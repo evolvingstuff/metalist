@@ -12,9 +12,11 @@
 ## Rendering Rules
 - **View mode**:
   - Note targets:
-    - `![[UUID]]` renders the referenced note as an embedded block (with descendants).
+    - `![[UUID]]` renders the referenced note as an embedded block with its complete descendant subtree whenever the host note is expanded. Saved collapse states on the referenced root or any descendant are ignored inside the embed.
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
-    - when the host note is collapsed, link-mode note references stay visible as a single compact row showing the preview text.
+    - when the host note is collapsed, both note-reference modes render as a single compact link row showing the referenced note's first line; an embed never expands inside a collapsed host.
+    - an expanded embed ends with a `↗ title` link that opens the source note in UUID search; compact note references use the same treatment. Hovering the arrow shows `Link to reference source`.
+    - right-click anywhere inside a rendered reference and choose **Go to Source** to open that source note with the same navigation behavior.
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
@@ -23,14 +25,10 @@
     - clicking the rendered file reference downloads the decrypted file from the server.
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
     - when the host note is collapsed and the first visible line is an embedded image file, the note collapses to a compact thumbnail-only version of that image preview.
-  - Each rendered reference has a `+/-` toggle:
-    - `-` switches embed -> link.
-    - `+` switches link -> embed.
-  - Toggle actions mutate the raw token in note content (`![[...]]` <-> `[[...]]`) and work per-token occurrence.
+  - Rendered references have no internal expand/collapse or embed/link controls; edit the raw token to change between `![[...]]` and `[[...]]`.
   - The embed always renders on its own visual line (block), even when written inline.
   - The referenced note's child subtree is included.
-  - Embedded note rendering starts with the same collapsed/expanded state as the source note.
-  - Embedded note collapse controls update the source note state, so toggling inside a reference is reflected anywhere that note appears.
+  - Embedded notes have no inner collapse controls; the host note owns the only collapse behavior for the rendered reference.
   - Clicking a link-mode reference opens UUID search for that note (it does not enter edit mode on the target note).
 - **Edit mode**:
   - Tokens remain literal raw text (`![[UUID]]` or `[[UUID]]`).
@@ -54,7 +52,6 @@
 
 ## Failure / Safety Cases
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
-  - Missing references do not show the `+/-` toggle control.
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
 - Removing every note reference to a file does not delete the file automatically.
 - `Trim unused files` is the explicit cleanup path for unreferenced file rows.

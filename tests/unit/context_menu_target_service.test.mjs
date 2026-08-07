@@ -5,11 +5,14 @@ function installFakeElementDom(t) {
     const originalHTMLElement = globalThis.HTMLElement;
 
     class FakeElement {
-        constructor({ selectors = [], tag = null } = {}) {
+        constructor({ selectors = [], tag = null, referenceNoteId = null } = {}) {
             this._selectors = new Set(selectors);
             this.dataset = {};
             if (tag !== null) {
                 this.dataset.tag = tag;
+            }
+            if (referenceNoteId !== null) {
+                this.dataset.refNoteId = referenceNoteId;
             }
         }
 
@@ -25,6 +28,19 @@ function installFakeElementDom(t) {
 
     return { FakeElement };
 }
+
+test('reference context resolves the closest rendered reference source', async (t) => {
+    const { FakeElement } = installFakeElementDom(t);
+    const { resolveReferenceContextFromElement } = await importTargetService();
+    const reference = new FakeElement({
+        selectors: ['.note-reference-note[data-ref-note-id]'],
+        referenceNoteId: 'source-note-456',
+    });
+
+    assert.deepEqual(resolveReferenceContextFromElement(reference), {
+        referenceNoteId: 'source-note-456',
+    });
+});
 
 async function importTargetService() {
     return await import(

@@ -7,7 +7,6 @@ from app.api.request_auth import read_request_auth_token
 from app.services.tokens import token_service
 from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
-from app.services.runtime_lock import purge_decrypted_runtime_state
 from app.models.database import SafeSession
 from app.config import API_PREFIX, TEST_MODE
 
@@ -61,9 +60,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
         path = request.url.path
-
-        if not token_service.has_active_tokens():
-            purge_decrypted_runtime_state()
 
         # Block any v1 API usage with an explicit 410 Gone (no DB access)
         if path.startswith('/api') and not (path.startswith(API_PREFIX) or path == API_PREFIX):

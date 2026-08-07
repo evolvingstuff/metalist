@@ -3,6 +3,7 @@ export const ROOT_SORT_MODES = Object.freeze({
     CREATED: 'created',
     UPDATED: 'updated',
     ALPHABETICAL: 'alphabetical',
+    CONTENT_VOLUME: 'content-volume',
 });
 
 export function normalizeRootSortMode(sortMode) {
@@ -15,6 +16,7 @@ export function normalizeRootSortMode(sortMode) {
         && normalized !== ROOT_SORT_MODES.CREATED
         && normalized !== ROOT_SORT_MODES.UPDATED
         && normalized !== ROOT_SORT_MODES.ALPHABETICAL
+        && normalized !== ROOT_SORT_MODES.CONTENT_VOLUME
     ) {
         throw new Error(`Unsupported root sort mode: ${sortMode}`);
     }
@@ -38,6 +40,9 @@ export function getRootSortModeIndicatorLabel(sortMode) {
     }
     if (normalized === ROOT_SORT_MODES.ALPHABETICAL) {
         return 'Sorted alphabetically';
+    }
+    if (normalized === ROOT_SORT_MODES.CONTENT_VOLUME) {
+        return 'Sorted by content volume';
     }
     throw new Error(`Unsupported root sort mode: ${sortMode}`);
 }

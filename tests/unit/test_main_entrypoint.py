@@ -114,6 +114,7 @@ def test_installed_cli_update_hands_off_without_starting_metalist(monkeypatch) -
 
     assert calls == [
         {
+            "current_version": main_entrypoint.__version__,
             "metalist_executable": "C:/Users/hlaho/.local/bin/metalist.exe",
             "current_pid": 4321,
             "platform_name": sys.platform,

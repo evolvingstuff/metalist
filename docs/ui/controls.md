@@ -52,7 +52,7 @@
 
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
-- The tab/search-context overlay appears while hovering over the black trigger region left of the search field and remains available while hovering over the dropdown itself. Creating a blank tab with `Enter` does not dismiss the overlay. Open search suggestions render above the tabs.
+- When tabs are enabled, a white outline stacked-folder icon marks the black trigger region left of the search field. Hovering that region or icon opens the tab/search-context overlay, which remains available while hovering over the dropdown itself. Creating a blank tab with `Enter` does not dismiss the overlay. Open search suggestions render above the tabs.
 - Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Search Input Behavior
@@ -110,11 +110,11 @@
 | Click `⋮` under the edited note's tag bar | Expand that collapsed parent note to reveal its hidden children. |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
-| Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
+| Right-click anywhere inside a rendered note reference | Choose **Go to Source** to open the referenced source note |
 | Press `@todo` / `@done` checkbox | Toggle the note status on mouse down. If another note is being edited, save + exit edit mode first and do not enter edit mode for the toggled note. |
 | Press note shell / blank space | Select/edit that note on mouse down. Note content waits until click so drag/drop can disambiguate click vs drag. |
-| Click the tag bar while editing | Focus the tag input without re-selecting the note shell. |
+| Click the tag bar while editing | Focus the tag input without re-selecting the note shell. Mouse or keyboard focus adds a soft focus ring and, when Animated Transitions is enabled, a single subtle outward halo. |
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Once movement crosses the drag threshold, releasing back over the source note does not count as a click. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
 | Right-click external link | Open a link-only context menu with `Copy Link` and `Open Link in New Tab`. Note actions are hidden for link targets. |

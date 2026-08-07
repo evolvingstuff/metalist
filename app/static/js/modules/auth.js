@@ -15,6 +15,7 @@ import {
     parseLoginNamespaceCatalog,
 } from './login-namespace-picker.js';
 import { renderNamespaceLoadingTab } from './modals/namespace-loading-page.js';
+import { formatElapsedDuration } from './elapsed-time.js';
 
 export const Auth = {
     hasPassword: null,
@@ -24,6 +25,8 @@ export const Auth = {
     _tabId: null,
     _startupIntroPromise: null,
     _startupIntroResolved: false,
+    _loadingStartedAt: null,
+    _loadingElapsedTimerId: null,
 
     _isStartupIntroEnabled() {
         return CONFIG.STARTUP.ENABLE_LOGIN_INTRO === true;
@@ -138,6 +141,35 @@ export const Auth = {
         }
         const loadingTitle = this._requireElement('login-loading-title');
         loadingTitle.textContent = text;
+    },
+
+    _updateLoadingElapsedUI() {
+        if (this._loadingStartedAt === null) {
+            throw new Error('Loading elapsed timer has not started');
+        }
+        const elapsed = this._requireElement('login-loading-elapsed');
+        const elapsedMilliseconds = window.performance.now() - this._loadingStartedAt;
+        elapsed.textContent = `Elapsed: ${formatElapsedDuration(elapsedMilliseconds)}`;
+    },
+
+    _startLoadingElapsedTimer() {
+        if (this._loadingElapsedTimerId !== null) {
+            return;
+        }
+        this._loadingStartedAt = window.performance.now();
+        this._updateLoadingElapsedUI();
+        this._loadingElapsedTimerId = window.setInterval(() => {
+            this._updateLoadingElapsedUI();
+        }, 1000);
+    },
+
+    _stopLoadingElapsedTimer() {
+        if (this._loadingElapsedTimerId !== null) {
+            window.clearInterval(this._loadingElapsedTimerId);
+        }
+        this._loadingElapsedTimerId = null;
+        this._loadingStartedAt = null;
+        this._requireElement('login-loading-elapsed').textContent = '';
     },
 
     _setCurrentNamespace(namespace) {
@@ -323,6 +355,7 @@ export const Auth = {
         this._setLoginLoadingTitle(loadingTitle);
         message.textContent = loadingMessage;
         bar.style.width = `${progressPercent}%`;
+        this._startLoadingElapsedTimer();
         this._clearLoginError();
         this._syncLoginNamespaceVisibility();
     },
@@ -399,6 +432,7 @@ export const Auth = {
         const loginForm = this._requireElement('login-form');
         const loadingPanel = this._requireElement('login-loading');
 
+        this._stopLoadingElapsedTimer();
         mainApp.style.display = 'none';
         loginPage.style.display = 'flex';
         startupSplash.style.display = 'flex';
@@ -422,6 +456,7 @@ export const Auth = {
         const loginForm = this._requireElement('login-form');
         const loadingPanel = this._requireElement('login-loading');
 
+        this._stopLoadingElapsedTimer();
         mainApp.style.display = 'none';
         loginPage.style.display = 'flex';
         startupSplash.style.display = 'none';
@@ -449,6 +484,7 @@ export const Auth = {
         const mainApp = this._requireElement('main-app');
         const passwordInput = this._requireElement('login-password');
 
+        this._stopLoadingElapsedTimer();
         loginPage.style.display = 'none';
         mainApp.style.display = 'block';
         this._resetHydrationUI();

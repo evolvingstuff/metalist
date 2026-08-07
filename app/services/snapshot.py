@@ -19,6 +19,7 @@ from app.services.date_filtering import note_matches_date_filter
 from app.services.embedded_references import collapsed_preview_source_has_image_file_embed
 from app.services.embedded_references import collapsed_preview_source_has_hidden_content
 from app.services.embedded_references import collapsed_preview_source_has_media
+from app.services.embedded_references import collapsed_preview_source_has_note_embed
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import extract_collapsed_preview_source_html
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
@@ -539,6 +540,11 @@ def build_view_state(
                 if collapsed_preview_source_has_media(rec.content):
                     content_is_collapsible = True
                 elif collapsed_preview_source_has_image_file_embed(
+                    content_html=rec.content,
+                    context=embed_render_context,
+                ):
+                    content_is_collapsible = True
+                elif collapsed_preview_source_has_note_embed(
                     content_html=rec.content,
                     context=embed_render_context,
                 ):

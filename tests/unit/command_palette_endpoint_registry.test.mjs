@@ -101,9 +101,14 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('view.sort_mode.created'), true);
     assert.equal(endpointIds.has('view.sort_mode.updated'), true);
     assert.equal(endpointIds.has('view.sort_mode.alphabetical'), true);
+    assert.equal(endpointIds.has('view.sort_mode.content_volume'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').label,
         'Sort order: Alphabetical',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.content_volume').label,
+        'Sort order: Content volume (largest first)',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.normal').getValue(),

@@ -33,8 +33,6 @@ only when the user explicitly requests an update. Future hardening could add:
   intended files.
 - Immutable commit-SHA pins for third-party GitHub Actions instead of movable
   version tags.
-- Clear self-update reporting of the installed and target versions, with
-  fail-closed behavior when installation or restart does not complete.
 - Periodic review of direct and transitive dependencies, especially packages
   that parse HTML, images, multipart uploads, archives, or cryptographic data.
 

@@ -51,7 +51,7 @@ After the first installation, update and restart MetaList with one cross-platfor
 ```bash
 metalist update
 ```
-The updater stops running namespaces, hands off to an external PowerShell process on Windows or `/bin/sh` on macOS/Linux so the installed environment can unlock, runs the forced cache-refreshed uv update, and launches MetaList again.
+The updater checks the installed version against the latest PyPI release first. If MetaList is already current, it reports the installed version and leaves all running namespaces untouched. When an update is available, it stops running namespaces, hands off to an external PowerShell process on Windows or `/bin/sh` on macOS/Linux so the installed environment can unlock, installs the exact version reported by PyPI with a forced cache refresh, launches MetaList again, and reports the installed version (for example, `MetaList updated to v0.3.13.`).
 
 For pip, users can run `pip install metalist`. For a non-editable local install from this checkout, use `uv pip install .` or `pip install .` instead of the editable command below.
 

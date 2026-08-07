@@ -19,6 +19,7 @@ def test_schedule_posix_self_update_stops_servers_then_hands_off_to_shell(
         "stop_all_namespace_processes_for_update",
         lambda: 3,
     )
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.13")
     monkeypatch.setattr(self_update.shutil, "which", lambda command: "/opt/homebrew/bin/uv")
     monkeypatch.setattr(
         self_update.subprocess,
@@ -27,6 +28,7 @@ def test_schedule_posix_self_update_stops_servers_then_hands_off_to_shell(
     )
 
     result = self_update.schedule_self_update(
+        current_version="0.3.12",
         metalist_executable="/Users/example/.local/bin/metalist",
         current_pid=4321,
         platform_name=platform_name,
@@ -35,12 +37,16 @@ def test_schedule_posix_self_update_stops_servers_then_hands_off_to_shell(
 
     assert result.stopped_process_count == 3
     assert result.platform_name == platform_name
+    assert result.current_version == "0.3.12"
+    assert result.target_version == "0.3.13"
+    assert result.update_scheduled is True
     assert len(popen_calls) == 1
     command, kwargs = popen_calls[0]
     assert command[:2] == ["/bin/sh", "-c"]
     assert "kill -0 4321" in command[2]
-    assert "/opt/homebrew/bin/uv tool install --force --reinstall --refresh metalist" in command[2]
+    assert "/opt/homebrew/bin/uv tool install --force --reinstall --refresh metalist==0.3.13" in command[2]
     assert "/Users/example/.local/bin/metalist" in command[2]
+    assert "MetaList updated to v0.3.13." in command[2]
     assert kwargs["start_new_session"] is True
     assert kwargs["cwd"] == str(self_update.Path.home())
     assert kwargs["env"] == {"PATH": "/opt/homebrew/bin"}
@@ -63,6 +69,7 @@ def test_schedule_windows_self_update_uses_external_powershell_console(monkeypat
         "stop_all_namespace_processes_for_update",
         lambda: 2,
     )
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.13")
     monkeypatch.setattr(self_update.shutil, "which", _resolve_executable)
     monkeypatch.setattr(
         self_update.subprocess,
@@ -71,6 +78,7 @@ def test_schedule_windows_self_update_uses_external_powershell_console(monkeypat
     )
 
     result = self_update.schedule_self_update(
+        current_version="0.3.12",
         metalist_executable="C:\\Users\\example\\.local\\bin\\metalist.exe",
         current_pid=9876,
         platform_name="win32",
@@ -79,6 +87,9 @@ def test_schedule_windows_self_update_uses_external_powershell_console(monkeypat
 
     assert result.stopped_process_count == 2
     assert result.platform_name == "win32"
+    assert result.current_version == "0.3.12"
+    assert result.target_version == "0.3.13"
+    assert result.update_scheduled is True
     assert len(popen_calls) == 1
     command, kwargs = popen_calls[0]
     assert command[:5] == [
@@ -89,14 +100,16 @@ def test_schedule_windows_self_update_uses_external_powershell_console(monkeypat
         "-Command",
     ]
     assert "Get-Process -Id 9876" in command[5]
-    assert "tool install --force --reinstall --refresh metalist" in command[5]
+    assert "tool install --force --reinstall --refresh 'metalist==0.3.13'" in command[5]
     assert "metalist.exe" in command[5]
+    assert "MetaList updated to v0.3.13." in command[5]
     assert kwargs["creationflags"] == self_update._WINDOWS_CREATE_NEW_CONSOLE
     assert kwargs["cwd"] == str(self_update.Path.home())
     assert kwargs["env"] == {"PATH": "C:\\Windows\\System32"}
 
 
 def test_schedule_self_update_refuses_to_stop_servers_without_uv(monkeypatch) -> None:
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.13")
     monkeypatch.setattr(self_update.shutil, "which", lambda command: None)
     monkeypatch.setattr(
         self_update,
@@ -106,6 +119,7 @@ def test_schedule_self_update_refuses_to_stop_servers_without_uv(monkeypatch) ->
 
     with pytest.raises(RuntimeError, match="uv executable was not found"):
         self_update.schedule_self_update(
+            current_version="0.3.12",
             metalist_executable="/Users/example/.local/bin/metalist",
             current_pid=os.getpid(),
             platform_name="linux",
@@ -122,6 +136,7 @@ def test_schedule_windows_self_update_refuses_to_stop_servers_without_powershell
         return None
 
     monkeypatch.setattr(self_update.shutil, "which", _resolve_executable)
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.13")
     monkeypatch.setattr(
         self_update,
         "stop_all_namespace_processes_for_update",
@@ -130,8 +145,114 @@ def test_schedule_windows_self_update_refuses_to_stop_servers_without_powershell
 
     with pytest.raises(RuntimeError, match="PowerShell is required"):
         self_update.schedule_self_update(
+            current_version="0.3.12",
             metalist_executable="C:\\Users\\example\\.local\\bin\\metalist.exe",
             current_pid=1234,
             platform_name="win32",
+            environ={},
+        )
+
+
+def test_schedule_self_update_does_nothing_when_current_version_matches_pypi(monkeypatch) -> None:
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.12")
+    monkeypatch.setattr(
+        self_update.shutil,
+        "which",
+        lambda command: (_ for _ in ()).throw(AssertionError("uv must not be resolved")),
+    )
+    monkeypatch.setattr(
+        self_update,
+        "stop_all_namespace_processes_for_update",
+        lambda: (_ for _ in ()).throw(AssertionError("servers must remain running")),
+    )
+    monkeypatch.setattr(
+        self_update.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("updater must not start")),
+    )
+
+    result = self_update.schedule_self_update(
+        current_version="0.3.12",
+        metalist_executable="/Users/example/.local/bin/metalist",
+        current_pid=4321,
+        platform_name="darwin",
+        environ={"PATH": "/opt/homebrew/bin"},
+    )
+
+    assert result.current_version == "0.3.12"
+    assert result.target_version == "0.3.12"
+    assert result.update_scheduled is False
+    assert result.stopped_process_count == 0
+    assert result.message == "MetaList is already up to date (v0.3.12)."
+
+
+def test_schedule_self_update_does_not_downgrade_a_newer_install(monkeypatch) -> None:
+    monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.12")
+    monkeypatch.setattr(
+        self_update,
+        "stop_all_namespace_processes_for_update",
+        lambda: (_ for _ in ()).throw(AssertionError("servers must remain running")),
+    )
+
+    result = self_update.schedule_self_update(
+        current_version="0.3.13",
+        metalist_executable="/Users/example/.local/bin/metalist",
+        current_pid=4321,
+        platform_name="darwin",
+        environ={},
+    )
+
+    assert result.update_scheduled is False
+    assert result.stopped_process_count == 0
+    assert result.message == (
+        "MetaList v0.3.13 is newer than the latest PyPI release "
+        "(v0.3.12); no update was performed."
+    )
+
+
+def test_fetch_latest_pypi_version_reads_validated_project_metadata(monkeypatch) -> None:
+    request = self_update.httpx.Request("GET", self_update._PYPI_PROJECT_URL)
+    response = self_update.httpx.Response(
+        200,
+        json={"info": {"version": "0.3.13"}},
+        request=request,
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        self_update.httpx,
+        "get",
+        lambda url, **kwargs: calls.append((url, kwargs)) or response,
+    )
+
+    assert self_update._fetch_latest_pypi_version() == "0.3.13"
+    assert calls == [
+        (
+            self_update._PYPI_PROJECT_URL,
+            {
+                "follow_redirects": False,
+                "timeout": self_update._PYPI_REQUEST_TIMEOUT_SECONDS,
+            },
+        )
+    ]
+
+
+def test_schedule_self_update_leaves_servers_running_when_pypi_check_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        self_update.httpx,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(self_update.httpx.ConnectError("offline")),
+    )
+    monkeypatch.setattr(
+        self_update,
+        "stop_all_namespace_processes_for_update",
+        lambda: (_ for _ in ()).throw(AssertionError("servers must remain running")),
+    )
+
+    with pytest.raises(self_update.httpx.ConnectError, match="offline"):
+        self_update.schedule_self_update(
+            current_version="0.3.12",
+            metalist_executable="/Users/example/.local/bin/metalist",
+            current_pid=4321,
+            platform_name="darwin",
             environ={},
         )

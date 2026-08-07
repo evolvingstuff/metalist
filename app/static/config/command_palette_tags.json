@@ -41,6 +41,10 @@
       "tags": ["sort", "order", "alphabetical", "alphabetic", "alpha", "content", "a", "z", "view"]
     },
     {
+      "id": "view.sort_mode.content_volume",
+      "tags": ["sort", "order", "content", "volume", "length", "character", "characters", "count", "text", "largest", "longest", "view"]
+    },
+    {
       "id": "pref.theme",
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },

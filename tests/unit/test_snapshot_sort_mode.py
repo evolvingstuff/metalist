@@ -264,6 +264,84 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
     assert state.metadata["rootSortBuckets"] == {}
 
 
+def test_build_view_state_sorts_roots_by_plain_text_volume_across_subtree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 7, 20, 0, tzinfo=timezone.utc)
+    notes = {
+        "root-own-long": _Note(
+            id="root-own-long",
+            parent_id=None,
+            prev_id=None,
+            next_id="root-subtree-large",
+            is_collapsed=False,
+            content="<div>1234567890</div>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+        "root-subtree-large": _Note(
+            id="root-subtree-large",
+            parent_id=None,
+            prev_id="root-own-long",
+            next_id="root-tied",
+            is_collapsed=False,
+            content="<h1>X</h1>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+        "child-large": _Note(
+            id="child-large",
+            parent_id="root-subtree-large",
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<p><strong>abcdefghijklmnop</strong></p>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+        "root-tied": _Note(
+            id="root-tied",
+            parent_id=None,
+            prev_id="root-subtree-large",
+            next_id=None,
+            is_collapsed=False,
+            content="<section>abcdefghij</section>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={
+            None: ["root-own-long", "root-subtree-large", "root-tied"],
+            "root-subtree-large": ["child-large"],
+        },
+    )
+    _patch_fake_store(monkeypatch, store)
+
+    state = build_view_state(
+        editing_note_id=None,
+        search=None,
+        sort_mode="content-volume",
+        date_filter=None,
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+    )
+
+    assert state.children_by_parent[None] == [
+        "root-subtree-large",
+        "root-own-long",
+        "root-tied",
+    ]
+    assert state.metadata["sortMode"] == "content-volume"
+    assert state.metadata["rootSortBuckets"] == {}
+
+
 def test_build_view_state_filters_by_updated_date_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

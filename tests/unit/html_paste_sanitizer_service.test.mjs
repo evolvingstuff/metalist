@@ -167,6 +167,23 @@ test('normalizeSoftWrappedTextLineBreaks keeps bare YouTube timestamp links as e
     assert.equal(normalized, input);
 });
 
+test('normalizeSoftWrappedTextLineBreaks keeps unbulleted YouTube description lists', () => {
+    const input = 'Why chronic stress and nervous system tension push the voice higher\n'
+        + 'How the tongue lifting blocks access to the lower register\n'
+        + 'The yawn-sigh technique for opening the lower register\n'
+        + "Jaw drop and chin elevation — the emperor's pose\n"
+        + 'Hands on the chest to feel chest voice vibrations\n'
+        + 'Sternum pressure points — the sea of tranquility\n'
+        + 'Pectoral muscle sweep to release chest tension\n'
+        + 'Vocal fry — what it is, why to avoid leaning on it\n'
+        + 'How to practice throughout the day without setting aside time\n'
+        + 'Journal prompt — finding your natural note';
+
+    const normalized = normalizeSoftWrappedTextLineBreaks(input);
+
+    assert.equal(normalized, input);
+});
+
 test('shouldPreserveTimestampSiblingLineBreaks keeps YouTube anchor timestamp sibling breaks', () => {
     assert.equal(
         shouldPreserveTimestampSiblingLineBreaks(
