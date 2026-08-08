@@ -21,6 +21,11 @@ def _load_store(
     monkeypatch.setattr(note_store_module, "search_index", index)
     monkeypatch.setattr(note_store_module, "get_cached_content", lambda note_id: content_by_id[note_id])
     monkeypatch.setattr(note_store_module, "get_cached_tags", lambda note_id: tags_by_id[note_id])
+    monkeypatch.setattr(
+        note_store_module,
+        "get_cached_text",
+        lambda note_id: note_store_module.strip_html(content_by_id[note_id]),
+    )
     monkeypatch.setattr(note_store_module, "get_ontology", lambda: TagOntology.empty())
 
     store = NoteStore()

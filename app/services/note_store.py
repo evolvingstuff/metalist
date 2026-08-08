@@ -19,7 +19,7 @@ from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
-from app.services.content_cache import get_cached_content, get_cached_tags
+from app.services.content_cache import get_cached_content, get_cached_tags, get_cached_text
 from app.services.file_registry import file_registry
 from app.services.hydration_state import hydration_state
 from app.services.note_image_tags import infer_image_tag_terms
@@ -269,7 +269,7 @@ class NoteStore:
                 note = SimpleNamespace(**row)
                 plaintext = get_cached_content(note.id)
                 tags = get_cached_tags(note.id)
-                content_text_by_id[note.id] = strip_html(plaintext)
+                content_text_by_id[note.id] = get_cached_text(note.id)
                 tag_terms, non_meta_tag_terms = _derive_own_tag_terms(
                     tags=tags,
                     content_html=plaintext,

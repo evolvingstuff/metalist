@@ -8,8 +8,9 @@
 
 ## Core Components (As Implemented)
 - `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content + tags + ordering metadata.
-- `app/services/content_cache.py`: decrypts note content + tags from DB into in-memory caches.
-- `app/services/search_index.py`: in-memory search index (tag postings + trigram postings) maintained from `NoteStore` mutations.
+- `app/services/content_cache.py`: decrypts each note, sanitizes its HTML, extracts plain text once, then publishes the completed content/tag/text caches in bulk.
+- `app/services/search_index.py`: in-memory tag postings plus case-folded note text maintained from `NoteStore` mutations. Quoted-text queries directly scan the tag-filtered in-memory strings and cache results, avoiding an expensive eager trigram index during hydration.
+- `app/services/note_image_tags.py`: infers the search-only `@image` tag with compiled markup detection and cheap Markdown/reference presence gates, so ordinary notes do not instantiate HTML/reference parsers during hydration.
 - `app/services/snapshot.py`: builds the view snapshot used by `POST /api2/notes/view`.
 - `app/db/session.py`: provides `begin_writer()`/`connect_reader()` and enforces the post-startup SELECT guard.
 
@@ -27,8 +28,8 @@ At a high level (`app/main.py`):
 1. Initialize DB schema + ensure settings exist.
 2. If encryption is **disabled**:
    - Prefetch all note rows.
-   - Populate the decrypted content cache.
-   - Hydrate the in-memory note store from the prefetched rows.
+   - Populate the decrypted content cache in one sanitize/plain-text pass.
+   - Hydrate the in-memory note store from the prefetched rows and cached plain text.
    - Enable the read guard so accidental runtime `SELECT` crashes loudly.
 3. If encryption is **enabled**:
    - Skip cache + note-store hydration at startup.

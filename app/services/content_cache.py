@@ -109,6 +109,8 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
     is no longer used now that the helper layer opens its own read
     connections.
     """
+    global _search_cache, _tag_cache, _text_cache
+
     logger.info("Populating content cache from database...")
 
     fetch_start = time.perf_counter()
@@ -128,6 +130,10 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         )
 
     clear_cache()
+
+    hydrated_content: Dict[str, str] = {}
+    hydrated_tags: Dict[str, str] = {}
+    hydrated_text: Dict[str, str] = {}
 
     if hydration_state.is_running():
         hydration_state.set_phase(
@@ -205,12 +211,10 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         else:
             decrypted_tags = tags
 
-        decrypted_content = sanitize_note_html(decrypted_content)
-        raw_text = strip_html(decrypted_content)
-
-        cache_note(note_id, decrypted_content)
-        cache_note_tags(note_id, decrypted_tags)
-        cache_note_text(note_id, raw_text)
+        sanitized_content = sanitize_note_html(decrypted_content)
+        hydrated_content[note_id] = sanitized_content
+        hydrated_tags[note_id] = decrypted_tags
+        hydrated_text[note_id] = strip_html(sanitized_content)
 
         processed += 1
         if _CACHE_TIMING_ENABLED and processed % 1000 == 0:
@@ -232,6 +236,10 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
 
     if hydration_state.is_running():
         hydration_state.update(processed)
+
+    _search_cache = hydrated_content
+    _tag_cache = hydrated_tags
+    _text_cache = hydrated_text
 
     if _CACHE_TIMING_ENABLED:
         total_loop = time.perf_counter() - loop_started

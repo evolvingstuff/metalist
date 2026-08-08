@@ -14,7 +14,6 @@ from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.search_text import build_searchable_text_casefold_from_plaintext
 
 
-_UNICODE_TRIGRAM_SENTINEL = 0xE000
 _QUOTE_CHARS = {"'", '"'}
 
 
@@ -91,33 +90,6 @@ class SearchRecord:
     tag_terms: FrozenSet[str]
 
 
-def _canonical_codepoint(char: str) -> int:
-    code = ord(char)
-    if code < 128:
-        return code
-    return _UNICODE_TRIGRAM_SENTINEL
-
-
-def _trigram_key(a: int, b: int, c: int) -> int:
-    return (a << 32) | (b << 16) | c
-
-
-def _extract_trigram_keys(text_casefold: str) -> Set[int]:
-    if not isinstance(text_casefold, str):
-        raise TypeError(f"text_casefold must be a string, got {type(text_casefold)}")
-
-    if len(text_casefold) < 3:
-        return set()
-
-    keys: Set[int] = set()
-    codes: List[int] = [_canonical_codepoint(ch) for ch in text_casefold]
-    index = 0
-    while index + 2 < len(codes):
-        keys.add(_trigram_key(codes[index], codes[index + 1], codes[index + 2]))
-        index += 1
-    return keys
-
-
 def extract_tags_for_search(tags: str) -> FrozenSet[str]:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
@@ -150,13 +122,10 @@ class SearchIndex:
         self._note_raw_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms_casefold: List[FrozenSet[str]] = []
-        self._note_trigrams: List[Set[int]] = []
-
         self._explicit_tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
         self._raw_tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
-        self._tri_notes: DefaultDict[int, Set[int]] = defaultdict(set)
 
         self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
 
@@ -184,12 +153,10 @@ class SearchIndex:
             self._note_raw_tag_terms.clear()
             self._note_tag_terms.clear()
             self._note_tag_terms_casefold.clear()
-            self._note_trigrams.clear()
             self._explicit_tag_notes.clear()
             self._raw_tag_notes_casefold.clear()
             self._tag_notes.clear()
             self._tag_notes_casefold.clear()
-            self._tri_notes.clear()
             self._result_cache.clear()
 
             self._revision += 1
@@ -218,7 +185,6 @@ class SearchIndex:
                 "elapsed_ms": elapsed_ms,
                 "note_count": len(materialized),
                 "unique_tag_terms": len(self._tag_notes),
-                "unique_trigrams": len(self._tri_notes),
                 "revision": self._revision,
             }
         ).info("search.index.rebuild.finish")
@@ -635,14 +601,13 @@ class SearchIndex:
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
-        text_casefold, trigrams = self._build_note_text_state(content_text, tags)
+        text_casefold = self._build_note_text_casefold(content_text, tags)
         explicit_tag_terms = extract_tags_for_search(tags)
         self._note_text_casefold.append(text_casefold)
         self._note_explicit_tag_terms.append(explicit_tag_terms)
         self._note_raw_tag_terms.append(raw_tag_terms)
         self._note_tag_terms.append(tag_terms)
         self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
-        self._note_trigrams.append(trigrams)
 
         for term in explicit_tag_terms:
             self._explicit_tag_notes[term].add(note_int_id)
@@ -651,8 +616,6 @@ class SearchIndex:
         for term in tag_terms:
             self._tag_notes[term].add(note_int_id)
             self._tag_notes_casefold[term.casefold()].add(note_int_id)
-        for trigram in trigrams:
-            self._tri_notes[trigram].add(note_int_id)
 
     def _update_existing_locked(
         self,
@@ -665,12 +628,11 @@ class SearchIndex:
         if note_int_id not in self._alive:
             raise RuntimeError("Cannot update deleted note")
 
-        new_text_casefold, new_trigrams = self._build_note_text_state(content_text, tags)
+        new_text_casefold = self._build_note_text_casefold(content_text, tags)
         new_explicit_tag_terms = extract_tags_for_search(tags)
         old_explicit_tag_terms = self._note_explicit_tag_terms[note_int_id]
         old_raw_tag_terms = self._note_raw_tag_terms[note_int_id]
         old_tag_terms = self._note_tag_terms[note_int_id]
-        old_trigrams = self._note_trigrams[note_int_id]
 
         if old_explicit_tag_terms != new_explicit_tag_terms:
             for term in old_explicit_tag_terms:
@@ -708,16 +670,6 @@ class SearchIndex:
                 term.casefold() for term in new_tag_terms
             )
 
-        if old_trigrams != new_trigrams:
-            for trigram in old_trigrams:
-                bucket = self._tri_notes.get(trigram)
-                if bucket is None:
-                    continue
-                bucket.discard(note_int_id)
-            for trigram in new_trigrams:
-                self._tri_notes[trigram].add(note_int_id)
-            self._note_trigrams[note_int_id] = new_trigrams
-
         self._note_text_casefold[note_int_id] = new_text_casefold
 
     def _remove_existing_locked(self, note_int_id: int) -> None:
@@ -742,28 +694,19 @@ class SearchIndex:
             bucket = self._raw_tag_notes_casefold.get(term.casefold())
             if bucket is not None:
                 bucket.discard(note_int_id)
-        for trigram in self._note_trigrams[note_int_id]:
-            bucket = self._tri_notes.get(trigram)
-            if bucket is None:
-                continue
-            bucket.discard(note_int_id)
-
         self._note_text_casefold[note_int_id] = ""
         self._note_explicit_tag_terms[note_int_id] = frozenset()
         self._note_raw_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms_casefold[note_int_id] = frozenset()
-        self._note_trigrams[note_int_id] = set()
 
-    def _build_note_text_state(self, content_text: str, tags: str) -> Tuple[str, Set[int]]:
+    def _build_note_text_casefold(self, content_text: str, tags: str) -> str:
         if not isinstance(content_text, str):
             raise TypeError(f"content_text must be a string, got {type(content_text)}")
         if not isinstance(tags, str):
             raise TypeError(f"tags must be a string, got {type(tags)}")
 
-        text_casefold = build_searchable_text_casefold_from_plaintext(content_text, tags)
-        trigrams = _extract_trigram_keys(text_casefold)
-        return text_casefold, trigrams
+        return build_searchable_text_casefold_from_plaintext(content_text, tags)
 
     def _build_suggestion_representatives_locked(
         self,
@@ -831,21 +774,6 @@ class SearchIndex:
                 return set()
             constraints.append(posting)
 
-        short_text_terms: List[str] = []
-        for term in parsed.required_text:
-            term_casefold = term.casefold()
-            if len(term_casefold) < 3:
-                short_text_terms.append(term_casefold)
-                continue
-            trigram_keys = _extract_trigram_keys(term_casefold)
-            if not trigram_keys:
-                continue
-            for trigram in trigram_keys:
-                posting = self._tri_notes.get(trigram)
-                if posting is None:
-                    return set()
-                constraints.append(posting)
-
         candidate_ids: Optional[Set[int]] = None
         if constraints:
             ordered = sorted(constraints, key=len)
@@ -864,22 +792,6 @@ class SearchIndex:
                 if posting is None:
                     continue
                 candidate_ids.difference_update(posting)
-
-        if short_text_terms:
-            verified: Set[int] = set()
-            for note_int_id in candidate_ids:
-                if note_int_id not in self._alive:
-                    continue
-                text_casefold = self._note_text_casefold[note_int_id]
-                missing = False
-                for term in short_text_terms:
-                    if term not in text_casefold:
-                        missing = True
-                        break
-                if missing:
-                    continue
-                verified.add(note_int_id)
-            candidate_ids = verified
 
         return candidate_ids
 

@@ -24,6 +24,11 @@ def _load_store_with_ontology(
     monkeypatch.setattr(note_store_module, "search_index", index)
     monkeypatch.setattr(note_store_module, "get_cached_content", lambda note_id: content_by_id[note_id])
     monkeypatch.setattr(note_store_module, "get_cached_tags", lambda note_id: tags_by_id[note_id])
+    monkeypatch.setattr(
+        note_store_module,
+        "get_cached_text",
+        lambda note_id: note_store_module.strip_html(content_by_id[note_id]),
+    )
 
     parsed = parse_rules_text(text=rules_text, filename="test_rules")
     ontology = compile_rules(rules=parsed, filename="test_rules")
@@ -65,4 +70,3 @@ def test_search_matches_ontology_text_matchers(monkeypatch: pytest.MonkeyPatch) 
     )
 
     assert index.query_note_ids("todo") == {"n"}
-

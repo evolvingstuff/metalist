@@ -22,6 +22,28 @@ def test_infer_image_tag_terms_ignores_non_image_content() -> None:
     assert tag_terms == frozenset()
 
 
+def test_inline_image_detection_does_not_match_longer_tag_names() -> None:
+    assert not image_tags.content_contains_image(
+        content_html="<div><image-placeholder>plain</image-placeholder></div>",
+        is_image_file=lambda _file_id: False,
+    )
+
+
+def test_plain_notes_skip_reference_token_collection(monkeypatch) -> None:
+    monkeypatch.setattr(
+        image_tags,
+        "collect_reference_tokens_from_html",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("plain notes have no references")
+        ),
+    )
+
+    assert not image_tags.content_contains_image(
+        content_html="<div>plain note</div>",
+        is_image_file=lambda _file_id: False,
+    )
+
+
 def test_content_contains_image_detects_image_file_reference() -> None:
     file_id = "11111111-1111-1111-1111-111111111111"
 
