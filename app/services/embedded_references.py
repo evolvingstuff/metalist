@@ -89,6 +89,8 @@ class ReferenceToken:
 def collect_reference_tokens_from_html(content_html: str) -> List[ReferenceToken]:
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
+    if "[[" not in content_html:
+        return []
 
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     tokens: List[ReferenceToken] = []

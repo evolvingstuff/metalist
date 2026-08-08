@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from html.parser import HTMLParser
 import re
 from typing import Callable, FrozenSet
 
@@ -9,24 +8,14 @@ from app.services.embedded_references import collect_reference_tokens_from_html
 
 IMAGE_TAG = "@image"
 
-_DATA_IMAGE_RE = re.compile(r"\bdata:image/[a-z0-9.+-]+", re.IGNORECASE)
+_INLINE_IMAGE_RE = re.compile(
+    r"<img(?=[\s/>])|\bdata:image/[a-z0-9.+-]+",
+    re.IGNORECASE,
+)
 _MARKDOWN_IMAGE_RE = re.compile(
     r"!\[[^\]\n]*\]\([^)]+?\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)(?:[?#][^)]*)?\)",
     re.IGNORECASE,
 )
-
-
-class _ImageHtmlDetector(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.has_image_tag = False
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "img":
-            self.has_image_tag = True
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
 
 
 def infer_image_tag_terms(
@@ -51,9 +40,11 @@ def content_contains_image(*, content_html: str, is_image_file: Callable[[str], 
 
     if _contains_inline_image_markup(content_html):
         return True
-    if _MARKDOWN_IMAGE_RE.search(content_html):
+    if "![" in content_html and _MARKDOWN_IMAGE_RE.search(content_html):
         return True
 
+    if "[[" not in content_html:
+        return False
     for reference_token in collect_reference_tokens_from_html(content_html):
         file_id = reference_token.note_id
         if is_image_file(file_id):
@@ -62,8 +53,4 @@ def content_contains_image(*, content_html: str, is_image_file: Callable[[str], 
 
 
 def _contains_inline_image_markup(content_html: str) -> bool:
-    detector = _ImageHtmlDetector()
-    detector.feed(content_html)
-    if detector.has_image_tag:
-        return True
-    return bool(_DATA_IMAGE_RE.search(content_html))
+    return _INLINE_IMAGE_RE.search(content_html) is not None
