@@ -348,13 +348,19 @@ test('buildContextMenuItems adds a top note action to non-editing note context',
     assert.deepEqual(calls, [['addNoteAtTop']]);
 });
 
-test('buildContextMenuItems returns export view for view context', () => {
+test('buildContextMenuItems returns view visibility toggles and export action', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'view', areTabsVisible: false, isCalendarVisible: true },
+        {
+            kind: 'view',
+            areTabsVisible: false,
+            isCalendarVisible: true,
+            areNoteTagsVisible: false,
+        },
         {
             onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
             onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
+            onToggleNoteTags: (nextValue) => calls.push(['toggleNoteTags', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
     );
@@ -364,6 +370,7 @@ test('buildContextMenuItems returns export view for view context', () => {
         [
             { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
             { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
+            { id: 'toggle-note-tags', label: 'Show Tags in List', enabled: true },
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
@@ -374,6 +381,7 @@ test('buildContextMenuItems returns export view for view context', () => {
     assert.deepEqual(calls, [
         ['toggleTabs', true],
         ['toggleCalendar', false],
+        ['toggleNoteTags', true],
         ['exportViewHtml'],
     ]);
 });
@@ -385,12 +393,14 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             kind: 'view',
             areTabsVisible: true,
             isCalendarVisible: true,
+            areNoteTagsVisible: true,
             canAddNoteAtTop: true,
         },
         {
             onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
             onToggleTabs: () => {},
             onToggleCalendar: () => {},
+            onToggleNoteTags: () => {},
             onExportViewHtml: () => {},
         },
     );

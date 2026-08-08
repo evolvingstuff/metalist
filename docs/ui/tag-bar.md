@@ -4,6 +4,7 @@
 - Each note has a tag string (`notes.tags`) that round-trips through the view snapshot (`snapshot.notes[*].tags`).
 - The tag bar editor enforces a small grammar in the browser so invalid characters/sequences are removed as you type.
 - When leaving the tag bar (Tab toggle or click-away) the input is **sanitized**: incomplete/broken items are removed.
+- When tags are shown in the note list, one line of tags shares the note's existing row height; the row grows only when its tags wrap onto additional lines.
 
 ## Whitespace + Tokens
 - Outside of `/* ... */` comments, tags are separated by whitespace.
