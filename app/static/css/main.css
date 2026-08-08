@@ -3306,10 +3306,6 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     font-style: italic;
 }
 
-.note-tags {
-    margin-bottom: 0.5rem;
-}
-
 .tag {
     background: #eee;
     padding: 0.2rem 0.5rem;
@@ -5007,7 +5003,7 @@ body.pref-show-note-tags .note-tags {
     display: none;
     font-size: 12px;
     color: #666;
-    padding: 0 8px 6px 8px;
+    padding: 0 8px;
     opacity: 0.9;
 }
 

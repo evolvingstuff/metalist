@@ -461,6 +461,7 @@ function buildViewContextItems(context, handlers) {
     const onAddNoteAtTop = handlers.onAddNoteAtTop;
     const onToggleTabs = handlers.onToggleTabs;
     const onToggleCalendar = handlers.onToggleCalendar;
+    const onToggleNoteTags = handlers.onToggleNoteTags;
     if (typeof onExportViewHtml !== 'function') {
         throw new Error('View context missing onExportViewHtml handler');
     }
@@ -470,11 +471,17 @@ function buildViewContextItems(context, handlers) {
     if (typeof onToggleCalendar !== 'function') {
         throw new Error('View context missing onToggleCalendar handler');
     }
+    if (typeof onToggleNoteTags !== 'function') {
+        throw new Error('View context missing onToggleNoteTags handler');
+    }
     if (typeof context.areTabsVisible !== 'boolean') {
         throw new Error('View context missing areTabsVisible boolean');
     }
     if (typeof context.isCalendarVisible !== 'boolean') {
         throw new Error('View context missing isCalendarVisible boolean');
+    }
+    if (typeof context.areNoteTagsVisible !== 'boolean') {
+        throw new Error('View context missing areNoteTagsVisible boolean');
     }
 
     const items = [
@@ -489,6 +496,12 @@ function buildViewContextItems(context, handlers) {
             label: context.isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View',
             enabled: true,
             onSelect: () => onToggleCalendar(!context.isCalendarVisible),
+        },
+        {
+            id: 'toggle-note-tags',
+            label: context.areNoteTagsVisible ? 'Hide Tags in List' : 'Show Tags in List',
+            enabled: true,
+            onSelect: () => onToggleNoteTags(!context.areNoteTagsVisible),
         },
         {
             id: 'export-view-html',

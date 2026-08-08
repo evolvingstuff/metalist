@@ -25,3 +25,11 @@ test('visible note tags wrap within one quarter of the note row', () => {
     assert.match(css, /body\.pref-show-note-tags\s+\.note-tags\s*\{[^}]*max-width:\s*25%/s);
     assert.match(css, /body\.pref-show-note-tags\s+\.note-tags\s*\{[^}]*overflow-wrap:\s*anywhere/s);
 });
+
+
+test('a single line of visible note tags adds no vertical spacing', () => {
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+
+    assert.match(css, /\.note-tags\s*\{[^}]*padding:\s*0 8px;/s);
+    assert.doesNotMatch(css, /\.note-tags\s*\{[^}]*margin-bottom:/s);
+});
