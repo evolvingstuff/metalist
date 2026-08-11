@@ -14,22 +14,6 @@ from app.usecases.base import QueryCommand
 from app.usecases.collapse import apply_set_collapse_bulk
 
 
-def _collect_descendants(root_id: str) -> List[str]:
-    if not isinstance(root_id, str) or not root_id:
-        raise TypeError("root_id must be a non-empty string")
-    if not note_store.has_note(root_id):
-        raise RuntimeError(f"Unknown root_id: {root_id}")
-
-    results: List[str] = []
-    to_visit = [root_id]
-    while to_visit:
-        current_id = to_visit.pop()
-        results.append(current_id)
-        for child_id in note_store.get_children(current_id):
-            to_visit.append(child_id)
-    return results
-
-
 def _quote_text_term_for_query(phrase: str) -> str:
     if not isinstance(phrase, str):
         raise TypeError(f"search phrase must be a string, got {type(phrase)}")
@@ -132,15 +116,7 @@ class CmdSetCollapseInContext(QueryCommand):
     def execute(self) -> Dict[str, object]:
         reset_undo_stack(self.client_id, self.undo_context)
         root_ids = _collect_context_root_ids(self.search_query)
-
-        note_ids: List[str] = []
-        seen: Set[str] = set()
-        for root_id in root_ids:
-            for note_id in _collect_descendants(root_id):
-                if note_id in seen:
-                    continue
-                seen.add(note_id)
-                note_ids.append(note_id)
+        note_ids = list(root_ids)
 
         before_by_id: Dict[str, bool] = {}
         note_ids_to_update: List[str] = []

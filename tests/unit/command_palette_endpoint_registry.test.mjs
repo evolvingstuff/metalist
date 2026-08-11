@@ -74,6 +74,14 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         'Note Layout & Appearance…',
     );
     assert.equal(endpointIds.has('action.logout'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.expand_all').label,
+        'Expand all root notes (current view)',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.collapse_all').label,
+        'Collapse all root notes (current view)',
+    );
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);
     assert.equal(endpointIds.has('action.export_html'), true);

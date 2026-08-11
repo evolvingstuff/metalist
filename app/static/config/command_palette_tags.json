@@ -50,11 +50,11 @@
     },
     {
       "id": "action.expand_all",
-      "tags": ["expand", "all", "collapsed", "notes", "view"]
+      "tags": ["expand", "all", "collapsed", "root", "top-level", "notes", "view"]
     },
     {
       "id": "action.collapse_all",
-      "tags": ["collapse", "all", "notes", "view"]
+      "tags": ["collapse", "all", "root", "top-level", "notes", "view"]
     },
     {
       "id": "action.reset_view_filters",
