@@ -4,6 +4,8 @@
 
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { Auth } from './auth.js';
+import { classifyApiFailure } from './api-failure-classification-service.js';
+import { clearEditingStateForDisconnect } from './disconnect-editing-state-service.js';
 
 const RESTORE_TRANSITION_UNTIL_KEY = 'metalist_restore_transition_until_ms';
 
@@ -35,47 +37,25 @@ export const ErrorHandler = {
      * Handle different types of API errors with appropriate UX
      */
     handleApiError(error, response) {
-        if (typeof response === 'undefined') {
-            throw new Error('ErrorHandler.handleApiError requires response (use null)');
-        }
         console.error('[ErrorHandler] Handling API failure');
-        
-        if (response !== null) {
-            // HTTP response error
-            if (response.status === 401) {
-                this.handleAuthError('Your session has expired. Please log in again.');
-            } else if (response.status >= 500) {
-                this.handleNetworkError(`Server error (${response.status}). Please try again.`);
-            } else if (response.status >= 400) {
-                this.handleNetworkError(`Request failed (${response.status}). Please check your input and try again.`);
-            } else {
-                this.handleNetworkError(`Unexpected error (${response.status}). Please try again.`);
-            }
+
+        const failure = classifyApiFailure(error, response);
+        if (failure.kind === 'auth') {
+            this.handleAuthError(failure.message);
             return;
         }
-
-        if (!error || typeof error !== 'object') {
-            throw new Error('ErrorHandler.handleApiError requires error object when response is null');
+        if (failure.kind === 'http') {
+            this.handleHttpError(failure.message);
+            return;
         }
-        if (typeof error.name !== 'string') {
-            throw new Error('ErrorHandler.handleApiError requires error.name string');
+        if (failure.kind === 'network') {
+            this.handleNetworkError(failure.message);
+            return;
         }
-        if (typeof error.message !== 'string') {
-            throw new Error('ErrorHandler.handleApiError requires error.message string');
+        if (failure.kind === 'internal') {
+            throw failure.error;
         }
-
-        // Network/connection error (fetch throws)
-        if (error.name === 'TypeError' && (
-            error.message.includes('fetch') ||
-            error.message.includes('Network request failed') ||
-            error.message.includes('Failed to fetch')
-        )) {
-                this.handleNetworkError('Cannot reach server. Please check your internet connection.');
-        } else if (error.name === 'AbortError') {
-                this.handleNetworkError('Request timed out. Please try again.');
-        } else {
-            this.handleNetworkError(`Network error: ${error.message}. Please try again.`);
-        }
+        throw new Error(`Unsupported API failure kind: ${failure.kind}`);
     },
     
     /**
@@ -87,6 +67,17 @@ export const ErrorHandler = {
         }
         console.log('[ErrorHandler] Authentication error');
         Auth.forceLogout(message);
+    },
+
+    /**
+     * Report an HTTP application failure without claiming the connection was lost.
+     */
+    handleHttpError(message) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('ErrorHandler.handleHttpError requires message string');
+        }
+        console.log('[ErrorHandler] HTTP error');
+        this.showErrorBanner(message, 'error', 5000, true);
     },
     
     /**
@@ -158,12 +149,9 @@ export const ErrorHandler = {
             element.style.pointerEvents = 'none'; // Prevent any interaction
         });
         
-        // Exit edit mode immediately without server calls if currently editing
-        if (ModeContext.isEditing) {
-            // Force exit edit mode without saving (server is down anyway)
-            ModeContext.setEditing(false);
-            ModeContext.setCurrentNoteId(null);
-            ModeContext.setCurrentContent(null);
+        // Exit edit mode immediately without server calls if currently editing.
+        // currentContent can still be null while note selection awaits its first refresh.
+        if (clearEditingStateForDisconnect(ModeContext)) {
             console.log('[ErrorHandler] Force-exited edit mode due to disconnection');
         }
     },

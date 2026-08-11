@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 import json
 import secrets
+from app.presentation.frontend_snapshot import create_frontend_snapshot
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
@@ -286,12 +287,23 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Add authentication middleware
 app.add_middleware(AuthMiddleware)
 
+# Freeze browser assets and templates to the same process generation as the loaded
+# Python routes. Source edits become visible together on the next server restart.
+_FRONTEND_SNAPSHOT = create_frontend_snapshot(Path(__file__).resolve().parent)
+
 # Mount static files with no-cache headers
-app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app.mount(
+    "/static",
+    NoCacheStaticFiles(directory=str(_FRONTEND_SNAPSHOT.static_directory)),
+    name="static",
+)
 
 ASSET_VERSION = str(int(time.time()))
 
-templates = get_templates()
+templates = get_templates(
+    template_directory=_FRONTEND_SNAPSHOT.template_directory,
+    module_directory=_FRONTEND_SNAPSHOT.mako_module_directory,
+)
 allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ)
 
 # v2 routers mounted under configured API_PREFIX

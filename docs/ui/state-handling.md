@@ -107,6 +107,14 @@ This dual approach ensures:
 - Programming errors fail fast and visibly (with errors)
 - Expected user behaviors are handled gracefully (with NOOP logs)
 
+### API Failure Boundaries
+
+- An HTTP response proves that the server connection is working. `4xx` and `5xx` responses show an application/request error but do not set `ModeContext.isConnected` to false or tear down edit mode.
+- `401` responses retain the dedicated authentication/logout path.
+- Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the persistent connection banner, and disable editing.
+- Unexpected client exceptions are rethrown instead of being relabeled as network failures.
+- Note selection sets `isEditing` and `currentNoteId` before awaiting the initial content refresh, so `currentContent` can legitimately still be `null` during that transition. Disconnect cleanup checks each nullable field before clearing it so strict state setters do not receive redundant writes.
+
 ## Boolean Flags vs. Traditional State Machines
 
 The ModeManager's boolean flags approach differs fundamentally from traditional state machines in several important ways:
