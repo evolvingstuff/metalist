@@ -214,14 +214,14 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'action.expand_all',
             kind: 'action',
-            label: 'Expand all collapsed notes (current view)',
+            label: 'Expand all root notes (current view)',
             closeOnExecute: true,
             execute: async () => expandAll(),
         },
         {
             id: 'action.collapse_all',
             kind: 'action',
-            label: 'Collapse all notes (current view)',
+            label: 'Collapse all root notes (current view)',
             closeOnExecute: true,
             execute: async () => collapseAll(),
         },

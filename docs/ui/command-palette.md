@@ -65,6 +65,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).
 The implementation uses `POST /api2/notes/set-collapsed-in-context`.
+Only root notes in that context are expanded or collapsed. Child and deeper descendant notes retain their individual saved expanded/collapsed states.
 
 These are treated as **global** actions:
 - The client bumps the undo-context epoch.
