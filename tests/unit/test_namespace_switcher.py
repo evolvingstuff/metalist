@@ -27,6 +27,15 @@ from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import _probe_namespace_status
 
 
+@pytest.fixture(autouse=True)
+def _assume_no_external_port_listeners(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: [],
+    )
+
+
 def test_rename_current_namespace_preserves_ports_and_starts_worker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -158,6 +167,66 @@ def test_build_namespace_catalog_suggests_next_free_ports(
         "namespace": "cla",
         "port": 8001,
         "https_port": None,
+    }
+
+
+def test_build_namespace_catalog_skips_ports_with_os_listeners(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=None,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: [4321] if port == 8001 else [],
+    )
+
+    catalog = build_namespace_catalog(
+        environ={},
+        current_namespace="default",
+    )
+
+    assert catalog["new_namespace_profile"] == {
+        "namespace": "new-namespace",
+        "port": 8002,
+        "https_port": None,
+    }
+
+
+def test_build_namespace_catalog_skips_os_listeners_for_http_and_https(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(namespace_switcher, "_supports_https", lambda *, environ: True)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=8443,
+        mcp_port=None,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: [4321] if port in {8001, 8444} else [],
+    )
+
+    catalog = build_namespace_catalog(
+        environ={},
+        current_namespace="default",
+    )
+
+    assert catalog["new_namespace_profile"] == {
+        "namespace": "new-namespace",
+        "port": 8002,
+        "https_port": 8445,
     }
 
 
@@ -741,7 +810,7 @@ def test_assert_ports_are_available_for_launch_ignores_legacy_port_metadata(
     )
 
 
-def test_assert_ports_are_available_for_launch_evicts_conflicting_ports(
+def test_assert_ports_are_available_for_launch_rejects_conflicting_ports_without_eviction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     evicted_ports: list[int] = []
@@ -782,19 +851,67 @@ def test_assert_ports_are_available_for_launch_evicts_conflicting_ports(
         lambda *, port: evicted_ports.append(port),
     )
 
-    namespace_switcher._assert_ports_are_available_for_launch(
-        environ={},
-        namespace="work",
-        chosen_profile=NamespaceLaunchProfile(
+    with pytest.raises(RuntimeError, match="HTTP port 8123 is already in use"):
+        namespace_switcher._assert_ports_are_available_for_launch(
+            environ={},
             namespace="work",
-            port=8123,
-            https_port=None,
-            mcp_port=8766,
+            chosen_profile=NamespaceLaunchProfile(
+                namespace="work",
+                port=8123,
+                https_port=None,
+                mcp_port=8766,
+            ),
+            allowed_listener_pids=frozenset(),
+        )
+
+    assert evicted_ports == []
+
+
+def test_assert_ports_are_available_for_launch_rejects_https_listener_without_eviction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evicted_ports: list[int] = []
+    monkeypatch.setattr(
+        namespace_switcher,
+        "resolve_main_server_config",
+        lambda *, environ: server_runtime.MainServerConfig(
+            host="127.0.0.1",
+            port=8000,
+            https_port=8443,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile="cert.pem",
+            ssl_keyfile="key.pem",
         ),
-        allowed_listener_pids=frozenset(),
+    )
+    monkeypatch.setattr(namespace_switcher, "resolve_backend_connect_host", lambda *, host: "127.0.0.1")
+    monkeypatch.setattr(namespace_switcher, "resolve_api_prefix", lambda *, environ: "/api2")
+    monkeypatch.setattr(namespace_switcher, "_probe_namespace_status", lambda **kwargs: None)
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_is_tcp_port_open",
+        lambda *, host, port: port == 8444,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_stop_processes_listening_on_port",
+        lambda *, port: evicted_ports.append(port),
     )
 
-    assert evicted_ports == [8123]
+    with pytest.raises(RuntimeError, match="HTTPS port 8444 is already in use"):
+        namespace_switcher._assert_ports_are_available_for_launch(
+            environ={},
+            namespace="work",
+            chosen_profile=NamespaceLaunchProfile(
+                namespace="work",
+                port=8001,
+                https_port=8444,
+                mcp_port=None,
+            ),
+            allowed_listener_pids=frozenset(),
+        )
+
+    assert evicted_ports == []
 
 
 def test_launch_namespace_process_uses_recorded_python_script_entrypoint(

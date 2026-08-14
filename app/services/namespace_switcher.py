@@ -1052,13 +1052,13 @@ def _suggest_profile(
     supports_https: bool,
 ) -> NamespaceLaunchProfile:
     working_ports = set(occupied_ports)
-    http_port = _next_free_port(
+    http_port = _next_available_port(
         start_port=server_runtime._DEFAULT_HTTP_PORT,
         occupied_ports=working_ports,
     )
     working_ports.add(http_port)
     if supports_https:
-        https_port = _next_free_port(
+        https_port = _next_available_port(
             start_port=server_runtime._DEFAULT_HTTPS_PORT,
             occupied_ports=working_ports,
         )
@@ -1078,6 +1078,18 @@ def _next_free_port(*, start_port: int, occupied_ports: set[int]) -> int:
     while port in occupied_ports:
         port += 1
     return port
+
+
+def _next_available_port(*, start_port: int, occupied_ports: set[int]) -> int:
+    working_ports = set(occupied_ports)
+    while True:
+        port = _next_free_port(
+            start_port=start_port,
+            occupied_ports=working_ports,
+        )
+        if len(_find_listening_pids_for_port(port=port)) == 0:
+            return port
+        working_ports.add(port)
 
 
 def _reserved_ports(
@@ -1410,7 +1422,7 @@ def _find_listening_pids_for_port(*, port: int) -> list[int]:
 
     lsof_path = shutil.which("lsof")
     if lsof_path is None:
-        raise RuntimeError("`lsof` is required to restart a running namespace")
+        raise RuntimeError("`lsof` is required to inspect namespace ports")
 
     completed = subprocess.run(
         [lsof_path, "-nP", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
@@ -1476,7 +1488,6 @@ def _assert_ports_are_available_for_launch(
     main_server_config = resolve_main_server_config(environ=environ)
     connect_host = resolve_backend_connect_host(host=main_server_config.host)
     api_prefix = resolve_api_prefix(environ=environ)
-    http_port_handled = False
     http_status = _probe_namespace_status(
         host=connect_host,
         port=chosen_profile.port,
@@ -1486,17 +1497,11 @@ def _assert_ports_are_available_for_launch(
         running_namespace = http_status.get("namespace")
         if running_namespace == namespace:
             return
-        if isinstance(running_namespace, str) and running_namespace != "":
-            if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
-                _stop_processes_listening_on_port(port=chosen_profile.port)
-                http_port_handled = True
-        else:
-            if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
-                _stop_processes_listening_on_port(port=chosen_profile.port)
-                http_port_handled = True
-    if not http_port_handled and _is_tcp_port_open(host=connect_host, port=chosen_profile.port):
         if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
-            _stop_processes_listening_on_port(port=chosen_profile.port)
+            raise RuntimeError(f"HTTP port {chosen_profile.port} is already in use")
+    if _is_tcp_port_open(host=connect_host, port=chosen_profile.port):
+        if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
+            raise RuntimeError(f"HTTP port {chosen_profile.port} is already in use")
     other_ports = [("HTTPS", chosen_profile.https_port)]
     for service, port in other_ports:
         if port is None:
@@ -1504,7 +1509,7 @@ def _assert_ports_are_available_for_launch(
         if _is_tcp_port_open(host=connect_host, port=port):
             if _port_is_owned_by_allowed_pids(port=port):
                 continue
-            _stop_processes_listening_on_port(port=port)
+            raise RuntimeError(f"{service} port {port} is already in use")
 
 
 def _save_profile_if_needed(

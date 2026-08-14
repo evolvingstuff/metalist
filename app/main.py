@@ -45,6 +45,7 @@ from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.namespace_runtime_guard import start_namespace_runtime_guard
 from app.services.diagnostics import configure_process_diagnostics
 from app.services.diagnostics import allow_plaintext_diagnostics
 from app.services.diagnostics import start_asyncio_diagnostics
@@ -127,6 +128,10 @@ app = FastAPI()
 @app.on_event("startup")
 async def start_diagnostics_watchdogs():
     start_asyncio_diagnostics(enabled=not TEST_MODE)
+    start_namespace_runtime_guard(
+        namespace=ACTIVE_NAMESPACE,
+        enabled=not TEST_MODE,
+    )
 
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)

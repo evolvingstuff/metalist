@@ -55,9 +55,7 @@ export class DeleteNamespaceModal extends BaseModal {
             namespace: '',
             selectableNamespaces: [],
             targetNamespaceText: '',
-            hasPassword: false,
             confirmationText: '',
-            currentPassword: '',
             activeNamespaceDeleted: false,
             redirectNamespaces: [],
             redirectNamespace: '',
@@ -169,9 +167,7 @@ export class DeleteNamespaceModal extends BaseModal {
         const namespace = typeof state.namespace === 'string' ? state.namespace : '';
         const selectableNamespaces = Array.isArray(state.selectableNamespaces) ? state.selectableNamespaces : [];
         const targetNamespaceText = typeof state.targetNamespaceText === 'string' ? state.targetNamespaceText : '';
-        const hasPassword = state.hasPassword === true;
         const confirmationText = typeof state.confirmationText === 'string' ? state.confirmationText : '';
-        const currentPassword = typeof state.currentPassword === 'string' ? state.currentPassword : '';
         const activeNamespaceDeleted = state.activeNamespaceDeleted === true;
         const redirectNamespaces = Array.isArray(state.redirectNamespaces) ? state.redirectNamespaces : [];
         const redirectNamespace = typeof state.redirectNamespace === 'string' ? state.redirectNamespace : '';
@@ -293,19 +289,6 @@ export class DeleteNamespaceModal extends BaseModal {
                     />
                 </div>
 
-                ${hasPassword ? `
-                    <div class="form-group">
-                        <label for="delete-namespace-current-password">Password for ${escapeHtml(namespace)}</label>
-                        <input
-                            id="delete-namespace-current-password"
-                            type="password"
-                            value="${escapeHtml(currentPassword)}"
-                            autocomplete="current-password"
-                            ${deleting ? 'disabled' : ''}
-                        />
-                    </div>
-                ` : ''}
-
                 <div class="form-actions">
                     <button type="button" class="danger-btn" id="delete-namespace-submit-btn" ${deleting ? 'disabled' : ''}>
                         Delete namespace
@@ -351,17 +334,6 @@ export class DeleteNamespaceModal extends BaseModal {
             };
         }
 
-        const passwordInput = document.getElementById('delete-namespace-current-password');
-        if (passwordInput instanceof HTMLInputElement) {
-            passwordInput.oninput = () => {
-                this.updateModalState({
-                    currentPassword: passwordInput.value,
-                    error: '',
-                    status: '',
-                });
-            };
-        }
-
         const redirectInput = document.getElementById('delete-namespace-redirect');
         if (redirectInput instanceof HTMLSelectElement) {
             redirectInput.onchange = () => {
@@ -386,9 +358,7 @@ export class DeleteNamespaceModal extends BaseModal {
                 this.updateModalState({
                     confirming: false,
                     namespace: '',
-                    hasPassword: false,
                     confirmationText: '',
-                    currentPassword: '',
                     activeNamespaceDeleted: false,
                     redirectNamespaces: [],
                     redirectNamespace: '',
@@ -441,9 +411,6 @@ export class DeleteNamespaceModal extends BaseModal {
             if (typeof preflight.target_exists !== 'boolean') {
                 throw new Error('Namespace delete preflight response missing target_exists');
             }
-            if (typeof preflight.target_requires_password !== 'boolean') {
-                throw new Error('Namespace delete preflight response missing target_requires_password');
-            }
             if (typeof preflight.is_current_namespace !== 'boolean') {
                 throw new Error('Namespace delete preflight response missing is_current_namespace');
             }
@@ -466,9 +433,7 @@ export class DeleteNamespaceModal extends BaseModal {
                 confirming: true,
                 namespace: preflight.target_namespace,
                 targetNamespaceText: preflight.target_namespace,
-                hasPassword: preflight.target_requires_password,
                 confirmationText: '',
-                currentPassword: '',
                 activeNamespaceDeleted: preflight.is_current_namespace,
                 redirectNamespaces: preflight.redirect_namespaces,
                 redirectNamespace: preflight.redirect_namespaces[0],
@@ -496,8 +461,6 @@ export class DeleteNamespaceModal extends BaseModal {
             return validateNamespaceDeletionSubmission({
                 namespace: state.namespace,
                 confirmationText: state.confirmationText,
-                currentPassword: state.currentPassword,
-                hasPassword: state.hasPassword === true,
                 isCurrentNamespace: state.activeNamespaceDeleted === true,
                 redirectNamespace: state.redirectNamespace,
             });
@@ -515,7 +478,6 @@ export class DeleteNamespaceModal extends BaseModal {
         const payload = {
             ...payloadResult.value,
             target_namespace: state.namespace,
-            current_password: typeof state.currentPassword === 'string' ? state.currentPassword : '',
         };
 
         this.updateModalState({

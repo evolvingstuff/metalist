@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
-import sqlite3
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, SecretStr
 from typing import Annotated, Optional
@@ -16,17 +14,8 @@ import time
 from app.api.transactions import transactional_route
 from app.api.deps import get_db
 from app.config import ACTIVE_NAMESPACE
-from app.config import KDF_ALGORITHM
-from app.config import KDF_MAX_MEMORY_COST_KIB
-from app.config import KDF_MAX_PARALLELISM
-from app.config import KDF_MAX_TIME_COST
-from app.config import KDF_MIN_MEMORY_COST_KIB
-from app.config import KDF_MIN_PARALLELISM
-from app.config import KDF_MIN_TIME_COST
 from app.config import KDF_TIME_COST
-from app.config import VAULT_VERSION
 from app.config import VERSION
-from app.db.schema import APP_SETTINGS_TABLE
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
@@ -275,156 +264,6 @@ def _namespace_target_exists(*, namespace: str) -> bool:
     return False
 
 
-def _read_namespace_auth_settings(*, namespace: str) -> dict[str, object] | None:
-    database_path = resolve_namespaced_database_path(namespace=namespace)
-    if not database_path.exists():
-        return None
-    if not database_path.is_file():
-        raise RuntimeError(f"Namespace database path is not a file: {database_path}")
-
-    connection = sqlite3.connect(database_path)
-    connection.row_factory = sqlite3.Row
-    try:
-        table_row = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?",
-            ("table", APP_SETTINGS_TABLE),
-        ).fetchone()
-        if table_row is None:
-            raise RuntimeError(f"Namespace database has no {APP_SETTINGS_TABLE} table: {namespace}")
-        row = connection.execute(
-            f"""
-            SELECT
-                auth_verifier,
-                auth_salt,
-                auth_iterations,
-                kek_iterations,
-                vault_version,
-                kdf_algorithm,
-                kdf_memory_cost_kib,
-                kdf_parallelism,
-                encryption_enabled
-            FROM {APP_SETTINGS_TABLE}
-            WHERE id = 1
-            """
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(f"Namespace database has no app_settings row: {namespace}")
-        return {
-            "auth_verifier": row["auth_verifier"],
-            "auth_salt": row["auth_salt"],
-            "auth_iterations": row["auth_iterations"],
-            "kek_iterations": row["kek_iterations"],
-            "vault_version": row["vault_version"],
-            "kdf_algorithm": row["kdf_algorithm"],
-            "kdf_memory_cost_kib": row["kdf_memory_cost_kib"],
-            "kdf_parallelism": row["kdf_parallelism"],
-            "encryption_enabled": row["encryption_enabled"],
-        }
-    finally:
-        connection.close()
-
-
-def _namespace_auth_settings_have_password(*, settings: dict[str, object] | None) -> bool:
-    if settings is None:
-        return False
-    encryption_enabled = settings["encryption_enabled"]
-    if encryption_enabled not in (0, 1, False, True):
-        raise RuntimeError(f"Invalid encryption_enabled value in namespace DB: {encryption_enabled!r}")
-    if not bool(encryption_enabled):
-        return False
-    _assert_supported_namespace_vault_profile(settings=settings)
-    if settings["auth_verifier"] is None:
-        raise RuntimeError("Namespace encryption is enabled but auth_verifier is missing")
-    if settings["auth_salt"] is None:
-        raise RuntimeError("Namespace auth_verifier is set but auth_salt is NULL")
-    if settings["auth_iterations"] is None:
-        raise RuntimeError("Namespace auth_verifier is set but auth_iterations is NULL")
-    return True
-
-
-def _namespace_requires_password(*, namespace: str) -> bool:
-    settings = _read_namespace_auth_settings(namespace=namespace)
-    return _namespace_auth_settings_have_password(settings=settings)
-
-
-def _assert_supported_namespace_vault_profile(*, settings: dict[str, object]) -> None:
-    vault_version = settings["vault_version"]
-    if vault_version is None:
-        raise RuntimeError("Namespace encryption is enabled but vault_version is NULL")
-    if vault_version != VAULT_VERSION:
-        raise RuntimeError(f"Unsupported namespace vault version: {vault_version}")
-    kdf_algorithm = settings["kdf_algorithm"]
-    if kdf_algorithm is None:
-        raise RuntimeError("Namespace encryption is enabled but kdf_algorithm is NULL")
-    if kdf_algorithm != KDF_ALGORITHM:
-        raise RuntimeError(f"Unsupported namespace kdf_algorithm: {kdf_algorithm}")
-    auth_iterations = settings["auth_iterations"]
-    if auth_iterations is None:
-        raise RuntimeError("Namespace encryption is enabled but auth_iterations is NULL")
-    if not isinstance(auth_iterations, int):
-        raise RuntimeError(f"Namespace auth_iterations is not an integer: {auth_iterations!r}")
-    if not (KDF_MIN_TIME_COST <= auth_iterations <= KDF_MAX_TIME_COST):
-        raise RuntimeError(f"Namespace auth_iterations out of range: {auth_iterations}")
-    kek_iterations = settings["kek_iterations"]
-    if kek_iterations is None:
-        raise RuntimeError("Namespace encryption is enabled but kek_iterations is NULL")
-    if not isinstance(kek_iterations, int):
-        raise RuntimeError(f"Namespace kek_iterations is not an integer: {kek_iterations!r}")
-    if not (KDF_MIN_TIME_COST <= kek_iterations <= KDF_MAX_TIME_COST):
-        raise RuntimeError(f"Namespace kek_iterations out of range: {kek_iterations}")
-    memory_cost_kib = settings["kdf_memory_cost_kib"]
-    if memory_cost_kib is None:
-        raise RuntimeError("Namespace encryption is enabled but kdf_memory_cost_kib is NULL")
-    if not isinstance(memory_cost_kib, int):
-        raise RuntimeError(f"Namespace kdf_memory_cost_kib is not an integer: {memory_cost_kib!r}")
-    if not (KDF_MIN_MEMORY_COST_KIB <= memory_cost_kib <= KDF_MAX_MEMORY_COST_KIB):
-        raise RuntimeError(f"Namespace kdf_memory_cost_kib out of range: {memory_cost_kib}")
-    parallelism = settings["kdf_parallelism"]
-    if parallelism is None:
-        raise RuntimeError("Namespace encryption is enabled but kdf_parallelism is NULL")
-    if not isinstance(parallelism, int):
-        raise RuntimeError(f"Namespace kdf_parallelism is not an integer: {parallelism!r}")
-    if not (KDF_MIN_PARALLELISM <= parallelism <= KDF_MAX_PARALLELISM):
-        raise RuntimeError(f"Namespace kdf_parallelism out of range: {parallelism}")
-
-
-def _verify_namespace_password(*, namespace: str, password: str) -> None:
-    if not isinstance(password, str):
-        raise TypeError("namespace password must be a string")
-    settings = _read_namespace_auth_settings(namespace=namespace)
-    if not _namespace_auth_settings_have_password(settings=settings):
-        return
-    if password == "":
-        raise HTTPException(status_code=400, detail="Namespace password is required")
-
-    assert settings is not None
-    auth_salt = settings["auth_salt"]
-    auth_iterations = settings["auth_iterations"]
-    memory_cost_kib = settings["kdf_memory_cost_kib"]
-    parallelism = settings["kdf_parallelism"]
-    auth_verifier = settings["auth_verifier"]
-    if not isinstance(auth_salt, bytes):
-        raise RuntimeError("Namespace auth_salt is not bytes")
-    if not isinstance(auth_iterations, int):
-        raise RuntimeError("Namespace auth_iterations is not an integer")
-    if not isinstance(memory_cost_kib, int):
-        raise RuntimeError("Namespace kdf_memory_cost_kib is not an integer")
-    if not isinstance(parallelism, int):
-        raise RuntimeError("Namespace kdf_parallelism is not an integer")
-    if not isinstance(auth_verifier, str):
-        raise RuntimeError("Namespace auth_verifier is not a string")
-
-    candidate = EncryptionService().derive_master_key(
-        password,
-        auth_salt,
-        auth_iterations,
-        memory_cost_kib,
-        parallelism,
-    ).hex()
-    if not secrets.compare_digest(candidate, auth_verifier):
-        raise HTTPException(status_code=401, detail="Invalid password")
-
-
 def _run_hydration(*, rebuild_required: bool) -> None:
     hydration_state.set_phase(
         phase="database_check",
@@ -594,15 +433,6 @@ def _require_string_field(payload: dict[str, object], field_name: str) -> str:
         raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
     if value.strip() == "":
         raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
-    return value
-
-
-def _require_string_field_allow_empty(payload: dict[str, object], field_name: str) -> str:
-    if field_name not in payload:
-        raise HTTPException(status_code=400, detail=f"{field_name} is required")
-    value = payload[field_name]
-    if not isinstance(value, str):
-        raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
     return value
 
 
@@ -995,14 +825,7 @@ def save_namespace_ports(
 def _delete_namespace_from_body(*, body: dict[str, object], target_namespace: str) -> dict[str, object]:
     normalized_target_namespace = validate_namespace(namespace=target_namespace)
     confirmed_namespace = _require_string_field(body, "confirmed_namespace")
-    current_password = _require_string_field_allow_empty(body, "current_password")
     redirect_namespace = _require_string_field(body, "redirect_namespace")
-
-    if _namespace_requires_password(namespace=normalized_target_namespace):
-        _verify_namespace_password(
-            namespace=normalized_target_namespace,
-            password=current_password,
-        )
 
     delete_capture = CapturedExceptionContext(
         RuntimeError,
@@ -1045,9 +868,6 @@ def namespace_delete_preflight(
         namespace=_require_string_field(body, "target_namespace"),
     )
     target_exists = _namespace_target_exists(namespace=target_namespace)
-    target_requires_password = False
-    if target_exists:
-        target_requires_password = _namespace_requires_password(namespace=target_namespace)
     catalog = build_namespace_catalog(
         environ=os.environ,
         current_namespace=ACTIVE_NAMESPACE,
@@ -1071,7 +891,6 @@ def namespace_delete_preflight(
     return {
         "target_namespace": target_namespace,
         "target_exists": target_exists,
-        "target_requires_password": target_requires_password,
         "is_current_namespace": target_namespace == ACTIVE_NAMESPACE,
         "redirect_namespaces": redirect_namespaces,
         "recreates_default": recreates_default,
