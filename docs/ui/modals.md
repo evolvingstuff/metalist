@@ -169,11 +169,21 @@ if (event.metaKey && event.key === 'p') {
     await exitEditingMode();
   }
   
-  // Open modal
-  const passwordModal = new PasswordModal();
-  passwordModal.open();
+  // Open one explicit password operation; the command palette exposes all three.
+  const addPasswordModal = new AddPasswordModal();
+  addPasswordModal.open();
 }
 ```
+
+Password management uses three distinct modal flows from
+`app/static/js/modules/modals/password-modal.js`:
+
+- **Add Password**: passwordless namespace → encrypted namespace. Shows local zxcvbn strength feedback.
+- **Change Password**: current password → new password. Shows local zxcvbn strength feedback.
+- **Remove Password**: encrypted namespace → passwordless namespace. Requires an explicit plaintext-storage acknowledgement.
+
+Each modal checks `/api2/auth/status` before rendering and rejects an operation
+that does not match the namespace's current password state.
 
 ## Benefits of This Architecture
 

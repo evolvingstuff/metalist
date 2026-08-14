@@ -46,6 +46,7 @@ from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.diagnostics import configure_process_diagnostics
+from app.services.diagnostics import allow_plaintext_diagnostics
 from app.services.diagnostics import start_asyncio_diagnostics
 from app.services.diagnostics import track_request
 from app.api.request_auth import AUTH_COOKIE_NAME, clear_auth_cookie
@@ -81,6 +82,7 @@ logger.add(
     level="INFO",
     backtrace=False,
     diagnose=False,
+    filter=allow_plaintext_diagnostics,
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message} | {extra}"
 )
 

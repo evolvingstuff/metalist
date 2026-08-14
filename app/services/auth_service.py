@@ -348,6 +348,8 @@ class AuthService:
                         ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(
                             sanitized_content
                         )
+                        cache_note(note_id, sanitized_content)
+                        cache_note_text(note_id, strip_html(sanitized_content))
                         update_payload.update(
                             {
                                 "content": ciphertext_base64,
@@ -358,6 +360,7 @@ class AuthService:
 
                     if not tags_encrypted:
                         tags_ciphertext, tags_nonce, tags_tag = self.encryption.encrypt_for_storage(tags)
+                        cache_note_tags(note_id, tags)
                         update_payload.update(
                             {
                                 "tags": tags_ciphertext,

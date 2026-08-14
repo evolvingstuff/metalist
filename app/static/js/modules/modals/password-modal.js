@@ -1,11 +1,4 @@
-/**
- * PasswordModal - Password management modal with three modes
- * 
- * Modes:
- * - create: Set initial password (when none exists)
- * - change: Change existing password 
- * - remove: Remove password protection
- */
+/** Three explicit password-management modals backed by shared behavior. */
 
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
@@ -13,13 +6,40 @@ import { CONFIG } from '../config.js';
 import {
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
+    calculatePasswordLengthProgress,
     validateNewPasswordLength,
 } from '../password-policy.js';
+import {
+    evaluatePasswordStrength,
+    loadPasswordStrengthEstimator,
+} from '../password-strength.js';
+import { readPasswordOperationResponse } from '../password-operation-response.js';
 import { buildSessionHeaders } from '../session-auth.js';
 
-export class PasswordModal extends BaseModal {
-    constructor() {
-        super('passwordModal', 'password-modal');
+const PASSWORD_MODAL_CONFIG = {
+    create: {
+        modalName: 'addPasswordModal',
+        modalElementId: 'add-password-modal',
+    },
+    change: {
+        modalName: 'changePasswordModal',
+        modalElementId: 'change-password-modal',
+    },
+    remove: {
+        modalName: 'removePasswordModal',
+        modalElementId: 'remove-password-modal',
+    },
+};
+
+
+class PasswordOperationModal extends BaseModal {
+    constructor(mode) {
+        const modalConfig = PASSWORD_MODAL_CONFIG[mode];
+        if (!modalConfig) {
+            throw new Error(`Unknown password modal mode: ${mode}`);
+        }
+        super(modalConfig.modalName, modalConfig.modalElementId);
+        this.mode = mode;
         this.apiEndpoints = {
             status: CONFIG.API.AUTH.STATUS,
             create: CONFIG.API.AUTH.SETTINGS.PASSWORD.CREATE,
@@ -28,12 +48,9 @@ export class PasswordModal extends BaseModal {
         };
     }
     
-    /**
-     * Initialize modal state based on current auth status
-     */
     getInitialModalState() {
         return {
-            mode: null, // Will be determined by API call
+            mode: this.mode,
             currentStep: 1,
             isProcessing: false,
             error: null,
@@ -45,12 +62,8 @@ export class PasswordModal extends BaseModal {
         };
     }
     
-    /**
-     * Called after modal opens - determine mode and setup UI
-     */
     async onOpen() {
         await (async () => {
-            // Determine which mode we should be in
             const response = await fetch(this.apiEndpoints.status, {
                 headers: buildSessionHeaders(false),
             });
@@ -58,18 +71,29 @@ export class PasswordModal extends BaseModal {
                 throw new Error(`Password status request failed with ${response.status}`);
             }
             const status = await response.json();
-            
-            const mode = status.has_password ? 'change' : 'create';
-            this.updateModalState({ mode });
-            
-            // Setup the UI for the determined mode
+            if (typeof status.has_password !== 'boolean') {
+                throw new Error('Password status response is missing has_password');
+            }
+            if (this.mode === 'create' && status.has_password) {
+                throw new Error('A password is already set. Use Change Password or Remove Password.');
+            }
+            if (this.mode !== 'create' && !status.has_password) {
+                throw new Error('No password is set. Use Add Password first.');
+            }
+
             this.renderModalContent();
+            if (this.mode !== 'remove') {
+                this.loadNewPasswordStrengthEstimator();
+            }
         })().catch((error) => {
-            console.error('Failed to determine password modal mode');
-            this.updateModalState({ 
-                error: 'Failed to load password settings. Please try again.' 
+            console.error('Failed to open password operation modal');
+            const errorMessage = error && typeof error.message === 'string' && error.message !== ''
+                ? error.message
+                : 'Failed to load password settings. Please try again.';
+            this.updateModalState({
+                error: errorMessage,
             });
-            this.renderError();
+            this.renderModalContent();
         });
     }
     
@@ -98,6 +122,13 @@ export class PasswordModal extends BaseModal {
         // Enter to submit (if not processing)
         if (event.key === 'Enter' && !state.isProcessing) {
             event.preventDefault();
+            const submitButton = document.querySelector('[data-password-submit]');
+            if (!(submitButton instanceof HTMLButtonElement)) {
+                throw new Error('Password modal submit button missing');
+            }
+            if (submitButton.disabled) {
+                return;
+            }
             this.handleSubmit();
         }
         
@@ -145,22 +176,34 @@ export class PasswordModal extends BaseModal {
     generateCreatePasswordHTML() {
         return `
             <div class="modal-content">
-                <h3>Create Password</h3>
+                <h3>Add Password</h3>
                 <p>Set a password to encrypt your notes. Use ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters; spaces and passphrases are welcome. Common or predictable passwords will be rejected.</p>
                 
                 <form id="password-form">
                     <div class="form-group">
                         <label for="new-password">New Password:</label>
-                        <input type="password" id="new-password" required>
+                        <input
+                            type="password"
+                            id="new-password"
+                            autocomplete="new-password"
+                            minlength="${PASSWORD_MIN_LENGTH}"
+                            maxlength="${PASSWORD_MAX_LENGTH}"
+                            required
+                        >
                     </div>
+
+                    ${this.generateNewPasswordLengthHTML()}
+                    ${this.generateNewPasswordStrengthHTML()}
                     
                     <div class="form-group">
                         <label for="confirm-password">Confirm Password:</label>
-                        <input type="password" id="confirm-password" required>
+                        <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
-                    
+
+                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
+
                     <div class="form-actions">
-                        <button type="submit" class="primary-btn">Create Password</button>
+                        <button type="submit" class="primary-btn" data-password-submit disabled>Add Password</button>
                         <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
                     </div>
                 </form>
@@ -189,18 +232,29 @@ export class PasswordModal extends BaseModal {
                     
                     <div class="form-group">
                         <label for="new-password">New Password:</label>
-                        <input type="password" id="new-password" autocomplete="new-password" required>
+                        <input
+                            type="password"
+                            id="new-password"
+                            autocomplete="new-password"
+                            minlength="${PASSWORD_MIN_LENGTH}"
+                            maxlength="${PASSWORD_MAX_LENGTH}"
+                            required
+                        >
                     </div>
+
+                    ${this.generateNewPasswordLengthHTML()}
+                    ${this.generateNewPasswordStrengthHTML()}
                     
                     <div class="form-group">
                         <label for="confirm-password">Confirm New Password:</label>
-                        <input type="password" id="confirm-password" autocomplete="new-password" required>
+                        <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
-                    
+
+                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
+
                     <div class="form-actions">
-                        <button type="submit" class="primary-btn">Change Password</button>
+                        <button type="submit" class="primary-btn" data-password-submit disabled>Change Password</button>
                         <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                        <button type="button" class="danger-btn" id="remove-password-btn">Remove Password</button>
                     </div>
                 </form>
                 
@@ -212,6 +266,189 @@ export class PasswordModal extends BaseModal {
                 </div>
             </div>
         `;
+    }
+
+    generateNewPasswordLengthHTML() {
+        return `
+            <div class="password-length" id="new-password-length" data-complete="false">
+                <div class="password-length-header">
+                    <span>Minimum length</span>
+                    <strong id="new-password-length-label">
+                        <span class="password-length-check" aria-hidden="true">✓</span>
+                        <span id="new-password-length-count">0 / ${PASSWORD_MIN_LENGTH}</span>
+                    </strong>
+                </div>
+                <div
+                    class="password-length-meter"
+                    id="new-password-length-meter"
+                    role="progressbar"
+                    aria-label="New password minimum length progress"
+                    aria-valuemin="0"
+                    aria-valuemax="${PASSWORD_MIN_LENGTH}"
+                    aria-valuenow="0"
+                >
+                    <span id="new-password-length-fill" style="width: 0%"></span>
+                </div>
+                <small class="form-help" id="new-password-length-policy">
+                    ${PASSWORD_MIN_LENGTH} characters required.
+                </small>
+            </div>
+        `;
+    }
+
+    renderNewPasswordLength(password) {
+        const lengthContainer = document.getElementById('new-password-length');
+        const lengthCount = document.getElementById('new-password-length-count');
+        const lengthMeter = document.getElementById('new-password-length-meter');
+        const lengthFill = document.getElementById('new-password-length-fill');
+        const lengthPolicy = document.getElementById('new-password-length-policy');
+        if (!(lengthContainer instanceof HTMLElement)) {
+            throw new Error('new-password-length missing');
+        }
+        if (!(lengthCount instanceof HTMLElement)) {
+            throw new Error('new-password-length-count missing');
+        }
+        if (!(lengthMeter instanceof HTMLElement)) {
+            throw new Error('new-password-length-meter missing');
+        }
+        if (!(lengthFill instanceof HTMLElement)) {
+            throw new Error('new-password-length-fill missing');
+        }
+        if (!(lengthPolicy instanceof HTMLElement)) {
+            throw new Error('new-password-length-policy missing');
+        }
+
+        const progress = calculatePasswordLengthProgress(password);
+        lengthContainer.dataset.complete = String(progress.meetsMinimumLength);
+        lengthCount.textContent = progress.meetsMinimumLength
+            ? `${progress.characterCount} characters`
+            : `${progress.characterCount} / ${PASSWORD_MIN_LENGTH}`;
+        lengthFill.style.width = `${progress.progressPercent}%`;
+        lengthMeter.setAttribute(
+            'aria-valuenow',
+            String(Math.min(progress.characterCount, PASSWORD_MIN_LENGTH)),
+        );
+        lengthPolicy.textContent = progress.meetsMinimumLength
+            ? 'Minimum length reached.'
+            : `${progress.remainingCharacterCount} more characters required.`;
+    }
+
+    generateNewPasswordStrengthHTML() {
+        return `
+            <div class="password-strength" id="new-password-strength" data-score="pending">
+                <div class="password-strength-header">
+                    <span>Strength</span>
+                    <strong id="new-password-strength-label">Enter a password</strong>
+                </div>
+                <div
+                    class="password-strength-meter"
+                    id="new-password-strength-meter"
+                    role="meter"
+                    aria-label="New password strength"
+                    aria-valuemin="0"
+                    aria-valuemax="4"
+                >
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <small class="form-help" id="new-password-strength-policy">
+                    Type a password to test it locally.
+                </small>
+            </div>
+        `;
+    }
+
+    loadNewPasswordStrengthEstimator() {
+        loadPasswordStrengthEstimator()
+            .then(() => {
+                if (!this.isOpen) {
+                    return;
+                }
+                const newPasswordInput = document.getElementById('new-password');
+                if (!(newPasswordInput instanceof HTMLInputElement)) {
+                    return;
+                }
+                this.renderNewPasswordStrength(newPasswordInput.value);
+            })
+            .catch(() => {
+                console.error('Password strength estimator failed');
+                if (!this.isOpen) {
+                    return;
+                }
+                const strengthContainer = document.getElementById('new-password-strength');
+                if (strengthContainer === null) {
+                    return;
+                }
+                this.renderNewPasswordStrengthUnavailable();
+            });
+    }
+
+    renderNewPasswordStrength(password) {
+        const strengthContainer = document.getElementById('new-password-strength');
+        const strengthLabel = document.getElementById('new-password-strength-label');
+        const strengthMeter = document.getElementById('new-password-strength-meter');
+        const strengthPolicy = document.getElementById('new-password-strength-policy');
+        if (!(strengthContainer instanceof HTMLElement)) {
+            throw new Error('new-password-strength missing');
+        }
+        if (!(strengthLabel instanceof HTMLElement)) {
+            throw new Error('new-password-strength-label missing');
+        }
+        if (!(strengthMeter instanceof HTMLElement)) {
+            throw new Error('new-password-strength-meter missing');
+        }
+        if (!(strengthPolicy instanceof HTMLElement)) {
+            throw new Error('new-password-strength-policy missing');
+        }
+
+        if (password.length === 0) {
+            strengthContainer.dataset.score = 'pending';
+            strengthLabel.textContent = 'Enter a password';
+            strengthMeter.removeAttribute('aria-valuenow');
+            strengthPolicy.textContent = 'Type a password to test it locally.';
+            return;
+        }
+        if (typeof globalThis.zxcvbn !== 'function') {
+            strengthContainer.dataset.score = 'pending';
+            strengthLabel.textContent = 'Calculating...';
+            strengthMeter.removeAttribute('aria-valuenow');
+            strengthPolicy.textContent = 'Loading the local strength estimator.';
+            return;
+        }
+
+        const strength = evaluatePasswordStrength(password, globalThis.zxcvbn);
+        strengthContainer.dataset.score = String(strength.score);
+        strengthLabel.textContent = `${strength.label} · ${strength.score}/4`;
+        strengthMeter.setAttribute('aria-valuenow', String(strength.score));
+        strengthPolicy.textContent = strength.meetsScoreThreshold
+            ? 'Meets the MetaList zxcvbn score threshold.'
+            : 'Below the MetaList zxcvbn score threshold.';
+    }
+
+    renderNewPasswordStrengthUnavailable() {
+        const strengthContainer = document.getElementById('new-password-strength');
+        const strengthLabel = document.getElementById('new-password-strength-label');
+        const strengthMeter = document.getElementById('new-password-strength-meter');
+        const strengthPolicy = document.getElementById('new-password-strength-policy');
+        if (!(strengthContainer instanceof HTMLElement)) {
+            throw new Error('new-password-strength missing');
+        }
+        if (!(strengthLabel instanceof HTMLElement)) {
+            throw new Error('new-password-strength-label missing');
+        }
+        if (!(strengthMeter instanceof HTMLElement)) {
+            throw new Error('new-password-strength-meter missing');
+        }
+        if (!(strengthPolicy instanceof HTMLElement)) {
+            throw new Error('new-password-strength-policy missing');
+        }
+
+        strengthContainer.dataset.score = 'unavailable';
+        strengthLabel.textContent = 'Unavailable';
+        strengthMeter.removeAttribute('aria-valuenow');
+        strengthPolicy.textContent = 'The local strength estimator could not be loaded.';
     }
     
     generateRemovePasswordHTML() {
@@ -232,11 +469,12 @@ export class PasswordModal extends BaseModal {
                             I understand that my notes will no longer be encrypted
                         </label>
                     </div>
-                    
+
+                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
+
                     <div class="form-actions">
-                        <button type="submit" class="danger-btn">Remove Password</button>
+                        <button type="submit" class="danger-btn" data-password-submit disabled>Remove Password</button>
                         <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                        <button type="button" class="primary-btn" id="change-password-btn">Change Password Instead</button>
                     </div>
                 </form>
                 
@@ -278,10 +516,10 @@ export class PasswordModal extends BaseModal {
         const form = document.getElementById('password-form');
         const cancelBtn = document.getElementById('cancel-btn');
         const closeBtn = document.getElementById('close-btn');
-        const removePasswordBtn = document.getElementById('remove-password-btn');
-        const changePasswordBtn = document.getElementById('change-password-btn');
         const newPasswordInput = document.getElementById('new-password');
         const confirmPasswordInput = document.getElementById('confirm-password');
+        const currentPasswordInput = document.getElementById('current-password');
+        const confirmRemoveCheckbox = document.getElementById('confirm-remove');
         
         if (form) {
             form.addEventListener('submit', (e) => {
@@ -292,6 +530,13 @@ export class PasswordModal extends BaseModal {
         
         // Real-time password matching validation
         if (newPasswordInput && confirmPasswordInput) {
+            newPasswordInput.addEventListener('input', () => {
+                this.renderNewPasswordLength(newPasswordInput.value);
+                this.renderNewPasswordStrength(newPasswordInput.value);
+            });
+            this.renderNewPasswordLength(newPasswordInput.value);
+            this.renderNewPasswordStrength(newPasswordInput.value);
+
             const checkPasswordMatch = () => {
                 const newPw = newPasswordInput.value;
                 const confirmPw = confirmPasswordInput.value;
@@ -336,20 +581,33 @@ export class PasswordModal extends BaseModal {
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.close());
         }
-        
-        if (removePasswordBtn) {
-            removePasswordBtn.addEventListener('click', () => {
-                this.updateModalState({ mode: 'remove' });
-                this.renderModalContent();
-            });
+
+        for (const passwordInput of [currentPasswordInput, newPasswordInput, confirmPasswordInput]) {
+            if (passwordInput instanceof HTMLInputElement) {
+                passwordInput.addEventListener('input', () => this.syncSubmitAvailability());
+            }
         }
-        
-        if (changePasswordBtn) {
-            changePasswordBtn.addEventListener('click', () => {
-                this.updateModalState({ mode: 'change' });
-                this.renderModalContent();
-            });
+        if (confirmRemoveCheckbox instanceof HTMLInputElement) {
+            confirmRemoveCheckbox.addEventListener('change', () => this.syncSubmitAvailability());
         }
+        if (form) {
+            this.syncSubmitAvailability();
+        }
+    }
+
+    syncSubmitAvailability() {
+        const submitButton = document.querySelector('[data-password-submit]');
+        const validationOutput = document.getElementById('password-form-validation');
+        if (!(submitButton instanceof HTMLButtonElement)) {
+            throw new Error('Password modal submit button missing');
+        }
+        if (!(validationOutput instanceof HTMLElement)) {
+            throw new Error('password-form-validation missing');
+        }
+
+        const validation = this.validateFormData(this.collectFormData(), this.mode);
+        submitButton.disabled = !validation.valid;
+        validationOutput.textContent = validation.valid ? '' : validation.error;
     }
     
     /**
@@ -361,21 +619,20 @@ export class PasswordModal extends BaseModal {
         if (state.isProcessing) {
             return; // Prevent double submission
         }
-        
+
+        const formData = this.collectFormData();
+        const validation = this.validateFormData(formData, state.mode);
+        if (!validation.valid) {
+            this.syncSubmitAvailability();
+            return;
+        }
+
         await (async () => {
             this.updateModalState({ isProcessing: true, error: null });
             this.showProcessingState();
             
             // Show waiting cursor
             document.body.classList.add('loading');
-            
-            const formData = this.collectFormData();
-            
-            // Validate form data
-            const validation = this.validateFormData(formData, state.mode);
-            if (!validation.valid) {
-                throw new Error(validation.error);
-            }
             
             // Submit to appropriate endpoint
             await this.submitPasswordOperation(state.mode, formData);
@@ -503,15 +760,7 @@ export class PasswordModal extends BaseModal {
             body: JSON.stringify(body)
         });
         
-        if (!response.ok) {
-            const error = await response.json();
-            if (typeof error.detail === 'string' && error.detail !== '') {
-                throw new Error(error.detail);
-            }
-            throw new Error(`Server error: ${response.status}`);
-        }
-        
-        return await response.json();
+        return readPasswordOperationResponse(response);
     }
     
     /**
@@ -554,5 +803,26 @@ export class PasswordModal extends BaseModal {
     
     shouldCloseOnClickOutside() {
         return true;
+    }
+}
+
+
+export class AddPasswordModal extends PasswordOperationModal {
+    constructor() {
+        super('create');
+    }
+}
+
+
+export class ChangePasswordModal extends PasswordOperationModal {
+    constructor() {
+        super('change');
+    }
+}
+
+
+export class RemovePasswordModal extends PasswordOperationModal {
+    constructor() {
+        super('remove');
     }
 }

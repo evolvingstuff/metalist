@@ -90,3 +90,22 @@ test('browser console calls never serialize raw Error objects', async () => {
         assert.doesNotMatch(source, rawErrorArgument, path);
     }
 });
+
+
+test('browser password submission code never passes password values to console calls', async () => {
+    const paths = [
+        'app/static/js/modules/auth.js',
+        'app/static/js/modules/modals/password-modal.js',
+    ];
+    const sensitiveIdentifiers = /\b(?:password|currentPassword|newPassword|confirmPassword|formData|body)\b/i;
+    const consoleCall = /console\.(?:log|warn|error)\(([\s\S]*?)\);/g;
+    const quotedLiteral = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g;
+
+    for (const path of paths) {
+        const source = await readFile(path, 'utf8');
+        for (const match of source.matchAll(consoleCall)) {
+            const executableArguments = match[1].replaceAll(quotedLiteral, '');
+            assert.doesNotMatch(executableArguments, sensitiveIdentifiers, `${path}: ${match[0]}`);
+        }
+    }
+});

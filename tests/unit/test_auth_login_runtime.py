@@ -47,6 +47,8 @@ def test_login_rate_limit_key_requires_client_metadata() -> None:
 
 
 def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> None:
+    logging_events: list[str] = []
+
     class _AuthService:
         def has_password(self) -> bool:
             return True
@@ -64,8 +66,22 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
     monkeypatch.setattr(auth_route, "AuthService", lambda db: _AuthService())
     monkeypatch.setattr(auth_route.login_rate_limiter, "check_allowed", lambda key: (True, 0))
     monkeypatch.setattr(auth_route.login_rate_limiter, "record_success", lambda key: None)
-    monkeypatch.setattr(auth_route, "set_session_dek", lambda dek: None)
-    monkeypatch.setattr(auth_route, "ensure_rules_decrypted_and_compiled", lambda *, token: None)
+    monkeypatch.setattr(
+        auth_route,
+        "set_session_dek",
+        lambda dek: logging_events.append("dek-set"),
+    )
+    monkeypatch.setattr(
+        auth_route,
+        "activate_authenticated_logging",
+        lambda *, namespace, dek: logging_events.append(f"logging-active:{namespace}"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_route,
+        "ensure_rules_decrypted_and_compiled",
+        lambda *, token: logging_events.append("decryption-started"),
+    )
     monkeypatch.setattr(auth_route.tab_state_store, "ensure_decrypted", lambda *, token: None)
     monkeypatch.setattr(auth_route.link_title_store, "ensure_decrypted", lambda *, token: None)
     monkeypatch.setattr(auth_route.reminder_store, "ensure_decrypted", lambda *, token: None)
@@ -102,3 +118,36 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
     )
 
     assert result.message == "Login successful"
+    assert logging_events[:3] == [
+        "dek-set",
+        f"logging-active:{auth_route._active_diagnostics_namespace()}",
+        "decryption-started",
+    ]
+
+
+def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(auth_route.token_service, "revoke_token", lambda token: events.append("token-revoked"))
+    monkeypatch.setattr(
+        auth_route,
+        "purge_decrypted_runtime_state",
+        lambda: events.append("plaintext-purged") or True,
+    )
+    monkeypatch.setattr(
+        auth_route,
+        "deactivate_authenticated_logging",
+        lambda: events.append("logging-deactivated"),
+        raising=False,
+    )
+    monkeypatch.setattr(auth_route, "clear_auth_cookie", lambda **kwargs: events.append("cookie-cleared"))
+
+    logout_impl = auth_route.logout.__wrapped__
+    result = logout_impl(response=Response(), token="token")
+
+    assert result == {"message": "Logout successful"}
+    assert events == [
+        "token-revoked",
+        "plaintext-purged",
+        "logging-deactivated",
+        "cookie-cleared",
+    ]

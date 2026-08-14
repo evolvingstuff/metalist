@@ -10,7 +10,7 @@ graph LR
     
     subgraph "UI Components"
         BaseModal[base-modal.js<br/>Modal Foundation]
-        PasswordModal[password-modal.js<br/>Password UI]
+        PasswordModals[password-modal.js<br/>Add / Change / Remove Password]
         DOMUtils[dom-utils.js<br/>DOM Helpers]
         CommentUtils[comment-utils.js<br/>Comment Formatting]
     end
@@ -81,6 +81,6 @@ graph LR
     ConnMonitor --> ErrorHandler
     ActivityTracker --> Auth
     
-    BaseModal --> PasswordModal
-    PasswordModal --> APIClient
+    BaseModal --> PasswordModals
+    PasswordModals --> APIClient
 ```

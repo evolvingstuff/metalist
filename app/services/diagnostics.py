@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import faulthandler
+import secrets
 import signal
 import sys
 import threading
@@ -13,6 +15,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from app.security.authenticated_logging import EncryptedLogSink
+from app.security.authenticated_logging import EncryptedTextStream
 from app.security.sensitive_logging import traceback_frame_summary
 from app.server_runtime import resolve_runtime_logs_directory
 
@@ -39,6 +43,15 @@ _process_diagnostics_configured = False
 _request_watchdog_started = False
 _event_loop_watchdog_started = False
 _direct_append_log_recycler_started = False
+_authenticated_logging_active = False
+_authenticated_logging_lock = threading.Lock()
+_authenticated_log_sink: EncryptedLogSink | None = None
+_authenticated_log_sink_id: int | None = None
+_authenticated_log_path: Path | None = None
+_authenticated_stdout: EncryptedTextStream | None = None
+_authenticated_stderr: EncryptedTextStream | None = None
+_plaintext_stdout = None
+_plaintext_stderr = None
 
 
 @dataclass
@@ -84,6 +97,129 @@ def _diagnostic_log_path(*, namespace: str) -> Path:
     return logs_directory / f"{namespace}-server.log"
 
 
+def _new_authenticated_log_path(*, namespace: str) -> Path:
+    if namespace.strip() == "":
+        raise ValueError("namespace must not be empty")
+    logs_directory = resolve_runtime_logs_directory()
+    logs_directory.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    session_id = secrets.token_hex(8)
+    return logs_directory / f"{namespace}-server.auth-{timestamp}-{session_id}.log.enc"
+
+
+def allow_plaintext_diagnostics(record: Mapping[str, object]) -> bool:
+    del record
+    return not _authenticated_logging_active
+
+
+def authenticated_logging_is_active() -> bool:
+    return _authenticated_logging_active
+
+
+def _disable_plaintext_fault_logging() -> None:
+    if hasattr(signal, "SIGUSR1"):
+        faulthandler.unregister(signal.SIGUSR1)
+    if faulthandler.is_enabled():
+        faulthandler.disable()
+
+
+def _enable_plaintext_fault_logging() -> None:
+    if _diagnostic_file_handle is None:
+        return
+    faulthandler.enable(file=_diagnostic_file_handle, all_threads=True)
+    if hasattr(signal, "SIGUSR1"):
+        faulthandler.register(
+            signal.SIGUSR1,
+            file=_diagnostic_file_handle,
+            all_threads=True,
+            chain=False,
+        )
+
+
+def activate_authenticated_logging(*, namespace: str, dek: bytes) -> Path:
+    global _authenticated_logging_active
+    global _authenticated_log_sink
+    global _authenticated_log_sink_id
+    global _authenticated_log_path
+    global _authenticated_stdout
+    global _authenticated_stderr
+    global _plaintext_stdout
+    global _plaintext_stderr
+
+    if not isinstance(namespace, str) or namespace.strip() == "":
+        raise ValueError("namespace must be a non-empty string")
+    if not isinstance(dek, bytes) or len(dek) != 32:
+        raise ValueError("authenticated logging requires a 32-byte DEK")
+
+    with _authenticated_logging_lock:
+        if _authenticated_logging_active:
+            if _authenticated_log_path is None:
+                raise RuntimeError("Authenticated logging is active without a log path")
+            return _authenticated_log_path
+
+        _authenticated_log_path = _new_authenticated_log_path(namespace=namespace)
+        _authenticated_log_sink = EncryptedLogSink(path=_authenticated_log_path, dek=dek)
+        _authenticated_log_sink_id = logger.add(
+            _authenticated_log_sink,
+            level="INFO",
+            backtrace=False,
+            diagnose=False,
+            enqueue=False,
+            format=(
+                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | "
+                "pid={process} thread={thread.name} | {message} | {extra}"
+            ),
+        )
+        _disable_plaintext_fault_logging()
+        _plaintext_stdout = sys.stdout
+        _plaintext_stderr = sys.stderr
+        _authenticated_stdout = EncryptedTextStream(destination=sys.stdout, dek=dek)
+        _authenticated_stderr = EncryptedTextStream(destination=sys.stderr, dek=dek)
+        sys.stdout = _authenticated_stdout
+        sys.stderr = _authenticated_stderr
+        _authenticated_logging_active = True
+        return _authenticated_log_path
+
+
+def deactivate_authenticated_logging() -> bool:
+    global _authenticated_logging_active
+    global _authenticated_log_sink
+    global _authenticated_log_sink_id
+    global _authenticated_log_path
+    global _authenticated_stdout
+    global _authenticated_stderr
+    global _plaintext_stdout
+    global _plaintext_stderr
+
+    with _authenticated_logging_lock:
+        if not _authenticated_logging_active:
+            return False
+        if _authenticated_log_sink is None or _authenticated_log_sink_id is None:
+            raise RuntimeError("Authenticated logging is active without an encrypted sink")
+        if _authenticated_stdout is None or _authenticated_stderr is None:
+            raise RuntimeError("Authenticated logging is active without encrypted process streams")
+        if _plaintext_stdout is None or _plaintext_stderr is None:
+            raise RuntimeError("Authenticated logging is active without original process streams")
+
+        logger.remove(_authenticated_log_sink_id)
+        _authenticated_log_sink.close()
+        sys.stdout = _plaintext_stdout
+        sys.stderr = _plaintext_stderr
+        _authenticated_stdout.close()
+        _authenticated_stderr.close()
+
+        _authenticated_log_sink = None
+        _authenticated_log_sink_id = None
+        _authenticated_log_path = None
+        _authenticated_stdout = None
+        _authenticated_stderr = None
+        _plaintext_stdout = None
+        _plaintext_stderr = None
+        _enable_plaintext_fault_logging()
+        _authenticated_logging_active = False
+        return True
+
+
 def configure_process_diagnostics(*, namespace: str, enabled: bool) -> Path | None:
     global _diagnostic_file_handle
     global _process_diagnostics_configured
@@ -102,6 +238,7 @@ def configure_process_diagnostics(*, namespace: str, enabled: bool) -> Path | No
         rotation=_LOG_ROTATION,
         retention=_LOG_RETENTION,
         enqueue=True,
+        filter=allow_plaintext_diagnostics,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | pid={process} thread={thread.name} | {message} | {extra}",
     )
 

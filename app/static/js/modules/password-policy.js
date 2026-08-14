@@ -3,6 +3,20 @@ export const PASSWORD_MAX_LENGTH = 72;
 export const PASSWORD_MIN_ZXCVBN_SCORE = 3;
 
 
+export function calculatePasswordLengthProgress(password) {
+    if (typeof password !== 'string') {
+        throw new TypeError('password must be a string');
+    }
+    const characterCount = password.length;
+    return {
+        characterCount,
+        remainingCharacterCount: Math.max(PASSWORD_MIN_LENGTH - characterCount, 0),
+        progressPercent: Math.min(characterCount / PASSWORD_MIN_LENGTH, 1) * 100,
+        meetsMinimumLength: characterCount >= PASSWORD_MIN_LENGTH,
+    };
+}
+
+
 export function validateNewPasswordLength(password) {
     if (typeof password !== 'string') {
         throw new TypeError('password must be a string');

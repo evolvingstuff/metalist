@@ -13,7 +13,9 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         },
         actions: {
             applyPreference: noop,
-            openPasswordManager: noop,
+            openAddPassword: noop,
+            openChangePassword: noop,
+            openRemovePassword: noop,
             openSessionTimeoutSettings: noop,
             openReminders: noop,
             openSoundManager: noop,
@@ -62,6 +64,22 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         'Delete namespace…',
     );
     assert.equal(endpointIds.has('form.restore_backup'), true);
+    assert.equal(endpointIds.has('form.add_password'), true);
+    assert.equal(endpointIds.has('form.change_password'), true);
+    assert.equal(endpointIds.has('form.remove_password'), true);
+    assert.equal(endpointIds.has('form.password_protection'), false);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.add_password').label,
+        'Add password…',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.change_password').label,
+        'Change password…',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.remove_password').label,
+        'Remove password…',
+    );
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(calendarEndpoint.defaultValue, false);
     assert.equal(animatedTransitionsEndpoint.defaultValue, true);

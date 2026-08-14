@@ -4,7 +4,7 @@ import logging
 import secrets
 import sqlite3
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from typing import Annotated, Optional
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
@@ -70,6 +70,8 @@ from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
 from app.services.sound_storage import sound_store
 from app.services.runtime_lock import purge_decrypted_runtime_state
+from app.services.diagnostics import activate_authenticated_logging
+from app.services.diagnostics import deactivate_authenticated_logging
 from app.services.hydration_state import hydration_state
 from app.services.file_registry import file_registry
 from app.services.file_storage import bootstrap_file_registry
@@ -98,7 +100,7 @@ logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
-    password: str
+    password: SecretStr
 
 
 class LoginResponse(BaseModel):
@@ -143,17 +145,17 @@ class HydrationStatusResponse(BaseModel):
 
 
 class PasswordCreateRequest(BaseModel):
-    password: str
+    password: SecretStr
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: SecretStr
+    new_password: SecretStr
     iterations: Optional[int] = None
 
 
 class PasswordRemoveRequest(BaseModel):
-    current_password: str
+    current_password: SecretStr
 
 
 class SessionTimeoutResponse(BaseModel):
@@ -224,6 +226,14 @@ _hydration_lock = Lock()
 _hydration_future: Future | None = None
 _server_restart_lock = Lock()
 _server_restart_scheduled = False
+
+
+def _active_diagnostics_namespace() -> str:
+    if ACTIVE_NAMESPACE is None:
+        return "default"
+    if ACTIVE_NAMESPACE == "":
+        raise RuntimeError("Active namespace must not be empty")
+    return ACTIVE_NAMESPACE
 
 
 def _reexec_server_process() -> None:
@@ -634,6 +644,7 @@ def login(
     tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
+    submitted_password = payload.password.get_secret_value()
     rate_limit_key = _login_rate_limit_key(request)
     allowed, retry_after_seconds = login_rate_limiter.check_allowed(rate_limit_key)
     if not allowed:
@@ -645,14 +656,18 @@ def login(
     auth = AuthService(db)
     if not auth.has_password():
         raise HTTPException(status_code=400, detail="No password is set. Please set a password first.")
-    if not auth.verify_password(payload.password):
+    if not auth.verify_password(submitted_password):
         login_rate_limiter.record_failure(rate_limit_key)
         raise HTTPException(status_code=401, detail="Invalid password")
 
-    dek = auth.unwrap_dek_for_password(payload.password)
+    dek = auth.unwrap_dek_for_password(submitted_password)
     auth.run_authenticated_database_migrations(dek=dek)
 
     set_session_dek(dek)
+    activate_authenticated_logging(
+        namespace=_active_diagnostics_namespace(),
+        dek=dek,
+    )
     ensure_rules_decrypted_and_compiled(token="")
     tab_state_store.ensure_decrypted(token="")
     link_title_store.ensure_decrypted(token="")
@@ -679,6 +694,7 @@ def logout(
     if not purge_decrypted_runtime_state():
         clear_all_locks()
         clear_encryption_key()
+    deactivate_authenticated_logging()
     clear_auth_cookie(response=response)
     return {"message": "Logout successful"}
 
@@ -726,6 +742,7 @@ def restore_from_backup(
     try:
         backup_file = restore_backup(payload.filename)
         password_required = _reset_runtime_state_after_restore()
+        deactivate_authenticated_logging()
     finally:
         maintenance_service.exit_maintenance()
 
@@ -1199,7 +1216,7 @@ def create_password(
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password already exists. Use change endpoint instead.")
-    success, message = auth.set_password(payload.password, KDF_TIME_COST)
+    success, message = auth.set_password(payload.password.get_secret_value(), KDF_TIME_COST)
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
@@ -1220,8 +1237,8 @@ def change_password(
     else:
         time_cost = KDF_TIME_COST
     success, message = auth.change_password(
-        payload.current_password,
-        payload.new_password,
+        payload.current_password.get_secret_value(),
+        payload.new_password.get_secret_value(),
         time_cost,
     )
     if not success:
@@ -1239,12 +1256,13 @@ def remove_password(
     token: Annotated[str, Depends(_require_auth)],
 ):
     auth = AuthService(db)
-    success, message = auth.remove_password(payload.current_password)
+    success, message = auth.remove_password(payload.current_password.get_secret_value())
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
     clear_all_locks()
     clear_encryption_key()
+    deactivate_authenticated_logging()
     return {"message": message}
 
 

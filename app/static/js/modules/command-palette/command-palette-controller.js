@@ -10,7 +10,11 @@ import {
 } from '../client-state-api.js';
 import { migrateLegacyClientState } from '../client-state-migration.js';
 import { ErrorHandler } from '../error-handler.js';
-import { PasswordModal } from '../modals/password-modal.js';
+import {
+    AddPasswordModal,
+    ChangePasswordModal,
+    RemovePasswordModal,
+} from '../modals/password-modal.js';
 import { SessionTimeoutModal } from '../modals/session-timeout-modal.js';
 import { BackupRetentionModal } from '../modals/backup-retention-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
@@ -269,6 +273,9 @@ class CommandPaletteController {
         this._backupRetentionModal = null;
         this._backupResultModal = null;
         this._backupRestoreModal = null;
+        this._addPasswordModal = null;
+        this._changePasswordModal = null;
+        this._removePasswordModal = null;
         this._randomPasswordModal = null;
         this._helpModal = null;
         this._sessionTimeoutModal = null;
@@ -318,7 +325,9 @@ class CommandPaletteController {
             preferencesStore: this._preferences,
             actions: {
                 applyPreference: this.applyPreference.bind(this),
-                openPasswordManager: this.openPasswordManager.bind(this),
+                openAddPassword: this.openAddPassword.bind(this),
+                openChangePassword: this.openChangePassword.bind(this),
+                openRemovePassword: this.openRemovePassword.bind(this),
                 openSessionTimeoutSettings: this.openSessionTimeoutSettings.bind(this),
                 openOntologyEditor: this.openOntologyEditor.bind(this),
                 createBackup: this.createBackup.bind(this),
@@ -1971,14 +1980,40 @@ class CommandPaletteController {
         this._deleteNamespaceModal.open();
     }
 
-    async openPasswordManager() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openPasswordManager');
+    async openAddPassword() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openAddPassword');
         if (!isReady) {
             return;
         }
 
-        const passwordModal = new PasswordModal();
-        passwordModal.open();
+        if (this._addPasswordModal === null) {
+            this._addPasswordModal = new AddPasswordModal();
+        }
+        this._addPasswordModal.open();
+    }
+
+    async openChangePassword() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openChangePassword');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._changePasswordModal === null) {
+            this._changePasswordModal = new ChangePasswordModal();
+        }
+        this._changePasswordModal.open();
+    }
+
+    async openRemovePassword() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openRemovePassword');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._removePasswordModal === null) {
+            this._removePasswordModal = new RemovePasswordModal();
+        }
+        this._removePasswordModal.open();
     }
 
     async openSessionTimeoutSettings() {

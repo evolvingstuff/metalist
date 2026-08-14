@@ -1617,7 +1617,7 @@ body.ontology-modal-open #ontology-modal {
     margin: 0;
 }
 
-.random-password-strength {
+.password-strength {
     margin: -2px 0 18px;
     padding: 12px 14px;
     border: 1px solid var(--border-color);
@@ -1625,7 +1625,15 @@ body.ontology-modal-open #ontology-modal {
     background: #f7f9fc;
 }
 
-.random-password-strength-header {
+.password-length {
+    margin: -2px 0 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #f7f9fc;
+}
+
+.password-length-header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -1633,7 +1641,7 @@ body.ontology-modal-open #ontology-modal {
     margin-bottom: 9px;
 }
 
-.random-password-strength-header span {
+.password-length-header > span {
     color: #6b7280;
     font-size: 12px;
     font-weight: 700;
@@ -1641,56 +1649,110 @@ body.ontology-modal-open #ontology-modal {
     text-transform: uppercase;
 }
 
-.random-password-strength-header strong {
+.password-length-header strong {
     color: #6b7280;
 }
 
-.random-password-strength-meter {
+.password-length-check {
+    display: none;
+    margin-right: 3px;
+}
+
+.password-length-meter {
+    height: 8px;
+    margin-bottom: 7px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #d9dee7;
+}
+
+.password-length-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #f0b429;
+    transition: width 120ms ease-out, background-color 120ms ease-out;
+}
+
+.password-length[data-complete="true"] .password-length-header strong,
+.password-length[data-complete="true"] .form-help {
+    color: #087443;
+}
+
+.password-length[data-complete="true"] .password-length-check {
+    display: inline;
+}
+
+.password-length[data-complete="true"] .password-length-meter span {
+    background: #07883f;
+}
+
+.password-strength-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 9px;
+}
+
+.password-strength-header span {
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.password-strength-header strong {
+    color: #6b7280;
+}
+
+.password-strength-meter {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     margin-bottom: 7px;
 }
 
-.random-password-strength-meter span {
+.password-strength-meter span {
     height: 7px;
     border-radius: 999px;
     background: #d9dee7;
 }
 
-.random-password-strength[data-score="1"] .random-password-strength-header strong {
+.password-strength[data-score="1"] .password-strength-header strong {
     color: #b42318;
 }
 
-.random-password-strength[data-score="1"] .random-password-strength-meter span:nth-child(1) {
+.password-strength[data-score="1"] .password-strength-meter span:nth-child(1) {
     background: #d92d20;
 }
 
-.random-password-strength[data-score="2"] .random-password-strength-header strong {
+.password-strength[data-score="2"] .password-strength-header strong {
     color: #9a6700;
 }
 
-.random-password-strength[data-score="2"] .random-password-strength-meter span:nth-child(-n+2) {
+.password-strength[data-score="2"] .password-strength-meter span:nth-child(-n+2) {
     background: #f0b429;
 }
 
-.random-password-strength[data-score="3"] .random-password-strength-header strong {
+.password-strength[data-score="3"] .password-strength-header strong {
     color: #087443;
 }
 
-.random-password-strength[data-score="3"] .random-password-strength-meter span:nth-child(-n+3) {
+.password-strength[data-score="3"] .password-strength-meter span:nth-child(-n+3) {
     background: #12a66a;
 }
 
-.random-password-strength[data-score="4"] .random-password-strength-header strong {
+.password-strength[data-score="4"] .password-strength-header strong {
     color: #08613a;
 }
 
-.random-password-strength[data-score="4"] .random-password-strength-meter span:nth-child(-n+4) {
+.password-strength[data-score="4"] .password-strength-meter span:nth-child(-n+4) {
     background: #07883f;
 }
 
-.random-password-strength[data-score="0"] .random-password-strength-header strong {
+.password-strength[data-score="0"] .password-strength-header strong {
     color: #b42318;
 }
 

@@ -160,13 +160,13 @@ export class RandomPasswordModal extends BaseModal {
                     <small id="password-result-copy-hint" class="form-help">${copyStatus}</small>
                 </div>
 
-                <div class="random-password-strength" id="password-strength" data-score="pending">
-                    <div class="random-password-strength-header">
+                <div class="password-strength" id="password-strength" data-score="pending">
+                    <div class="password-strength-header">
                         <span>Strength</span>
                         <strong id="password-strength-label">Calculating...</strong>
                     </div>
                     <div
-                        class="random-password-strength-meter"
+                        class="password-strength-meter"
                         id="password-strength-meter"
                         role="meter"
                         aria-label="Password candidate strength"

@@ -65,12 +65,16 @@
       "tags": ["reset", "clear", "preferences", "settings", "defaults"]
     },
     {
-      "id": "form.change_password",
-      "tags": ["password", "change", "security", "auth", "encryption"]
+      "id": "form.add_password",
+      "tags": ["password", "add", "create", "enable", "protect", "protection", "security", "auth", "encryption"]
     },
     {
-      "id": "form.password_protection",
-      "tags": ["password", "protect", "protection", "enable", "disable", "security"]
+      "id": "form.change_password",
+      "tags": ["password", "change", "update", "security", "auth", "encryption"]
+    },
+    {
+      "id": "form.remove_password",
+      "tags": ["password", "remove", "disable", "decrypt", "protection", "security"]
     },
     {
       "id": "form.session_timeout",

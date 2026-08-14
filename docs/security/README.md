@@ -221,6 +221,23 @@ connection.
 Runtime logs and browser diagnostics describe application structure without
 recording decrypted user data:
 
+- Before an encrypted namespace is unlocked, persistent startup diagnostics are
+  plaintext because no DEK exists in memory and decrypted vault data is not
+  hydrated. Successful DEK unwrap switches the process to authenticated logging
+  before any note, rule, tab, reminder, or search-history decryption begins.
+- While unlocked, every Loguru file record and every direct `stdout`/`stderr`
+  write is stored as an independent `MLLOG1` AES-256-GCM envelope under the
+  namespace DEK using a domain-separated HKDF logging key and a fresh random
+  nonce. Plaintext Loguru sinks are filtered out and plaintext fault logging is
+  disabled for the unlocked interval.
+- Logout returns to plaintext startup diagnostics only after decrypted runtime
+  stores and the session key have been purged. Password removal and backup
+  restore close the encrypted diagnostic session after their sensitive work.
+- Password-bearing request models use Pydantic `SecretStr`, so model rendering
+  and JSON serialization cannot expose submitted login, creation, current,
+  replacement, or removal passwords. Canary tests cover rejected login and
+  password-change paths, and an AST regression test rejects direct password
+  values passed to logging or `print` from the authentication modules.
 - Server request telemetry records method, route path, timing, client address,
   and whether a query string exists; it never retains the query-string value or
   request body.

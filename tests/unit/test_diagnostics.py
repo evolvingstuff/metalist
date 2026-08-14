@@ -1,5 +1,9 @@
+from io import StringIO
+
 import pytest
 
+from app.security.authenticated_logging import decrypt_log_record
+from app.security.authenticated_logging import decrypt_log_records
 from app.services import diagnostics
 
 
@@ -122,3 +126,39 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
     assert first_logs[0].duration_seconds == 15.0
     assert repeated_logs == []
     assert len(later_logs) == 1
+
+
+def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    dek = b"a" * 32
+    secret = "decrypted note content must never persist as plaintext"
+    plaintext_stdout = StringIO()
+    plaintext_stderr = StringIO()
+    monkeypatch.setattr(diagnostics, "resolve_runtime_logs_directory", lambda: tmp_path)
+    monkeypatch.setattr(diagnostics, "_disable_plaintext_fault_logging", lambda: None)
+    monkeypatch.setattr(diagnostics, "_enable_plaintext_fault_logging", lambda: None)
+    monkeypatch.setattr(diagnostics.sys, "stdout", plaintext_stdout)
+    monkeypatch.setattr(diagnostics.sys, "stderr", plaintext_stderr)
+
+    encrypted_path = diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
+    try:
+        print(secret)
+        assert diagnostics._authenticated_log_sink is not None
+        diagnostics._authenticated_log_sink.write(secret)
+    finally:
+        diagnostics.deactivate_authenticated_logging()
+
+    stdout_bytes = plaintext_stdout.getvalue().encode("ascii")
+    assert secret.encode("utf-8") not in stdout_bytes
+    assert secret.encode("utf-8") not in plaintext_stderr.getvalue().encode("ascii")
+    assert secret.encode("utf-8") not in encrypted_path.read_bytes()
+    stdout_records = [
+        decrypt_log_record(envelope=line, dek=dek)
+        for line in stdout_bytes.splitlines()
+    ]
+    assert secret in stdout_records
+    assert secret in decrypt_log_records(path=encrypted_path, dek=dek)
+    assert diagnostics.sys.stdout is plaintext_stdout
+    assert diagnostics.sys.stderr is plaintext_stderr

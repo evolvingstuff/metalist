@@ -49,7 +49,9 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const actions = deps.actions;
     const applyPreference = requireAction(actions, 'applyPreference');
-    const openPasswordManager = requireAction(actions, 'openPasswordManager');
+    const openAddPassword = requireAction(actions, 'openAddPassword');
+    const openChangePassword = requireAction(actions, 'openChangePassword');
+    const openRemovePassword = requireAction(actions, 'openRemovePassword');
     const openSessionTimeoutSettings = requireAction(actions, 'openSessionTimeoutSettings');
     const createBackup = requireAction(actions, 'createBackup');
     const openBackupRestore = requireAction(actions, 'openBackupRestore');
@@ -239,16 +241,22 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => resetAllPreferences(),
         },
         {
+            id: 'form.add_password',
+            kind: 'form',
+            label: 'Add password…',
+            execute: async () => openAddPassword(),
+        },
+        {
             id: 'form.change_password',
             kind: 'form',
             label: 'Change password…',
-            execute: async () => openPasswordManager(),
+            execute: async () => openChangePassword(),
         },
         {
-            id: 'form.password_protection',
+            id: 'form.remove_password',
             kind: 'form',
-            label: 'Enable/disable password protection…',
-            execute: async () => openPasswordManager(),
+            label: 'Remove password…',
+            execute: async () => openRemovePassword(),
         },
         {
             id: 'form.session_timeout',

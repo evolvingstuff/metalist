@@ -20,11 +20,15 @@ from app.db.tab_state_sql import fetch_tab_state_row
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.auth_service import AuthService
+from app.services.content_cache import clear_cache, populate_cache_from_db
 from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, get_file_reference_record
 from app.services.search_history import list_recent_search_tags, record_search_interaction
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.tab_state import TabStateStore, tab_state_store
+from app.services.note_store import store as note_store
+from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.usecases.create_note import apply_insert_note
 import app.services.search_history as search_history_module
 
 
@@ -44,6 +48,50 @@ def _fetch_search_history_row():
             LIMIT 1
             """
         ).fetchone()
+
+
+def test_set_password_after_first_note_in_fresh_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    clear_cache()
+    note_store.reset()
+    try:
+        session = SafeSession()
+        try:
+            with SafeSession.allow_reads("tests:auth_vault_metadata:bootstrap_ontology"):
+                bootstrap_ontology_rules_store(connection=session.connection())
+            prefetched_rows = populate_cache_from_db(session)
+            note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+            assert note_store.loaded
+            assert len(prefetched_rows) == 0
+
+            apply_insert_note(
+                "first-note",
+                None,
+                None,
+                None,
+                "",
+                content="First note",
+                tags="",
+            )
+
+            auth = AuthService(session)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
+
+            assert success, message
+            assert note_store.get_note("first-note").content == "First note"
+        finally:
+            session.close()
+    finally:
+        note_store.reset()
+        clear_cache()
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
 
 
 def test_set_password_persists_vault_metadata(
