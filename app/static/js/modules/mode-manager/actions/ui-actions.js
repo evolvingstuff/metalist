@@ -11,6 +11,7 @@ import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.j
 import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
 import { rebuildRootDateSeparators } from '../services/root-date-separator-service.js';
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
+import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { updateDateFilterIndicator } from '../services/date-filter-indicator-service.js';
 import { refreshRhsActivity, scheduleRhsActivityRefresh } from '../services/rhs-panel-service.js';
 
@@ -162,8 +163,9 @@ function updateSearchResultsCount(snapshot, tabId) {
     }
 
     const hasDateFilter = snapshot.dateFilter !== null && typeof snapshot.dateFilter === 'object';
+    const hasUntaggedView = snapshot.isUntaggedView === true;
     const isSearching = searchQuery.trim().length > 0;
-    const total = isSearching || hasDateFilter ? searchRootCountTotal : rootCountTotal;
+    const total = isSearching || hasDateFilter || hasUntaggedView ? searchRootCountTotal : rootCountTotal;
     el.textContent = `${total}`;
 }
 
@@ -256,6 +258,7 @@ export async function actionRefreshAndMaybeSelect(options) {
 
         updateSearchResultsCount(snapshot, requestTabId);
         updateRootSortIndicator(snapshot);
+        updateUntaggedViewIndicator(snapshot);
         updateDateFilterIndicator();
         const previousRootCountTotals = ModeContext.getRootCountTotals(requestTabId);
         // Incremental notes.view refreshes can return the same totals when only note content changed.

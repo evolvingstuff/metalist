@@ -61,6 +61,34 @@ def test_search_index_tag_and_text_queries() -> None:
     assert index.query_note_ids("-\"world\"") == {"n2", "n3"}
 
 
+def test_search_index_untagged_query_ignores_meta_tags() -> None:
+    index = _build_index(
+        [
+            SearchRecord(note_id="empty", content_text="Empty", tags="", tag_terms=frozenset()),
+            SearchRecord(
+                note_id="formatted",
+                content_text="Formatted",
+                tags="@markdown",
+                tag_terms=frozenset({"@markdown"}),
+            ),
+            SearchRecord(
+                note_id="classified",
+                content_text="Classified",
+                tags="technology",
+                tag_terms=frozenset({"technology"}),
+            ),
+            SearchRecord(
+                note_id="inherited",
+                content_text="Inherited",
+                tags="",
+                tag_terms=frozenset({"technology"}),
+            ),
+        ]
+    )
+
+    assert index.query_untagged_note_ids() == {"empty", "formatted"}
+
+
 def test_search_index_short_text_term_falls_back_to_verification() -> None:
     index = _build_index(
         [

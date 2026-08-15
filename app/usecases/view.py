@@ -25,4 +25,5 @@ class CmdView(QueryCommand):
             client_known_note_ids=None,
             client_seen_root_ids=None,
             anchor_root_id=None,
+            is_untagged_view=False,
         )

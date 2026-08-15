@@ -12,6 +12,7 @@ import { primeActiveSearchInteractionState, recordSearchExecutionInteractionIfEl
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
 import { clearActiveDateFilterForSearchInput } from '../services/date-filter-indicator-service.js';
+import { clearActiveSortModeForSearchInput } from '../services/root-sort-indicator-service.js';
 
 export function resetActiveTabForSearchExecution(searchQuery, options) {
     if (typeof searchQuery !== 'string') {
@@ -60,14 +61,34 @@ export function handleSearchInput(event) {
     }, Logger.LogCategory.EVENT);
 
     const previousSearchQuery = ModeContext.searchQuery;
-    const isFreshSearchInput = previousSearchQuery !== analysis.normalizedText;
+    const wasUntaggedView = ModeContext.isUntaggedView;
+    let isFreshSearchInput = previousSearchQuery !== analysis.normalizedText;
+    if (wasUntaggedView) {
+        isFreshSearchInput = true;
+    }
 
     // Browser input events can re-fire with the same normalized value during autofill/composition.
-    let dateFilterClearPromise = null;
+    let viewOverridesClearPromise = null;
     if (isFreshSearchInput) {
-        ModeContext.setSearchQuery(analysis.normalizedText);
+        if (previousSearchQuery !== analysis.normalizedText) {
+            ModeContext.setSearchQuery(analysis.normalizedText);
+        }
+        if (wasUntaggedView) {
+            ModeContext.setUntaggedView(false);
+        }
+        let hasPersistedViewOverride = ModeContext.activeTabSortMode !== 'normal';
         if (ModeContext.activeTabDateFilter !== null) {
-            dateFilterClearPromise = clearActiveDateFilterForSearchInput();
+            hasPersistedViewOverride = true;
+        }
+        if (hasPersistedViewOverride) {
+            const intendedSearchQuery = analysis.normalizedText;
+            viewOverridesClearPromise = (async () => {
+                await clearActiveSortModeForSearchInput();
+                await clearActiveDateFilterForSearchInput();
+                if (ModeContext.searchQuery !== intendedSearchQuery) {
+                    ModeContext.setSearchQuery(intendedSearchQuery);
+                }
+            })();
         }
     }
 
@@ -99,8 +120,8 @@ export function handleSearchInput(event) {
 
         void CommandGate.run('search.execute', async () => {
             Logger.logAction('executeSearch', { searchQuery: currentSearch });
-            if (dateFilterClearPromise !== null) {
-                await dateFilterClearPromise;
+            if (viewOverridesClearPromise !== null) {
+                await viewOverridesClearPromise;
             }
             resetActiveTabForSearchExecution(currentSearch, { isFreshSearchInput });
             ModeContext.resetRootTracking({ clear: true });

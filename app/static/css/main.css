@@ -1973,14 +1973,18 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
         width: 100%;
     }
 
-    .controls .root-sort-indicator {
+    .controls .root-sort-indicator,
+    .controls .untagged-view-indicator,
+    .controls .date-filter-indicator {
         top: -12px;
         max-width: calc(100% - 16px);
         padding-left: 10px;
         padding-right: 6px;
     }
 
-    .controls .root-sort-indicator-label {
+    .controls .root-sort-indicator-label,
+    .controls .untagged-view-indicator-label,
+    .controls .date-filter-indicator-label {
         font-size: 11px;
     }
 }
@@ -3710,6 +3714,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 }
 
 .controls .root-sort-indicator,
+.controls .untagged-view-indicator,
 .controls .date-filter-indicator {
     position: absolute;
     top: -14px;
@@ -3728,19 +3733,40 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
-.controls .date-filter-indicator {
+.controls .untagged-view-indicator {
     top: 26px;
     background: linear-gradient(135deg, #b7d7ff, #74a9f5);
     color: #06172f;
     border-color: rgba(6, 23, 47, 0.2);
 }
 
+.controls .date-filter-indicator {
+    top: 66px;
+    background: linear-gradient(135deg, #b7d7ff, #74a9f5);
+    color: #06172f;
+    border-color: rgba(6, 23, 47, 0.2);
+}
+
+.controls .root-sort-indicator[hidden] + .untagged-view-indicator {
+    top: -14px;
+}
+
+.controls .untagged-view-indicator[hidden] + .date-filter-indicator {
+    top: 26px;
+}
+
+.controls .root-sort-indicator[hidden] + .untagged-view-indicator[hidden] + .date-filter-indicator {
+    top: -14px;
+}
+
 .controls .root-sort-indicator[hidden],
+.controls .untagged-view-indicator[hidden],
 .controls .date-filter-indicator[hidden] {
     display: none;
 }
 
 .controls .root-sort-indicator-label,
+.controls .untagged-view-indicator-label,
 .controls .date-filter-indicator-label {
     display: block;
     max-width: 100%;
@@ -3754,6 +3780,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 }
 
 .controls .root-sort-indicator-clear,
+.controls .untagged-view-indicator-clear,
 .controls .date-filter-indicator-clear {
     width: 22px;
     height: 22px;
@@ -3773,6 +3800,8 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 
 .controls .root-sort-indicator-clear:hover,
 .controls .root-sort-indicator-clear:focus-visible,
+.controls .untagged-view-indicator-clear:hover,
+.controls .untagged-view-indicator-clear:focus-visible,
 .controls .date-filter-indicator-clear:hover,
 .controls .date-filter-indicator-clear:focus-visible {
     background: rgba(45, 27, 0, 0.24);

@@ -47,7 +47,6 @@ def test_create_tab_copies_sort_mode_from_source_tab() -> None:
     assert duplicated["tabs"][new_tab_id]["calendarScrollPinnedToNewest"] is False
     assert updated["tabs"][source_tab_id]["sortMode"] == "updated"
 
-
 def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
     store = TabStateStore()
     snapshot = store.snapshot()

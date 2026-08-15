@@ -4,7 +4,13 @@ import test from 'node:test';
 import {
     blurFocusedSearchInput,
     focusSearchInputAndSelectAllText,
+    resolveSearchInputDisplayQuery,
 } from '../../app/static/js/modules/mode-manager/services/search-input-service.js';
+
+test('untagged view visually hides the preserved tab query', () => {
+    assert.equal(resolveSearchInputDisplayQuery('journal', true), '');
+    assert.equal(resolveSearchInputDisplayQuery('journal', false), 'journal');
+});
 
 test('blurFocusedSearchInput blurs the active search input', (t) => {
     const originalDocument = globalThis.document;

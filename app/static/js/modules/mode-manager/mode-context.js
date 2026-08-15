@@ -45,6 +45,7 @@ class ModeContext {
         this._lastContentChangeTime = null;
         this._searchQuery = '';
         this._isInitialPageLoad = true;
+        this._isUntaggedView = false;
         
         // Tab state management
         this._activeTabId = '0';
@@ -1763,6 +1764,20 @@ class ModeContext {
 
     get activeTabSortMode() {
         return this.getTabSortMode(this._activeTabId);
+    }
+
+    setUntaggedView(value) {
+        if (typeof value !== 'boolean') {
+            throw new Error('isUntaggedView must be a boolean');
+        }
+        this._assertStateChanged('isUntaggedView', this._isUntaggedView, value);
+        this._isUntaggedView = value;
+        this._notifyListeners('isUntaggedView', value);
+        return this;
+    }
+
+    get isUntaggedView() {
+        return this._isUntaggedView;
     }
 
     get isInitialPageLoad() {

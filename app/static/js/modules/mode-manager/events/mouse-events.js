@@ -917,6 +917,17 @@ function handleClick(event) {
         return;
     }
 
+    const untaggedViewIndicator = event.target.closest('#untagged-view-indicator');
+    if (untaggedViewIndicator) {
+        event.preventDefault();
+        event.stopPropagation();
+        const clearButton = event.target.closest('#untagged-view-indicator-clear');
+        if (clearButton) {
+            void CommandPalette.setIsUntaggedView(false);
+        }
+        return;
+    }
+
     const menuButton = event.target.closest('#menu-button');
     if (menuButton) {
         event.preventDefault();

@@ -11,6 +11,40 @@ const tabPollState = {};
 
 const ROOT_PARENT_SENTINELS = new Set(['', 'null', 'undefined', 'none']);
 
+export function selectInfiniteScrollRootTotal(viewContext) {
+    if (!viewContext || typeof viewContext !== 'object') {
+        throw new Error('selectInfiniteScrollRootTotal requires view context');
+    }
+    const {
+        searchQuery,
+        isUntaggedView,
+        dateFilter,
+        rootCountTotal,
+        searchRootCountTotal,
+    } = viewContext;
+    if (typeof searchQuery !== 'string') {
+        throw new Error('searchQuery must be a string');
+    }
+    if (typeof isUntaggedView !== 'boolean') {
+        throw new Error('isUntaggedView must be a boolean');
+    }
+    if (!Number.isInteger(rootCountTotal) || rootCountTotal < 0) {
+        throw new Error('rootCountTotal must be a non-negative integer');
+    }
+    if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
+        throw new Error('searchRootCountTotal must be a non-negative integer');
+    }
+    const hasDateFilter = dateFilter !== null;
+    let isFilteredView = searchQuery.trim().length > 0;
+    if (isUntaggedView) {
+        isFilteredView = true;
+    }
+    if (hasDateFilter) {
+        isFilteredView = true;
+    }
+    return isFilteredView ? searchRootCountTotal : rootCountTotal;
+}
+
 function getActiveTabState() {
     let tabId = ModeContext.activeTabId;
     if (!tabId) {
@@ -158,14 +192,18 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect({ startedAt, context });
     const currentKnown = ModeContext.knownRootCount;
-    const searchQuery = (ModeContext.searchQuery || '').toString();
-    const searchActive = searchQuery.trim().length > 0;
     if (currentKnown > previousKnownCount) {
         state.lastKnownCount = currentKnown;
         state.noMoreRoots = false;
         refreshOverlayMetrics();
     } else if (nearEndFlag) {
-        const totalRoots = searchActive ? ModeContext.searchRootCountTotal : ModeContext.rootCountTotal;
+        const totalRoots = selectInfiniteScrollRootTotal({
+            searchQuery: (ModeContext.searchQuery || '').toString(),
+            isUntaggedView: ModeContext.isUntaggedView,
+            dateFilter: ModeContext.activeTabDateFilter,
+            rootCountTotal: ModeContext.rootCountTotal,
+            searchRootCountTotal: ModeContext.searchRootCountTotal,
+        });
         if (totalRoots < currentKnown) {
             throw new Error(`Invariant violation: knownRootCount (${currentKnown}) exceeds totalRoots (${totalRoots})`);
         }

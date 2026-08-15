@@ -82,6 +82,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
+    const getIsUntaggedView = requireAction(actions, 'getIsUntaggedView');
+    const setIsUntaggedView = requireAction(actions, 'setIsUntaggedView');
 
     const defaults = {
         showBacklinks: true,
@@ -199,6 +201,22 @@ export function buildCommandPaletteEndpoints(deps) {
             getValue: () => sortModeActionValue('content-volume'),
             closeOnExecute: true,
             execute: async () => setSortMode('content-volume'),
+        },
+        {
+            id: 'view.all_notes',
+            kind: 'action',
+            label: 'View: All notes',
+            getValue: () => (getIsUntaggedView() ? '↵' : 'Current'),
+            closeOnExecute: true,
+            execute: async () => setIsUntaggedView(false),
+        },
+        {
+            id: 'view.untagged_notes',
+            kind: 'action',
+            label: 'View: Untagged notes',
+            getValue: () => (getIsUntaggedView() ? 'Current' : '↵'),
+            closeOnExecute: true,
+            execute: async () => setIsUntaggedView(true),
         },
         {
             id: 'pref.theme',

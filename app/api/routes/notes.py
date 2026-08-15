@@ -184,6 +184,9 @@ def view_diff(payload: dict):
     undo_context = payload["undoContext"]
     client_note_uuid_hashes = payload["clientNoteUuidHashes"]
     anchor_root_id = payload["visibleRootAnchorId"]
+    is_untagged_view = payload["isUntaggedView"]
+    if not isinstance(is_untagged_view, bool):
+        raise TypeError("isUntaggedView must be a boolean")
 
     sort_mode = _resolve_tab_sort_mode(tab_id)
     date_filter = _resolve_tab_date_filter(tab_id)
@@ -228,6 +231,7 @@ def view_diff(payload: dict):
         "tab_id": tab_id,
         "search": normalized_search,
         "sort_mode": sort_mode,
+        "is_untagged_view": is_untagged_view,
         "date_filter": date_filter_signature(date_filter),
     }
     cached_state = view_cache.get(**cache_key)
@@ -244,6 +248,7 @@ def view_diff(payload: dict):
         client_seen_root_ids=set(),
         anchor_root_id=anchor_root_id,
         date_filter=date_filter,
+        is_untagged_view=is_untagged_view,
     )
     update_uuid = get_current_sync_uuid()
     root_ids = list(state.children_by_parent.get(None, []))
@@ -298,6 +303,7 @@ def view_diff(payload: dict):
                 "currentClientId": client_id,
                 "searchQuery": search,
                 "sortMode": sort_mode,
+                "isUntaggedView": is_untagged_view,
                 "dateFilter": date_filter,
                 "rootCountTotal": root_count_total,
                 "searchRootCountTotal": search_root_count_total,
@@ -316,6 +322,7 @@ def view_diff(payload: dict):
             "currentClientId": client_id,
             "searchQuery": search,
             "sortMode": sort_mode,
+            "isUntaggedView": is_untagged_view,
             "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
@@ -341,6 +348,7 @@ def view_diff(payload: dict):
             "currentClientId": client_id,
             "searchQuery": search,
             "sortMode": sort_mode,
+            "isUntaggedView": is_untagged_view,
             "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
@@ -371,6 +379,7 @@ def view_diff(payload: dict):
         "currentClientId": client_id,
         "searchQuery": search,
         "sortMode": sort_mode,
+        "isUntaggedView": is_untagged_view,
         "dateFilter": date_filter,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
