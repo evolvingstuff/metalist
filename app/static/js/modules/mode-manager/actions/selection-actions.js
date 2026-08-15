@@ -7,6 +7,7 @@ import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
+import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
 import {
     beginEditInteractionForActiveQuery,
     cancelPendingInteraction,
@@ -133,11 +134,7 @@ export async function actionDeselectNote() {
         }
     }
 
-    ModeContext.setEditing(false);
-
-    ModeContext.setCurrentNoteId(null);
-
-    ModeContext.setCurrentContent(null);
+    clearSelectionStateForDeselect(ModeContext);
 
     await NotesAPI.recordEditModeTransition(noteId, null, '');
 

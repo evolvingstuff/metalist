@@ -114,6 +114,7 @@ This dual approach ensures:
 - Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the persistent connection banner, and disable editing.
 - Unexpected client exceptions are rethrown instead of being relabeled as network failures.
 - Note selection sets `isEditing` and `currentNoteId` before awaiting the initial content refresh, so `currentContent` can legitimately still be `null` during that transition. Disconnect cleanup checks each nullable field before clearing it so strict state setters do not receive redundant writes.
+- A refresh can remove the edited note from the DOM and clear `currentContent` before deselection completes. Deselect cleanup therefore checks `currentContent` before clearing it while still requiring the editing and note-selection transitions.
 
 ## Boolean Flags vs. Traditional State Machines
 
