@@ -26,19 +26,6 @@ def _summarize_op(op: dict) -> str:
     if not isinstance(op_type, str) or not op_type:
         raise RuntimeError(f"Undo op type must be a non-empty string | op={op}")
 
-    if op_type == "edit_mode":
-        before = op["before_editing_note_id"]
-        after = op["after_editing_note_id"]
-        if before is not None and (not isinstance(before, str) or not before):
-            raise RuntimeError(
-                f"Undo op edit_mode.before_editing_note_id must be a non-empty string or null | op={op}"
-            )
-        if after is not None and (not isinstance(after, str) or not after):
-            raise RuntimeError(
-                f"Undo op edit_mode.after_editing_note_id must be a non-empty string or null | op={op}"
-            )
-        return f"edit_mode({before}->{after})"
-
     if op_type in {"update_content", "move", "collapse", "paste_into", "split_note"}:
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
@@ -211,31 +198,6 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         if not isinstance(note_id, str) or not note_id:
             raise RuntimeError(f"Undo op move_batch.moves[0].note_id must be a non-empty string | op={op}")
         return note_id
-
-    if op_type == "edit_mode":
-        if "before_editing_note_id" not in op:
-            raise RuntimeError(f"Undo op edit_mode missing required key: before_editing_note_id | op={op}")
-        if "after_editing_note_id" not in op:
-            raise RuntimeError(f"Undo op edit_mode missing required key: after_editing_note_id | op={op}")
-        before_editing_note_id = op["before_editing_note_id"]
-        after_editing_note_id = op["after_editing_note_id"]
-        if before_editing_note_id is not None and not isinstance(before_editing_note_id, str):
-            raise RuntimeError(f"Undo op edit_mode.before_editing_note_id must be a string or null | op={op}")
-        if after_editing_note_id is not None and not isinstance(after_editing_note_id, str):
-            raise RuntimeError(f"Undo op edit_mode.after_editing_note_id must be a string or null | op={op}")
-
-        if direction == "undo":
-            if isinstance(before_editing_note_id, str) and before_editing_note_id:
-                return before_editing_note_id
-            if isinstance(after_editing_note_id, str) and after_editing_note_id:
-                return after_editing_note_id
-            return ""
-
-        if isinstance(after_editing_note_id, str) and after_editing_note_id:
-            return after_editing_note_id
-        if isinstance(before_editing_note_id, str) and before_editing_note_id:
-            return before_editing_note_id
-        return ""
 
     if op_type == "create_note":
         record = op["record"]
@@ -538,20 +500,6 @@ def record_collapse(
     maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
 
-    # Selecting a collapsed note triggers an automatic expand request so the user can
-    # see/edit its contents. That auto-expand should not consume a separate undo step;
-    # instead, fold the collapse-state change into the preceding edit_mode op so a
-    # single undo step both exits edit mode and restores the prior collapsed state.
-    if before is True and after is False and ctx.history:
-        last_op = ctx.history[-1]
-        last_op_type = last_op["type"]
-        if last_op_type == "edit_mode" and last_op["after_editing_note_id"] == note_id:
-            last_op["auto_expand_note_id"] = note_id
-            last_op["auto_expand_before_collapsed"] = True
-            last_op["auto_expand_after_collapsed"] = False
-            ctx.redo.clear()
-            return
-
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -679,107 +627,6 @@ def record_split_note(
     ctx.redo.clear()
 
 
-def record_edit_mode(
-    client_id: str,
-    undo_context: str,
-    *,
-    before_editing_note_id: Optional[str],
-    after_editing_note_id: Optional[str],
-    viewport: Dict[str, object],
-) -> None:
-    if before_editing_note_id is not None and (not isinstance(before_editing_note_id, str) or not before_editing_note_id):
-        raise ValueError("before_editing_note_id must be a non-empty string or null")
-    if after_editing_note_id is not None and (not isinstance(after_editing_note_id, str) or not after_editing_note_id):
-        raise ValueError("after_editing_note_id must be a non-empty string or null")
-
-    maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
-    normalized_viewport = _normalize_viewport_snapshot(viewport)
-    view_anchor_root_id = _anchor_root_id(normalized_viewport)
-
-    if before_editing_note_id is not None and after_editing_note_id is None and ctx.history:
-        last_op = ctx.history[-1]
-        if "type" not in last_op:
-            raise RuntimeError(f"Undo op missing required key: type | op={last_op}")
-        if last_op["type"] == "edit_mode":
-            if "before_editing_note_id" not in last_op:
-                raise RuntimeError(
-                    f"Undo op edit_mode missing required key: before_editing_note_id | op={last_op}"
-                )
-            if "after_editing_note_id" not in last_op:
-                raise RuntimeError(
-                    f"Undo op edit_mode missing required key: after_editing_note_id | op={last_op}"
-                )
-            previous_before = last_op["before_editing_note_id"]
-            previous_after = last_op["after_editing_note_id"]
-            if previous_before is None and previous_after == before_editing_note_id:
-                op = {
-                    "type": "edit_mode",
-                    "before_editing_note_id": before_editing_note_id,
-                    "after_editing_note_id": None,
-                    "viewport": normalized_viewport,
-                    "viewAnchorRootId": view_anchor_root_id,
-                }
-                for key in (
-                    "auto_expand_note_id",
-                    "auto_expand_before_collapsed",
-                    "auto_expand_after_collapsed",
-                ):
-                    if key in last_op:
-                        op[key] = last_op[key]
-                ctx.history[-1] = op
-                ctx.redo.clear()
-                logger.info(
-                    "undo.coalesce edit_mode enter+exit: note_id=%s history_len=%s redo_len=%s history_tail=%s",
-                    before_editing_note_id,
-                    len(ctx.history),
-                    len(ctx.redo),
-                    _summarize_stack(ctx.history, 12),
-                )
-                return
-
-    # Don't record an extra undo stage when the client enters edit mode
-    # immediately after creating a note. The create op already captures the
-    # intended "note exists" transition, and keeping edit_mode as a separate
-    # entry forces the user to press undo twice (exit edit mode, then delete).
-    if before_editing_note_id is None and after_editing_note_id is not None and ctx.history:
-        last_op = ctx.history[-1]
-        if "type" not in last_op:
-            raise RuntimeError(f"Undo op missing required key: type | op={last_op}")
-        if last_op["type"] == "create_note":
-            if "record" not in last_op:
-                raise RuntimeError(f"Undo op create_note missing required key: record | op={last_op}")
-            record = last_op["record"]
-            if not isinstance(record, dict):
-                raise RuntimeError(f"Undo op create_note.record must be an object | op={last_op}")
-            if "id" not in record:
-                raise RuntimeError(f"Undo op create_note.record missing id | op={last_op}")
-            created_id = record["id"]
-            if created_id == after_editing_note_id:
-                return
-
-    op = {
-        "type": "edit_mode",
-        "before_editing_note_id": before_editing_note_id,
-        "after_editing_note_id": after_editing_note_id,
-        "viewport": normalized_viewport,
-        "viewAnchorRootId": view_anchor_root_id,
-    }
-
-    ctx.history.append(op)
-    ctx.redo.clear()
-
-    logger.info(
-        "undo.stack record_edit_mode client=%s before=%s after=%s history_len=%s redo_len=%s history_tail=%s",
-        client_id,
-        before_editing_note_id,
-        after_editing_note_id,
-        len(ctx.history),
-        len(ctx.redo),
-        _summarize_stack(ctx.history, 12),
-    )
-
-
 def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
     ctx = _ctx(client_id)
     if not isinstance(undo_context, str):
@@ -838,51 +685,6 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
     op_type = op["type"]
-
-    # Coalesce a freshly-created note's auto-enter-edit-mode into the create op.
-    # Without this, the user must press undo twice: once to exit edit mode and
-    # again to delete the note.
-    if op_type == "edit_mode" and ctx.history:
-        if "before_editing_note_id" not in op:
-            raise RuntimeError(f"Undo op edit_mode missing required key: before_editing_note_id | op={op}")
-        if "after_editing_note_id" not in op:
-            raise RuntimeError(f"Undo op edit_mode missing required key: after_editing_note_id | op={op}")
-        before = op["before_editing_note_id"]
-        after = op["after_editing_note_id"]
-        if before is None and isinstance(after, str) and after:
-            prev = ctx.history[-1]
-            if "type" not in prev:
-                raise RuntimeError(f"Undo op missing required key: type | op={prev}")
-            if prev["type"] == "create_note":
-                if "record" not in prev:
-                    raise RuntimeError(f"Undo op create_note missing required key: record | op={prev}")
-                record = prev["record"]
-                if not isinstance(record, dict):
-                    raise RuntimeError(f"Undo op create_note.record must be an object | op={prev}")
-                if "id" not in record:
-                    raise RuntimeError(f"Undo op create_note.record missing id | op={prev}")
-                created_id = record["id"]
-                if not isinstance(created_id, str) or not created_id:
-                    raise RuntimeError(f"Undo op create_note.record.id must be a non-empty string | op={prev}")
-                if created_id == after:
-                    logger.info(
-                        "undo.coalesce create_note+edit_mode: created_id=%s",
-                        created_id,
-                    )
-                    op = ctx.history.pop()
-                    if "type" not in op:
-                        raise RuntimeError(f"Undo op missing required key: type | op={op}")
-                    op_type = op["type"]
-
-                    logger.info(
-                        "undo.stack undo_coalesce client=%s coalesced_op=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
-                        client_id,
-                        _summarize_op(op),
-                        len(ctx.history),
-                        len(ctx.redo),
-                        _summarize_stack(ctx.history, 12),
-                        _summarize_stack(ctx.redo, 12),
-                    )
 
     undo_viewport = op["viewport"]
 
@@ -1001,28 +803,8 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
-    elif op_type == "edit_mode":
-        ctx.redo.append(op)
-
-        if "auto_expand_note_id" in op:
-            auto_expand_note_id = op["auto_expand_note_id"]
-            if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
-                raise RuntimeError(f"Undo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
-            before_collapsed = op["auto_expand_before_collapsed"]
-            if not isinstance(before_collapsed, bool):
-                raise RuntimeError(
-                    f"Undo op edit_mode.auto_expand_before_collapsed must be a bool | op={op}"
-                )
-            apply_set_collapse(auto_expand_note_id, bool(before_collapsed))
-            generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
-
-    editing_note_id = None
-    if op_type == "edit_mode":
-        editing_note_id = op["before_editing_note_id"]
-        if editing_note_id is not None and (not isinstance(editing_note_id, str) or not editing_note_id):
-            raise RuntimeError(f"Undo op edit_mode.before_editing_note_id must be a non-empty string or null | op={op}")
 
     focus_note_id = _compute_focus_note_id(op, direction="undo")
     if focus_note_id:
@@ -1035,8 +817,6 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
-    if op_type == "edit_mode":
-        payload["editingNoteId"] = editing_note_id
     logger.info(
         "undo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
         op_type,
@@ -1045,11 +825,10 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     )
 
     logger.info(
-        "undo.stack undo_finish client=%s opType=%s focusNoteId=%s editingNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        "undo.stack undo_finish client=%s opType=%s focusNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
         client_id,
         op_type,
         focus_note_id,
-        editing_note_id,
         len(ctx.history),
         len(ctx.redo),
         _summarize_stack(ctx.history, 12),
@@ -1098,37 +877,6 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         ctx.history.append(op)
         generate_new_uuid()
 
-        # If the client recorded an enter-edit-mode op immediately after create,
-        # it is redundant: redo(create_note) already restores focus/editing.
-        if ctx.redo:
-            maybe_redundant = ctx.redo[-1]
-            if "type" not in maybe_redundant:
-                raise RuntimeError(f"Redo op missing required key: type | op={maybe_redundant}")
-            if maybe_redundant["type"] == "edit_mode":
-                if "before_editing_note_id" not in maybe_redundant:
-                    raise RuntimeError(
-                        f"Redo op edit_mode missing required key: before_editing_note_id | op={maybe_redundant}"
-                    )
-                if "after_editing_note_id" not in maybe_redundant:
-                    raise RuntimeError(
-                        f"Redo op edit_mode missing required key: after_editing_note_id | op={maybe_redundant}"
-                    )
-                before = maybe_redundant["before_editing_note_id"]
-                after = maybe_redundant["after_editing_note_id"]
-                if not isinstance(rec, dict):
-                    raise RuntimeError(f"Redo op create_note.record must be an object | op={op}")
-                if "id" not in rec:
-                    raise RuntimeError(f"Redo op create_note.record missing id | op={op}")
-                rec_id = rec["id"]
-                if not isinstance(rec_id, str) or not rec_id:
-                    raise RuntimeError(f"Redo op create_note.record.id must be a non-empty string | op={op}")
-
-                if before is None and after == rec_id:
-                    logger.info(
-                        "redo.drop redundant edit_mode enter: note_id=%s",
-                        rec_id,
-                    )
-                    ctx.redo.pop()
     elif op_type == "delete_subtree":
         # re-delete
         first = op["records"][0]
@@ -1214,28 +962,8 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_restore_records(op["records"], token)
         ctx.history.append(op)
         generate_new_uuid()
-    elif op_type == "edit_mode":
-        ctx.history.append(op)
-
-        if "auto_expand_note_id" in op:
-            auto_expand_note_id = op["auto_expand_note_id"]
-            if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
-                raise RuntimeError(f"Redo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
-            after_collapsed = op["auto_expand_after_collapsed"]
-            if not isinstance(after_collapsed, bool):
-                raise RuntimeError(
-                    f"Redo op edit_mode.auto_expand_after_collapsed must be a bool | op={op}"
-                )
-            apply_set_collapse(auto_expand_note_id, bool(after_collapsed))
-            generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
-
-    editing_note_id = None
-    if op_type == "edit_mode":
-        editing_note_id = op["after_editing_note_id"]
-        if editing_note_id is not None and (not isinstance(editing_note_id, str) or not editing_note_id):
-            raise RuntimeError(f"Redo op edit_mode.after_editing_note_id must be a non-empty string or null | op={op}")
 
     focus_note_id = _compute_focus_note_id(op, direction="redo")
     if focus_note_id:
@@ -1248,8 +976,6 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
-    if op_type == "edit_mode":
-        payload["editingNoteId"] = editing_note_id
     logger.info(
         "redo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
         op_type,
@@ -1258,11 +984,10 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     )
 
     logger.info(
-        "undo.stack redo_finish client=%s opType=%s focusNoteId=%s editingNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        "undo.stack redo_finish client=%s opType=%s focusNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
         client_id,
         op_type,
         focus_note_id,
-        editing_note_id,
         len(ctx.history),
         len(ctx.redo),
         _summarize_stack(ctx.history, 12),

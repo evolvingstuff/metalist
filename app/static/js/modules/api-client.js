@@ -480,25 +480,6 @@ export const NotesAPI = {
         return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
-    async recordEditModeTransition(beforeEditingNoteId, afterEditingNoteId, executedSearchQuery) {
-        if (typeof executedSearchQuery === 'undefined') {
-            throw new Error('NotesAPI.recordEditModeTransition requires executedSearchQuery (use empty string when absent)');
-        }
-        if (executedSearchQuery !== null && typeof executedSearchQuery !== 'string') {
-            throw new Error('NotesAPI.recordEditModeTransition requires executedSearchQuery string or null');
-        }
-        const body = {
-            beforeEditingNoteId,
-            afterEditingNoteId,
-            executedSearchQuery: executedSearchQuery === null ? '' : executedSearchQuery,
-        };
-        return this._apiCall(CONFIG.API.NOTES.EDIT_MODE, {
-            method: 'POST',
-            claimSession: true,
-            body: JSON.stringify(body),
-        });
-    },
-
     async recordSearchInteraction(query, interactionType) {
         if (typeof query !== 'string') {
             throw new Error('NotesAPI.recordSearchInteraction requires query string');

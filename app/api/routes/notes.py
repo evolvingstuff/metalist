@@ -44,7 +44,6 @@ from app.usecases.unformat_content import CmdUnformatContent
 from app.usecases.resize_image import CmdResizeImage
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
-from app.usecases.record_edit_mode import CmdRecordEditMode
 from app.services.sync import get_current_sync_uuid
 from app.config import MAX_SEARCH_SUGGESTIONS
 from app.config import MAX_TAG_SUGGESTIONS
@@ -1282,29 +1281,3 @@ def undo_endpoint(request: Request, client_id: str, undoContext: str):
 def redo_endpoint(request: Request, client_id: str, undoContext: str):
     token = _require_bearer_token(request)
     return CmdRedo(client_id=client_id, token=token, undo_context=undoContext).execute()
-
-
-@router.post("/notes/edit-mode")
-@transactional_route
-def record_edit_mode_endpoint(request: Request, body: dict) -> Dict[str, object]:
-    token = _require_bearer_token(request)
-    viewport = _require_viewport(body)
-    executed_search_query = body["executedSearchQuery"]
-    if not isinstance(executed_search_query, str):
-        raise HTTPException(status_code=400, detail="executedSearchQuery must be a string")
-    cmd = CmdRecordEditMode(
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        before_editing_note_id=body["beforeEditingNoteId"],
-        after_editing_note_id=body["afterEditingNoteId"],
-        viewport=viewport,
-    )
-    result = cmd.execute()
-    after_editing_note_id = body["afterEditingNoteId"]
-    if isinstance(after_editing_note_id, str) and after_editing_note_id != "" and executed_search_query != "":
-        record_search_interaction(
-            query=executed_search_query,
-            interaction_type="edit",
-            token=token,
-        )
-    return result

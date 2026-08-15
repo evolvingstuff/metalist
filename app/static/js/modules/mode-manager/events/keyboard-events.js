@@ -19,6 +19,11 @@ import {
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
+import {
+    executeEditorRedo,
+    shouldExecuteEditorRedo,
+    shouldUseApplicationHistory,
+} from '../services/history-shortcut-policy-service.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
@@ -991,26 +996,15 @@ function handleUndoShortcut(event) {
         throw new Error('handleUndoShortcut called without an event object');
     }
 
-    if (ModeContext.isEditing) {
-        if (ModeContext.isDirty || ModeContext.editSessionHasEdits) {
-            return;
-        }
-
-        Logger.logDebug('Undo shortcut in editing mode with no editor history; exiting edit mode first', {
+    if (!shouldUseApplicationHistory({ isEditing: ModeContext.isEditing })) {
+        Logger.logDebug('Undo shortcut left to the active note editor', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
             isDirty: ModeContext.isDirty,
             editSessionHasEdits: ModeContext.editSessionHasEdits
         }, Logger.LogCategory.EVENT);
-
-        event.preventDefault();
-        event.stopPropagation();
-
-		void CommandGate.run('keyboard.undo', async () => {
-			await actionUndo();
-		});
-		return;
-	}
+        return;
+    }
 
     Logger.logDebug('Undo shortcut triggered', {
         isEditing: ModeContext.isEditing,
@@ -1031,26 +1025,25 @@ function handleRedoShortcut(event) {
         throw new Error('handleRedoShortcut called without an event object');
     }
 
-    if (ModeContext.isEditing) {
-        if (ModeContext.isDirty || ModeContext.editSessionHasEdits) {
+    if (!shouldUseApplicationHistory({ isEditing: ModeContext.isEditing })) {
+        if (shouldExecuteEditorRedo({ isEditing: ModeContext.isEditing, key: event.key })) {
+            event.preventDefault();
+            event.stopPropagation();
+            const didRedo = executeEditorRedo(document);
+            Logger.logDebug('Redo shortcut executed in the active note editor', {
+                currentNoteId: ModeContext.currentNoteId,
+                didRedo,
+            }, Logger.LogCategory.EVENT);
             return;
         }
-
-        Logger.logDebug('Redo shortcut in editing mode with no editor history; issuing server redo', {
+        Logger.logDebug('Redo shortcut left to the active note editor', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
             isDirty: ModeContext.isDirty,
             editSessionHasEdits: ModeContext.editSessionHasEdits,
         }, Logger.LogCategory.EVENT);
-
-        event.preventDefault();
-        event.stopPropagation();
-
-		void CommandGate.run('keyboard.redo', async () => {
-			await actionRedo();
-		});
-		return;
-	}
+        return;
+    }
 
     Logger.logDebug('Redo shortcut triggered', {
         isEditing: ModeContext.isEditing,

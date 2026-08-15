@@ -14,21 +14,16 @@ import {
     finalizeRecordedInteraction,
 } from '../services/search-interaction-service.js';
 
-function recordEditModeTransitionWithInteraction(beforeEditingNoteId, afterEditingNoteId, interactionQuery) {
-    return NotesAPI.recordEditModeTransition(
-        beforeEditingNoteId,
-        afterEditingNoteId,
-        interactionQuery
-    ).then(
+function recordEditInteraction(interactionQuery) {
+    if (interactionQuery === null) {
+        return Promise.resolve();
+    }
+    return NotesAPI.recordSearchInteraction(interactionQuery, 'edit').then(
         () => {
-            if (interactionQuery !== null) {
-                finalizeRecordedInteraction(interactionQuery);
-            }
+            finalizeRecordedInteraction(interactionQuery);
         },
         (error) => {
-            if (interactionQuery !== null) {
-                cancelPendingInteraction(interactionQuery);
-            }
+            cancelPendingInteraction(interactionQuery);
             throw error;
         }
     );
@@ -64,12 +59,12 @@ export async function actionSelectNote(noteId, options) {
     }
     const initialCaretVisibility = options.initialCaretVisibility;
     if (
-        Object.prototype.hasOwnProperty.call(options, 'recordEditModeTransition')
-        && typeof options.recordEditModeTransition !== 'boolean'
+        Object.prototype.hasOwnProperty.call(options, 'recordEditInteraction')
+        && typeof options.recordEditInteraction !== 'boolean'
     ) {
-        throw new Error('actionSelectNote options.recordEditModeTransition must be boolean when provided');
+        throw new Error('actionSelectNote options.recordEditInteraction must be boolean when provided');
     }
-    const shouldRecordEditModeTransition = options.recordEditModeTransition !== false;
+    const shouldRecordEditInteraction = options.recordEditInteraction !== false;
     const startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
@@ -95,9 +90,9 @@ export async function actionSelectNote(noteId, options) {
 
     applyInitialCaretVisibility(initialCaretVisibility);
 
-    if (shouldRecordEditModeTransition) {
+    if (shouldRecordEditInteraction) {
         const interactionQuery = beginEditInteractionForActiveQuery();
-        await recordEditModeTransitionWithInteraction(null, noteId, interactionQuery);
+        await recordEditInteraction(interactionQuery);
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
@@ -136,8 +131,6 @@ export async function actionDeselectNote() {
 
     clearSelectionStateForDeselect(ModeContext);
 
-    await NotesAPI.recordEditModeTransition(noteId, null, '');
-
     await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
     ModeContext.validate();
@@ -164,8 +157,6 @@ export async function actionSaveAndExitEditingWithoutRefreshing() {
     if (noteElement !== null) {
         restoreCollapsedStateLocallyIfNeeded(noteElement);
     }
-
-    await NotesAPI.recordEditModeTransition(noteId, null, '');
 
     actionExitEditingWithoutSavingOrRefreshing();
 }
@@ -239,9 +230,9 @@ export async function actionSwitchNotes(newNoteId, options) {
         return;
 	    }
 
-	    await actionSaveNote(currentNoteId);
+        await actionSaveNote(currentNoteId);
         const interactionQuery = beginEditInteractionForActiveQuery();
-        await recordEditModeTransitionWithInteraction(currentNoteId, newNoteId, interactionQuery);
+        await recordEditInteraction(interactionQuery);
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 

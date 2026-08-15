@@ -474,7 +474,7 @@ async function createNoteWithPlacement(placeAtTop) {
     } else {
         await actionSelectNote(newNoteId, {
             ...caretOptions,
-            recordEditModeTransition: false,
+            recordEditInteraction: false,
         });
     }
 
@@ -518,7 +518,7 @@ export async function createChildNote() {
     } else {
         return await actionSelectNote(newNoteId, {
             ...caretOptions,
-            recordEditModeTransition: false,
+            recordEditInteraction: false,
         });
     }
 }

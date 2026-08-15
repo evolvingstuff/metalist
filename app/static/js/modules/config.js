@@ -45,7 +45,6 @@ export const CONFIG = {
             PASTE_CHILD: (targetNoteId) => `${API_NOTES_BASE}/paste-child/${targetNoteId}`,
             UNDO: `${API_NOTES_BASE}/undo`,
             REDO: `${API_NOTES_BASE}/redo`,
-            EDIT_MODE: `${API_NOTES_BASE}/edit-mode`,
             VIEW: `${API_NOTES_BASE}/view`,
             TAB_STATE: `${API_NOTES_BASE}/tab-state`,
             TAB_STATE_NEW_TAB: `${API_NOTES_BASE}/tab-state/new-tab`,

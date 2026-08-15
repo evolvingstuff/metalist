@@ -23,6 +23,8 @@
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
 | `⇧ + ⌘ + R` | Paste embedded reference from the most recently copied note UUID as a new child note |
 | `⌘ + Backspace/Delete` | Delete the selected note |
+| `⌘ + Z` | Undo text/tag edits locally in the active editor |
+| `⇧ + ⌘ + Z` or `⌘ + Y` | Redo text/tag edits locally in the active editor |
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
 - When note paste replaces an empty target, the target keeps its search-context tags and merges in copied root tags with case-insensitive dedupe.
@@ -49,6 +51,8 @@
 | `?` | Open keyboard shortcuts / cheatsheet (idle mode) |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
+
+On macOS, `⌘ + Y` normally opens Safari History rather than performing native text redo. MetaList intercepts it while editing and maps it to the active editor's local redo operation; this does not call the server.
 
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
