@@ -8,8 +8,16 @@ import {
 } from '../../app/static/js/modules/mode-manager/services/search-input-service.js';
 
 test('untagged view visually hides the preserved tab query', () => {
-    assert.equal(resolveSearchInputDisplayQuery('journal', true), '');
-    assert.equal(resolveSearchInputDisplayQuery('journal', false), 'journal');
+    assert.equal(resolveSearchInputDisplayQuery('journal', true, false), '');
+    assert.equal(resolveSearchInputDisplayQuery('journal', false, false), 'journal');
+});
+
+test('reference source view visually hides its internal UUID query', () => {
+    assert.equal(
+        resolveSearchInputDisplayQuery('f81d4fae-7dec-11d0-a765-00a0c91e6bf6', false, true),
+        '',
+    );
+    assert.equal(resolveSearchInputDisplayQuery('journal', false, false), 'journal');
 });
 
 test('blurFocusedSearchInput blurs the active search input', (t) => {

@@ -41,6 +41,7 @@ import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
 } from '../mode-manager/services/search-input-service.js';
+import { isViewingReferenceSource } from '../mode-manager/services/reference-source-navigation-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache, syncBacklinksPanelPlacement } from '../mode-manager/services/backlinks-panel-service.js';
@@ -1166,7 +1167,11 @@ class CommandPaletteController {
         }
         syncSearchInputValue(
             searchInput,
-            resolveSearchInputDisplayQuery(ModeContext.searchQuery, isUntaggedView),
+            resolveSearchInputDisplayQuery(
+                ModeContext.searchQuery,
+                isUntaggedView,
+                isViewingReferenceSource(),
+            ),
         );
         ModeContext.clearTabRevealedRedactions(activeTabId);
         ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });

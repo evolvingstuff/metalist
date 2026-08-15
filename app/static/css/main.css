@@ -1973,15 +1973,20 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
         width: 100%;
     }
 
+    .controls .view-indicators {
+        top: -12px;
+        max-width: calc(100% - 16px);
+    }
+
+    .controls .reference-source-indicator,
     .controls .root-sort-indicator,
     .controls .untagged-view-indicator,
     .controls .date-filter-indicator {
-        top: -12px;
-        max-width: calc(100% - 16px);
         padding-left: 10px;
         padding-right: 6px;
     }
 
+    .controls .reference-source-indicator-label,
     .controls .root-sort-indicator-label,
     .controls .untagged-view-indicator-label,
     .controls .date-filter-indicator-label {
@@ -3547,39 +3552,6 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
     z-index: 10000;
 }
 
-.controls .reference-back-button {
-    position: absolute;
-    left: calc(50% - var(--search-input-half-width) - 34px);
-    top: 50%;
-    transform: translateY(-50%);
-    width: 26px;
-    height: 26px;
-    border: 1px solid rgba(255, 255, 255, 0.28);
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.96);
-    color: #111111;
-    font-size: 16px;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    cursor: pointer;
-}
-
-.controls .reference-back-button:hover,
-.controls .reference-back-button:focus-visible {
-    background: #ffffff;
-    border-color: rgba(255, 255, 255, 0.55);
-    outline: none;
-}
-
-.controls .reference-back-button:disabled {
-    opacity: 0.35;
-    cursor: default;
-    pointer-events: none;
-}
-
 .controls .search-suggestions[hidden],
 .controls .search-suggestions:empty {
     display: none;
@@ -3713,18 +3685,28 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     pointer-events: none;
 }
 
-.controls .root-sort-indicator,
-.controls .untagged-view-indicator,
-.controls .date-filter-indicator {
+.controls .view-indicators {
     position: absolute;
     top: -14px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 14;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: max-content;
+    max-width: calc(100% - 24px);
+}
+
+.controls .reference-source-indicator,
+.controls .root-sort-indicator,
+.controls .untagged-view-indicator,
+.controls .date-filter-indicator {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    max-width: calc(100% - 24px);
+    max-width: 100%;
     padding: 6px 8px 6px 12px;
     border: 1px solid rgba(130, 73, 0, 0.22);
     border-radius: 999px;
@@ -3733,38 +3715,22 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
-.controls .untagged-view-indicator {
-    top: 26px;
-    background: linear-gradient(135deg, #b7d7ff, #74a9f5);
-    color: #06172f;
-    border-color: rgba(6, 23, 47, 0.2);
-}
-
+.controls .reference-source-indicator,
+.controls .untagged-view-indicator,
 .controls .date-filter-indicator {
-    top: 66px;
     background: linear-gradient(135deg, #b7d7ff, #74a9f5);
     color: #06172f;
     border-color: rgba(6, 23, 47, 0.2);
 }
 
-.controls .root-sort-indicator[hidden] + .untagged-view-indicator {
-    top: -14px;
-}
-
-.controls .untagged-view-indicator[hidden] + .date-filter-indicator {
-    top: 26px;
-}
-
-.controls .root-sort-indicator[hidden] + .untagged-view-indicator[hidden] + .date-filter-indicator {
-    top: -14px;
-}
-
+.controls .reference-source-indicator[hidden],
 .controls .root-sort-indicator[hidden],
 .controls .untagged-view-indicator[hidden],
 .controls .date-filter-indicator[hidden] {
     display: none;
 }
 
+.controls .reference-source-indicator-label,
 .controls .root-sort-indicator-label,
 .controls .untagged-view-indicator-label,
 .controls .date-filter-indicator-label {
@@ -3779,6 +3745,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     text-transform: uppercase;
 }
 
+.controls .reference-source-indicator-clear,
 .controls .root-sort-indicator-clear,
 .controls .untagged-view-indicator-clear,
 .controls .date-filter-indicator-clear {
@@ -3798,6 +3765,8 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     cursor: pointer;
 }
 
+.controls .reference-source-indicator-clear:hover,
+.controls .reference-source-indicator-clear:focus-visible,
 .controls .root-sort-indicator-clear:hover,
 .controls .root-sort-indicator-clear:focus-visible,
 .controls .untagged-view-indicator-clear:hover,
@@ -5282,7 +5251,6 @@ html[data-theme="dark"] .controls .search-suggestion.is-selected {
     border-color: rgba(138, 180, 255, 0.28);
 }
 
-html[data-theme="dark"] .controls .reference-back-button,
 html[data-theme="dark"] .menu-button,
 html[data-theme="dark"] .scroll-to-top-button {
     background: rgba(255, 255, 255, 0.08);
@@ -5290,8 +5258,6 @@ html[data-theme="dark"] .scroll-to-top-button {
     color: #edf3ff;
 }
 
-html[data-theme="dark"] .controls .reference-back-button:hover,
-html[data-theme="dark"] .controls .reference-back-button:focus-visible,
 html[data-theme="dark"] .menu-button:hover,
 html[data-theme="dark"] .scroll-to-top-button:hover {
     background: rgba(255, 255, 255, 0.16);

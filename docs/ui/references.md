@@ -15,7 +15,7 @@
     - `![[UUID]]` renders the referenced note as an embedded block with its complete descendant subtree whenever the host note is expanded. Saved collapse states on the referenced root or any descendant are ignored inside the embed.
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
     - when the host note is collapsed, both note-reference modes render as a single compact link row showing the referenced note's first line; an embed never expands inside a collapsed host.
-    - an expanded embed ends with a `↗ title` link that opens the source note in UUID search; compact note references use the same treatment. Hovering the arrow shows `Link to reference source`.
+    - an expanded embed ends with a `↗ title` link that opens the source note in a temporary reference-source context; compact note references use the same treatment. Hovering the arrow shows `Link to reference source`.
     - right-click anywhere inside a rendered reference and choose **Go to Source** to open that source note with the same navigation behavior.
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
@@ -29,7 +29,7 @@
   - The embed always renders on its own visual line (block), even when written inline.
   - The referenced note's child subtree is included.
   - Embedded notes have no inner collapse controls; the host note owns the only collapse behavior for the rendered reference.
-  - Clicking a link-mode reference opens UUID search for that note (it does not enter edit mode on the target note).
+  - Clicking a link-mode reference opens a temporary reference-source context for that note (it does not enter edit mode on the target note). The internal UUID query stays hidden from the search input; the `Reference source` indicator identifies the context, and its `×` returns to the originating context.
 - **Edit mode**:
   - Tokens remain literal raw text (`![[UUID]]` or `[[UUID]]`).
   - Saved-file image actions are not available from the raw token; they are available once the token renders as an image preview in view mode.
@@ -68,7 +68,9 @@
 - Referenced note tags do **not** affect search matching for the host note (neither positive nor negative).
 - Host note search behavior continues to use host note content/tags plus existing inheritance/ontology rules.
 - UUID link-click behavior:
-  - Search input is set to the referenced UUID.
+  - The temporary source tab searches for the referenced UUID internally while leaving the search input visually empty.
+  - A `Reference source` mode indicator replaces the old back-arrow control; clicking its `×` returns to the originating context and closes the temporary source tab.
+  - Typing in the search input dismisses reference-source mode and keeps the temporary tab as a normal search context.
   - Target note is included.
   - Target ancestors are included.
   - Target descendants are included (not redacted).

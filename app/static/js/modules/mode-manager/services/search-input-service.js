@@ -2,14 +2,17 @@ import { analyzeSearchQueryInput, enforceSearchQueryInputForEditing } from './se
 
 const SEARCH_INVALID_CLASS = 'search-invalid';
 
-export function resolveSearchInputDisplayQuery(searchQuery, isUntaggedView) {
+export function resolveSearchInputDisplayQuery(searchQuery, isUntaggedView, isReferenceSourceView) {
     if (typeof searchQuery !== 'string') {
         throw new Error('resolveSearchInputDisplayQuery requires searchQuery string');
     }
     if (typeof isUntaggedView !== 'boolean') {
         throw new Error('resolveSearchInputDisplayQuery requires isUntaggedView boolean');
     }
-    return isUntaggedView ? '' : searchQuery;
+    if (typeof isReferenceSourceView !== 'boolean') {
+        throw new Error('resolveSearchInputDisplayQuery requires isReferenceSourceView boolean');
+    }
+    return isUntaggedView || isReferenceSourceView ? '' : searchQuery;
 }
 
 function ensureSearchValidationMessageElement() {

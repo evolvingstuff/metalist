@@ -27,6 +27,10 @@ function installSearchEventsDom(t) {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalHTMLButtonElement = globalThis.HTMLButtonElement;
 
+    class FakeHTMLElement {}
+
+    const referenceSourceIndicator = new FakeHTMLElement();
+    referenceSourceIndicator.hidden = true;
     const searchSuggestions = {
         hidden: true,
         style: {},
@@ -70,6 +74,9 @@ function installSearchEventsDom(t) {
             if (id === 'notes-container') {
                 return notesContainer;
             }
+            if (id === 'reference-source-indicator') {
+                return referenceSourceIndicator;
+            }
             return null;
         },
         addEventListener() {},
@@ -82,7 +89,7 @@ function installSearchEventsDom(t) {
     };
     globalThis.sessionStorage = createStorage();
     globalThis.localStorage = createStorage();
-    globalThis.HTMLElement = class FakeHTMLElement {};
+    globalThis.HTMLElement = FakeHTMLElement;
     globalThis.HTMLButtonElement = class FakeHTMLButtonElement extends globalThis.HTMLElement {};
 
     const restore = () => {
@@ -167,6 +174,49 @@ test('fresh search input dismisses the temporary untagged view', async (t) => {
 
     assert.equal(ModeContext.searchQuery, 'journal entry');
     assert.equal(ModeContext.isUntaggedView, false);
+});
+
+test('typing in search dismisses reference source mode without leaving the active tab', async (t) => {
+    const restoreDom = installSearchEventsDom(t);
+
+    const [
+        { handleSearchInput },
+        { cancelDebouncedSearchExecution },
+        { ModeContextInstance: ModeContext },
+        { isViewingReferenceSource, pushReferenceNavigationEntry },
+    ] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
+        import('../../app/static/js/modules/mode-manager/services/search-debounce-service.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+        import('../../app/static/js/modules/mode-manager/services/reference-source-navigation-service.js'),
+    ]);
+
+    const originalTabState = ModeContext.getTabStatePayload();
+    const sourceTabState = structuredClone(originalTabState);
+    const originalTabId = sourceTabState.activeTabId;
+    const sourceTabId = 'reference-source-search-test';
+    sourceTabState.tabs[sourceTabId] = structuredClone(sourceTabState.tabs[originalTabId]);
+    sourceTabState.tabs[sourceTabId].searchQuery = 'reference-uuid';
+    sourceTabState.tabOrder.push(sourceTabId);
+    sourceTabState.activeTabId = sourceTabId;
+    ModeContext.hydrateTabState(sourceTabState, { emitUpdate: false });
+    pushReferenceNavigationEntry(originalTabId, sourceTabId);
+
+    t.after(async () => {
+        cancelDebouncedSearchExecution();
+        ModeContext.hydrateTabState(originalTabState, { emitUpdate: false });
+        await import('../../app/static/js/modules/mode-manager/services/infinite-scroll-service.js');
+        await Promise.resolve();
+        restoreDom();
+    });
+
+    handleSearchInput({
+        target: createSearchInput('project notes'),
+    });
+
+    assert.equal(ModeContext.activeTabId, sourceTabId);
+    assert.equal(ModeContext.searchQuery, 'project notes');
+    assert.equal(isViewingReferenceSource(), false);
 });
 
 test('pasting the preserved tab query into untagged search still dismisses the view', async (t) => {

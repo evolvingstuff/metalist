@@ -13,6 +13,10 @@ import { initializeSearchSuggestions, updateSearchSuggestions } from '../service
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
 import { clearActiveDateFilterForSearchInput } from '../services/date-filter-indicator-service.js';
 import { clearActiveSortModeForSearchInput } from '../services/root-sort-indicator-service.js';
+import {
+    dismissReferenceSourceModeForActiveTab,
+    isViewingReferenceSource,
+} from '../services/reference-source-navigation-service.js';
 
 export function resetActiveTabForSearchExecution(searchQuery, options) {
     if (typeof searchQuery !== 'string') {
@@ -47,6 +51,10 @@ export function handleSearchInput(event) {
     const searchInput = event.target;
     if (!searchInput || typeof searchInput.value !== 'string') {
         throw new Error('Search input handler requires event.target input element');
+    }
+
+    if (isViewingReferenceSource()) {
+        dismissReferenceSourceModeForActiveTab();
     }
 
     const enforcedValue = enforceSearchInputElement(searchInput);
