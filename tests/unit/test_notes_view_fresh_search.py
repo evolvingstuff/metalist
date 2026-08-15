@@ -48,6 +48,7 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
             "undoContext": "tab:0|search:journal|epoch:0",
             "clientNoteUuidHashes": {},
             "visibleRootAnchorId": None,
+            "isUntaggedView": False,
         }
     )
 
@@ -105,6 +106,7 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
             "undoContext": "tab:0|search:journal|epoch:0",
             "clientNoteUuidHashes": {"root-a": "old-hash"},
             "visibleRootAnchorId": None,
+            "isUntaggedView": False,
         }
     )
 

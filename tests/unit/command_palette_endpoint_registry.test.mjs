@@ -46,6 +46,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             resetUpdatedAtToCreatedAt: noop,
             getSortMode: () => 'normal',
             setSortMode: noop,
+            getIsUntaggedView: () => false,
+            setIsUntaggedView: noop,
         },
     });
 
@@ -128,6 +130,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('view.sort_mode.updated'), true);
     assert.equal(endpointIds.has('view.sort_mode.alphabetical'), true);
     assert.equal(endpointIds.has('view.sort_mode.content_volume'), true);
+    assert.equal(endpointIds.has('view.all_notes'), true);
+    assert.equal(endpointIds.has('view.untagged_notes'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').label,
         'Sort order: Alphabetical',

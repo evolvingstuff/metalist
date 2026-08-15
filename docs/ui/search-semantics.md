@@ -27,6 +27,13 @@ Ontology rules also add **inferred tags** before search matching:
 - Implication + matcher rules are applied per note, and inferred tags are added to the effective tag set.
 - See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
 
+### Untagged Notes View
+- `View: Untagged notes` is a temporary, tab-agnostic view selected from the command palette, not an `@untagged` search token.
+- Selecting it preserves the active tab and its search while temporarily showing notes whose full effective tag set has no non-meta tags. The search box is visually blank while this override is active because the preserved tab query is not being applied.
+- Inherited and ontology-inferred tags count as tags; formatting/meta tags beginning with `@` do not.
+- The dismissible `Untagged notes` pill returns to the underlying tab view and restores its query in the search box. Clicking any tab or changing the search input also dismisses the temporary view.
+- Changing the search input additionally resets the active tab's sort mode to Normal and clears its date filter before executing the search.
+
 ### Search Suggestions
 - Search-bar tag suggestions are segment-aware for connector-separated tags.
 - For a blank query or the first tag prefix in a query, the top 3 suggestion slots can be promoted from the active namespace's highest-scoring recently interacted matching tags.

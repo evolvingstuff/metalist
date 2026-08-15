@@ -26,6 +26,13 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
 - When a non-normal sort mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
 - Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.
+- Changing the search input resets the active tab's sort mode to Normal before executing the search.
+
+## Untagged Notes View
+- `View: Untagged notes` temporarily overrides the displayed results with notes that have no non-meta effective tags while preserving the active tab and its search. Its search box is visually blank because the preserved query is not active.
+- `View: All notes` returns to the underlying tab view. The active untagged view also appears as a dismissible pill above the sticky top bar.
+- The setting is transient and tab-agnostic: it is not persisted or inherited when a tab is duplicated.
+- Clicking any tab, changing the search input, or dismissing the pill exits the untagged view. Changing it resets the active display's scroll state and undo/redo context.
 
 ## Config
 - Tag mappings live in `app/static/config/command_palette_tags.json`.

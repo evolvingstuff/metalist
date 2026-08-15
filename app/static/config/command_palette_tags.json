@@ -45,6 +45,14 @@
       "tags": ["sort", "order", "content", "volume", "length", "character", "characters", "count", "text", "largest", "longest", "view"]
     },
     {
+      "id": "view.all_notes",
+      "tags": ["view", "all", "notes", "normal", "unfiltered"]
+    },
+    {
+      "id": "view.untagged_notes",
+      "tags": ["view", "untagged", "unclassified", "notes", "tag", "filter", "empty"]
+    },
+    {
       "id": "pref.theme",
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },

@@ -3,6 +3,8 @@ import {
     getRootSortModeIndicatorLabel,
     normalizeRootSortMode,
 } from './root-sort-service.js';
+import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { setTabSortModeOnServer } from './tab-state-service.js';
 
 export function updateRootSortIndicator(snapshot) {
     if (!snapshot || typeof snapshot !== 'object') {
@@ -28,4 +30,19 @@ export function updateRootSortIndicator(snapshot) {
 
     label.textContent = getRootSortModeIndicatorLabel(sortMode);
     indicator.hidden = false;
+}
+
+export async function clearActiveSortModeForSearchInput() {
+    if (ModeContext.activeTabSortMode === ROOT_SORT_MODES.NORMAL) {
+        return;
+    }
+    const activeTabId = ModeContext.activeTabId;
+    if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+        throw new Error('ModeContext.activeTabId must be a non-empty string');
+    }
+    ModeContext.bumpUndoContextEpoch('sortMode.searchInput');
+    const response = await setTabSortModeOnServer(activeTabId, ROOT_SORT_MODES.NORMAL);
+    ModeContext.hydrateTabState(response, { emitUpdate: false });
+    ModeContext.clearTabRevealedRedactions(activeTabId);
+    ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
 }

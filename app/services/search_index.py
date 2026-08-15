@@ -128,6 +128,7 @@ class SearchIndex:
         self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
 
         self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
+        self._untagged_result_cache: tuple[int, FrozenSet[str]] | None = None
 
     def rebuild(
         self,
@@ -585,6 +586,25 @@ class SearchIndex:
             },
         ).info("search.query.finish")
         return matched_note_ids
+
+    def query_untagged_note_ids(self) -> Set[str]:
+        with self._lock:
+            cached = self._untagged_result_cache
+            if cached is not None:
+                cached_revision, cached_results = cached
+                if cached_revision == self._revision:
+                    return set(cached_results)
+
+            matched_note_ids = frozenset(
+                self._id_to_uuid[note_int_id]
+                for note_int_id in self._alive
+                if all(
+                    term_casefold.startswith("@")
+                    for term_casefold in self._note_tag_terms_casefold[note_int_id]
+                )
+            )
+            self._untagged_result_cache = (self._revision, matched_note_ids)
+            return set(matched_note_ids)
 
     # Internal ----------------------------------------------------------------
 

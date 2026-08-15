@@ -550,6 +550,7 @@ export const NotesAPI = {
             editingNoteId: noteId,
             search: searchQuery,
             tabId,
+            isUntaggedView: ModeContext.isUntaggedView,
             clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
             visibleRootAnchorId,
         };

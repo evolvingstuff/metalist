@@ -106,3 +106,23 @@ test('ModeContext modal stack uses strict mutators instead of direct array mutat
         /Redundant state change: modalStack does not contain strictModal/
     );
 });
+
+test('ModeContext keeps the untagged view outside persisted tab state', async (t) => {
+    installModeContextGlobals(t);
+    const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
+
+    ModeContext.setUntaggedView(true);
+    t.after(() => {
+        if (ModeContext.isUntaggedView) {
+            ModeContext.setUntaggedView(false);
+        }
+    });
+
+    const serializedTabState = ModeContext.getTabStatePayload();
+
+    assert.equal(ModeContext.isUntaggedView, true);
+    assert.equal(Object.hasOwn(serializedTabState, 'isUntaggedView'), false);
+    for (const tab of Object.values(serializedTabState.tabs)) {
+        assert.equal(Object.hasOwn(tab, 'isUntaggedView'), false);
+    }
+});

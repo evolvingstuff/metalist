@@ -216,6 +216,26 @@ def resolve_search_scope(
     )
 
 
+def _apply_untagged_view(
+    *,
+    ordered_root_ids: List[str],
+) -> SearchScope:
+    matched_note_ids = search_index.query_untagged_note_ids()
+
+    allowed_note_ids = set(matched_note_ids)
+    _include_ancestors(allowed_note_ids, starting_ids=set(matched_note_ids))
+    root_ids_ordered = [
+        root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
+    ]
+    return SearchScope(
+        search_active=True,
+        allowed_note_ids=allowed_note_ids,
+        matched_note_ids=matched_note_ids,
+        search_root_ids_ordered=root_ids_ordered,
+        search_root_count_total=len(root_ids_ordered),
+    )
+
+
 def _root_id_for_note(note_id: str) -> str:
     current = note_store.get_note(note_id)
     while current.parent_id is not None:
@@ -393,7 +413,10 @@ def build_view_state(
     client_known_note_ids: Optional[Set[str]],
     client_seen_root_ids: Optional[Set[str]],
     anchor_root_id: Optional[str],
+    is_untagged_view: bool,
 ) -> ViewState:
+    if not isinstance(is_untagged_view, bool):
+        raise TypeError("is_untagged_view must be a bool")
     t0 = time.perf_counter()
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
@@ -434,12 +457,17 @@ def build_view_state(
     root_count_total = len(ordered_root_ids)
     normalized_date_filter = normalize_date_filter(date_filter)
 
-    search_scope = resolve_search_scope(
-        search=search,
-        editing_note_id=editing_note_id,
-        sort_mode=normalized_sort_mode,
-        ordered_root_ids=ordered_root_ids,
-    )
+    if is_untagged_view:
+        search_scope = _apply_untagged_view(
+            ordered_root_ids=ordered_root_ids,
+        )
+    else:
+        search_scope = resolve_search_scope(
+            search=search,
+            editing_note_id=editing_note_id,
+            sort_mode=normalized_sort_mode,
+            ordered_root_ids=ordered_root_ids,
+        )
     if search_scope.search_active:
         filter_active = True
         allowed_note_ids = search_scope.allowed_note_ids
@@ -635,6 +663,7 @@ def build_view_state(
         "editingNoteId": editing_note_id,
         "search": search,
         "sortMode": normalized_sort_mode,
+        "isUntaggedView": is_untagged_view,
         "dateFilter": normalized_date_filter,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": filtered_root_count_total,
@@ -675,6 +704,7 @@ def build_view_snapshot(
     client_known_note_ids: Optional[Set[str]],
     client_seen_root_ids: Optional[Set[str]],
     anchor_root_id: Optional[str],
+    is_untagged_view: bool,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
         editing_note_id=editing_note_id,
@@ -684,5 +714,6 @@ def build_view_snapshot(
         client_known_note_ids=client_known_note_ids,
         client_seen_root_ids=client_seen_root_ids,
         anchor_root_id=anchor_root_id,
+        is_untagged_view=is_untagged_view,
     )
     return state.structure, state.payloads, state.locks

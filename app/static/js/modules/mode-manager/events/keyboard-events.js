@@ -28,7 +28,12 @@ import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '.
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
-import { blurFocusedSearchInput, focusSearchInputAndSelectAllText, syncSearchInputValue } from '../services/search-input-service.js';
+import {
+    blurFocusedSearchInput,
+    focusSearchInputAndSelectAllText,
+    resolveSearchInputDisplayQuery,
+    syncSearchInputValue,
+} from '../services/search-input-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
 import {
     getTagBarValue,
@@ -2947,12 +2952,22 @@ export function updateSearchContextsList() {
                     return;
                 }
                 hideSearchContextsOverlay();
-                if (tabId === ModeContext.activeTabId) {
-                    return;
-                }
-					void CommandGate.run('tab.switch', async () => {
-						await switchToTabContext(tabId, {});
-					});
+                void CommandGate.run('tab.select', async () => {
+                    if (tabId === ModeContext.activeTabId) {
+                        if (!ModeContext.isUntaggedView) {
+                            return;
+                        }
+                        ModeContext.setUntaggedView(false);
+                        syncSearchInputField();
+                        ModeContext.resetTabDiffCache(tabId, { preserveRootAnchor: false });
+                        clearCachedNotesDomForTab(tabId);
+                        clearActiveNotesDom();
+                        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+                        await actionRefreshAndMaybeSelect({ context: 'untaggedView.dismissTab' });
+                        return;
+                    }
+                    await switchToTabContext(tabId, {});
+                });
 	            });
 	        });
         
@@ -3037,12 +3052,22 @@ export async function switchToTabContext(tabId, options) {
     }
     const perfContext = `switchTab tab#${previousTabIndex + 1}→tab#${nextTabIndex + 1}`;
 
+    const dismissedUntaggedView = ModeContext.isUntaggedView;
+    if (dismissedUntaggedView) {
+        ModeContext.setUntaggedView(false);
+        ModeContext.resetTabDiffCache(previousTabId, { preserveRootAnchor: false });
+        clearCachedNotesDomForTab(previousTabId);
+        clearActiveNotesDom();
+    }
+
 	ModeContext.beginIgnoreScrollEvents();
 	await (async () => {
 		await persistCurrentTabState();
 
 		ModeContext.switchToTab(tabId, { force: true });
-		cacheNotesDomForTab(previousTabId);
+		if (!dismissedUntaggedView) {
+			cacheNotesDomForTab(previousTabId);
+		}
 		restoreNotesDomForTab(tabId);
 
 		syncSearchInputField();
@@ -3479,7 +3504,10 @@ function syncSearchInputField() {
         throw new Error('ModeContext.searchQuery must be a string');
     }
 
-    syncSearchInputValue(searchInput, activeQuery);
+    syncSearchInputValue(
+        searchInput,
+        resolveSearchInputDisplayQuery(activeQuery, ModeContext.isUntaggedView),
+    );
 }
 
 async function persistCurrentTabState() {

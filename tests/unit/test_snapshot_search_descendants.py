@@ -39,6 +39,54 @@ def _visible_ids(state) -> set[str]:
     return {entry["id"] for entry in state.structure}
 
 
+def test_untagged_view_shows_notes_without_non_meta_effective_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "untagged": _Note("untagged", None, None, "tagged", False, "<div>One</div>", "@markdown"),
+        "tagged": _Note("tagged", None, "untagged", None, False, "<div>Two</div>", "journal"),
+    }
+    store = _FakeNoteStore(notes=notes, children_by_parent={None: ["untagged", "tagged"]})
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id=note.id,
+                content_text=note.content,
+                tags=note.tags,
+                tag_terms=extract_tags_for_search(note.tags),
+            )
+            for note in notes.values()
+        ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
+        progress_update=lambda _: None,
+        progress_interval=1000,
+    )
+
+    import app.services.snapshot as snapshot
+
+    monkeypatch.setattr(snapshot, "note_store", store)
+    monkeypatch.setattr(snapshot, "search_index", index)
+    monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
+
+    state = build_view_state(
+        editing_note_id=None,
+        search="journal",
+        sort_mode="normal",
+        date_filter=None,
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+        is_untagged_view=True,
+    )
+
+    assert _visible_ids(state) == {"untagged"}
+    assert state.metadata["isUntaggedView"] is True
+
+
 def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyPatch) -> None:
     # Tree:
     # r1(asdf)
@@ -91,6 +139,7 @@ def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyP
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
@@ -143,6 +192,7 @@ def test_search_snapshot_does_not_include_children_of_collapsed_root(monkeypatch
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert _visible_ids(state) == {"r1"}
@@ -200,6 +250,7 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
@@ -252,6 +303,7 @@ def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pyt
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert _visible_ids(state) == {"r1"}

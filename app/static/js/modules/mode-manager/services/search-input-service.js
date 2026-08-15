@@ -2,6 +2,16 @@ import { analyzeSearchQueryInput, enforceSearchQueryInputForEditing } from './se
 
 const SEARCH_INVALID_CLASS = 'search-invalid';
 
+export function resolveSearchInputDisplayQuery(searchQuery, isUntaggedView) {
+    if (typeof searchQuery !== 'string') {
+        throw new Error('resolveSearchInputDisplayQuery requires searchQuery string');
+    }
+    if (typeof isUntaggedView !== 'boolean') {
+        throw new Error('resolveSearchInputDisplayQuery requires isUntaggedView boolean');
+    }
+    return isUntaggedView ? '' : searchQuery;
+}
+
 function ensureSearchValidationMessageElement() {
     const message = document.getElementById('search-validation-message');
     if (!message) {

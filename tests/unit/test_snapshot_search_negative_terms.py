@@ -80,6 +80,7 @@ def test_negative_text_term_redacts_notes_containing_phrase(monkeypatch: pytest.
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert not state.payloads["c2"]["flags"]["searchRedacted"]
@@ -129,6 +130,7 @@ def test_negative_text_term_redacts_forbidden_descendants(monkeypatch: pytest.Mo
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert not state.payloads["r1"]["flags"]["searchRedacted"]

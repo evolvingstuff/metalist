@@ -37,7 +37,10 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 import { SoundManagerModal } from '../modals/sound-manager-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
-import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
+import {
+    resolveSearchInputDisplayQuery,
+    syncSearchInputValue,
+} from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache, syncBacklinksPanelPlacement } from '../mode-manager/services/backlinks-panel-service.js';
@@ -358,6 +361,8 @@ class CommandPaletteController {
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
+                getIsUntaggedView: this.getIsUntaggedView.bind(this),
+                setIsUntaggedView: this.setIsUntaggedView.bind(this),
             },
         });
 
@@ -1133,6 +1138,58 @@ class CommandPaletteController {
         });
     }
 
+    getIsUntaggedView() {
+        return ModeContext.isUntaggedView;
+    }
+
+    async setIsUntaggedView(isUntaggedView) {
+        if (typeof isUntaggedView !== 'boolean') {
+            throw new Error('isUntaggedView must be a boolean');
+        }
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+        if (ModeContext.isUntaggedView === isUntaggedView) {
+            return;
+        }
+
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+
+        ModeContext.bumpUndoContextEpoch(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
+        ModeContext.setUntaggedView(isUntaggedView);
+        const searchInput = document.getElementById('search-input');
+        if (!(searchInput instanceof HTMLInputElement)) {
+            throw new Error('search-input missing from DOM');
+        }
+        syncSearchInputValue(
+            searchInput,
+            resolveSearchInputDisplayQuery(ModeContext.searchQuery, isUntaggedView),
+        );
+        ModeContext.clearTabRevealedRedactions(activeTabId);
+        ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
+        if (ModeContext.getTabScrollPosition(activeTabId) !== 0) {
+            ModeContext.updateTabScroll(activeTabId, 0, false);
+        }
+        if (ModeContext.getTabScrollAnchor(activeTabId) !== null) {
+            ModeContext.updateTabScrollAnchor(activeTabId, null, false);
+        }
+        if (ModeContext.getRootAnchorId() !== null) {
+            ModeContext.setRootAnchorId(null);
+        }
+
+        ModeContext.beginIgnoreScrollEvents();
+        window.scrollTo(0, 0);
+        ModeContext.endIgnoreScrollEvents();
+
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: `untaggedView.${isUntaggedView ? 'on' : 'off'}`,
+        });
+    }
+
     async exportCurrentViewAsHtml() {
         if (this.isOpen()) {
             this.close();
@@ -1502,6 +1559,10 @@ class CommandPaletteController {
 
             if (ModeContext.isEditing) {
                 await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            if (ModeContext.isUntaggedView) {
+                ModeContext.setUntaggedView(false);
             }
 
             const searchInput = document.getElementById('search-input');

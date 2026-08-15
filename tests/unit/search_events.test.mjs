@@ -140,6 +140,114 @@ test('handleSearchInput updates search query even while loading', async (t) => {
     assert.equal(ModeContext.searchQuery, 'ML3');
 });
 
+test('fresh search input dismisses the temporary untagged view', async (t) => {
+    const restoreDom = installSearchEventsDom(t);
+
+    const [{ handleSearchInput }, { cancelDebouncedSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
+        import('../../app/static/js/modules/mode-manager/services/search-debounce-service.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+    ]);
+
+    ModeContext.setSearchQuery('journal');
+    ModeContext.setUntaggedView(true);
+
+    t.after(() => {
+        cancelDebouncedSearchExecution();
+        if (ModeContext.isUntaggedView) {
+            ModeContext.setUntaggedView(false);
+        }
+        ModeContext.setSearchQuery('');
+        restoreDom();
+    });
+
+    handleSearchInput({
+        target: createSearchInput('journal entry'),
+    });
+
+    assert.equal(ModeContext.searchQuery, 'journal entry');
+    assert.equal(ModeContext.isUntaggedView, false);
+});
+
+test('pasting the preserved tab query into untagged search still dismisses the view', async (t) => {
+    const restoreDom = installSearchEventsDom(t);
+
+    const [{ handleSearchInput }, { cancelDebouncedSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
+        import('../../app/static/js/modules/mode-manager/services/search-debounce-service.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+    ]);
+
+    ModeContext.setSearchQuery('journal');
+    ModeContext.setUntaggedView(true);
+
+    t.after(() => {
+        cancelDebouncedSearchExecution();
+        if (ModeContext.isUntaggedView) {
+            ModeContext.setUntaggedView(false);
+        }
+        ModeContext.setSearchQuery('');
+        restoreDom();
+    });
+
+    handleSearchInput({
+        target: createSearchInput('journal'),
+    });
+
+    assert.equal(ModeContext.searchQuery, 'journal');
+    assert.equal(ModeContext.isUntaggedView, false);
+});
+
+test('fresh search input resets the active tab sort without losing the typed query', async (t) => {
+    const restoreDom = installSearchEventsDom(t);
+    const originalFetch = globalThis.fetch;
+
+    const [{ handleSearchInput }, { cancelDebouncedSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
+        import('../../app/static/js/modules/mode-manager/services/search-debounce-service.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+    ]);
+
+    const originalTabState = ModeContext.getTabStatePayload();
+    const activeTabId = originalTabState.activeTabId;
+    const sortedTabState = structuredClone(originalTabState);
+    sortedTabState.tabs[activeTabId].searchQuery = 'journal';
+    sortedTabState.tabs[activeTabId].sortMode = 'updated';
+    ModeContext.hydrateTabState(sortedTabState, { emitUpdate: false });
+    sessionStorage.setItem('metalist_tab_id', 'search-events-test');
+
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push({ url, body: JSON.parse(options.body) });
+        const responseState = structuredClone(sortedTabState);
+        responseState.tabs[activeTabId].sortMode = 'normal';
+        return {
+            ok: true,
+            async json() {
+                return responseState;
+            },
+        };
+    };
+
+    t.after(() => {
+        cancelDebouncedSearchExecution();
+        globalThis.fetch = originalFetch;
+        ModeContext.hydrateTabState(originalTabState, { emitUpdate: false });
+        restoreDom();
+    });
+
+    handleSearchInput({
+        target: createSearchInput('journal entry'),
+    });
+    cancelDebouncedSearchExecution();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].body.sortMode, 'normal');
+    assert.equal(ModeContext.activeTabSortMode, 'normal');
+    assert.equal(ModeContext.searchQuery, 'journal entry');
+});
+
 test('fresh search input clears same-query render cache and active DOM', async (t) => {
     const restoreDom = installSearchEventsDom(t);
 

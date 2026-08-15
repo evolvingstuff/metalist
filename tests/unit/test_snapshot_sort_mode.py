@@ -131,6 +131,7 @@ def test_build_view_state_uses_newest_created_timestamp_in_root_subtree(
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert state.children_by_parent[None] == ["root-old", "root-new"]
@@ -194,6 +195,7 @@ def test_build_view_state_uses_newest_updated_timestamp_in_root_subtree(
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert state.children_by_parent[None] == ["root-stale", "root-fresh"]
@@ -257,6 +259,7 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert state.children_by_parent[None] == ["root-apple", "root-banana", "root-zebra"]
@@ -331,6 +334,7 @@ def test_build_view_state_sorts_roots_by_plain_text_volume_across_subtree(
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
     )
 
     assert state.children_by_parent[None] == [
@@ -393,6 +397,7 @@ def test_build_view_state_filters_by_updated_date_range(
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
+        is_untagged_view=False,
         date_filter={"metric": "updated", "startDate": "2026-05-18", "endDate": "2026-05-18"},
     )
 
