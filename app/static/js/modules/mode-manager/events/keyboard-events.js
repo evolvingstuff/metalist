@@ -39,6 +39,12 @@ import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
 } from '../services/search-input-service.js';
+import {
+    isViewingReferenceSource,
+    popReferenceNavigationEntryForActiveTab,
+    pushReferenceNavigationEntry,
+    updateReferenceSourceIndicator,
+} from '../services/reference-source-navigation-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
 import {
     getTagBarValue,
@@ -103,77 +109,7 @@ const TAG_BAR_META_SHORTCUT_KEYS = new Set(['c', 'x', 'v', 'z', 'y', 'r', 's', '
 let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
-const referenceNavigationStack = [];
 let noteClipboardRequiresBrowserValidation = false;
-
-function getReferenceBackButtonElement() {
-    const element = document.getElementById('reference-back-button');
-    if (!element) {
-        return null;
-    }
-    if (!(element instanceof HTMLButtonElement)) {
-        throw new Error('reference-back-button must be a button element');
-    }
-    return element;
-}
-
-function pruneReferenceNavigationStackToExistingTabs() {
-    const tabOrder = ModeContext.tabOrder;
-    if (!Array.isArray(tabOrder)) {
-        throw new Error('ModeContext.tabOrder must be an array');
-    }
-    const existingTabIds = new Set(tabOrder);
-    let writeIndex = 0;
-    for (let i = 0; i < referenceNavigationStack.length; i += 1) {
-        const entry = referenceNavigationStack[i];
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-        if (!existingTabIds.has(entry.fromTabId) || !existingTabIds.has(entry.toTabId)) {
-            continue;
-        }
-        referenceNavigationStack[writeIndex] = entry;
-        writeIndex += 1;
-    }
-    referenceNavigationStack.length = writeIndex;
-}
-
-function findReferenceBackEntryIndexForActiveTab() {
-    const activeTabId = ModeContext.activeTabId;
-    for (let i = referenceNavigationStack.length - 1; i >= 0; i -= 1) {
-        const entry = referenceNavigationStack[i];
-        if (entry.toTabId === activeTabId) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-function canNavigateReferenceBackFromActiveTab() {
-    pruneReferenceNavigationStackToExistingTabs();
-    return findReferenceBackEntryIndexForActiveTab() !== -1;
-}
-
-export function updateReferenceBackButtonState() {
-    const backButton = getReferenceBackButtonElement();
-    if (!backButton) {
-        return;
-    }
-    const canNavigateBack = canNavigateReferenceBackFromActiveTab();
-    backButton.disabled = !canNavigateBack;
-    backButton.setAttribute('aria-disabled', canNavigateBack ? 'false' : 'true');
-}
-
-function pushReferenceNavigationEntry(fromTabId, toTabId) {
-    if (typeof fromTabId !== 'string' || fromTabId.length === 0) {
-        throw new Error('pushReferenceNavigationEntry requires fromTabId');
-    }
-    if (typeof toTabId !== 'string' || toTabId.length === 0) {
-        throw new Error('pushReferenceNavigationEntry requires toTabId');
-    }
-    referenceNavigationStack.push({ fromTabId, toTabId });
-    updateReferenceBackButtonState();
-}
 
 function isTagBarNoteShortcut(event) {
     if (!event) {
@@ -218,7 +154,7 @@ export function initKeyboardEvents() {
     
     // Initialize search contexts list on startup
     updateSearchContextsList();
-    updateReferenceBackButtonState();
+    updateReferenceSourceIndicator();
 }
 
 function handleSearchContextsViewportChange() {
@@ -2862,7 +2798,7 @@ function handlePasteEvent(event) {
 
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
-    updateReferenceBackButtonState();
+    updateReferenceSourceIndicator();
     if (!searchContextsList) return;
     const showTabUi = document.body.classList.contains('pref-show-tab-ui');
     
@@ -3018,7 +2954,7 @@ export function updateSearchContextsList() {
     }
 
     syncBacklinksPanelPlacement();
-    updateReferenceBackButtonState();
+    updateReferenceSourceIndicator();
 }
 
 export async function switchToTabContext(tabId, options) {
@@ -3269,9 +3205,8 @@ export async function openReferenceInNewTab(referenceNoteId) {
         await switchToTabContext(newTabId, {});
     }
 
-    await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_tab');
-
     pushReferenceNavigationEntry(sourceTabId, newTabId);
+    await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_tab');
     return newTabId;
 }
 
@@ -3293,6 +3228,7 @@ async function runReferenceSearchInActiveTab(referenceNoteId, context) {
     if (ModeContext.searchQuery !== normalizedReferenceId) {
         ModeContext.setSearchQuery(normalizedReferenceId);
     }
+    syncSearchInputField();
     updateSearchContextsList();
 
     await actionEnterSearchMode();
@@ -3320,9 +3256,11 @@ async function runReferenceSearchInActiveTab(referenceNoteId, context) {
     });
     await persistTabStateSnapshot();
 
-    searchInput.value = normalizedReferenceId;
-    searchInput.focus();
-    searchInput.setSelectionRange(normalizedReferenceId.length, normalizedReferenceId.length);
+    syncSearchInputField();
+    if (!isViewingReferenceSource()) {
+        searchInput.focus();
+        searchInput.setSelectionRange(normalizedReferenceId.length, normalizedReferenceId.length);
+    }
 }
 
 export async function openReferenceInCurrentTab(referenceNoteId) {
@@ -3440,17 +3378,8 @@ async function deleteTabContext(deleteTabId) {
 }
 
 export async function navigateBackFromReferenceContext() {
-    pruneReferenceNavigationStackToExistingTabs();
-
-    const backEntryIndex = findReferenceBackEntryIndexForActiveTab();
-    if (backEntryIndex === -1) {
-        updateReferenceBackButtonState();
-        return false;
-    }
-
-    const [entry] = referenceNavigationStack.splice(backEntryIndex, 1);
-    if (!entry || typeof entry !== 'object') {
-        updateReferenceBackButtonState();
+    const entry = popReferenceNavigationEntryForActiveTab();
+    if (entry === null) {
         return false;
     }
 
@@ -3463,7 +3392,6 @@ export async function navigateBackFromReferenceContext() {
         throw new Error('Reference back entry missing toTabId');
     }
     if (!ModeContext.tabs[fromTabId]) {
-        updateReferenceBackButtonState();
         return false;
     }
 
@@ -3482,7 +3410,7 @@ export async function navigateBackFromReferenceContext() {
         }
     }
 
-    updateReferenceBackButtonState();
+    updateReferenceSourceIndicator();
     return true;
 }
 
@@ -3499,7 +3427,11 @@ function syncSearchInputField() {
 
     syncSearchInputValue(
         searchInput,
-        resolveSearchInputDisplayQuery(activeQuery, ModeContext.isUntaggedView),
+        resolveSearchInputDisplayQuery(
+            activeQuery,
+            ModeContext.isUntaggedView,
+            isViewingReferenceSource(),
+        ),
     );
 }
 

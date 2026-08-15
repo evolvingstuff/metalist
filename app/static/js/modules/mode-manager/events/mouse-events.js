@@ -152,6 +152,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-tag-bar',
             '#search-contexts-list',
             '#backlinks-panel',
+            '#reference-source-indicator',
             '#root-sort-indicator',
             '#menu-button',
             '.add-note',
@@ -161,7 +162,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-reference-link',
             '.note-file-reference-link',
             '.note-file-image-download-link',
-            '#reference-back-button',
             '.backlink-item',
             CREDENTIAL_VALUE_SELECTOR,
             EMAIL_VALUE_SELECTOR,
@@ -866,7 +866,7 @@ function handleClick(event) {
         return;
     }
 
-    if (handleReferenceBackButtonClick(event)) {
+    if (handleReferenceSourceIndicatorClick(event)) {
         return;
     }
 
@@ -1398,31 +1398,32 @@ function handleFileReferenceClick(event) {
     return true;
 }
 
-function handleReferenceBackButtonClick(event) {
+function handleReferenceSourceIndicatorClick(event) {
     if (!event.target) {
-        throw new Error('Reference back click missing target element');
+        throw new Error('Reference source indicator click missing target element');
     }
 
-    const backButton = event.target.closest('#reference-back-button');
-    if (!backButton) {
+    const indicator = event.target.closest('#reference-source-indicator');
+    if (!indicator) {
         return false;
     }
 
     event.preventDefault();
     event.stopPropagation();
 
+    const clearButton = event.target.closest('#reference-source-indicator-clear');
+    if (!clearButton) {
+        return true;
+    }
+
     if (!ModeContext.isConnected) {
-        Logger.logNoop('Reference back click ignored while disconnected', {
+        Logger.logNoop('Reference source indicator close ignored while disconnected', {
             isConnected: false,
         });
         return true;
     }
 
-    if (backButton instanceof HTMLButtonElement && backButton.disabled) {
-        return true;
-    }
-
-    void CommandGate.run('mouse.reference_back', async () => {
+    void CommandGate.run('mouse.reference_source_close', async () => {
         await navigateBackFromReferenceContext();
     });
     return true;

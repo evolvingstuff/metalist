@@ -107,49 +107,53 @@
                                 />
                             </svg>
                         </div>
-                        <button
-                            id="reference-back-button"
-                            class="reference-back-button interactive"
-                            type="button"
-                            aria-label="Back to previous reference context"
-                            title="Back to previous reference context"
-                            disabled
-                        >←</button>
                         <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                         <div id="search-results-count" class="search-results-count">0</div>
                         <div id="search-suggestions" class="search-suggestions" hidden></div>
                     </div>
                     <div id="search-validation-message" class="search-validation-message" hidden></div>
                 </div>
-                <div id="root-sort-indicator" class="root-sort-indicator" hidden>
-                    <span id="root-sort-indicator-label" class="root-sort-indicator-label"></span>
-                    <button
-                        id="root-sort-indicator-clear"
-                        class="root-sort-indicator-clear interactive"
-                        type="button"
-                        aria-label="Return to normal sort order"
-                        title="Return to normal sort order"
-                    >×</button>
-                </div>
-                <div id="untagged-view-indicator" class="untagged-view-indicator" hidden>
-                    <span class="untagged-view-indicator-label">Untagged notes</span>
-                    <button
-                        id="untagged-view-indicator-clear"
-                        class="untagged-view-indicator-clear interactive"
-                        type="button"
-                        aria-label="Return to all notes"
-                        title="Return to all notes"
-                    >×</button>
-                </div>
-                <div id="date-filter-indicator" class="date-filter-indicator" hidden>
-                    <span id="date-filter-indicator-label" class="date-filter-indicator-label"></span>
-                    <button
-                        id="date-filter-indicator-clear"
-                        class="date-filter-indicator-clear interactive"
-                        type="button"
-                        aria-label="Clear date filter"
-                        title="Clear date filter"
-                    >×</button>
+                <div class="view-indicators">
+                    <div id="reference-source-indicator" class="reference-source-indicator" hidden>
+                        <span class="reference-source-indicator-label">Reference source</span>
+                        <button
+                            id="reference-source-indicator-clear"
+                            class="reference-source-indicator-clear interactive"
+                            type="button"
+                            aria-label="Return to previous context"
+                            title="Return to previous context"
+                        >×</button>
+                    </div>
+                    <div id="root-sort-indicator" class="root-sort-indicator" hidden>
+                        <span id="root-sort-indicator-label" class="root-sort-indicator-label"></span>
+                        <button
+                            id="root-sort-indicator-clear"
+                            class="root-sort-indicator-clear interactive"
+                            type="button"
+                            aria-label="Return to normal sort order"
+                            title="Return to normal sort order"
+                        >×</button>
+                    </div>
+                    <div id="untagged-view-indicator" class="untagged-view-indicator" hidden>
+                        <span class="untagged-view-indicator-label">Untagged notes</span>
+                        <button
+                            id="untagged-view-indicator-clear"
+                            class="untagged-view-indicator-clear interactive"
+                            type="button"
+                            aria-label="Return to all notes"
+                            title="Return to all notes"
+                        >×</button>
+                    </div>
+                    <div id="date-filter-indicator" class="date-filter-indicator" hidden>
+                        <span id="date-filter-indicator-label" class="date-filter-indicator-label"></span>
+                        <button
+                            id="date-filter-indicator-clear"
+                            class="date-filter-indicator-clear interactive"
+                            type="button"
+                            aria-label="Clear date filter"
+                            title="Clear date filter"
+                        >×</button>
+                    </div>
                 </div>
                 <!-- <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button> -->
             </div>

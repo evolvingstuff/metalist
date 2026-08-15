@@ -114,8 +114,10 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 | Click `⋮` under the edited note's tag bar | Expand that collapsed parent note to reveal its hidden children. |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
-| Click link-mode reference text | Set search input to the referenced UUID and run search |
-| Right-click anywhere inside a rendered note reference | Choose **Go to Source** to open the referenced source note |
+| Click link-mode reference text | Open the referenced note in a temporary `Reference source` context; the UUID query remains hidden |
+| Click `×` on the `Reference source` indicator | Return to the originating context and close the temporary source tab |
+| Type in search while viewing a reference source | Dismiss reference-source mode and keep the current tab as a normal search context |
+| Right-click anywhere inside a rendered note reference | Choose **Go to Source** to open the same temporary reference-source context |
 | Press `@todo` / `@done` checkbox | Toggle the note status on mouse down. If another note is being edited, save + exit edit mode first and do not enter edit mode for the toggled note. |
 | Press note shell / blank space | Select/edit that note on mouse down. Note content waits until click so drag/drop can disambiguate click vs drag. |
 | Click the tag bar while editing | Focus the tag input without re-selecting the note shell. Mouse or keyboard focus adds a soft focus ring and, when Animated Transitions is enabled, a single subtle outward halo. |
