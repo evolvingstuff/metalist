@@ -41,7 +41,11 @@ def highlight_search_terms(html_content: str, search_query: str) -> str:
         return html_content
     
     # Split search query into terms
-    search_terms = [term.lower() for term in search_query.strip().split() if term]
+    search_terms = [
+        term.lower()
+        for term in search_query.strip().split()
+        if term and term != "OR"
+    ]
     if not search_terms:
         return html_content
     

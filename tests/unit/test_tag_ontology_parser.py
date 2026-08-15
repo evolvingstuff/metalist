@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.tag_ontology import OntologyParseError, TagAtom, compile_rules, parse_rules_text
+from app.services.tag_ontology import (
+    OntologyParseError,
+    TagAtom,
+    compile_rules,
+    is_valid_tag_token,
+    parse_rules_text,
+)
 
 
 def test_parse_comments_and_blank_lines_are_ignored() -> None:
@@ -46,6 +52,14 @@ def test_parse_rejects_inline_comments() -> None:
 def test_parse_rejects_negated_tag_token() -> None:
     with pytest.raises(OntologyParseError):
         parse_rules_text(text="-foo => bar", filename="ontology_rules.txt")
+
+
+def test_exact_uppercase_or_is_reserved_as_an_ontology_tag() -> None:
+    assert not is_valid_tag_token("OR")
+    assert is_valid_tag_token("or")
+
+    with pytest.raises(OntologyParseError):
+        parse_rules_text(text="a => OR", filename="ontology_rules.txt")
 
 
 def test_inference_applies_implications_and_matchers_to_fixed_point() -> None:

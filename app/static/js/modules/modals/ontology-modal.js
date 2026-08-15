@@ -43,6 +43,9 @@ function isValidTagToken(token) {
     if (token.length === 0) {
         return false;
     }
+    if (token === 'OR') {
+        return false;
+    }
     if (/\s/.test(token)) {
         return false;
     }

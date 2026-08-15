@@ -23,6 +23,7 @@ from app.security.encryption import (
     is_encryption_required,
 )
 from app.services.search_index import search_index
+from app.services.search_query import parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
 
 SEARCH_HISTORY_DECAY_FACTOR = 0.98
@@ -360,51 +361,14 @@ def normalize_search_history_query(query: str) -> NormalizedSearchHistoryQuery |
     if text == "":
         return None
 
-    index = 0
-    while index < len(text):
-        while index < len(text) and text[index].isspace():
-            index += 1
-        if index >= len(text):
-            break
-
-        prefix = ""
-        if text[index] in ("+", "-"):
-            prefix = text[index]
-            index += 1
-            if index >= len(text) or text[index].isspace():
-                raise ValueError("Dangling prefix in search query")
-
-        if text[index] in ('"', "'"):
-            quote_char = text[index]
-            index += 1
-            while index < len(text):
-                char = text[index]
-                if char == quote_char:
-                    index += 1
-                    break
-                if char == "\\" and index + 1 < len(text):
-                    next_char = text[index + 1]
-                    if next_char == quote_char or next_char == "\\":
-                        index += 2
-                        continue
-                index += 1
-            else:
-                raise ValueError(f"Unclosed quote {quote_char!r} in search query")
-            continue
-
-        start = index
-        while index < len(text) and not text[index].isspace():
-            index += 1
-        token = text[start:index]
-        if token == "":
-            raise ValueError("Empty tag term in search query")
-        if prefix == "-":
-            continue
-        if _UUID_TERM_RE.fullmatch(token) is not None:
-            continue
-        token_casefold = token.casefold()
-        if token_casefold not in tags_by_casefold:
-            tags_by_casefold[token_casefold] = token
+    parsed = parse_search_query(text)
+    for clause in parsed.clauses:
+        for token in clause.required_tags:
+            if _UUID_TERM_RE.fullmatch(token) is not None:
+                continue
+            token_casefold = token.casefold()
+            if token_casefold not in tags_by_casefold:
+                tags_by_casefold[token_casefold] = token
 
     if not tags_by_casefold:
         return None

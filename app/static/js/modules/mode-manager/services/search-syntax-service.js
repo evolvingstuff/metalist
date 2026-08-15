@@ -21,6 +21,7 @@ const TAG_CONTAINS_DISALLOWED = new Set([
 const TOKEN_START_DISALLOWED = new Set(['-', '+', '/']);
 
 const QUOTE_CHARS = new Set(['"', "'" ]);
+const OR_OPERATOR = 'OR';
 
 function isAsciiPrintable(char) {
     if (typeof char !== 'string' || char.length === 0) {
@@ -120,6 +121,8 @@ export function analyzeSearchQueryInput(rawInput) {
 
     let isComplete = true;
     let warningMessage = null;
+    let currentClauseTermCount = 0;
+    let endsWithOrOperator = false;
 
     let index = 0;
     while (index < rawInput.length) {
@@ -179,6 +182,8 @@ export function analyzeSearchQueryInput(rawInput) {
             }
 
             sanitizedTerms.push(closedToken);
+            currentClauseTermCount += 1;
+            endsWithOrOperator = false;
             continue;
         }
 
@@ -186,6 +191,31 @@ export function analyzeSearchQueryInput(rawInput) {
         while (index < rawInput.length && !isWhitespace(rawInput[index])) {
             rawToken += rawInput[index];
             index += 1;
+        }
+
+        if (rawToken === OR_OPERATOR) {
+            const prefixText = prefix === null ? '' : prefix;
+            normalizedTerms.push(`${prefixText}${OR_OPERATOR}`);
+            if (prefix !== null) {
+                isComplete = false;
+                if (!warningMessage) {
+                    warningMessage = 'OR is reserved and cannot be used as a tag';
+                }
+                endsWithOrOperator = false;
+                continue;
+            }
+            if (currentClauseTermCount === 0) {
+                isComplete = false;
+                if (!warningMessage) {
+                    warningMessage = 'OR requires a term before it';
+                }
+                endsWithOrOperator = true;
+                continue;
+            }
+            sanitizedTerms.push(OR_OPERATOR);
+            currentClauseTermCount = 0;
+            endsWithOrOperator = true;
+            continue;
         }
 
         const enforcedToken = enforceTagToken(rawToken);
@@ -196,11 +226,32 @@ export function analyzeSearchQueryInput(rawInput) {
             }
             continue;
         }
+        if (enforcedToken === OR_OPERATOR) {
+            normalizedTerms.push(OR_OPERATOR);
+            isComplete = false;
+            if (!warningMessage) {
+                warningMessage = 'OR is reserved and cannot be used as a tag';
+            }
+            endsWithOrOperator = false;
+            continue;
+        }
 
         const prefixText = prefix === null ? '' : prefix;
         const normalizedTag = `${prefixText}${enforcedToken}`;
         normalizedTerms.push(normalizedTag);
         sanitizedTerms.push(normalizedTag);
+        currentClauseTermCount += 1;
+        endsWithOrOperator = false;
+    }
+
+    if (endsWithOrOperator) {
+        isComplete = false;
+        if (!warningMessage) {
+            warningMessage = 'OR requires a term after it';
+        }
+        while (sanitizedTerms[sanitizedTerms.length - 1] === OR_OPERATOR) {
+            sanitizedTerms.pop();
+        }
     }
 
     const normalizedText = normalizedTerms.join(' ').trim();
@@ -283,6 +334,9 @@ export function findSearchTagAtIndex(rawInput, cursorIndex) {
                 tokenText = tokenText.slice(1);
             }
             const enforced = enforceTagToken(tokenText);
+            if (enforced === OR_OPERATOR) {
+                return null;
+            }
             if (enforced.length > 0) {
                 return {
                     tag: enforced,

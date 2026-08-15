@@ -47,7 +47,9 @@ Ontology rules also add **inferred tags** before search matching:
 - This affects suggestions only; actual tag search matching remains exact against effective tag terms.
 
 ### Creating Notes From Search
-- New notes created while a positive tag search is active are initialized with the required tag terms needed to keep the note visible in that search context.
+- New notes created while a positive tag search is active are initialized from
+  the positive tags and text terms in the **first clause only**. Later `OR`
+  clauses are not copied into the new note.
 - If an existing case-equivalent tag spelling is already common in the namespace, that spelling is used for the new note. Example: searching `ml3` adds `ML3` when existing notes use `ML3`.
 - If the new note already inherits a case-equivalent non-meta tag from an ancestor, the inherited tag is treated as satisfying the search and is not duplicated.
 
@@ -66,13 +68,24 @@ Text matching is:
 
 ## Matching Rules
 
-All required terms are AND-ed:
+Terms within a clause are AND-ed:
 - A note must contain **every required tag**.
 - A note must contain **every required text term** as a substring.
 
-Forbidden terms exclude matches:
+Forbidden terms exclude matches from their own clause:
 - A note must contain **none** of the forbidden tags.
 - A note must contain **none** of the forbidden text substrings.
+
+Exact uppercase, unquoted `OR` separates clauses, and a note matches if any
+complete clause matches. For example:
+- `A B C OR D E` means `(A AND B AND C) OR (D AND E)`.
+- `A OR B OR C D` means `A OR B OR (C AND D)`.
+- `A -X OR B` means `(A AND NOT X) OR B`; `-X` does not exclude a note that
+  matches the `B` clause.
+
+Leading, trailing, and consecutive `OR` operators are invalid. Lowercase `or`
+is an ordinary tag term, and quoted `"OR"` is an ordinary text term. Uppercase
+`OR` is reserved across tag-entry paths and cannot be created as a tag.
 
 ## Tree Inclusion
 

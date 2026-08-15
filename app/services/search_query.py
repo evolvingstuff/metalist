@@ -6,11 +6,37 @@ from typing import FrozenSet, List, Optional, Set, Tuple
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedSearchQuery:
+class SearchClause:
     required_tags: FrozenSet[str]
     forbidden_tags: FrozenSet[str]
     required_text: Tuple[str, ...]
     forbidden_text: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedSearchQuery:
+    clauses: Tuple[SearchClause, ...]
+
+    @property
+    def first_clause(self) -> SearchClause:
+        if len(self.clauses) == 0:
+            raise RuntimeError("ParsedSearchQuery must contain at least one clause")
+        return self.clauses[0]
+
+
+def _build_clause(
+    *,
+    required_tags: Set[str],
+    forbidden_tags: Set[str],
+    required_text: List[str],
+    forbidden_text: List[str],
+) -> SearchClause:
+    return SearchClause(
+        required_tags=frozenset(required_tags),
+        forbidden_tags=frozenset(forbidden_tags),
+        required_text=tuple(required_text),
+        forbidden_text=tuple(forbidden_text),
+    )
 
 
 def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
@@ -20,16 +46,22 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
     text = normalized_text.strip()
     if text == "":
         return ParsedSearchQuery(
-            required_tags=frozenset(),
-            forbidden_tags=frozenset(),
-            required_text=(),
-            forbidden_text=(),
+            clauses=(
+                SearchClause(
+                    required_tags=frozenset(),
+                    forbidden_tags=frozenset(),
+                    required_text=(),
+                    forbidden_text=(),
+                ),
+            ),
         )
 
+    clauses: List[SearchClause] = []
     required_tags: Set[str] = set()
     forbidden_tags: Set[str] = set()
     required_text: List[str] = []
     forbidden_text: List[str] = []
+    clause_term_count = 0
 
     index = 0
     while index < len(text):
@@ -66,6 +98,7 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
                 forbidden_text.append(phrase)
             else:
                 required_text.append(phrase)
+            clause_term_count += 1
             index = next_index
             continue
 
@@ -76,17 +109,43 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
         if token == "":
             raise ValueError("Empty tag term in search query")
 
+        if token == "OR":
+            if prefix is not None:
+                raise ValueError("OR is reserved and cannot be used as a tag")
+            if clause_term_count == 0:
+                raise ValueError("OR requires a term before it")
+            clauses.append(
+                _build_clause(
+                    required_tags=required_tags,
+                    forbidden_tags=forbidden_tags,
+                    required_text=required_text,
+                    forbidden_text=forbidden_text,
+                )
+            )
+            required_tags = set()
+            forbidden_tags = set()
+            required_text = []
+            forbidden_text = []
+            clause_term_count = 0
+            continue
+
         if prefix == "-":
             forbidden_tags.add(token)
         else:
             required_tags.add(token)
+        clause_term_count += 1
 
-    return ParsedSearchQuery(
-        required_tags=frozenset(required_tags),
-        forbidden_tags=frozenset(forbidden_tags),
-        required_text=tuple(required_text),
-        forbidden_text=tuple(forbidden_text),
+    if clause_term_count == 0:
+        raise ValueError("OR requires a term after it")
+    clauses.append(
+        _build_clause(
+            required_tags=required_tags,
+            forbidden_tags=forbidden_tags,
+            required_text=required_text,
+            forbidden_text=forbidden_text,
+        )
     )
+    return ParsedSearchQuery(clauses=tuple(clauses))
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -137,4 +196,3 @@ def _unescape_quoted_inner(normalized_inner: str, quote_char: str) -> str:
         output += char
         index += 1
     return output
-

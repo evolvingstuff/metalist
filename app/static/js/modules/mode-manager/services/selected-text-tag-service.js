@@ -56,7 +56,8 @@ export function normalizeSelectedTextForTagAction(selectedText) {
     if (normalizedSelectedText.length === 0) {
         return null;
     }
-    if (buildDefaultTagCandidate(normalizedSelectedText).length === 0) {
+    const candidate = buildDefaultTagCandidate(normalizedSelectedText);
+    if (candidate.length === 0 || candidate === 'OR') {
         return null;
     }
     return normalizedSelectedText;

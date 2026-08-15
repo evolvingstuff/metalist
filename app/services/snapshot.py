@@ -32,7 +32,7 @@ from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
 from app.services.search_index import search_index
-from app.services.search_query import ParsedSearchQuery, parse_search_query
+from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
 from app.utils.text_utils import strip_html
@@ -54,12 +54,12 @@ class SearchScope:
     matched_note_ids: Optional[Set[str]] = None
 
 
-def _extract_direct_uuid_note_ids(parsed_query: ParsedSearchQuery) -> Set[str]:
+def _extract_direct_uuid_note_ids(clause: SearchClause) -> Set[str]:
     candidates: Set[str] = set()
-    for token in parsed_query.required_tags:
+    for token in clause.required_tags:
         for match in _UUID_IN_TEXT_RE.finditer(token):
             candidates.add(match.group(0).lower())
-    for phrase in parsed_query.required_text:
+    for phrase in clause.required_text:
         for match in _UUID_IN_TEXT_RE.finditer(phrase):
             candidates.add(match.group(0).lower())
 
@@ -71,15 +71,13 @@ def _extract_direct_uuid_note_ids(parsed_query: ParsedSearchQuery) -> Set[str]:
 
 
 def _has_search_terms(parsed: ParsedSearchQuery) -> bool:
-    if len(parsed.required_tags) > 0:
-        return True
-    if len(parsed.forbidden_tags) > 0:
-        return True
-    if len(parsed.required_text) > 0:
-        return True
-    if len(parsed.forbidden_text) > 0:
-        return True
-    return False
+    return any(
+        clause.required_tags
+        or clause.forbidden_tags
+        or clause.required_text
+        or clause.forbidden_text
+        for clause in parsed.clauses
+    )
 
 
 def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
@@ -110,20 +108,63 @@ def _include_descendants(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
             to_visit.append(child_id)
 
 
-def _quote_text_term_for_query(phrase: str) -> str:
-    if not isinstance(phrase, str):
-        raise TypeError(f"search phrase must be a string, got {type(phrase)}")
+def _positive_tag_clause(tag: str) -> SearchClause:
+    return SearchClause(
+        required_tags=frozenset({tag}),
+        forbidden_tags=frozenset(),
+        required_text=(),
+        forbidden_text=(),
+    )
 
-    if '"' not in phrase:
-        escaped = phrase.replace("\\", "\\\\")
-        return f'"{escaped}"'
 
-    if "'" not in phrase:
-        escaped = phrase.replace("\\", "\\\\").replace("'", "\\'")
-        return f"'{escaped}'"
+def _positive_text_clause(phrase: str) -> SearchClause:
+    return SearchClause(
+        required_tags=frozenset(),
+        forbidden_tags=frozenset(),
+        required_text=(phrase,),
+        forbidden_text=(),
+    )
 
-    escaped = phrase.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+
+def _resolve_clause_note_sets(
+    *,
+    clause: SearchClause,
+    ordered_root_ids: List[str],
+) -> Tuple[Set[str], Set[str]]:
+    has_positive_terms = bool(clause.required_tags)
+    if clause.required_text:
+        has_positive_terms = True
+    direct_uuid_note_ids = _extract_direct_uuid_note_ids(clause)
+
+    if has_positive_terms:
+        positively_matched_note_ids = set(search_index.query_clause_note_ids(clause))
+    else:
+        positively_matched_note_ids = set(ordered_root_ids)
+        _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
+
+    positively_matched_note_ids.update(direct_uuid_note_ids)
+    allowed_note_ids = set(positively_matched_note_ids)
+
+    excluded_note_ids: Set[str] = set()
+    for tag in clause.forbidden_tags:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_tag_clause(tag)))
+    for phrase in clause.forbidden_text:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
+
+    _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
+    if not has_positive_terms:
+        _include_descendants(allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+    if excluded_note_ids:
+        allowed_note_ids.difference_update(excluded_note_ids)
+        positively_matched_note_ids.difference_update(excluded_note_ids)
+    if direct_uuid_note_ids:
+        allowed_note_ids.update(direct_uuid_note_ids)
+        positively_matched_note_ids.update(direct_uuid_note_ids)
+        _include_ancestors(allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
+        _include_descendants(allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
+        _include_descendants(positively_matched_note_ids, starting_ids=set(direct_uuid_note_ids))
+
+    return allowed_note_ids, positively_matched_note_ids
 
 
 def resolve_search_scope(
@@ -164,40 +205,15 @@ def resolve_search_scope(
                 normalized_sort_mode,
                 root_timestamps=root_sort_timestamps,
             )
-    has_positive_terms = False
-    if parsed.required_tags:
-        has_positive_terms = True
-    if parsed.required_text:
-        has_positive_terms = True
-    direct_uuid_note_ids = _extract_direct_uuid_note_ids(parsed)
-
-    if has_positive_terms:
-        positively_matched_note_ids = set(search_index.query_note_ids(search))
-    else:
-        positively_matched_note_ids = set(ordered_root_ids)
-        _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
-
-    positively_matched_note_ids.update(direct_uuid_note_ids)
-    search_allowed_note_ids = set(positively_matched_note_ids)
-
-    excluded_note_ids: Set[str] = set()
-    for tag in parsed.forbidden_tags:
-        excluded_note_ids.update(search_index.query_note_ids(tag))
-    for phrase in parsed.forbidden_text:
-        excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
-
-    _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
-    if not has_positive_terms:
-        _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
-    if excluded_note_ids:
-        search_allowed_note_ids.difference_update(excluded_note_ids)
-        positively_matched_note_ids.difference_update(excluded_note_ids)
-    if direct_uuid_note_ids:
-        search_allowed_note_ids.update(direct_uuid_note_ids)
-        positively_matched_note_ids.update(direct_uuid_note_ids)
-        _include_ancestors(search_allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
-        _include_descendants(search_allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
-        _include_descendants(positively_matched_note_ids, starting_ids=set(direct_uuid_note_ids))
+    search_allowed_note_ids: Set[str] = set()
+    positively_matched_note_ids: Set[str] = set()
+    for clause in parsed.clauses:
+        clause_allowed_note_ids, clause_matched_note_ids = _resolve_clause_note_sets(
+            clause=clause,
+            ordered_root_ids=ordered_root_ids,
+        )
+        search_allowed_note_ids.update(clause_allowed_note_ids)
+        positively_matched_note_ids.update(clause_matched_note_ids)
 
     search_root_ids_ordered_for_count = [
         root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids

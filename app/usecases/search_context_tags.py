@@ -39,7 +39,8 @@ def ensure_tags_match_search_query(
         raise TypeError(f"search_query must be a string, got {type(search_query)}")
 
     parsed = parse_search_query(search_query)
-    if not parsed.required_tags and not parsed.required_text:
+    first_clause = parsed.first_clause
+    if not first_clause.required_tags and not first_clause.required_text:
         return tags
 
     inherited_non_meta = compute_inherited_non_meta_tag_terms(parent_id)
@@ -52,7 +53,7 @@ def ensure_tags_match_search_query(
     required_tag_terms = dedupe_tag_terms_by_casefold(
         [
             prefer_existing_tag_case(term, preferred_by_casefold)
-            for term in sorted(parsed.required_tags)
+            for term in sorted(first_clause.required_tags)
         ]
     )
     for term in required_tag_terms:
@@ -72,12 +73,12 @@ def ensure_tags_match_search_query(
         else:
             next_tags = f"{next_tags} {' '.join(additions)}"
 
-    if not parsed.required_text:
+    if not first_clause.required_text:
         return next_tags
 
     searchable = build_searchable_text_casefold(content, next_tags)
     missing_phrases: list[str] = []
-    for phrase in parsed.required_text:
+    for phrase in first_clause.required_text:
         if phrase.casefold() in searchable:
             continue
         missing_phrases.append(phrase)

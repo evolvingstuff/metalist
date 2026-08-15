@@ -1,4 +1,11 @@
-from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
+import pytest
+
+from app.services.search_index import (
+    SearchIndex,
+    SearchRecord,
+    _parse_search_query_for_suggestions,
+    extract_tags_for_search,
+)
 from app.services.search_query import parse_search_query
 from app.utils.text_utils import strip_html
 
@@ -24,10 +31,28 @@ def test_strip_html_ignores_script_and_inserts_whitespace() -> None:
 
 def test_search_query_parser_tags_and_text() -> None:
     parsed = parse_search_query("foo -bar \"hello world\" -'bad'")
-    assert parsed.required_tags == frozenset({"foo"})
-    assert parsed.forbidden_tags == frozenset({"bar"})
-    assert parsed.required_text == ("hello world",)
-    assert parsed.forbidden_text == ("bad",)
+    assert len(parsed.clauses) == 1
+    clause = parsed.clauses[0]
+    assert clause.required_tags == frozenset({"foo"})
+    assert clause.forbidden_tags == frozenset({"bar"})
+    assert clause.required_text == ("hello world",)
+    assert clause.forbidden_text == ("bad",)
+
+
+def test_search_query_parser_builds_ordered_or_clauses() -> None:
+    parsed = parse_search_query('A B C OR D -E OR "some text"')
+
+    assert len(parsed.clauses) == 3
+    assert parsed.clauses[0].required_tags == frozenset({"A", "B", "C"})
+    assert parsed.clauses[1].required_tags == frozenset({"D"})
+    assert parsed.clauses[1].forbidden_tags == frozenset({"E"})
+    assert parsed.clauses[2].required_text == ("some text",)
+
+
+def test_search_query_parser_rejects_empty_or_clauses_and_prefixed_or() -> None:
+    for query in ("OR A", "A OR", "A OR OR B", "+OR", "-OR"):
+        with pytest.raises(ValueError):
+            parse_search_query(query)
 
 
 def test_search_index_tag_and_text_queries() -> None:
@@ -59,6 +84,63 @@ def test_search_index_tag_and_text_queries() -> None:
     assert index.query_note_ids("foo \"world\"") == {"n1"}
     assert index.query_note_ids("foo -bar") == {"n1"}
     assert index.query_note_ids("-\"world\"") == {"n2", "n3"}
+
+
+def test_search_index_unions_or_clauses_with_clause_local_negative_terms() -> None:
+    index = _build_index(
+        [
+            SearchRecord(
+                note_id="n1",
+                content_text="Hello world",
+                tags="A B",
+                tag_terms=extract_tags_for_search("A B"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_text="Other",
+                tags="C",
+                tag_terms=extract_tags_for_search("C"),
+            ),
+            SearchRecord(
+                note_id="n3",
+                content_text="Other",
+                tags="C blocked",
+                tag_terms=extract_tags_for_search("C blocked"),
+            ),
+            SearchRecord(
+                note_id="lowercase-or",
+                content_text="Other",
+                tags="or",
+                tag_terms=extract_tags_for_search("or"),
+            ),
+        ]
+    )
+
+    assert index.query_note_ids("A B OR C -blocked") == {"n1", "n2"}
+    assert index.query_note_ids("or") == {"lowercase-or"}
+
+
+def test_quoted_or_remains_a_text_term() -> None:
+    index = _build_index(
+        [
+            SearchRecord(
+                note_id="text-or",
+                content_text="This or that",
+                tags="",
+                tag_terms=frozenset(),
+            ),
+        ]
+    )
+
+    assert index.query_note_ids('"OR"') == {"text-or"}
+
+
+def test_search_suggestion_context_resets_anchors_after_or() -> None:
+    assert _parse_search_query_for_suggestions("alpha beta OR gam") == ((), "gam")
+
+
+def test_exact_uppercase_or_is_not_indexed_as_a_tag() -> None:
+    assert extract_tags_for_search("OR or [alpha OR]") == frozenset({"or", "alpha"})
 
 
 def test_search_index_untagged_query_ignores_meta_tags() -> None:

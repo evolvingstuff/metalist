@@ -9,7 +9,7 @@ from typing import Callable, DefaultDict, Dict, FrozenSet, Iterable, List, Optio
 from loguru import logger
 
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token, list_known_meta_tag_terms
-from app.services.search_query import ParsedSearchQuery, parse_search_query
+from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.search_text import build_searchable_text_casefold_from_plaintext
 
@@ -23,6 +23,7 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
 
     anchors: List[str] = []
     partial_prefix: Optional[str] = None
+    clause_term_count = 0
     has_trailing_whitespace = len(raw_input) > 0 and raw_input[-1].isspace()
 
     index = 0
@@ -58,6 +59,7 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
                 index += 1
             if not closed:
                 return tuple(anchors), None
+            clause_term_count += 1
             continue
 
         start = index
@@ -68,14 +70,27 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
         if token == "":
             continue
 
+        if token == "OR":
+            if prefix is not None:
+                return tuple(anchors), None
+            if clause_term_count == 0:
+                return tuple(anchors), None
+            if index >= length and not raw_input[-1].isspace():
+                return tuple(anchors), None
+            anchors = []
+            clause_term_count = 0
+            continue
+
         is_partial = index >= length and not raw_input[-1].isspace()
         if is_partial:
             partial_prefix = token
             continue
 
         if prefix == "-":
+            clause_term_count += 1
             continue
         anchors.append(token)
+        clause_term_count += 1
 
     if partial_prefix is None and has_trailing_whitespace:
         partial_prefix = ""
@@ -98,10 +113,11 @@ def extract_tags_for_search(tags: str) -> FrozenSet[str]:
     for token in _tokenize_tag_bar(tags):
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is None:
-            terms.add(base)
+            if base != "OR":
+                terms.add(base)
             continue
         for inner in base.split():
-            if inner:
+            if inner and inner != "OR":
                 terms.add(inner)
     return frozenset(terms)
 
@@ -512,21 +528,26 @@ class SearchIndex:
 
         parse_ms = (time.perf_counter() - t0) * 1000
 
-        has_terms = False
-        if len(parsed.required_tags) > 0:
-            has_terms = True
-        if len(parsed.forbidden_tags) > 0:
-            has_terms = True
-        if len(parsed.required_text) > 0:
-            has_terms = True
-        if len(parsed.forbidden_text) > 0:
-            has_terms = True
+        has_terms = any(
+            clause.required_tags
+            or clause.forbidden_tags
+            or clause.required_text
+            or clause.forbidden_text
+            for clause in parsed.clauses
+        )
         if not has_terms:
             return set()
 
+        required_tag_count = sum(len(clause.required_tags) for clause in parsed.clauses)
+        forbidden_tag_count = sum(len(clause.forbidden_tags) for clause in parsed.clauses)
+        required_text_count = sum(len(clause.required_text) for clause in parsed.clauses)
+        forbidden_text_count = sum(len(clause.forbidden_text) for clause in parsed.clauses)
+
         t1 = time.perf_counter()
         with self._lock:
-            candidate_ids = self._candidate_note_ids_locked(parsed)
+            candidate_ids: Set[int] = set()
+            for clause in parsed.clauses:
+                candidate_ids.update(self._candidate_note_ids_locked(clause))
             candidate_count = len(candidate_ids)
             if not candidate_ids:
                 candidate_ms = (time.perf_counter() - t1) * 1000
@@ -541,10 +562,11 @@ class SearchIndex:
                         "candidate_count": 0,
                         "verified_count": 0,
                         "matched_count": 0,
-                        "required_tag_count": len(parsed.required_tags),
-                        "forbidden_tag_count": len(parsed.forbidden_tags),
-                        "required_text_count": len(parsed.required_text),
-                        "forbidden_text_count": len(parsed.forbidden_text),
+                        "required_tag_count": required_tag_count,
+                        "forbidden_tag_count": forbidden_tag_count,
+                        "required_text_count": required_text_count,
+                        "forbidden_text_count": forbidden_text_count,
+                        "or_clause_count": len(parsed.clauses),
                         "revision": self._revision,
                     },
                 ).info("search.query.finish")
@@ -557,7 +579,10 @@ class SearchIndex:
                 verified += 1
                 if note_int_id not in self._alive:
                     continue
-                if not self._verify_note_matches_locked(note_int_id, parsed):
+                if not any(
+                    self._verify_note_matches_locked(note_int_id, clause)
+                    for clause in parsed.clauses
+                ):
                     continue
                 matched_note_ids.add(self._id_to_uuid[note_int_id])
 
@@ -578,14 +603,24 @@ class SearchIndex:
                 "candidate_count": candidate_count,
                 "verified_count": verified,
                 "matched_count": len(matched_note_ids),
-                "required_tag_count": len(parsed.required_tags),
-                "forbidden_tag_count": len(parsed.forbidden_tags),
-                "required_text_count": len(parsed.required_text),
-                "forbidden_text_count": len(parsed.forbidden_text),
+                "required_tag_count": required_tag_count,
+                "forbidden_tag_count": forbidden_tag_count,
+                "required_text_count": required_text_count,
+                "forbidden_text_count": forbidden_text_count,
+                "or_clause_count": len(parsed.clauses),
                 "revision": self._revision,
             },
         ).info("search.query.finish")
         return matched_note_ids
+
+    def query_clause_note_ids(self, clause: SearchClause) -> Set[str]:
+        if not isinstance(clause, SearchClause):
+            raise TypeError(f"clause must be SearchClause, got {type(clause)}")
+        with self._lock:
+            return {
+                self._id_to_uuid[note_int_id]
+                for note_int_id in self._matching_note_int_ids_for_clause_locked(clause)
+            }
 
     def query_untagged_note_ids(self) -> Set[str]:
         with self._lock:
@@ -737,7 +772,7 @@ class SearchIndex:
         partial_prefix_casefold = partial_prefix.casefold()
         representatives: Dict[str, str] = {}
         for term in self._tag_notes.keys():
-            if not term or term.startswith("@"):
+            if not term or term == "OR" or term.startswith("@"):
                 continue
             term_casefold = term.casefold()
             if term_casefold in anchor_casefold_set:
@@ -785,10 +820,10 @@ class SearchIndex:
         candidates.sort()
         return [term for _, __, ___, term in candidates[:limit]]
 
-    def _candidate_note_ids_locked(self, parsed: ParsedSearchQuery) -> Set[int]:
+    def _candidate_note_ids_locked(self, clause: SearchClause) -> Set[int]:
         constraints: List[Set[int]] = []
 
-        for tag in parsed.required_tags:
+        for tag in clause.required_tags:
             posting = self._tag_notes_casefold.get(tag.casefold())
             if posting is None:
                 return set()
@@ -806,8 +841,8 @@ class SearchIndex:
         if candidate_ids is None:
             candidate_ids = set(self._alive)
 
-        if parsed.forbidden_tags:
-            for tag in parsed.forbidden_tags:
+        if clause.forbidden_tags:
+            for tag in clause.forbidden_tags:
                 posting = self._tag_notes_casefold.get(tag.casefold())
                 if posting is None:
                     continue
@@ -815,16 +850,25 @@ class SearchIndex:
 
         return candidate_ids
 
-    def _verify_note_matches_locked(self, note_int_id: int, parsed: ParsedSearchQuery) -> bool:
+    def _matching_note_int_ids_for_clause_locked(self, clause: SearchClause) -> Set[int]:
+        candidate_ids = self._candidate_note_ids_locked(clause)
+        return {
+            note_int_id
+            for note_int_id in candidate_ids
+            if note_int_id in self._alive
+            and self._verify_note_matches_locked(note_int_id, clause)
+        }
+
+    def _verify_note_matches_locked(self, note_int_id: int, clause: SearchClause) -> bool:
         text_casefold = self._note_text_casefold[note_int_id]
-        for term in parsed.required_text:
+        for term in clause.required_text:
             if term.casefold() not in text_casefold:
                 return False
-        for term in parsed.forbidden_text:
+        for term in clause.forbidden_text:
             if term.casefold() in text_casefold:
                 return False
         note_tag_terms_casefold = self._note_tag_terms_casefold[note_int_id]
-        for tag in parsed.forbidden_tags:
+        for tag in clause.forbidden_tags:
             if tag.casefold() in note_tag_terms_casefold:
                 return False
         return True

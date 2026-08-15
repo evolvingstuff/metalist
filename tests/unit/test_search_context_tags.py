@@ -38,6 +38,17 @@ def test_ensure_tags_match_search_query_dedupes_case_equivalent_search_tags(monk
     assert tags == "ML3"
 
 
+def test_ensure_tags_match_search_query_uses_only_first_or_clause() -> None:
+    tags = ensure_tags_match_search_query(
+        parent_id=None,
+        content="",
+        tags="",
+        search_query='alpha beta "first phrase" OR gamma "second phrase"',
+    )
+
+    assert tags == "alpha beta /*first phrase*/"
+
+
 def test_ensure_tags_match_search_query_compares_explicit_tags_case_insensitively(monkeypatch) -> None:
     monkeypatch.setattr(
         search_context_tags_module.search_index,

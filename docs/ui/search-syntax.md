@@ -8,7 +8,22 @@
 - The untagged-notes view is also outside search syntax. Select it from the command palette rather than entering `@untagged`.
 
 ## Terms
-Search queries are a whitespace-separated list of **terms**.
+Search queries are a whitespace-separated list of **terms** and optional `OR`
+operators. Terms next to each other form an implicit-AND clause; `OR` separates
+clauses.
+
+### OR Operator
+- Only exact uppercase, unquoted `OR` is an operator.
+- Every clause must contain at least one term, so leading, trailing, and
+  consecutive `OR` operators are invalid.
+- `+OR` and `-OR` are invalid because uppercase `OR` is reserved and cannot be
+  used as a tag.
+- Lowercase or mixed-case forms such as `or` and `Or` remain ordinary tag terms.
+- Quoted `"OR"` and `'OR'` remain ordinary text terms.
+
+Examples:
+- `A B C OR D E`
+- `A OR B OR C D`
 
 ### Tag Terms
 - `foo`
@@ -52,6 +67,8 @@ Rules:
 - **Empty quoted strings**: incomplete and warned.
   - Examples: `""` and `''` → warn `Enter text inside quotes`
 - **Dangling prefixes**: `+` or `-` alone is incomplete, but does not immediately warn.
+- **Empty OR clauses**: leading, trailing, or consecutive `OR` is incomplete and
+  warned.
 
 ## Implementation
 - Verifier: `app/static/js/modules/mode-manager/services/search-syntax-service.js`

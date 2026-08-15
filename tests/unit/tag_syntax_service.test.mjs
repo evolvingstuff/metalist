@@ -91,6 +91,16 @@ test('normalizeTagBarInput strips illegal assignment separators and invalid tag 
     assert.equal(normalizeTagBarInput('abc=<script>'), 'abc=script');
 });
 
+test('exact uppercase OR is reserved and cannot be saved as a tag', () => {
+    const reserved = analyzeTagBarInput('alpha OR beta');
+    assert.equal(reserved.isValid, false);
+    assert.equal(reserved.errorMessage, 'OR is reserved for search');
+
+    const lowercase = analyzeTagBarInput('alpha or beta');
+    assert.equal(lowercase.isValid, true);
+    assert.equal(lowercase.normalizedText, 'alpha or beta');
+});
+
 test('parseTagBarSuggestionContext exposes all explicit tags including the current token', () => {
     const rawInput = 'linux Pandoc';
     const context = parseTagBarSuggestionContext(rawInput, rawInput.length);

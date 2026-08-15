@@ -50,7 +50,7 @@ def _extract_positive_text_terms(search_query: Optional[str]) -> tuple[str, ...]
     if search_query.strip() == "":
         return ()
     parsed = parse_search_query(search_query)
-    return parsed.required_text
+    return parsed.first_clause.required_text
 
 
 def _extract_positive_tag_terms(search_query: Optional[str]) -> tuple[str, ...]:
@@ -61,12 +61,13 @@ def _extract_positive_tag_terms(search_query: Optional[str]) -> tuple[str, ...]:
     if search_query.strip() == "":
         return ()
     parsed = parse_search_query(search_query)
-    if not parsed.required_tags:
+    first_clause = parsed.first_clause
+    if not first_clause.required_tags:
         return ()
     preferred_by_casefold = build_preferred_tag_case_map(search_index.list_tag_frequencies())
     preferred_terms = [
         prefer_existing_tag_case(term, preferred_by_casefold)
-        for term in sorted(parsed.required_tags)
+        for term in sorted(first_clause.required_tags)
     ]
     return tuple(dedupe_tag_terms_by_casefold(preferred_terms))
 

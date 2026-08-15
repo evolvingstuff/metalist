@@ -494,6 +494,7 @@ export function analyzeTagBarInput(rawInput) {
 
 
     let unclosedWrapperSuffix = null;
+    let hasReservedOrTag = false;
 
     const sanitizedSegments = [];
     const normalizedSegments = [];
@@ -505,6 +506,14 @@ export function analyzeTagBarInput(rawInput) {
                 if (wrapperInfo.shouldWarn && !unclosedWrapperSuffix) {
                     unclosedWrapperSuffix = wrapperInfo.missingSuffix;
                 }
+                continue;
+            }
+            const closedWrapperInfo = unwrapWrapperToken(segment.text);
+            const tagTerms = closedWrapperInfo
+                ? closedWrapperInfo.inner.split(/\s+/).filter(Boolean)
+                : [segment.text];
+            if (tagTerms.includes('OR')) {
+                hasReservedOrTag = true;
                 continue;
             }
         }
@@ -522,7 +531,9 @@ export function analyzeTagBarInput(rawInput) {
 
     const errorMessage = shouldWarnUnclosedComment
         ? 'Close comment with */'
-        : (unclosedWrapperSuffix ? `Close tag wrapper with ${unclosedWrapperSuffix}` : null);
+        : (unclosedWrapperSuffix
+            ? `Close tag wrapper with ${unclosedWrapperSuffix}`
+            : (hasReservedOrTag ? 'OR is reserved for search' : null));
 
     return {
         isValid: errorMessage === null,

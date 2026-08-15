@@ -35,8 +35,8 @@ class _FakeNoteStore:
 
 
 class _FakeSearchIndex:
-    def query_note_ids(self, search: str) -> set[str]:
-        del search
+    def query_clause_note_ids(self, clause: object) -> set[str]:
+        del clause
         return set()
 
 
