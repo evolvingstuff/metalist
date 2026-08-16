@@ -95,6 +95,8 @@ _DISALLOWED_TAG_CHARS = set(':"\\><=[]{}()*|;~`')
 def _is_valid_tag_token(token: str) -> bool:
     if not token:
         return False
+    if token == "OR":
+        return False
     if any(ch.isspace() for ch in token):
         return False
     if token[0] in ("-", "+", "/"):

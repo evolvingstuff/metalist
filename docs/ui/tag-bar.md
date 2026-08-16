@@ -13,6 +13,9 @@
 - A normal tag token allows only ASCII-printable characters and disallows: `: , " \\ > < [ ] { } ( ) * | ; ~ ``.
 - One `=` is allowed inside regular or meta tags when valid tag characters occur on both sides (for example `abc=xyz` or `@size=2.0`). It cannot appear at the start/end, and multiple `=` characters are removed during normalization.
 - Tag tokens also cannot start with `-`, `+`, or `/`.
+- Exact uppercase `OR` is reserved as the search disjunction operator and cannot
+  be saved as a tag, including inside a wrapper. Lowercase `or` and mixed-case
+  variants remain valid tags.
 
 ## Wrapper Tags
 A tag token may be wrapped with matching brackets:
@@ -148,7 +151,7 @@ Unclosed comments behave like unclosed wrappers:
 - Existing explicit namespace tags are matched case-insensitively with spaces, `-`, `_`, `.`, and `/` treated as equivalent joiners. The most-used existing spelling and joiner style is reused.
 - If the note already has an equivalent explicit tag, the action is a no-op and does not add a duplicate.
 - If no equivalent tag exists, a new tag preserves the selection's capitalization, replaces whitespace with dashes, and removes characters disallowed by the tag-bar grammar. This preserves acronyms such as `GPT`.
-- Selections longer than 25 characters, blank selections, and selections with no usable tag characters do not show the action.
+- Selections longer than 25 characters, blank selections, selections with no usable tag characters, and exact uppercase `OR` do not show the action.
 
 ## Add Style Context Menu
 - Right-clicking the actively edited note adds **Add Style**. Hovering or selecting it opens a connected flyout submenu containing the supported visual and renderer meta tags.

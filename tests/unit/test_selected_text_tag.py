@@ -28,6 +28,13 @@ def test_build_default_tag_rejects_long_or_empty_sanitized_selection() -> None:
         build_default_tag_from_selected_text("<<<>>>")
 
 
+def test_build_default_tag_rejects_reserved_or_operator() -> None:
+    with pytest.raises(SelectedTextTagValidationError, match="reserved for search"):
+        build_default_tag_from_selected_text("OR")
+
+    assert build_default_tag_from_selected_text("or") == "or"
+
+
 def test_find_equivalent_existing_tag_matches_case_and_joiner_variants() -> None:
     existing = {
         "Neural.Networks": 2,

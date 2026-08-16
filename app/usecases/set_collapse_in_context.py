@@ -6,28 +6,12 @@ from typing import Dict, List, Optional, Set
 
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
-from app.services.search_query import parse_search_query
+from app.services.search_query import SearchClause, parse_search_query
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.undo_state import reset_undo_stack
 from app.usecases.base import QueryCommand
 from app.usecases.collapse import apply_set_collapse_bulk
-
-
-def _quote_text_term_for_query(phrase: str) -> str:
-    if not isinstance(phrase, str):
-        raise TypeError(f"search phrase must be a string, got {type(phrase)}")
-
-    if '"' not in phrase:
-        escaped = phrase.replace('\\', '\\\\')
-        return f'"{escaped}"'
-
-    if "'" not in phrase:
-        escaped = phrase.replace('\\', '\\\\').replace("'", "\\'")
-        return f"'{escaped}'"
-
-    escaped = phrase.replace('\\', '\\\\').replace('\"', '\\"')
-    return f'"{escaped}"'
 
 
 def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
@@ -68,33 +52,50 @@ def _collect_context_root_ids(search_query: Optional[str]) -> List[str]:
         raise TypeError("search_query must be a string or null")
 
     parsed = parse_search_query(search_query)
-    has_terms = False
-    if len(parsed.required_tags) > 0:
-        has_terms = True
-    if len(parsed.forbidden_tags) > 0:
-        has_terms = True
-    if len(parsed.required_text) > 0:
-        has_terms = True
-    if len(parsed.forbidden_text) > 0:
-        has_terms = True
+    has_terms = any(
+        clause.required_tags
+        or clause.forbidden_tags
+        or clause.required_text
+        or clause.forbidden_text
+        for clause in parsed.clauses
+    )
 
     if not has_terms:
         return list(ordered_root_ids)
 
-    positively_matched_note_ids = set(search_index.query_note_ids(search_query))
-    allowed_note_ids = set(positively_matched_note_ids)
+    allowed_note_ids: Set[str] = set()
+    for clause in parsed.clauses:
+        clause_matched_note_ids = set(search_index.query_clause_note_ids(clause))
+        clause_allowed_note_ids = set(clause_matched_note_ids)
 
-    excluded_note_ids: Set[str] = set()
-    for tag in parsed.forbidden_tags:
-        excluded_note_ids.update(search_index.query_note_ids(tag))
+        _include_ancestors(clause_allowed_note_ids, starting_ids=set(clause_matched_note_ids))
+        _include_descendants(clause_allowed_note_ids, starting_ids=set(clause_matched_note_ids))
 
-    for phrase in parsed.forbidden_text:
-        excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
-
-    _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
-    _include_descendants(allowed_note_ids, starting_ids=set(positively_matched_note_ids))
-    if excluded_note_ids:
-        allowed_note_ids.difference_update(excluded_note_ids)
+        excluded_note_ids: Set[str] = set()
+        for tag in clause.forbidden_tags:
+            excluded_note_ids.update(
+                search_index.query_clause_note_ids(
+                    SearchClause(
+                        required_tags=frozenset({tag}),
+                        forbidden_tags=frozenset(),
+                        required_text=(),
+                        forbidden_text=(),
+                    )
+                )
+            )
+        for phrase in clause.forbidden_text:
+            excluded_note_ids.update(
+                search_index.query_clause_note_ids(
+                    SearchClause(
+                        required_tags=frozenset(),
+                        forbidden_tags=frozenset(),
+                        required_text=(phrase,),
+                        forbidden_text=(),
+                    )
+                )
+            )
+        clause_allowed_note_ids.difference_update(excluded_note_ids)
+        allowed_note_ids.update(clause_allowed_note_ids)
 
     return [root_id for root_id in ordered_root_ids if root_id in allowed_note_ids]
 

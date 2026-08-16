@@ -177,7 +177,7 @@ metalist
 ## Gotchas / Open Issues
 - Removing the `app/services/store.py` adapter and calling `NoteStore` directly from all usecases still exposes referential integrity issues in some undo flows (delete/move). Adapter remains; revisit with tighter invariants + targeted tests.
 - Search is server-side + indexed: `app/services/search_index.py` (tag postings + trigram postings over `strip_html(content)`), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
-  - Query terms: unquoted tokens are tag terms; quoted strings are text terms (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
+  - Query terms: unquoted tokens are tag terms; quoted strings are text terms. Exact uppercase unquoted `OR` separates implicit-AND clauses, with forbidden terms scoped to their clause; uppercase `OR` is reserved from tag creation (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
   - Date constraints live outside search syntax; use the RHS activity calendar/date-filter state instead.
   - Views remain windowed (roots chunked; infinite scroll extends as needed).
 - Root sorting helper: `app/services/root_sorting.py` centralizes sort-mode normalization, subtree-max root timestamps, HTML-stripped subtree content-volume totals, server-side root ordering, and date-bucket metadata for the client.

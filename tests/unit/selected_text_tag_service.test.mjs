@@ -21,3 +21,9 @@ test('normalizeSelectedTextForTagAction rejects selections over the limit', () =
 test('normalizeSelectedTextForTagAction rejects text with no usable tag characters', () => {
     assert.equal(normalizeSelectedTextForTagAction('<<<>>>'), null);
 });
+
+
+test('normalizeSelectedTextForTagAction rejects exact uppercase OR only', () => {
+    assert.equal(normalizeSelectedTextForTagAction('OR'), null);
+    assert.equal(normalizeSelectedTextForTagAction('or'), 'or');
+});

@@ -76,6 +76,8 @@ def build_default_tag_from_selected_text(selected_text: str) -> str:
         raise SelectedTextTagValidationError(
             "Selected text does not contain usable tag characters"
         )
+    if candidate == "OR":
+        raise SelectedTextTagValidationError("OR is reserved for search")
     if any(char.isspace() for char in candidate):
         raise RuntimeError("Generated selected-text tag contains whitespace")
     return candidate

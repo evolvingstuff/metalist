@@ -28,6 +28,8 @@ Comments:
 - Tags are plain tokens (no special prefix required).
 - `#` is allowed in tag tokens.
 - Tags must be a single token with no spaces.
+- Exact uppercase `OR` is reserved by search and is not a valid ontology tag;
+  lowercase and mixed-case variants remain valid.
 
 ### LHS forms
 

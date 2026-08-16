@@ -62,6 +62,11 @@ def test_normalize_search_history_query_sorts_dedupes_and_skips_negative_and_tex
     assert mixed is not None
     assert mixed.query_key == "journal"
 
+    disjunction = normalize_search_history_query("journal OR exercise todo")
+    assert disjunction is not None
+    assert disjunction.query_key == "exercise journal todo"
+    assert disjunction.tags == ("exercise", "journal", "todo")
+
 
 def test_record_search_interaction_uses_event_decay_and_returns_recent_tags(
     tmp_path: Path,

@@ -27,6 +27,8 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
     new_tag = new.strip()
     if old_tag == new_tag:
         raise ValueError('old and new must differ')
+    if new_tag == 'OR':
+        raise ValueError('OR is reserved for search')
 
     if not note_store.loaded:
         raise RuntimeError('NoteStore must be loaded before renaming tags')

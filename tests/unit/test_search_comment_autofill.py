@@ -50,6 +50,15 @@ def test_compute_initial_tags_for_new_note_dedupes_case_equivalent_search_tags(m
     assert tags == "ML3"
 
 
+def test_compute_initial_tags_for_new_note_uses_only_first_or_clause() -> None:
+    tags = compute_initial_tags_for_new_note(
+        parent_id=None,
+        search_query='alpha beta "first phrase" OR gamma "second phrase"',
+    )
+
+    assert tags == "alpha beta /*first phrase*/"
+
+
 def test_compute_initial_tags_for_new_note_compares_inherited_tags_case_insensitively(monkeypatch) -> None:
     monkeypatch.setattr(
         search_comment_autofill_module.search_index,

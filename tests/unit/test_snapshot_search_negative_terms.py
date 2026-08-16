@@ -135,3 +135,61 @@ def test_negative_text_term_redacts_forbidden_descendants(monkeypatch: pytest.Mo
 
     assert not state.payloads["r1"]["flags"]["searchRedacted"]
     assert state.payloads["c1"]["flags"]["searchRedacted"]
+
+
+def test_or_search_keeps_negative_terms_local_to_their_clause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root": _Note("root", None, None, None, False, "<div>root</div>", ""),
+        "a-blocked": _Note(
+            "a-blocked", "root", None, "b", False, "<div>A branch</div>", "A blocked"
+        ),
+        "b": _Note("b", "root", "a-blocked", "b-blocked", False, "<div>B branch</div>", "B"),
+        "b-blocked": _Note(
+            "b-blocked", "root", "b", None, False, "<div>blocked B</div>", "B blocked"
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root"], "root": ["a-blocked", "b", "b-blocked"]},
+    )
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id=note.id,
+                content_text=note.content,
+                tags=note.tags,
+                tag_terms=extract_tags_for_search(note.tags),
+            )
+            for note in notes.values()
+        ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
+        progress_update=lambda _: None,
+        progress_interval=1000,
+    )
+
+    import app.services.snapshot as snapshot
+
+    monkeypatch.setattr(snapshot, "note_store", store)
+    monkeypatch.setattr(snapshot, "search_index", index)
+    monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
+
+    state = build_view_state(
+        editing_note_id=None,
+        search="A OR B -blocked",
+        sort_mode="normal",
+        date_filter=None,
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+        is_untagged_view=False,
+    )
+
+    assert state.payloads["a-blocked"]["flags"]["searchRedacted"] is False
+    assert state.payloads["b"]["flags"]["searchRedacted"] is False
+    assert state.payloads["b-blocked"]["flags"]["searchRedacted"] is True
