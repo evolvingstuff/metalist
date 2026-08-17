@@ -54,6 +54,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     const endpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
     const attachFileEndpoint = endpoints.find((endpoint) => endpoint.id === 'action.attach_file_to_current_note');
     const calendarEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel');
+    const noteTimestampsEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.show_note_timestamps');
     const animatedTransitionsEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.animated_transitions');
     assert.equal(endpointIds.has('action.create_backup'), true);
     assert.equal(endpointIds.has('form.switch_namespace'), true);
@@ -84,6 +85,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     );
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(calendarEndpoint.defaultValue, false);
+    assert.equal(noteTimestampsEndpoint.defaultValue, false);
+    assert.equal(noteTimestampsEndpoint.label, 'Show note timestamps');
     assert.equal(animatedTransitionsEndpoint.defaultValue, true);
     assert.equal(animatedTransitionsEndpoint.label, 'Hide animated transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
@@ -170,12 +173,14 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show tags in list');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show tabs');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Show calendar view');
+    assert.equal(noteTimestampsEndpoint.label, 'Show note timestamps');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Show performance overlay');
 
     storedPreferences.set('pref.show_backlinks', 'false');
     storedPreferences.set('pref.show_note_tags', 'true');
     storedPreferences.set('pref.show_tab_ui', 'true');
     storedPreferences.set('pref.show_rhs_panel', 'true');
+    storedPreferences.set('pref.show_note_timestamps', 'true');
     storedPreferences.set('pref.show_perf_overlay', 'true');
     storedPreferences.set('pref.animated_transitions', 'false');
 
@@ -183,6 +188,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide tags in list');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide tabs');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Hide calendar view');
+    assert.equal(noteTimestampsEndpoint.label, 'Hide note timestamps');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Hide performance overlay');
     assert.equal(animatedTransitionsEndpoint.label, 'Show animated transitions');
 });

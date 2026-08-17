@@ -17,6 +17,10 @@
       "tags": ["calendar", "calender", "heatmap", "activity", "right", "view", "show", "hide", "toggle"]
     },
     {
+      "id": "pref.show_note_timestamps",
+      "tags": ["note", "notes", "timestamp", "timestamps", "datetime", "date", "time", "created", "updated", "modified", "hover", "popup", "show", "hide", "toggle"]
+    },
+    {
       "id": "pref.show_perf_overlay",
       "tags": ["perf", "performance", "overlay", "debug", "metrics", "dev", "ui", "show", "hide", "toggle"]
     },

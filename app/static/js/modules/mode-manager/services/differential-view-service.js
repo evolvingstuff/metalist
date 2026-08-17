@@ -16,6 +16,10 @@ import {
     captureNoteRemovalAnimation,
 } from './note-reposition-animation-service.js';
 import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
+import {
+    formatBrowserNoteTimestamp,
+    syncNoteTimestampDataset,
+} from './note-timestamp-hover-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
 const CHILD_CONTAINER_CACHE = new WeakMap();
@@ -840,6 +844,11 @@ export function applyDifferentialView(payload, options) {
             noteElement.dataset.noteTags = noteData.tags;
             if (noteData.metadata && typeof noteData.metadata === 'object') {
                 noteElement.dataset.noteMetadata = JSON.stringify(noteData.metadata);
+                syncNoteTimestampDataset(
+                    noteElement,
+                    noteData.metadata,
+                    formatBrowserNoteTimestamp,
+                );
             }
             syncTagsElement(noteElement);
         }
@@ -1054,6 +1063,11 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.dataset.noteTags = noteData.tags;
     if (noteData.metadata && typeof noteData.metadata === 'object') {
         noteElement.dataset.noteMetadata = JSON.stringify(noteData.metadata);
+        syncNoteTimestampDataset(
+            noteElement,
+            noteData.metadata,
+            formatBrowserNoteTimestamp,
+        );
     }
     syncTagsElement(noteElement);
     let flags = noteData.flags;

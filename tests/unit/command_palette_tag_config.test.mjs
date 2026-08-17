@@ -41,6 +41,20 @@ test('animated transitions preference matches motion queries', () => {
     assert.equal(animatedTransitions.tags.includes('disable'), true);
 });
 
+test('note timestamp preference matches hover and datetime queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const noteTimestamps = payload.endpoints.find(
+        (endpoint) => endpoint.id === 'pref.show_note_timestamps',
+    );
+
+    assert.ok(noteTimestamps, 'expected pref.show_note_timestamps endpoint in command palette tag config');
+    assert.equal(noteTimestamps.tags.includes('hover'), true);
+    assert.equal(noteTimestamps.tags.includes('datetime'), true);
+    assert.equal(noteTimestamps.tags.includes('created'), true);
+    assert.equal(noteTimestamps.tags.includes('updated'), true);
+});
+
 test('keyboard shortcuts action matches cheatsheet queries', () => {
     const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
     const payload = JSON.parse(source);
