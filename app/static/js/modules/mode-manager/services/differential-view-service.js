@@ -7,6 +7,7 @@ import {
     prepareRemoteImageElementsForEditing,
 } from './remote-image-proxy-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
+import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
 import {
     animateNoteCollapseChanges,
     captureNoteCollapseAnimation,
@@ -357,6 +358,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
     if (didRenderContent) {
         hydrateImageFilePreviews(notesContainer);
         hydrateRemoteImagesForCurrentMode(notesContainer);
+        void queueMermaidDiagramRendering(notesContainer);
     }
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     animateNoteCollapseChanges(collapseAnimationCaptures);
@@ -949,6 +951,7 @@ export function applyDifferentialView(payload, options) {
     hydrateImageFilePreviews(notesContainer);
     hydrateRemoteImagesForCurrentMode(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);
+    void queueMermaidDiagramRendering(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     animateNoteCollapseChanges(collapseAnimationCaptures);
 

@@ -788,6 +788,22 @@ export const NotesAPI = {
         });
     },
 
+    async getNoteFullscreen(noteId) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.getNoteFullscreen requires noteId string');
+        }
+        const response = await this._apiCall(CONFIG.API.NOTES.FULLSCREEN(noteId), {
+            method: 'GET',
+        });
+        if (response === null || typeof response !== 'object') {
+            throw new Error('Note fullscreen response must be an object');
+        }
+        if (typeof response.html !== 'string' || response.html.length === 0) {
+            throw new Error('Note fullscreen response must include non-empty html');
+        }
+        return response;
+    },
+
     async exportCurrentViewAsHtml(theme, options = {}) {
         if (theme !== 'dark' && theme !== 'light') {
             throw new Error("NotesAPI.exportCurrentViewAsHtml requires theme 'dark' or 'light'");

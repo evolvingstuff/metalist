@@ -614,6 +614,22 @@ def test_format_note_content_for_view_markdown_does_not_render_latex_in_code() -
     assert "<math" not in rendered
 
 
+def test_format_note_content_for_view_marks_mermaid_fence_for_browser_rendering() -> None:
+    html = (
+        "<div>```mermaid</div>"
+        "<div>flowchart TD</div>"
+        "<div>A[Source&lt;br/&gt;table_a] --&gt; B[Target]</div>"
+        "<div>```</div>"
+    )
+
+    rendered = format_note_content_for_view(content_html=html, tags="@markdown")
+
+    assert '<pre class="meta-mermaid-source">' in rendered
+    assert '<code class="language-mermaid">' in rendered
+    assert "flowchart TD" in rendered
+    assert "A[Source&lt;br/&gt;table_a] --&gt; B[Target]" in rendered
+
+
 def test_format_note_content_for_view_markdown_auto_latex_preserves_scoped_latex() -> None:
     html = (
         "<div>Automatic: \\(x^2\\)</div>"

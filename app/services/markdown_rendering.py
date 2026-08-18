@@ -102,6 +102,13 @@ class _MarkdownRenderer:
             self._index += 1
 
         escaped_code = html.escape("\n".join(content_lines), quote=False)
+        if language.casefold() == "mermaid":
+            return (
+                '<pre class="meta-mermaid-source">'
+                f'<code class="language-mermaid">{escaped_code}</code>'
+                "</pre>"
+            )
+
         language_attr = ""
         if language != "":
             escaped_language = html.escape(language, quote=True)
