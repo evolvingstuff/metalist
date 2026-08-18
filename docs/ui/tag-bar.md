@@ -65,6 +65,7 @@ Examples (autocorrected while typing):
   - The tag is search-only; it is not persisted in the note's tag bar and does not change note rendering.
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown on the server in view mode.
+  - Fenced `mermaid` blocks inside Markdown render locally as responsive SVG diagrams in the app; the Mermaid runtime is lazy-loaded only when needed, and invalid syntax preserves the source with an inline error badge.
   - Standard LaTeX regions inside Markdown render automatically: `\(...\)` or `$...$` for inline math, and `\[...\]` or `$$...$$` for display math.
   - LaTeX delimiters inside inline code or fenced code blocks remain literal.
 - LaTeX meta tags:

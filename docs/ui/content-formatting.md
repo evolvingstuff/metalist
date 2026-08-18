@@ -112,6 +112,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
+- Fenced `mermaid` blocks render as responsive SVG diagrams in the app. The pinned Mermaid runtime loads locally and only when a visible note contains a Mermaid fence; no diagram source is sent to a CDN or external service.
+- Mermaid uses strict security mode and follows the active light/dark theme when rendering. Invalid Mermaid syntax remains visible as a code block with an `Invalid Mermaid diagram` badge.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
 - Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.
 - Explicit scoped LaTeX such as content `(((\frac{1}{2})))` with tag-bar token `(((@LaTeX)))` remains supported and can coexist with automatic math in the same Markdown note.

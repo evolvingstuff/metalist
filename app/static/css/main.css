@@ -4606,6 +4606,39 @@ body.loading::after {
     padding: 0;
 }
 
+.meta-mermaid-diagram {
+    display: block;
+    max-width: 100%;
+    margin: 0.55em 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow-x: auto;
+}
+
+.meta-mermaid-diagram svg {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+}
+
+.meta-markdown pre.meta-mermaid-invalid {
+    border-color: rgba(211, 47, 47, 0.35);
+    background: #fff5f5;
+}
+
+.meta-mermaid-error-badge {
+    display: block;
+    margin-bottom: 6px;
+    color: #b3261e;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 650;
+}
+
 .meta-markdown blockquote {
     margin: 0.35em 0;
     padding: 0.2em 0 0.2em 0.8em;
@@ -5376,6 +5409,20 @@ html[data-theme="dark"] .meta-csv-table {
     background: var(--app-surface-0);
     border-color: var(--app-border-soft);
     color: var(--text-color);
+}
+
+html[data-theme="dark"] .meta-mermaid-diagram {
+    background: var(--app-surface-0);
+    border-color: var(--app-border-soft);
+}
+
+html[data-theme="dark"] .meta-markdown pre.meta-mermaid-invalid {
+    background: rgba(127, 29, 29, 0.22);
+    border-color: rgba(251, 113, 133, 0.28);
+}
+
+html[data-theme="dark"] .meta-mermaid-error-badge {
+    color: #fecaca;
 }
 
 html[data-theme="dark"] .meta-json-error .meta-json-pre,

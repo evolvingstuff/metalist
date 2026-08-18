@@ -7,6 +7,9 @@ import { ActivityTracker } from './modules/activity-tracker.js';
 import { CommandPalette } from './modules/command-palette/command-palette-controller.js';
 import { ReminderSurface } from './modules/reminder-surface-service.js';
 import { initializeNoteHtmlSanitizer } from './modules/note-html-sanitizer.js';
+import {
+    queueMermaidDiagramRendering,
+} from './modules/mode-manager/services/mermaid-render-service.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
     document.body.dataset.appReady = 'false';
@@ -28,6 +31,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isAuthOk) {
         console.log('+++ main.js: About to initialize ModeManager');
         await ModeManager.init({});
+        const notesContainer = document.getElementById('notes-container');
+        if (!notesContainer) {
+            throw new Error('Notes container not found after ModeManager initialization');
+        }
+        await queueMermaidDiagramRendering(notesContainer);
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
