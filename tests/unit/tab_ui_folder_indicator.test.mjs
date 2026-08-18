@@ -27,6 +27,14 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
         /class="tab-ui-folder-icon-back"[\s\S]*V20a2\.5 2\.5 0 0 1-2\.5 2\.5H12A2\.5 2\.5 0 0 1 9\.5 20z/,
     );
     assert.match(cssSource, /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*stroke: #ffffff;/);
+    assert.match(
+        cssSource,
+        /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*left: 6px;[\s\S]*transform: translateY\(-50%\);/,
+    );
+    assert.match(
+        cssSource,
+        /\.controls \.search-results-count\s*\{[\s\S]*right: 6px;/,
+    );
     assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: #000000;/);
     assert.match(
         cssSource,

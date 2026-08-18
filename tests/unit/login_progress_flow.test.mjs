@@ -44,6 +44,21 @@ test('login template exposes elapsed startup time without claiming every hydrati
 });
 
 
+test('encrypted hydration hides the duplicate page subtitle above the progress panel', async () => {
+    const source = await readFile(AUTH_SOURCE_URL, 'utf8');
+    const hydrationStart = source.indexOf('_showHydrationUI()');
+    const hydrationEnd = source.indexOf('_updateHydrationUI(status)', hydrationStart);
+
+    assert.ok(hydrationStart >= 0);
+    assert.ok(hydrationEnd > hydrationStart);
+    assert.match(source.slice(hydrationStart, hydrationEnd), /this\._hideLoginSubtitle\(\);/);
+    assert.match(
+        source,
+        /_setLoginSubtitle\(text\)[\s\S]*subtitle\.textContent = text;[\s\S]*subtitle\.hidden = false;/,
+    );
+});
+
+
 test('post-login startup failures do not return to the password form', async () => {
     const source = await readFile(AUTH_SOURCE_URL, 'utf8');
     const loginStart = source.indexOf('async handleLogin(event)');

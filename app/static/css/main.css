@@ -3523,11 +3523,11 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 
 .controls .tab-ui-folder-icon {
     position: absolute;
-    left: 50%;
+    left: 6px;
     top: 50%;
     width: 34px;
     height: 26px;
-    transform: translate(-50%, -50%);
+    transform: translateY(-50%);
     fill: none;
     stroke: #ffffff;
     stroke-width: 1.8;
