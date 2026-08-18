@@ -34,6 +34,10 @@ class _FakeNoteStore:
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         return list(self._children_by_parent.get(parent_id, []))
 
+    def get_inherited_non_meta_tag_terms(self, note_id: str) -> frozenset[str]:
+        assert note_id in self._notes
+        return frozenset()
+
 
 HOST_ID = "11111111-1111-1111-1111-111111111111"
 TARGET_ID = "22222222-2222-2222-2222-222222222222"

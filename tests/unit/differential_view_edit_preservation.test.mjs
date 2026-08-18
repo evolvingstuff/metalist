@@ -9,6 +9,7 @@ function installBrowserEnvironment(t, options = {}) {
     const originalHTMLImageElement = globalThis.HTMLImageElement;
     const originalSessionStorage = globalThis.sessionStorage;
     const originalLocalStorage = globalThis.localStorage;
+    let querySelectorAllCalls = 0;
 
     function createStorage() {
         const entries = new Map();
@@ -176,6 +177,7 @@ function installBrowserEnvironment(t, options = {}) {
         }
 
         querySelectorAll(selector) {
+            querySelectorAllCalls += 1;
             if (selector === 'a[href]' || selector === '.note-file-image-embed[data-file-ref-id]') {
                 return [];
             }
@@ -322,6 +324,9 @@ function installBrowserEnvironment(t, options = {}) {
         createElement: (tagName) => document.createElement(tagName),
         elementByNoteId,
         notesContainer,
+        getQuerySelectorAllCalls() {
+            return querySelectorAllCalls;
+        },
         runAnimationFrame() {
             const callback = animationFrames.shift();
             if (typeof callback !== 'function') {
@@ -338,6 +343,44 @@ function installBrowserEnvironment(t, options = {}) {
         },
     };
 }
+
+test('empty server diff avoids full-tree media scans', async (t) => {
+    const env = installBrowserEnvironment(t);
+    const { applyDifferentialView } = await import(
+        '../../app/static/js/modules/mode-manager/services/differential-view-service.js'
+    );
+
+    const result = applyDifferentialView({
+        currentClientId: 'client-1',
+        editingNoteId: null,
+        diffOps: [],
+        locks: {},
+        lockDiffs: {},
+        notes: {},
+    }, {});
+
+    assert.equal(result.vdomOperations, 0);
+    assert.equal(env.getQuerySelectorAllCalls(), 0);
+});
+
+test('lock-only server diff avoids full-tree media scans', async (t) => {
+    const env = installBrowserEnvironment(t);
+    const { applyDifferentialView } = await import(
+        '../../app/static/js/modules/mode-manager/services/differential-view-service.js'
+    );
+
+    const result = applyDifferentialView({
+        currentClientId: 'client-1',
+        editingNoteId: null,
+        diffOps: [],
+        locks: {},
+        lockDiffs: { missing: 'client-2' },
+        notes: {},
+    }, {});
+
+    assert.equal(result.vdomOperations, 0);
+    assert.equal(env.getQuerySelectorAllCalls(), 0);
+});
 
 test('diff refresh preserves current editor content after edit-session changes', async (t) => {
     const env = installBrowserEnvironment(t);

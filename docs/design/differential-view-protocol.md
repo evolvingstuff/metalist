@@ -124,6 +124,12 @@
 - `rootIds` keeps infinite-scroll metrics in sync without re-sending the full structure array.
 - The server stores the newly generated view in-memory per `(clientId, tabId, search)` so subsequent requests can stay incremental.
 
+## Reconciliation Efficiency
+- Snapshot construction uses a request-local traversal cache for note records, ordered child lists, ancestor paths, and descendant counts. A hierarchy branch is read once even though rendering and per-note metadata both need it.
+- If a viewport anchor disappears between client polling and server reconciliation, windowing continues from the furthest client-known root still present in the current view so infinite scrolling can keep extending.
+- If the cached and current `children_by_parent` maps are identical, the server skips branch-by-branch structural diffing and only computes sparse note/lock updates.
+- An incremental response with no structural, note, or lock changes returns from client reconciliation immediately. Lock-only and structure-only responses also skip media hydration unless note content was actually replaced.
+
 ## Client Reconciliation
 - Tab switch optimization: clients may detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile diffs.
 - If a persisted tab is restored after a server restart but its detached DOM cache is gone, tab duplication falls back to an empty client cache and lets the next `/notes/view` round-trip bootstrap the new tab from server state.

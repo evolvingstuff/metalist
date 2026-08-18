@@ -39,10 +39,12 @@ At a high level (`app/main.py`):
 
 ## View / Diff Flow
 - Route: `POST /api2/notes/view` (`app/api/routes/notes.py`)
-- Snapshot builder: `app/services/snapshot.build_view_snapshot(...)`
+- Snapshot builder: `app/services/snapshot.build_view_state(...)`
 - Diffing behavior:
-  - The server always returns authoritative `snapshot.structure`.
+  - A cold tab/view cache returns authoritative `snapshot.structure`; a warm cache returns structural `snapshot.diffOps`.
   - `snapshot.notes` is filtered to only include notes whose `hash` differs from the client’s `clientNoteUuidHashes`.
+  - Snapshot rendering and metadata share request-local note/child/path/descendant caches so the hierarchy is not repeatedly walked.
+  - Identical hierarchy maps bypass structural diff traversal.
 
 See `docs/design/differential-view-protocol.md` for the wire format.
 

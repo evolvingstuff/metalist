@@ -215,11 +215,6 @@ def resolve_search_scope(
         search_allowed_note_ids.update(clause_allowed_note_ids)
         positively_matched_note_ids.update(clause_matched_note_ids)
 
-    search_root_ids_ordered_for_count = [
-        root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
-    ]
-    search_root_count_total = len(search_root_ids_ordered_for_count)
-
     search_root_ids_ordered = [
         root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
     ]
@@ -228,7 +223,7 @@ def resolve_search_scope(
         allowed_note_ids=set(search_allowed_note_ids),
         matched_note_ids=set(positively_matched_note_ids),
         search_root_ids_ordered=search_root_ids_ordered,
-        search_root_count_total=search_root_count_total,
+        search_root_count_total=len(search_root_ids_ordered),
     )
 
 
@@ -360,24 +355,26 @@ def _determine_root_window_end(
         while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
             window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
     if anchor_root_id:
+        anchor_index: Optional[int] = None
         if anchor_root_id in root_index_map:
             anchor_index = root_index_map[anchor_root_id]
+        else:
+            known_root_indices = [
+                root_index_map[note_id]
+                for note_id in client_known_note_ids
+                if note_id in root_index_map
+            ]
+            if known_root_indices:
+                # The DOM anchor can disappear between polls. Continue from the
+                # furthest root that is still valid in the current view.
+                anchor_index = max(known_root_indices)
+        if anchor_index is not None:
             while (
                 window_end < len(ordered_root_ids) - 1
                 and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
             ):
                 window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
     return window_end
-
-
-def _count_descendants(note_id: str) -> int:
-    total = 0
-    stack = list(note_store.get_children(note_id))
-    while stack:
-        child_id = stack.pop()
-        total += 1
-        stack.extend(note_store.get_children(child_id))
-    return total
 
 
 def _timestamp_iso(record: object, field_name: str) -> str:
@@ -387,37 +384,93 @@ def _timestamp_iso(record: object, field_name: str) -> str:
     return timestamp.isoformat()
 
 
-def _build_note_path(note_id: str) -> List[Dict[str, str]]:
-    path: List[Dict[str, str]] = []
-    current = note_store.get_note(note_id)
-    while True:
-        path.append({
-            "id": current.id,
-            "label": strip_html(current.content).strip()[:80],
-        })
-        if current.parent_id is None:
-            break
-        current = note_store.get_note(current.parent_id)
-    path.reverse()
-    return path
+class _SnapshotTraversalCache:
+    """Request-local hierarchy cache shared by rendering and metadata building."""
 
+    def __init__(self) -> None:
+        self._children_by_parent: Dict[Optional[str], List[str]] = {}
+        self._record_by_id: Dict[str, object] = {}
+        self._path_by_id: Dict[str, List[Dict[str, str]]] = {}
+        self._descendant_count_by_id: Dict[str, int] = {}
 
-def _build_note_metadata(note_id: str) -> Dict[str, object]:
-    record = note_store.get_note(note_id)
-    child_ids = note_store.get_children(note_id)
-    inherited_tags_fn = getattr(note_store, "get_inherited_non_meta_tag_terms", None)
-    if callable(inherited_tags_fn):
-        inherited_tags = sorted(inherited_tags_fn(note_id))
-    else:
-        inherited_tags = []
-    return {
-        "createdAt": _timestamp_iso(record, "created_at"),
-        "updatedAt": _timestamp_iso(record, "updated_at"),
-        "inheritedTags": inherited_tags,
-        "path": _build_note_path(note_id),
-        "childCount": len(child_ids),
-        "subtreeCount": _count_descendants(note_id),
-    }
+    def get_children(self, parent_id: Optional[str]) -> List[str]:
+        if parent_id not in self._children_by_parent:
+            self._children_by_parent[parent_id] = note_store.get_children(parent_id)
+        return self._children_by_parent[parent_id]
+
+    def get_note(self, note_id: str) -> object:
+        if note_id not in self._record_by_id:
+            self._record_by_id[note_id] = note_store.get_note(note_id)
+        return self._record_by_id[note_id]
+
+    def _build_path(self, note_id: str) -> List[Dict[str, str]]:
+        if note_id in self._path_by_id:
+            return self._path_by_id[note_id]
+
+        uncached_records: List[object] = []
+        current_id = note_id
+        visited_ids: Set[str] = set()
+        while current_id not in self._path_by_id:
+            if current_id in visited_ids:
+                raise RuntimeError(f"Hierarchy cycle detected while building path for {note_id}")
+            visited_ids.add(current_id)
+            record = self.get_note(current_id)
+            uncached_records.append(record)
+            if record.parent_id is None:
+                path: List[Dict[str, str]] = []
+                break
+            current_id = record.parent_id
+        else:
+            path = list(self._path_by_id[current_id])
+
+        for record in reversed(uncached_records):
+            path.append({
+                "id": record.id,
+                "label": strip_html(record.content).strip()[:80],
+            })
+            self._path_by_id[record.id] = list(path)
+        return self._path_by_id[note_id]
+
+    def _count_descendants(self, note_id: str) -> int:
+        if note_id in self._descendant_count_by_id:
+            return self._descendant_count_by_id[note_id]
+
+        stack: List[Tuple[str, bool]] = [(note_id, False)]
+        visiting: Set[str] = set()
+        while stack:
+            current_id, is_expanded = stack.pop()
+            if current_id in self._descendant_count_by_id:
+                continue
+            if is_expanded:
+                children = self.get_children(current_id)
+                self._descendant_count_by_id[current_id] = sum(
+                    1 + self._descendant_count_by_id[child_id]
+                    for child_id in children
+                )
+                visiting.remove(current_id)
+                continue
+            if current_id in visiting:
+                raise RuntimeError(
+                    f"Hierarchy cycle detected while counting descendants for {note_id}"
+                )
+            visiting.add(current_id)
+            stack.append((current_id, True))
+            for child_id in reversed(self.get_children(current_id)):
+                if child_id not in self._descendant_count_by_id:
+                    stack.append((child_id, False))
+        return self._descendant_count_by_id[note_id]
+
+    def build_metadata(self, note_id: str) -> Dict[str, object]:
+        record = self.get_note(note_id)
+        inherited_tags = sorted(note_store.get_inherited_non_meta_tag_terms(note_id))
+        return {
+            "createdAt": _timestamp_iso(record, "created_at"),
+            "updatedAt": _timestamp_iso(record, "updated_at"),
+            "inheritedTags": inherited_tags,
+            "path": self._build_path(note_id),
+            "childCount": len(self.get_children(note_id)),
+            "subtreeCount": self._count_descendants(note_id),
+        }
 
 
 def build_view_state(
@@ -446,6 +499,7 @@ def build_view_state(
 
     force_uncollapsed_ids: Set[str] = set()
     file_record_cache: Dict[str, object] = {}
+    traversal_cache = _SnapshotTraversalCache()
 
     def _get_file_record(file_id: str) -> object:
         if file_id not in file_record_cache:
@@ -454,15 +508,15 @@ def build_view_state(
 
     embed_render_context = EmbedRenderContext(
         has_note=note_store.has_note,
-        get_note=note_store.get_note,
-        get_children=note_store.get_children,
+        get_note=traversal_cache.get_note,
+        get_children=traversal_cache.get_children,
         has_file=file_registry.has_file,
         get_file=_get_file_record,
     )
 
     normalized_sort_mode = normalize_sort_mode(sort_mode)
     if normalized_sort_mode == "normal":
-        ordered_root_ids = note_store.get_children(None)
+        ordered_root_ids = traversal_cache.get_children(None)
         root_sort_timestamps: Dict[str, datetime] = {}
     else:
         root_sort_timestamps = get_root_sort_timestamps(normalized_sort_mode)
@@ -565,7 +619,7 @@ def build_view_state(
         if parent_id is None:
             ids = visible_root_ids_ordered
         else:
-            ids = note_store.get_children(parent_id)
+            ids = traversal_cache.get_children(parent_id)
 
         for idx, nid in enumerate(ids):
             is_search_redacted = (
@@ -575,7 +629,7 @@ def build_view_state(
                 and nid not in allowed_note_ids
             )
             children_by_parent[parent_id].append(nid)
-            rec = note_store.get_note(nid)
+            rec = traversal_cache.get_note(nid)
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
             collapsed_preview_source = extract_collapsed_preview_source_html(rec.content)
@@ -595,7 +649,7 @@ def build_view_state(
                     content_is_collapsible = True
                 elif collapsed_preview_source_has_hidden_content(rec.content):
                     content_is_collapsible = True
-            has_children = bool(note_store.get_children(rec.id))
+            has_children = bool(traversal_cache.get_children(rec.id))
             is_collapsible = has_children
             if content_is_collapsible:
                 is_collapsible = True
@@ -656,7 +710,7 @@ def build_view_state(
                 "content": rendered_content,
                 "tags": rec.tags,
                 "flags": flags,
-                "metadata": _build_note_metadata(rec.id),
+                "metadata": traversal_cache.build_metadata(rec.id),
                 "hash": h,
             }
             hash_by_id[rec.id] = h

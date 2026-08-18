@@ -37,6 +37,10 @@ class _FakeNoteStore:
             return list(self._children_by_parent[parent_id])
         return []
 
+    def get_inherited_non_meta_tag_terms(self, note_id: str) -> frozenset[str]:
+        assert note_id in self._notes
+        return frozenset()
+
 
 class _FakeFileRegistry:
     def __init__(self, file_ids: set[str]) -> None:
