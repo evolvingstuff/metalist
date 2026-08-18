@@ -918,6 +918,7 @@ function showViewContextMenu(event) {
         areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
         isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
         areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
+        areNoteTimestampsVisible: document.body.classList.contains('pref-show-note-timestamps'),
         canAddNoteAtTop: !ModeContext.isEditing,
     };
     const items = buildContextMenuItems(context, {
@@ -929,6 +930,9 @@ function showViewContextMenu(event) {
         },
         onToggleNoteTags: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_note_tags', nextValue);
+        },
+        onToggleNoteTimestamps: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_note_timestamps', nextValue);
         },
         onAddNoteAtTop: () => {
             void CommandGate.run('contextMenu.view.add_at_top', async () => {

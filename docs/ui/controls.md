@@ -127,9 +127,9 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 | Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). While actively editing that note, `Add Style` opens a connected formatting flyout and `Remove Formatting` performs the same operation as `Cmd/Ctrl+U`. Paste actions appear only when a note has been copied. |
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range and `Remove Formatting` removes formatting only from that range. |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
-| Right-click notes view background | Open the view context menu with dynamic `Show/Hide Tabs`, `Show/Hide Calendar View`, `Show/Hide Tags in List`, and `Export View as HTML` actions |
+| Right-click notes view background | Open the view context menu with dynamic `Show/Hide Tabs`, `Show/Hide Calendar View`, `Show/Hide Tags in List`, `Show/Hide Note Timestamps`, and `Export View as HTML` actions |
 | Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships) |
-| Right-click left or right lane | Open the same view menu: show/hide tabs, calendar, or note-list tags, or export the current view as HTML |
+| Right-click left or right lane | Open the same view menu: show/hide tabs, calendar, note-list tags, or note timestamps, or export the current view as HTML |
 | Hover left side of search bar | Show the tab/search-context overlay |
 | Hover/click search input | Hide the tab/search-context overlay |
 

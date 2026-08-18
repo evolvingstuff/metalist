@@ -462,6 +462,7 @@ function buildViewContextItems(context, handlers) {
     const onToggleTabs = handlers.onToggleTabs;
     const onToggleCalendar = handlers.onToggleCalendar;
     const onToggleNoteTags = handlers.onToggleNoteTags;
+    const onToggleNoteTimestamps = handlers.onToggleNoteTimestamps;
     if (typeof onExportViewHtml !== 'function') {
         throw new Error('View context missing onExportViewHtml handler');
     }
@@ -474,6 +475,9 @@ function buildViewContextItems(context, handlers) {
     if (typeof onToggleNoteTags !== 'function') {
         throw new Error('View context missing onToggleNoteTags handler');
     }
+    if (typeof onToggleNoteTimestamps !== 'function') {
+        throw new Error('View context missing onToggleNoteTimestamps handler');
+    }
     if (typeof context.areTabsVisible !== 'boolean') {
         throw new Error('View context missing areTabsVisible boolean');
     }
@@ -482,6 +486,9 @@ function buildViewContextItems(context, handlers) {
     }
     if (typeof context.areNoteTagsVisible !== 'boolean') {
         throw new Error('View context missing areNoteTagsVisible boolean');
+    }
+    if (typeof context.areNoteTimestampsVisible !== 'boolean') {
+        throw new Error('View context missing areNoteTimestampsVisible boolean');
     }
 
     const items = [
@@ -502,6 +509,12 @@ function buildViewContextItems(context, handlers) {
             label: context.areNoteTagsVisible ? 'Hide Tags in List' : 'Show Tags in List',
             enabled: true,
             onSelect: () => onToggleNoteTags(!context.areNoteTagsVisible),
+        },
+        {
+            id: 'toggle-note-timestamps',
+            label: context.areNoteTimestampsVisible ? 'Hide Note Timestamps' : 'Show Note Timestamps',
+            enabled: true,
+            onSelect: () => onToggleNoteTimestamps(!context.areNoteTimestampsVisible),
         },
         {
             id: 'export-view-html',

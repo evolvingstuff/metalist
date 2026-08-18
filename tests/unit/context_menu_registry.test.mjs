@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { buildContextMenuItems } from '../../app/static/js/modules/context-menu/context-menu-registry.js';
 import { isContextMenuIconSupported } from '../../app/static/js/modules/context-menu/context-menu-service.js';
+
+const CONTEXT_MENU_EVENTS_URL = new URL(
+    '../../app/static/js/modules/mode-manager/events/context-menu-events.js',
+    import.meta.url,
+);
 
 function buildNoteHandlers(calls) {
     return {
@@ -356,11 +362,13 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
             areTabsVisible: false,
             isCalendarVisible: true,
             areNoteTagsVisible: false,
+            areNoteTimestampsVisible: true,
         },
         {
             onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
             onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
             onToggleNoteTags: (nextValue) => calls.push(['toggleNoteTags', nextValue]),
+            onToggleNoteTimestamps: (nextValue) => calls.push(['toggleNoteTimestamps', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
     );
@@ -371,6 +379,7 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
             { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
             { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
             { id: 'toggle-note-tags', label: 'Show Tags in List', enabled: true },
+            { id: 'toggle-note-timestamps', label: 'Hide Note Timestamps', enabled: true },
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
@@ -382,8 +391,27 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
         ['toggleTabs', true],
         ['toggleCalendar', false],
         ['toggleNoteTags', true],
+        ['toggleNoteTimestamps', false],
         ['exportViewHtml'],
     ]);
+});
+
+test('view context menu persists the note timestamp visibility preference', async () => {
+    const source = await readFile(CONTEXT_MENU_EVENTS_URL, 'utf8');
+    const viewMenuStart = source.indexOf('function showViewContextMenu(event)');
+    const viewMenuEnd = source.indexOf('function handleContextMenu(event)', viewMenuStart);
+
+    assert.ok(viewMenuStart >= 0);
+    assert.ok(viewMenuEnd > viewMenuStart);
+    const viewMenuSource = source.slice(viewMenuStart, viewMenuEnd);
+    assert.match(
+        viewMenuSource,
+        /areNoteTimestampsVisible: document\.body\.classList\.contains\('pref-show-note-timestamps'\)/,
+    );
+    assert.match(
+        viewMenuSource,
+        /onToggleNoteTimestamps:[\s\S]*CommandPalette\.applyPreference\('pref\.show_note_timestamps', nextValue\)/,
+    );
 });
 
 test('buildContextMenuItems adds a top note action to non-editing blank view context', () => {
@@ -394,6 +422,7 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             areTabsVisible: true,
             isCalendarVisible: true,
             areNoteTagsVisible: true,
+            areNoteTimestampsVisible: true,
             canAddNoteAtTop: true,
         },
         {
@@ -401,6 +430,7 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             onToggleTabs: () => {},
             onToggleCalendar: () => {},
             onToggleNoteTags: () => {},
+            onToggleNoteTimestamps: () => {},
             onExportViewHtml: () => {},
         },
     );
