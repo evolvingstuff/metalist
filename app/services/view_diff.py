@@ -6,6 +6,9 @@ from app.services.view_state import ViewState
 
 
 def generate_diff_ops(previous: ViewState, current: ViewState) -> List[Dict[str, object]]:
+    if previous.children_by_parent == current.children_by_parent:
+        return []
+
     operations: List[Dict[str, object]] = []
 
     def diff_branch(parent_id: Optional[str]) -> None:

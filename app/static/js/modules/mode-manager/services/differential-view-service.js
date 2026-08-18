@@ -166,12 +166,24 @@ function applyServerDiffOps(payload, animateNoteChanges) {
     if (!noteUpdates || typeof noteUpdates !== 'object') {
         noteUpdates = {};
     }
+    if (payload.diffOps.length === 0
+        && Object.keys(noteUpdates).length === 0
+        && Object.keys(lockDiffs).length === 0) {
+        return {
+            notesContainer,
+            editingNoteElement: payload.editingNoteId
+                ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`)
+                : null,
+            vdomOperations: 0,
+        };
+    }
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
     const collapseAnimationCaptures = buildCollapseAnimationCaptures(noteUpdates, animateNoteChanges);
     const collapsingCaptureByNoteId = buildCollapsingCaptureByNoteId(collapseAnimationCaptures);
     const noteElements = new Map();
     let vdomOperations = 0;
+    let didRenderContent = false;
     const insertedIds = new Set();
 
     for (const op of payload.diffOps) {
@@ -279,6 +291,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
             vdomOperations += 1;
             if (contentChanged) {
                 vdomOperations += 1;
+                didRenderContent = true;
             }
             if (noteData) {
                 delete noteUpdates[op.noteId];
@@ -325,6 +338,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         noteElements.set(noteId, element);
         if (contentChanged) {
             vdomOperations += 1;
+            didRenderContent = true;
         }
     });
 
@@ -340,8 +354,10 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         }
     }
 
-    hydrateImageFilePreviews(notesContainer);
-    hydrateRemoteImagesForCurrentMode(notesContainer);
+    if (didRenderContent) {
+        hydrateImageFilePreviews(notesContainer);
+        hydrateRemoteImagesForCurrentMode(notesContainer);
+    }
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     animateNoteCollapseChanges(collapseAnimationCaptures);
 

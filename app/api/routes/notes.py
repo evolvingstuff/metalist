@@ -272,7 +272,6 @@ def view_diff(payload: dict):
             len(extra_client_ids),
         )
 
-    cached_state = view_cache.get(**cache_key)
     client_has_state = bool(client_hashes)
 
     if not cached_state or force_full_snapshot:

@@ -1,3 +1,4 @@
+import app.services.view_diff as view_diff_module
 from app.services.view_diff import generate_diff_ops
 from app.services.view_state import ViewState
 from app.api.routes.notes import _unknown_client_note_ids
@@ -47,6 +48,18 @@ def test_generate_diff_ops_nested_insert():
     ops = generate_diff_ops(previous, current)
 
     assert any(op for op in ops if op['type'] == 'insert' and op['noteId'] == 'child' and op['parentId'] == 'root' and op['toIndex'] == 0)
+
+
+def test_generate_diff_ops_skips_branch_diff_when_structure_is_identical(monkeypatch):
+    previous = build_state({None: ['root'], 'root': ['child']}, {'root': 'old', 'child': 'old-child'})
+    current = build_state({None: ['root'], 'root': ['child']}, {'root': 'new', 'child': 'new-child'})
+
+    def fail_sibling_diff(*args, **kwargs):
+        raise AssertionError('identical structure should not run sibling diff')
+
+    monkeypatch.setattr(view_diff_module, '_diff_sibling_order', fail_sibling_diff)
+
+    assert generate_diff_ops(previous, current) == []
 
 
 def test_unknown_client_note_ids_ignores_cached_deleted_ids():
