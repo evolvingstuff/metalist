@@ -133,6 +133,12 @@ export const Auth = {
         }
         const subtitle = this._requireElement('login-subtitle');
         subtitle.textContent = text;
+        subtitle.hidden = false;
+    },
+
+    _hideLoginSubtitle() {
+        const subtitle = this._requireElement('login-subtitle');
+        subtitle.hidden = true;
     },
 
     _setLoginLoadingTitle(text) {
@@ -500,6 +506,7 @@ export const Auth = {
             '',
             0,
         );
+        this._hideLoginSubtitle();
     },
 
     _updateHydrationUI(status) {
