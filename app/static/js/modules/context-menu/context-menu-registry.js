@@ -79,6 +79,7 @@ function buildNoteContextItems(context, handlers) {
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
     const onExportNoteHtml = handlers.onExportNoteHtml;
     const onExportViewHtml = handlers.onExportViewHtml;
+    const onViewNoteFullscreen = handlers.onViewNoteFullscreen;
     if (typeof onAddSiblingNote !== 'function') {
         throw new Error('Note context missing onAddSiblingNote handler');
     }
@@ -228,6 +229,19 @@ function buildNoteContextItems(context, handlers) {
         copyItem.separated = true;
     }
     items.push(copyItem);
+
+    if (context.canViewFullscreen === true) {
+        if (typeof onViewNoteFullscreen !== 'function') {
+            throw new Error('Non-editing note context missing onViewNoteFullscreen handler');
+        }
+        items.push({
+            id: 'view-note-fullscreen',
+            label: 'View Full Screen',
+            icon: 'zoom',
+            enabled: true,
+            onSelect: () => onViewNoteFullscreen(noteId),
+        });
+    }
 
     const selectedTextForTag = context.selectedTextForTag;
     if (selectedTextForTag !== undefined) {

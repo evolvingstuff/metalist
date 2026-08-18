@@ -27,6 +27,7 @@ function buildNoteHandlers(calls) {
         onResetImageSize: (context) => calls.push(['resetImageSize', context]),
         onExportNoteHtml: (noteId) => calls.push(['exportNoteHtml', noteId]),
         onExportViewHtml: () => calls.push(['exportViewHtml']),
+        onViewNoteFullscreen: (noteId) => calls.push(['viewNoteFullscreen', noteId]),
         onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
         onAddSiblingNote: (noteId) => calls.push(['addSibling', noteId]),
         onAddChildNote: (noteId) => calls.push(['addChild', noteId]),
@@ -101,6 +102,27 @@ test('buildContextMenuItems returns note actions for note context', () => {
         ['exportNoteHtml', 'note-123'],
         ['exportViewHtml'],
     ]);
+});
+
+test('buildContextMenuItems exposes full screen only for an eligible view-mode note', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        { kind: 'note', noteId: 'note-123', canViewFullscreen: true },
+        buildNoteHandlers(calls),
+    );
+
+    const fullscreenItem = items.find((item) => item.id === 'view-note-fullscreen');
+    assert.ok(fullscreenItem);
+    assert.equal(fullscreenItem.label, 'View Full Screen');
+    assert.equal(isContextMenuIconSupported(fullscreenItem.icon), true);
+    fullscreenItem.onSelect();
+    assert.deepEqual(calls, [['viewNoteFullscreen', 'note-123']]);
+
+    const editingItems = buildContextMenuItems(
+        { kind: 'note', noteId: 'note-123', canViewFullscreen: false },
+        buildNoteHandlers([]),
+    );
+    assert.equal(editingItems.some((item) => item.id === 'view-note-fullscreen'), false);
 });
 
 test('buildContextMenuItems prepends image actions for note image context', () => {

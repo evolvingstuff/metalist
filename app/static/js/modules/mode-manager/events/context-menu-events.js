@@ -59,6 +59,7 @@ import {
     buildStyleApplicationPlan,
 } from '../services/add-style-service.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
+import { openNoteFullscreen } from '../services/note-fullscreen-service.js';
 import { openReferenceInNewTab } from './keyboard-events.js';
 
 const ontologyModal = new OntologyModal();
@@ -675,6 +676,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canAddNoteAtTop: !ModeContext.isEditing,
+        canViewFullscreen: !ModeContext.isEditing,
     };
     if (referenceContext !== null) {
         if (typeof referenceContext !== 'object') {
@@ -791,6 +793,14 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
                 await exportHtmlFromContextMenu(null);
             }, {
                 timeoutMs: 120000,
+            });
+        },
+        onViewNoteFullscreen: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.view_fullscreen', async () => {
+                if (ModeContext.isEditing) {
+                    throw new Error('View Full Screen requires non-editing mode');
+                }
+                await openNoteFullscreen(targetNoteId);
             });
         },
         onAddSiblingNote: (targetNoteId) => {
@@ -972,6 +982,9 @@ function handleContextMenu(event) {
 
     const element = resolveEventElement(event.target);
     if (!element) {
+        return;
+    }
+    if (element.closest('.note-fullscreen-overlay')) {
         return;
     }
 

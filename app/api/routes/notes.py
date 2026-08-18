@@ -64,6 +64,7 @@ from app.services.root_sorting import normalize_sort_mode
 from app.services.search_query import parse_search_query
 from app.services.html_export import build_notes_export_document
 from app.services.html_export import build_notes_export_filename
+from app.services.note_fullscreen import build_note_fullscreen_markup
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
 from app.services.undo_state import reset_undo_stack
@@ -645,6 +646,12 @@ def export_notes_html(request: Request) -> Response:
             "X-MetaList-Export": "notes-html-v1",
         },
     )
+
+
+@router.get("/notes/{note_id}/fullscreen")
+def note_fullscreen(note_id: str) -> Dict[str, str]:
+    _require_note_present(note_id, context="notes.fullscreen")
+    return {"html": build_note_fullscreen_markup(note_id)}
 
 
 @router.get("/notes/{note_id}/backlinks")
