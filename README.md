@@ -235,6 +235,18 @@ node --test tests/unit/*.mjs
 .venv/bin/python -c "from pathlib import Path; import main; main._run_startup_sanity_gates(repo_root=Path.cwd())"
 ```
 
+Source-checkout development launches can enable the mandatory Python and
+JavaScript sanity gates with an ignored repository-root `.env` file:
+
+```dotenv
+METALIST_ENVIRONMENT=development
+```
+
+`main.py` prints the resolved environment at startup. An explicit process
+environment value takes precedence over `.env`; only `development` and
+`production` are accepted. When the variable and `.env` file are absent,
+MetaList runs in production mode and skips the source sanity gates.
+
 `TEST_MODE=1` and `POST /api2/test/reset` still exist for deterministic browser automation if we decide to add a new harness later, but Cypress is not part of the current workflow.
 
 ### Diagrams

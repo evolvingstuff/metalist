@@ -16,7 +16,9 @@ This document describes the security architecture for MetaList3's password prote
 - Runtime hardening runs at startup:
   - core dumps disabled on POSIX
   - optional macOS checks for encrypted swap and no RAM-to-disk hibernation behavior.
-- Before any namespace restart/launch work, `main.py` also runs source-level startup sanity gates:
+- Before any namespace restart/launch work, `main.py` prints its resolved
+  `METALIST_ENVIRONMENT`. Development mode also runs source-level startup
+  sanity gates; production mode skips them:
   - Python AST/default/transaction-route rules
   - JS tree-sitter sanity rules for `try/catch`, default params, destructuring defaults, and defaulting operators.
 - Password policy is intentionally permissive in current dev mode (see "Password Requirements").

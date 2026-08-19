@@ -29,6 +29,8 @@ from app.encryption_audit import audit_all_namespaces
 from app.encryption_audit import EncryptionAuditReport
 from app.startup_js_sanity import assert_startup_js_sanity
 from app.startup_sanity import assert_startup_sanity
+from app.startup_environment import DEVELOPMENT_ENVIRONMENT
+from app.startup_environment import resolve_startup_environment
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
@@ -83,6 +85,14 @@ def _print_shell_execution_enabled_banner() -> None:
 
 
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
+    startup_environment = resolve_startup_environment(
+        repo_root=repo_root,
+        environ=os.environ,
+    )
+    print(f"[startup] MetaList environment: {startup_environment}", flush=True)
+    if startup_environment != DEVELOPMENT_ENVIRONMENT:
+        return
+
     assert_startup_sanity(repo_root)
     assert_startup_js_sanity(repo_root)
 

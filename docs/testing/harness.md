@@ -4,8 +4,13 @@ The legacy unit/integration suites were removed during the API2
 migration. Current coverage is a mix of Python/unit tests, small JS unit
 tests, startup sanity gates, and manual regression passes.
 
-Startup sanity is now part of normal `main.py` startup, but it can also be
-run directly without launching namespaces:
+Development-mode startup sanity is part of normal `main.py` startup, but it
+can also be run directly without launching namespaces:
+
+- Set `METALIST_ENVIRONMENT=development` in the ignored repository-root
+  `.env` file to enable the startup sanity gates. Production mode is the
+  default when the setting is absent, and startup always prints the resolved
+  mode.
 
 - Python + JS prelaunch gate:
   - `.venv/bin/python -c "from pathlib import Path; import main; main._run_startup_sanity_gates(repo_root=Path.cwd())"`

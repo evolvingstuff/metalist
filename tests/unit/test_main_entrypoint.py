@@ -167,8 +167,13 @@ def test_installed_default_bootstrap_creates_metalist_directory_tree(
     assert audit_report.encrypted_namespace_count == 0
 
 
-def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Path) -> None:
+def test_run_startup_sanity_gates_runs_python_then_js_in_development(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
     calls: list[str] = []
+    monkeypatch.setenv("METALIST_ENVIRONMENT", "development")
 
     monkeypatch.setattr(
         main_entrypoint,
@@ -187,6 +192,29 @@ def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Pat
         f"python:{tmp_path}",
         f"js:{tmp_path}",
     ]
+    assert "[startup] MetaList environment: development" in capsys.readouterr().out
+
+
+def test_run_startup_sanity_gates_skips_checks_in_production(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    monkeypatch.setenv("METALIST_ENVIRONMENT", "production")
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_sanity",
+        lambda repo_root: (_ for _ in ()).throw(AssertionError("Python sanity must not run")),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_js_sanity",
+        lambda repo_root: (_ for _ in ()).throw(AssertionError("JS sanity must not run")),
+    )
+
+    main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
+
+    assert "[startup] MetaList environment: production" in capsys.readouterr().out
 
 
 def test_startup_encryption_audit_crashes_for_fatal_findings(
