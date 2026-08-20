@@ -1,6 +1,7 @@
 import { NotesAPI } from '../../api-client.js';
 import { analyzeSearchQueryInput } from './search-syntax-service.js';
 import { syncSearchInputValue } from './search-input-service.js';
+import { getSearchSuggestionWindowDays } from './search-suggestion-windows-service.js';
 
 const SUGGESTION_DEBOUNCE_MS = 50;
 const HOVER_DISMISS_BOTTOM_BUFFER_PX = 25;
@@ -413,7 +414,10 @@ export function updateSearchSuggestions(searchInput, options) {
     const requestId = ++requestSerial;
     pendingTimer = setTimeout(async () => {
         pendingTimer = null;
-        const response = await NotesAPI.fetchSearchSuggestions(rawValue);
+        const response = await NotesAPI.fetchSearchSuggestions(
+            rawValue,
+            getSearchSuggestionWindowDays(),
+        );
         if (!response || typeof response !== 'object') {
             throw new Error('Search suggestions response missing');
         }

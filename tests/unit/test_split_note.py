@@ -120,7 +120,6 @@ def test_split_note_updates_original_inserts_siblings_and_records_one_undo(monke
     monkeypatch.setattr(split_module, "store", fake_store)
     monkeypatch.setattr(split_module, "apply_update_content", _fake_update)
     monkeypatch.setattr(split_module, "apply_insert_note", _fake_insert)
-    monkeypatch.setattr(split_module, "_record_added_tag_activity", lambda **kwargs: None)
     monkeypatch.setattr(split_module, "record_split_note", _fake_record_split_note)
     monkeypatch.setattr(split_module.uuid, "uuid4", lambda: next(new_ids))
     monkeypatch.setattr(split_module, "generate_new_uuid", lambda: "uuid-split")

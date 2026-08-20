@@ -133,12 +133,97 @@ def _migration_1_to_2(
     return 0
 
 
+_LEGACY_SEARCH_HISTORY_COLUMNS = {
+    "query_hash",
+    "query_key",
+    "query_key_encryption_nonce",
+    "query_key_encryption_tag",
+    "root_tag",
+    "root_tag_encryption_nonce",
+    "root_tag_encryption_tag",
+    "tags_json",
+    "tags_json_encryption_nonce",
+    "tags_json_encryption_tag",
+    "score",
+    "created_at",
+    "last_interacted_at",
+    "updated_at",
+}
+_OPAQUE_SEARCH_HISTORY_COLUMNS = {
+    "storage_id",
+    "payload_json",
+    "payload_encryption_nonce",
+    "payload_encryption_tag",
+}
+
+
+def _migration_2_to_3(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    columns = _table_columns(connection, table="search_interaction_history")
+    if columns == _OPAQUE_SEARCH_HISTORY_COLUMNS:
+        return 0
+    if columns != _LEGACY_SEARCH_HISTORY_COLUMNS:
+        raise RuntimeError(
+            "Database migration 2→3 found unexpected search history schema: "
+            f"{sorted(columns)}"
+        )
+    legacy_row = connection.execute(
+        "SELECT COUNT(*) FROM search_interaction_history"
+    ).fetchone()
+    if legacy_row is None:
+        raise RuntimeError("Database migration 2→3 could not count legacy search history")
+    deleted_count = int(legacy_row[0])
+
+    connection.execute("DROP TABLE IF EXISTS search_interaction_history_v3")
+    connection.execute(
+        """
+        CREATE TABLE search_interaction_history_v3 (
+            storage_id TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            payload_encryption_nonce BLOB,
+            payload_encryption_tag BLOB
+        )
+        """
+    )
+    connection.execute("DROP TABLE search_interaction_history")
+    connection.execute(
+        "ALTER TABLE search_interaction_history_v3 RENAME TO search_interaction_history"
+    )
+    return deleted_count
+
+
+def _migration_3_to_4(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    columns = _table_columns(connection, table="search_interaction_history")
+    if columns != _OPAQUE_SEARCH_HISTORY_COLUMNS:
+        raise RuntimeError(
+            "Database migration 3→4 found unexpected search history schema: "
+            f"{sorted(columns)}"
+        )
+    row = connection.execute("SELECT COUNT(*) FROM search_interaction_history").fetchone()
+    if row is None:
+        raise RuntimeError("Database migration 3→4 could not count query-score rows")
+    deleted_count = int(row[0])
+    connection.execute("DELETE FROM search_interaction_history")
+    return deleted_count
+
+
 _MIGRATIONS: dict[
     int,
     Callable[..., int],
 ] = {
     0: _migration_0_to_1,
     1: _migration_1_to_2,
+    2: _migration_2_to_3,
+    3: _migration_3_to_4,
 }
 
 
@@ -174,3 +259,17 @@ def run_database_migrations(
         applied_versions=tuple(applied_versions),
         rewritten_payload_count=rewritten_payload_count,
     )
+
+
+def purge_migration_residue(connection: sqlite3.Connection) -> None:
+    """Remove pre-migration values from SQLite pages and the WAL."""
+    if connection.in_transaction:
+        raise RuntimeError("Database residue purge requires a committed connection")
+    connection.execute("PRAGMA secure_delete=ON")
+    checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    if checkpoint is None or int(checkpoint[0]) != 0:
+        raise RuntimeError(f"Database WAL checkpoint could not complete: {checkpoint!r}")
+    connection.execute("VACUUM")
+    checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    if checkpoint is None or int(checkpoint[0]) != 0:
+        raise RuntimeError(f"Database WAL truncation could not complete: {checkpoint!r}")

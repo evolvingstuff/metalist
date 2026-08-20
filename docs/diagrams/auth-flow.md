@@ -51,6 +51,7 @@ sequenceDiagram
                 AuthSvc->>DB: Apply idempotent schema/data rewrite with DEK
                 AuthSvc->>DB: Verify and advance user_version
             end
+            AuthSvc->>DB: Leave all historical backup archives unchanged
         end
         
         AuthSvc->>TokenSvc: create_token(client_info, dek)

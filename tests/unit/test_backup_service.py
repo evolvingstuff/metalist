@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,9 @@ from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
+from app.models.database import SafeSession
+from app.services import backup_service as backup_service_module
+from app.services.search_history_storage import serialize_search_history_payload
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
@@ -165,37 +169,19 @@ def _write_search_history_marker(database_path: Path, query_key: str) -> None:
         connection.execute(
             """
             INSERT INTO search_interaction_history (
-                query_hash,
-                query_key,
-                query_key_encryption_nonce,
-                query_key_encryption_tag,
-                root_tag,
-                root_tag_encryption_nonce,
-                root_tag_encryption_tag,
-                tags_json,
-                tags_json_encryption_nonce,
-                tags_json_encryption_tag,
-                score,
-                created_at,
-                last_interacted_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                storage_id,
+                payload_json,
+                payload_encryption_nonce,
+                payload_encryption_tag
+            ) VALUES (?, ?, ?, ?)
             """,
             (
-                f"hash:{query_key}",
-                query_key,
+                "00000000-0000-4000-8000-000000000001",
+                serialize_search_history_payload(
+                    counts_by_date={"2026-03-05": {query_key: 1}},
+                ),
                 None,
                 None,
-                query_key.split()[0],
-                None,
-                None,
-                f'["{query_key.split()[0]}"]',
-                None,
-                None,
-                1.0,
-                "2026-03-05T00:00:00+00:00",
-                "2026-03-05T00:00:00+00:00",
-                "2026-03-05T00:00:00+00:00",
             ),
         )
         connection.commit()
@@ -209,9 +195,15 @@ def _read_search_history_queries(database_path: Path) -> list[str]:
     try:
         initialize_schema(connection)
         rows = connection.execute(
-            "SELECT query_key FROM search_interaction_history ORDER BY query_key ASC"
+            "SELECT payload_json FROM search_interaction_history ORDER BY storage_id ASC"
         ).fetchall()
-        return [str(row["query_key"]) for row in rows]
+        query_keys: list[str] = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            counts_by_date = payload["counts_by_date"]
+            for tag_counts in counts_by_date.values():
+                query_keys.extend(str(tag_name) for tag_name in tag_counts)
+        return sorted(query_keys)
     finally:
         connection.close()
 
@@ -287,6 +279,7 @@ def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
     _write_counter(database_path, 7)
     backup_file = create_timestamped_backup_for_paths(database_path, backup_directory)
     backup_path = backup_directory / backup_file.filename
+    immutable_backup_hash = _sha256_for_path(backup_path)
 
     assert backup_file.filename.startswith("live-")
     assert backup_file.filename.endswith(".metalist-backup.tar.gz")
@@ -308,6 +301,68 @@ def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
 
     restore_backup_to_paths(backup_path, database_path)
     assert _read_counter(database_path) == 7
+    assert _sha256_for_path(backup_path) == immutable_backup_hash
+
+
+def test_backup_creation_never_overwrites_an_existing_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "live.db"
+    backup_directory = tmp_path / "backups"
+    backup_directory.mkdir()
+    _write_counter(database_path, 7)
+    fixed_filename = "live-20260820-120000-000000.metalist-backup.tar.gz"
+    existing_backup = backup_directory / fixed_filename
+    existing_backup.write_bytes(b"existing-immutable-archive")
+    existing_hash = _sha256_for_path(existing_backup)
+    monkeypatch.setattr(
+        backup_service_module,
+        "_format_archive_backup_filename",
+        lambda *, namespace, now_utc: fixed_filename,
+    )
+
+    with pytest.raises(FileExistsError, match="Backup already exists"):
+        create_timestamped_backup_for_paths(database_path, backup_directory)
+
+    assert _sha256_for_path(existing_backup) == existing_hash
+
+
+def test_restore_detects_any_source_archive_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "live.db"
+    backup_directory = tmp_path / "backups"
+    _write_counter(database_path, 7)
+    backup = create_timestamped_backup_for_paths(database_path, backup_directory)
+    backup_path = backup_directory / backup.filename
+
+    def _mutate_source(
+        source_path: Path,
+        _database_path: Path,
+        *,
+        source_namespace: str | None,
+    ) -> None:
+        assert source_namespace is None
+        source_path.write_bytes(b"mutated-during-restore")
+
+    monkeypatch.setattr(
+        backup_service_module,
+        "_restore_archive_backup_to_paths",
+        _mutate_source,
+    )
+
+    with pytest.raises(RuntimeError, match="Restore source was modified"):
+        restore_backup_to_paths(backup_path, database_path)
+
+
+def test_restore_refuses_to_use_live_database_as_backup_source(tmp_path: Path) -> None:
+    database_path = tmp_path / "20260820-120000-000000.live.db.bak"
+    _write_counter(database_path, 7)
+
+    with pytest.raises(ValueError, match="source and live database destination must differ"):
+        restore_backup_to_paths(database_path, database_path)
 
 
 def test_restore_archive_into_different_namespace_rewrites_launch_profile(tmp_path: Path) -> None:
@@ -551,6 +606,11 @@ def test_restore_supports_legacy_backup_format(tmp_path: Path) -> None:
     _copy_database_for_fixture(database_path, backup_path)
     _copy_database_for_fixture(file_database_path, file_backup_path)
     _copy_database_for_fixture(search_history_database_path, search_history_backup_path)
+    source_hashes = (
+        _sha256_for_path(backup_path),
+        _sha256_for_path(file_backup_path),
+        _sha256_for_path(search_history_backup_path),
+    )
 
     _write_counter(database_path, 99)
     _write_file_marker(file_database_path, "file-b")
@@ -560,6 +620,11 @@ def test_restore_supports_legacy_backup_format(tmp_path: Path) -> None:
     assert _read_counter(database_path) == 7
     assert _read_file_ids(file_database_path) == ["file-a"]
     assert _read_search_history_queries(search_history_database_path) == ["exercise"]
+    assert (
+        _sha256_for_path(backup_path),
+        _sha256_for_path(file_backup_path),
+        _sha256_for_path(search_history_backup_path),
+    ) == source_hashes
 
 
 def test_restore_rejects_unsupported_future_archive_format_before_writing(tmp_path: Path) -> None:

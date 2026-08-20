@@ -54,10 +54,13 @@ from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_history import (
+    current_local_date,
     is_first_search_tag_suggestion_context,
-    list_recent_search_tags,
+    list_recent_search_tags_for_first_query,
     prioritize_first_search_tag_suggestions,
-    record_search_interaction,
+    record_note_interaction,
+    reset_search_history,
+    validate_tag_activity_windows,
 )
 from app.services.root_sorting import is_root_reorder_locked
 from app.services.root_sorting import normalize_sort_mode
@@ -78,8 +81,6 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
-RECENT_SEARCH_TAG_CANDIDATE_LIMIT = 50
-RECENT_SEARCH_TAG_PRIORITY_SLOTS = 3
 
 
 def _require_note_present(note_id: str, *, context: str) -> None:
@@ -514,18 +515,35 @@ def delete_tab(payload: dict) -> Dict[str, object]:
 @transactional_route
 def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     query = payload["query"]
+    raw_window_days = payload["windowDays"]
     if not isinstance(query, str):
         raise TypeError("query must be a string")
-    suggestions = search_index.suggest_tag_completions(query=query, limit=MAX_SEARCH_SUGGESTIONS)
+    if not isinstance(raw_window_days, list):
+        raise TypeError("windowDays must be a list")
+    if len(raw_window_days) > MAX_SEARCH_SUGGESTIONS:
+        raise ValueError(
+            f"windowDays cannot contain more than {MAX_SEARCH_SUGGESTIONS} slots"
+        )
+    window_days = tuple(raw_window_days)
+    validate_tag_activity_windows(window_days)
+    all_suggestions = search_index.suggest_all_tag_completions(query=query)
+    suggestions = all_suggestions[:MAX_SEARCH_SUGGESTIONS]
     if is_first_search_tag_suggestion_context(query):
         token = _require_bearer_token(request)
-        recent_tags = list_recent_search_tags(limit=RECENT_SEARCH_TAG_CANDIDATE_LIMIT, token=token)
+        recent_tags = list_recent_search_tags_for_first_query(
+            query=query,
+            candidate_tags=all_suggestions,
+            window_days=window_days,
+            token=token,
+            today=current_local_date(),
+        )
         suggestions = prioritize_first_search_tag_suggestions(
             query=query,
             base_suggestions=suggestions,
             recent_tags=recent_tags,
-            priority_slots=RECENT_SEARCH_TAG_PRIORITY_SLOTS,
+            priority_slots=len(window_days),
         )
+        suggestions = suggestions[:MAX_SEARCH_SUGGESTIONS]
     return {"suggestions": suggestions}
 
 
@@ -551,22 +569,32 @@ def prioritize_tag_suggestions(payload: dict) -> Dict[str, object]:
     return {"suggestions": suggestions}
 
 
-@router.post("/notes/search-interactions")
+@router.post("/notes/tag-interactions")
 @transactional_route
-def search_interactions(request: Request, payload: dict) -> Dict[str, object]:
+def tag_interactions(request: Request, payload: dict) -> Dict[str, object]:
     token = _require_bearer_token(request)
-    query = payload["query"]
+    note_id = payload["noteId"]
     interaction_type = payload["interactionType"]
-    if not isinstance(query, str):
-        raise TypeError("query must be a string")
+    if not isinstance(note_id, str) or note_id == "":
+        raise TypeError("noteId must be a non-empty string")
     if not isinstance(interaction_type, str):
         raise TypeError("interactionType must be a string")
-    credited = record_search_interaction(
-        query=query,
+    _require_note_present(note_id, context="notes.tag-interactions")
+    credited = record_note_interaction(
+        note_id=note_id,
         interaction_type=interaction_type,
         token=token,
+        interacted_on=current_local_date(),
     )
     return {"credited": credited}
+
+
+@router.delete("/notes/tag-interactions")
+@transactional_route
+def delete_tag_interactions(request: Request) -> Dict[str, object]:
+    token = _require_bearer_token(request)
+    deleted_count = reset_search_history(token=token)
+    return {"deletedCount": deleted_count}
 
 
 @router.post("/notes/tag-suggestions")

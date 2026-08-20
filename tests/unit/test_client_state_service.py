@@ -58,6 +58,7 @@ def test_save_client_preferences_round_trips_through_app_settings(
         "pref.animated_transitions": "false",
         "pref.reminder_surface_expanded": "false",
         "pref.theme": "dark",
+        "pref.search_suggestion_windows": "[30,7,1]",
     }
 
     saved = save_client_preferences(preferences=expected_preferences, token="")
@@ -128,6 +129,22 @@ def test_save_client_preferences_accepts_note_layout_keys(
 
     assert saved == expected_preferences
     assert load_client_preferences(token="") == expected_preferences
+
+
+def test_save_client_preferences_validates_search_suggestion_windows(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    expected_preferences = {"pref.search_suggestion_windows": "[1,30]"}
+    assert save_client_preferences(preferences=expected_preferences, token="") == expected_preferences
+
+    for invalid_value in ("[0]", "[366]", "[7,7]", "[1, 7]", "not-json"):
+        with pytest.raises((RuntimeError, json.JSONDecodeError)):
+            save_client_preferences(
+                preferences={"pref.search_suggestion_windows": invalid_value},
+                token="",
+            )
 
 
 def test_save_command_palette_usage_round_trips_through_app_settings(

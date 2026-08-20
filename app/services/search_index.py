@@ -383,6 +383,18 @@ class SearchIndex:
                 if note_ids and term_casefold and not term_casefold.startswith("@")
             }
 
+    def list_raw_tag_terms_for_note(self, note_id: str) -> FrozenSet[str]:
+        """Return explicit and inherited tags before ontology inference."""
+        if not isinstance(note_id, str) or note_id == "":
+            raise TypeError("note_id must be a non-empty string")
+        with self._lock:
+            if note_id not in self._uuid_to_id:
+                raise KeyError(f"Note {note_id} not present in SearchIndex")
+            note_int_id = self._uuid_to_id[note_id]
+            if note_int_id not in self._alive:
+                raise KeyError(f"Note {note_id} is not active in SearchIndex")
+            return self._note_raw_tag_terms[note_int_id]
+
     def list_explicit_tag_frequencies(self) -> Dict[str, int]:
         """Return explicitly written tag term -> note count (excluding @meta tags)."""
         with self._lock:
@@ -503,6 +515,12 @@ class SearchIndex:
 
             scored.sort()
             return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
+
+    def suggest_all_tag_completions(self, *, query: str) -> List[str]:
+        """Return the complete ranked candidate set before UI truncation."""
+        with self._lock:
+            candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
+        return self.suggest_tag_completions(query=query, limit=candidate_capacity)
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()
         if not isinstance(search, str):

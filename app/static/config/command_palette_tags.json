@@ -61,6 +61,10 @@
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },
     {
+      "id": "form.search_suggestion_windows",
+      "tags": ["search", "suggestion", "history", "window", "windows", "days", "slots", "ranking", "recent", "order"]
+    },
+    {
       "id": "action.expand_all",
       "tags": ["expand", "all", "collapsed", "root", "top-level", "notes", "view"]
     },
@@ -75,6 +79,10 @@
     {
       "id": "action.reset_all_preferences",
       "tags": ["reset", "clear", "preferences", "settings", "defaults"]
+    },
+    {
+      "id": "action.reset_search_suggestion_history",
+      "tags": ["reset", "clear", "search", "suggestion", "history", "activity", "ranking", "counts"]
     },
     {
       "id": "form.add_password",

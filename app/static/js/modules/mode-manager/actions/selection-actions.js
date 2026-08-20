@@ -9,25 +9,8 @@ import { clearTagBar } from '../services/tag-bar-service.js';
 import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
 import {
-    beginEditInteractionForActiveQuery,
-    cancelPendingInteraction,
-    finalizeRecordedInteraction,
+    recordNoteInteractionIfNew,
 } from '../services/search-interaction-service.js';
-
-function recordEditInteraction(interactionQuery) {
-    if (interactionQuery === null) {
-        return Promise.resolve();
-    }
-    return NotesAPI.recordSearchInteraction(interactionQuery, 'edit').then(
-        () => {
-            finalizeRecordedInteraction(interactionQuery);
-        },
-        (error) => {
-            cancelPendingInteraction(interactionQuery);
-            throw error;
-        }
-    );
-}
 
 function getNoteElementIfPresent(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
@@ -91,8 +74,7 @@ export async function actionSelectNote(noteId, options) {
     applyInitialCaretVisibility(initialCaretVisibility);
 
     if (shouldRecordEditInteraction) {
-        const interactionQuery = beginEditInteractionForActiveQuery();
-        await recordEditInteraction(interactionQuery);
+        await recordNoteInteractionIfNew(noteId, 'edit');
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
@@ -231,8 +213,7 @@ export async function actionSwitchNotes(newNoteId, options) {
 	    }
 
         await actionSaveNote(currentNoteId);
-        const interactionQuery = beginEditInteractionForActiveQuery();
-        await recordEditInteraction(interactionQuery);
+        await recordNoteInteractionIfNew(newNoteId, 'edit');
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 

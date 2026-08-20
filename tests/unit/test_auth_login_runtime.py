@@ -85,6 +85,7 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
     monkeypatch.setattr(auth_route.tab_state_store, "ensure_decrypted", lambda *, token: None)
     monkeypatch.setattr(auth_route.link_title_store, "ensure_decrypted", lambda *, token: None)
     monkeypatch.setattr(auth_route.reminder_store, "ensure_decrypted", lambda *, token: None)
+    monkeypatch.setattr(auth_route.search_history_store, "bootstrap", lambda *, connection: None)
     monkeypatch.setattr(auth_route.search_history_store, "ensure_decrypted", lambda *, token: None)
     monkeypatch.setattr(
         auth_route,
@@ -114,7 +115,7 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
         response=Response(),
         payload=auth_route.LoginRequest(password="abcd"),
         tab_id="tab-id",
-        db=object(),
+        db=type("_Database", (), {"connection": lambda self: object()})(),
     )
 
     assert result.message == "Login successful"

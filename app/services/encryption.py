@@ -217,6 +217,29 @@ class EncryptionService:
         ciphertext = encryptor.update(plaintext) + encryptor.finalize()
         tag = encryptor.tag
         return ciphertext, nonce, tag
+
+    def encrypt_with_aad(
+        self,
+        plaintext: str,
+        associated_data: bytes,
+    ) -> tuple[str, bytes, bytes]:
+        if self.dek is None:
+            raise ValueError("No DEK set - ensure password has been provided")
+        if not isinstance(plaintext, str):
+            raise TypeError(f"plaintext must be a string, got {type(plaintext)}")
+        if not isinstance(associated_data, bytes) or associated_data == b"":
+            raise ValueError("associated_data must be non-empty bytes")
+
+        nonce = os.urandom(12)
+        cipher = Cipher(
+            algorithms.AES(self.dek),
+            modes.GCM(nonce),
+            backend=default_backend(),
+        )
+        encryptor = cipher.encryptor()
+        encryptor.authenticate_additional_data(associated_data)
+        ciphertext = encryptor.update(plaintext.encode("utf-8")) + encryptor.finalize()
+        return base64.b64encode(ciphertext).decode("utf-8"), nonce, encryptor.tag
     
     def decrypt(self, ciphertext_base64: str, nonce: bytes, tag: bytes) -> str:
         """Decrypt AES-256-GCM encrypted data from separate database fields using DEK.
@@ -266,6 +289,35 @@ class EncryptionService:
         )
         decryptor = cipher.decryptor()
         return decryptor.update(ciphertext) + decryptor.finalize()
+
+    def decrypt_with_aad(
+        self,
+        ciphertext_base64: str,
+        nonce: bytes,
+        tag: bytes,
+        associated_data: bytes,
+    ) -> str:
+        if self.dek is None:
+            raise ValueError("No DEK set - ensure password has been provided")
+        if not isinstance(ciphertext_base64, str):
+            raise TypeError(f"ciphertext_base64 must be a string, got {type(ciphertext_base64)}")
+        if not isinstance(associated_data, bytes) or associated_data == b"":
+            raise ValueError("associated_data must be non-empty bytes")
+
+        normalized = ciphertext_base64.strip()
+        missing_padding = (-len(normalized)) % 4
+        if missing_padding:
+            normalized += "=" * missing_padding
+        ciphertext = base64.b64decode(normalized)
+        cipher = Cipher(
+            algorithms.AES(self.dek),
+            modes.GCM(nonce, tag),
+            backend=default_backend(),
+        )
+        decryptor = cipher.decryptor()
+        decryptor.authenticate_additional_data(associated_data)
+        plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        return plaintext.decode("utf-8")
     
     def generate_salt(self) -> bytes:
         """Generate cryptographically secure random salt.

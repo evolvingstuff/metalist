@@ -480,20 +480,26 @@ export const NotesAPI = {
         return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
-    async recordSearchInteraction(query, interactionType) {
-        if (typeof query !== 'string') {
-            throw new Error('NotesAPI.recordSearchInteraction requires query string');
+    async recordNoteInteraction(noteId, interactionType) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.recordNoteInteraction requires noteId string');
         }
         if (typeof interactionType !== 'string' || interactionType.length === 0) {
-            throw new Error('NotesAPI.recordSearchInteraction requires interactionType string');
+            throw new Error('NotesAPI.recordNoteInteraction requires interactionType string');
         }
         const body = {
-            query,
+            noteId,
             interactionType,
         };
-        return this._apiCall(CONFIG.API.NOTES.SEARCH_INTERACTIONS, {
+        return this._apiCall(CONFIG.API.NOTES.TAG_INTERACTIONS, {
             method: 'POST',
             body: JSON.stringify(body),
+        });
+    },
+
+    async resetSearchSuggestionHistory() {
+        return this._apiCall(CONFIG.API.NOTES.TAG_INTERACTIONS, {
+            method: 'DELETE',
         });
     },
 
@@ -564,11 +570,14 @@ export const NotesAPI = {
         });
     },
 
-    async fetchSearchSuggestions(query) {
+    async fetchSearchSuggestions(query, windowDays) {
         if (typeof query !== 'string') {
             throw new Error('NotesAPI.fetchSearchSuggestions requires query string');
         }
-        const payload = { query };
+        if (!Array.isArray(windowDays)) {
+            throw new Error('NotesAPI.fetchSearchSuggestions requires windowDays array');
+        }
+        const payload = { query, windowDays };
         return this._apiCall(CONFIG.API.NOTES.SEARCH_SUGGESTIONS, {
             method: 'POST',
             body: JSON.stringify(payload)

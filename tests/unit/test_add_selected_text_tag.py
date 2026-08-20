@@ -30,7 +30,6 @@ def test_command_uses_existing_namespace_variant_and_records_tag_only_update(mon
         "apply_update_content",
         lambda note_id, content, tags, token: applied.append((note_id, content, tags, token)),
     )
-    monkeypatch.setattr(add_tag_module, "_record_added_tag_activity", lambda **kwargs: None)
     monkeypatch.setattr(add_tag_module, "record_update", lambda *args, **kwargs: undo_calls.append(kwargs))
     monkeypatch.setattr(add_tag_module, "generate_new_uuid", lambda: "update-1")
 

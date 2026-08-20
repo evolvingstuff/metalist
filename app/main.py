@@ -190,11 +190,15 @@ with begin_writer() as connection:
             encryption_enabled=False,
             encryption_service=None,
         )
+        database_version = CURRENT_DATABASE_VERSION
     bootstrap_ontology_rules_store(connection=connection)
     tab_state_store.bootstrap(connection=connection)
     link_title_store.bootstrap(connection=connection)
     reminder_store.bootstrap(connection=connection)
-    search_history_store.bootstrap(connection=connection)
+    if not bool(settings["encryption_enabled"]) or database_version >= CURRENT_DATABASE_VERSION:
+        search_history_store.bootstrap(connection=connection)
+    else:
+        search_history_store.reset()
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 startup_has_password = False

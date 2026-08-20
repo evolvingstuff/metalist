@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -390,17 +391,63 @@ def test_search_suggestions_route_uses_configured_limit(
     monkeypatch.setattr(notes_route, "MAX_SEARCH_SUGGESTIONS", 7)
     monkeypatch.setattr(
         notes_route.search_index,
-        "suggest_tag_completions",
-        lambda *, query, limit: captured.update(query=query, limit=limit) or ["foo"],
+        "suggest_all_tag_completions",
+        lambda *, query: captured.update(query=query) or [f"tag-{index}" for index in range(10)],
     )
 
-    result = notes_route.search_suggestions(None, {"query": "foo bar"})
+    result = notes_route.search_suggestions(
+        None,
+        {"query": "foo bar", "windowDays": [1, 7, 30]},
+    )
 
     assert captured == {
         "query": "foo bar",
-        "limit": 7,
     }
-    assert result == {"suggestions": ["foo"]}
+    assert result == {"suggestions": [f"tag-{index}" for index in range(7)]}
+
+
+def test_delete_tag_interactions_route_resets_active_namespace_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda _request: "token")
+    monkeypatch.setattr(
+        notes_route,
+        "reset_search_history",
+        lambda *, token: captured.update(token=token) or 17,
+    )
+
+    result = notes_route.delete_tag_interactions(object())
+
+    assert captured == {"token": "token"}
+    assert result == {"deletedCount": 17}
+
+
+def test_tag_interactions_route_credits_the_note_not_the_search_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda _request: "token")
+    monkeypatch.setattr(notes_route, "_require_note_present", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(notes_route, "current_local_date", lambda: date(2026, 8, 20))
+    monkeypatch.setattr(
+        notes_route,
+        "record_note_interaction",
+        lambda **kwargs: captured.update(kwargs) or True,
+    )
+
+    result = notes_route.tag_interactions(
+        object(),
+        {"noteId": "note-1", "interactionType": "expand"},
+    )
+
+    assert captured == {
+        "note_id": "note-1",
+        "interaction_type": "expand",
+        "token": "token",
+        "interacted_on": date(2026, 8, 20),
+    }
+    assert result == {"credited": True}
 
 
 def test_prioritize_tag_suggestions_route_uses_configured_tag_limit(

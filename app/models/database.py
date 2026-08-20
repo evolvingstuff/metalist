@@ -79,6 +79,7 @@ class SafeSession:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA secure_delete=ON")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA cache_size=500000")
@@ -101,6 +102,7 @@ class SafeSession:
         )
         anchor.row_factory = sqlite3.Row
         anchor.execute("PRAGMA foreign_keys = ON")
+        anchor.execute("PRAGMA secure_delete=ON")
         initialize_schema(anchor)
         anchor.commit()
         _configure_sql_logging(anchor)
@@ -132,6 +134,7 @@ class SafeSession:
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA secure_delete=ON")
         initialize_schema(conn)
         conn.commit()
         _configure_sql_logging(conn)

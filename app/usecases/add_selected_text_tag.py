@@ -12,7 +12,7 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid, get_current_sync_uuid
 from app.services.undo_state import record_update
 from app.usecases.base import QueryCommand
-from app.usecases.update_content import _record_added_tag_activity, apply_update_content
+from app.usecases.update_content import apply_update_content
 
 
 def _append_global_tag(*, tags: str, tag: str) -> str:
@@ -79,12 +79,6 @@ class CmdAddSelectedTextTag(QueryCommand):
             next_tags,
             self.token,
         )
-        _record_added_tag_activity(
-            before_tags=record.tags,
-            after_tags=next_tags,
-            token=self.token,
-        )
-
         record_update(
             self.client_id,
             self.undo_context,

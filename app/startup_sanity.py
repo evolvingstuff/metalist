@@ -17,6 +17,39 @@ from app.startup_sanity_config import is_installed_distribution_root
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _ROUTE_DECORATOR_METHODS = frozenset({"post", "put", "patch", "delete"})
 _MAX_VIOLATIONS = 200
+_BACKUP_SERVICE_PATH = "app/services/backup_service.py"
+_DATABASE_MIGRATIONS_PATH = "app/db/migrations.py"
+_AUTH_SERVICE_PATH = "app/services/auth_service.py"
+_AUTH_ROUTES_PATH = "app/api/routes/auth.py"
+_MAIN_PATH = "app/main.py"
+_BACKUP_SERVICE_MODULE = "app.services.backup_service"
+_BACKUP_DELETE_FUNCTION = "delete_oldest_backups_in_directory"
+_FORBIDDEN_BACKUP_MUTATION_CALLEES = frozenset(
+    {
+        "os.chmod",
+        "os.remove",
+        "os.rename",
+        "os.replace",
+        "os.truncate",
+        "os.unlink",
+        "os.utime",
+        "shutil.copy",
+        "shutil.copy2",
+        "shutil.copyfile",
+        "shutil.move",
+    }
+)
+_FORBIDDEN_BACKUP_PATH_METHODS = frozenset(
+    {
+        "chmod",
+        "rename",
+        "replace",
+        "touch",
+        "write_bytes",
+        "write_text",
+    }
+)
+_FORBIDDEN_BACKUP_FUNCTION_TERMS = frozenset({"migrate", "replace", "rewrite", "upgrade"})
 
 
 @dataclass(frozen=True)
@@ -283,6 +316,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
         self._dict_like_names: set[str] = set()
         self._parent_stack: list[tuple[ast.AST, str]] = []
         self._prefixes = _scope_prefixes(tree)
+        self._relative_path = _path_rel(project_root, path)
 
     def violations(self) -> list[StartupSanityViolation]:
         return list(self._violations)
@@ -317,14 +351,14 @@ class _StartupSanityChecker(ast.NodeVisitor):
     def _add(self, *, node: ast.AST, rule_id: str, message: str) -> None:
         lineno = getattr(node, "lineno", 1)
         col = getattr(node, "col_offset", 0)
-        if _suppressed(self._lines, lineno, rule_id):
+        if rule_id != "BKP001" and _suppressed(self._lines, lineno, rule_id):
             return
         frame = _codeframe(self._lines, lineno, col, 2)
         self._violations.append(
             StartupSanityViolation(
                 rule_id=rule_id,
                 message=message,
-                path=_path_rel(self._project_root, self._path),
+                path=self._relative_path,
                 lineno=lineno,
                 col=col,
                 codeframe=frame,
@@ -387,13 +421,51 @@ class _StartupSanityChecker(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._check_backup_function_name(node)
         self._check_defaults(node)
         self._check_route_transaction_decorators(node)
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._check_backup_function_name(node)
         self._check_defaults(node)
         self._check_route_transaction_decorators(node)
+        self.generic_visit(node)
+
+    def _check_backup_function_name(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> None:
+        if not self._relative_path.startswith("app/"):
+            return
+        lowered_name = node.name.casefold()
+        if "backup" not in lowered_name:
+            return
+        if any(term in lowered_name for term in _FORBIDDEN_BACKUP_FUNCTION_TERMS):
+            self._add(
+                node=node,
+                rule_id="BKP001",
+                message="historical backup transformation functions are forbidden",
+            )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if (
+            self._relative_path in {_DATABASE_MIGRATIONS_PATH, _MAIN_PATH}
+            and node.module == _BACKUP_SERVICE_MODULE
+        ):
+            self._add(
+                node=node,
+                rule_id="BKP001",
+                message="startup and database migrations must not import the backup service",
+            )
+        if self._relative_path == _AUTH_SERVICE_PATH and node.module == _BACKUP_SERVICE_MODULE:
+            for alias in node.names:
+                if alias.name != "create_timestamped_backup":
+                    self._add(
+                        node=node,
+                        rule_id="BKP001",
+                        message="authenticated migration may only create a new backup",
+                    )
         self.generic_visit(node)
 
     def _check_defaults(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
@@ -482,8 +554,187 @@ class _StartupSanityChecker(ast.NodeVisitor):
                 )
 
     def visit_Call(self, node: ast.Call) -> None:
+        self._check_backup_immutability(node)
         self._check_default_value_apis(node)
         self.generic_visit(node)
+
+    def _enclosing_function_name(self) -> str | None:
+        for parent, _field_name in reversed(self._parent_stack):
+            if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return parent.name
+        return None
+
+    def _check_backup_immutability(self, node: ast.Call) -> None:
+        callee = _dotted_name(node.func)
+        if (
+            self._relative_path == _AUTH_ROUTES_PATH
+            and self._enclosing_function_name() == "login"
+            and isinstance(callee, str)
+            and "backup" in callee.casefold()
+        ):
+            self._add(
+                node=node,
+                rule_id="BKP001",
+                message="login must not enumerate or mutate backup files",
+            )
+            return
+        if self._relative_path.startswith("app/") and self._relative_path != _BACKUP_SERVICE_PATH:
+            call_text = ast.unparse(node).casefold()
+            if callee in _FORBIDDEN_BACKUP_MUTATION_CALLEES and "backup" in call_text:
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message=f"existing backup mutation via {callee} is forbidden",
+                )
+                return
+            if isinstance(node.func, ast.Attribute):
+                receiver = _dotted_name(node.func.value)
+                receiver_mentions_backup = (
+                    isinstance(receiver, str) and "backup" in receiver.casefold()
+                )
+                if receiver_mentions_backup and (
+                    node.func.attr in _FORBIDDEN_BACKUP_PATH_METHODS
+                    or node.func.attr == "unlink"
+                ):
+                    self._add(
+                        node=node,
+                        rule_id="BKP001",
+                        message="existing backups may only be deleted by the retention workflow",
+                    )
+                    return
+            if callee == "tarfile.open" and "backup" in call_text:
+                mode_node = None
+                if len(node.args) >= 2:
+                    mode_node = node.args[1]
+                for keyword in node.keywords:
+                    if keyword.arg == "mode":
+                        mode_node = keyword.value
+                if not isinstance(mode_node, ast.Constant) or not isinstance(mode_node.value, str):
+                    self._add(
+                        node=node,
+                        rule_id="BKP001",
+                        message="backup archive mode must be a literal read or exclusive-create mode",
+                    )
+                    return
+                if not mode_node.value.startswith(("r", "x")):
+                    self._add(
+                        node=node,
+                        rule_id="BKP001",
+                        message="backup archives may only be read or created exclusively",
+                    )
+                    return
+        if self._relative_path != _BACKUP_SERVICE_PATH:
+            return
+        if callee in _FORBIDDEN_BACKUP_MUTATION_CALLEES:
+            self._add(
+                node=node,
+                rule_id="BKP001",
+                message=f"existing backup mutation via {callee} is forbidden",
+            )
+            return
+
+        if callee == "tarfile.open":
+            mode_node = None
+            if len(node.args) >= 2:
+                mode_node = node.args[1]
+            for keyword in node.keywords:
+                if keyword.arg == "mode":
+                    mode_node = keyword.value
+            if not isinstance(mode_node, ast.Constant) or not isinstance(mode_node.value, str):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup archive mode must be a literal read or exclusive-create mode",
+                )
+                return
+            if not mode_node.value.startswith(("r", "x")):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup archives may only be read or created exclusively",
+                )
+            return
+
+        if callee in {"open", "bz2.open", "gzip.open", "lzma.open"}:
+            if len(node.args) == 0:
+                return
+            target_text = ast.unparse(node.args[0]).casefold()
+            if "backup" not in target_text:
+                return
+            mode_node = None
+            if len(node.args) >= 2:
+                mode_node = node.args[1]
+            for keyword in node.keywords:
+                if keyword.arg == "mode":
+                    mode_node = keyword.value
+            if mode_node is None:
+                return
+            if not isinstance(mode_node, ast.Constant) or not isinstance(mode_node.value, str):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup file open mode must be a literal read mode",
+                )
+                return
+            if any(marker in mode_node.value for marker in ("w", "a", "x", "+")):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="existing backup files must not be opened for writing",
+                )
+            return
+
+        if callee == "sqlite3.connect" and len(node.args) >= 1:
+            target_text = ast.unparse(node.args[0]).casefold()
+            if "backup" in target_text:
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup databases must not be opened through a writable SQLite connection",
+                )
+            return
+
+        if not isinstance(node.func, ast.Attribute):
+            return
+        receiver = _dotted_name(node.func.value)
+        receiver_mentions_backup = isinstance(receiver, str) and "backup" in receiver.casefold()
+        if receiver_mentions_backup and node.func.attr in _FORBIDDEN_BACKUP_PATH_METHODS:
+            self._add(
+                node=node,
+                rule_id="BKP001",
+                message=f"existing backup mutation via .{node.func.attr}(...) is forbidden",
+            )
+            return
+        if receiver_mentions_backup and node.func.attr == "open":
+            mode_node = None
+            if len(node.args) >= 1:
+                mode_node = node.args[0]
+            for keyword in node.keywords:
+                if keyword.arg == "mode":
+                    mode_node = keyword.value
+            if mode_node is None:
+                return
+            if not isinstance(mode_node, ast.Constant) or not isinstance(mode_node.value, str):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup path open mode must be a literal read mode",
+                )
+                return
+            if any(marker in mode_node.value for marker in ("w", "a", "x", "+")):
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="existing backup paths must not be opened for writing",
+                )
+            return
+        if receiver_mentions_backup and node.func.attr == "unlink":
+            if self._enclosing_function_name() != _BACKUP_DELETE_FUNCTION:
+                self._add(
+                    node=node,
+                    rule_id="BKP001",
+                    message="backup deletion is restricted to the explicit retention/delete workflow",
+                )
 
     def _check_default_value_apis(self, node: ast.Call) -> None:
         callee = _dotted_name(node.func)

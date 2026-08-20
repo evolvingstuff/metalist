@@ -280,6 +280,8 @@ export async function toggleTodoDone(noteId) {
     });
 
     await NotesAPI.toggleTodo(noteId);
+    const module = await import('../services/search-interaction-service.js');
+    await module.recordNoteInteractionIfNew(noteId, 'command');
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
 }
 
@@ -338,7 +340,10 @@ export async function runShellNote(noteId, timeoutSeconds) {
         throw new Error(`runShellNote called while editing note ${ModeContext.currentNoteId}`);
     }
 
-    return NotesAPI.runShell(noteId, timeoutSeconds);
+    const response = await NotesAPI.runShell(noteId, timeoutSeconds);
+    const module = await import('../services/search-interaction-service.js');
+    await module.recordNoteInteractionIfNew(noteId, 'command');
+    return response;
 }
 
 export async function getShellRun(noteId, runId) {
@@ -833,6 +838,8 @@ async function setNoteCollapse(noteId, collapsed) {
         await NotesAPI.collapseNote(noteId);
     } else {
         await NotesAPI.expandNote(noteId);
+        const module = await import('../services/search-interaction-service.js');
+        await module.recordNoteInteractionIfNew(noteId, 'expand');
         if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
             ModeContext.markEditSessionExpandedPersisted();
         }

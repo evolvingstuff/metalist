@@ -206,6 +206,23 @@ class _AuditState:
         )
 
 
+_LEGACY_SEARCH_HISTORY_COLUMNS = frozenset(
+    {
+        "query_hash", "query_key", "query_key_encryption_nonce",
+        "query_key_encryption_tag", "root_tag", "root_tag_encryption_nonce",
+        "root_tag_encryption_tag", "tags_json", "tags_json_encryption_nonce",
+        "tags_json_encryption_tag", "score", "created_at", "last_interacted_at",
+        "updated_at",
+    }
+)
+_OPAQUE_SEARCH_HISTORY_COLUMNS = frozenset(
+    {
+        "storage_id", "payload_json", "payload_encryption_nonce",
+        "payload_encryption_tag",
+    }
+)
+
+
 _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
     "notes": frozenset(
         {
@@ -255,15 +272,7 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "created_at", "updated_at",
         }
     ),
-    "search_interaction_history": frozenset(
-        {
-            "query_hash", "query_key", "query_key_encryption_nonce",
-            "query_key_encryption_tag", "root_tag", "root_tag_encryption_nonce",
-            "root_tag_encryption_tag", "tags_json", "tags_json_encryption_nonce",
-            "tags_json_encryption_tag", "score", "created_at", "last_interacted_at",
-            "updated_at",
-        }
-    ),
+    "search_interaction_history": _LEGACY_SEARCH_HISTORY_COLUMNS,
     "namespace_launch_profile": frozenset(
         {"namespace", "port", "https_port", "mcp_port", "created_at", "updated_at"}
     ),
@@ -279,6 +288,16 @@ _MAIN_SCHEMA = {
     ),
 }
 
+_OPAQUE_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
+    **_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS,
+    "search_interaction_history": _OPAQUE_SEARCH_HISTORY_COLUMNS,
+}
+
+_OPAQUE_MAIN_SCHEMA = {
+    **_MAIN_SCHEMA,
+    "search_interaction_history": _OPAQUE_SEARCH_HISTORY_COLUMNS,
+}
+
 _FILE_SCHEMA = {
     table: frozenset(
         {
@@ -291,7 +310,7 @@ _FILE_SCHEMA = {
     for table in ("files", "sounds")
 }
 
-_MAIN_PAYLOADS = (
+_MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
     _PayloadSpec("notes", "content", "encryption_nonce", "encryption_tag", "text"),
     _PayloadSpec("notes", "tags", "tags_encryption_nonce", "tags_encryption_tag", "text"),
     _PayloadSpec(
@@ -323,6 +342,9 @@ _MAIN_PAYLOADS = (
     _PayloadSpec(
         "reminders", "payload_json", "payload_encryption_nonce", "payload_encryption_tag", "text"
     ),
+)
+
+_LEGACY_SEARCH_HISTORY_PAYLOADS = (
     _PayloadSpec(
         "search_interaction_history", "query_key", "query_key_encryption_nonce",
         "query_key_encryption_tag", "text",
@@ -334,6 +356,13 @@ _MAIN_PAYLOADS = (
     _PayloadSpec(
         "search_interaction_history", "tags_json", "tags_json_encryption_nonce",
         "tags_json_encryption_tag", "text",
+    ),
+)
+
+_OPAQUE_SEARCH_HISTORY_PAYLOADS = (
+    _PayloadSpec(
+        "search_interaction_history", "payload_json", "payload_encryption_nonce",
+        "payload_encryption_tag", "text",
     ),
 )
 
@@ -356,6 +385,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
         }
     ),
     1: frozenset(),
+    2: frozenset(),
+    3: frozenset(),
 }
 
 
@@ -742,6 +773,11 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         is_encrypted = _encryption_enabled(main_connection)
         database_version = _database_version(main_connection)
         main_table_names = _table_names(main_connection)
+        search_history_columns = frozenset()
+        if "search_interaction_history" in main_table_names:
+            search_history_columns = frozenset(
+                _column_names(main_connection, table="search_interaction_history")
+            )
     finally:
         main_connection.close()
     if not is_encrypted:
@@ -752,16 +788,44 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
             checked_payload_count=0,
             findings=(),
         )
-    expected_main_schema = _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS
-    if (
-        database_version >= 2
-        or "namespace_content_migrations" in main_table_names
-    ):
-        expected_main_schema = _MAIN_SCHEMA
+    uses_legacy_search_history = (
+        database_version < 3
+        and search_history_columns == _LEGACY_SEARCH_HISTORY_COLUMNS
+    )
+    expected_main_schema = _OPAQUE_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS
+    payload_specs = (
+        _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY + _OPAQUE_SEARCH_HISTORY_PAYLOADS
+    )
+    if uses_legacy_search_history:
+        expected_main_schema = _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS
+        payload_specs = (
+            _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY + _LEGACY_SEARCH_HISTORY_PAYLOADS
+        )
+        state.add_migration_finding(
+            database_path=database_path,
+            table="search_interaction_history",
+            field="*",
+            message=(
+                "legacy deterministic search-history metadata requires authenticated "
+                "database migration"
+            ),
+        )
+    elif database_version in (2, 3) and search_history_columns == _OPAQUE_SEARCH_HISTORY_COLUMNS:
+        state.add_migration_finding(
+            database_path=database_path,
+            table="search_interaction_history",
+            field="*",
+            message="authenticated live-database tag-activity reset has not completed",
+        )
+    if database_version >= 2 or "namespace_content_migrations" in main_table_names:
+        if uses_legacy_search_history:
+            expected_main_schema = _MAIN_SCHEMA
+        else:
+            expected_main_schema = _OPAQUE_MAIN_SCHEMA
     _audit_database(
         database_path=database_path,
         expected_schema=expected_main_schema,
-        payload_specs=_MAIN_PAYLOADS,
+        payload_specs=payload_specs,
         state=state,
         is_main_database=True,
         migration_deferred_plaintext_fields=_migration_deferred_plaintext_fields(

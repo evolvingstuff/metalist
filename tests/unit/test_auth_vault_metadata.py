@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,10 @@ from app.services.auth_service import AuthService
 from app.services.content_cache import clear_cache, populate_cache_from_db
 from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, get_file_reference_record
-from app.services.search_history import list_recent_search_tags, record_search_interaction
+from app.services.search_history import (
+    list_recent_search_tags_for_first_query,
+    record_note_interaction,
+)
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.tab_state import TabStateStore, tab_state_store
 from app.services.note_store import store as note_store
@@ -39,14 +44,7 @@ def _reset_search_history_state() -> None:
 def _fetch_search_history_row():
     with connect_reader("tests:auth_vault_metadata:search_history") as connection:
         return connection.execute(
-            """
-            SELECT
-                query_key,
-                query_key_encryption_nonce,
-                tags_json_encryption_nonce
-            FROM search_interaction_history
-            LIMIT 1
-            """
+            "SELECT * FROM search_interaction_history LIMIT 1"
         ).fetchone()
 
 
@@ -293,26 +291,41 @@ def test_password_transitions_rewrite_search_history_rows(
         session = SafeSession()
         try:
             auth = AuthService(session)
-            assert record_search_interaction(query="journal", interaction_type="edit", token="token") is True
+            assert record_note_interaction(
+                note_id="n1",
+                interaction_type="edit",
+                token="token",
+                interacted_on=date(2026, 8, 20),
+            ) is True
 
             row = _fetch_search_history_row()
             assert row is not None
-            assert row["query_key"] == "journal"
-            assert row["query_key_encryption_nonce"] is None
-            assert row["tags_json_encryption_nonce"] is None
+            plaintext_storage_id = row["storage_id"]
+            assert json.loads(row["payload_json"])["counts_by_date"] == {
+                "2026-08-20": {"journal": 1}
+            }
+            assert row["payload_encryption_nonce"] is None
+            assert row["payload_encryption_tag"] is None
 
             success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             encrypted_row = _fetch_search_history_row()
             assert encrypted_row is not None
-            assert encrypted_row["query_key"] != "journal"
-            assert isinstance(encrypted_row["query_key_encryption_nonce"], bytes)
-            assert isinstance(encrypted_row["tags_json_encryption_nonce"], bytes)
+            assert encrypted_row["storage_id"] != plaintext_storage_id
+            assert "journal" not in encrypted_row["payload_json"]
+            assert isinstance(encrypted_row["payload_encryption_nonce"], bytes)
+            assert isinstance(encrypted_row["payload_encryption_tag"], bytes)
 
             dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
-            assert list_recent_search_tags(limit=3, token="token") == ["journal"]
+            assert list_recent_search_tags_for_first_query(
+                query="jour",
+                candidate_tags=["journal"],
+                window_days=(1, 7, 30),
+                token="token",
+                today=date(2026, 8, 20),
+            ) == ["journal"]
 
             success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
@@ -321,9 +334,11 @@ def test_password_transitions_rewrite_search_history_rows(
 
             decrypted_row = _fetch_search_history_row()
             assert decrypted_row is not None
-            assert decrypted_row["query_key"] == "journal"
-            assert decrypted_row["query_key_encryption_nonce"] is None
-            assert decrypted_row["tags_json_encryption_nonce"] is None
+            assert json.loads(decrypted_row["payload_json"])["counts_by_date"] == {
+                "2026-08-20": {"journal": 1}
+            }
+            assert decrypted_row["payload_encryption_nonce"] is None
+            assert decrypted_row["payload_encryption_tag"] is None
         finally:
             session.close()
     finally:

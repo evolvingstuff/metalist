@@ -36,10 +36,12 @@ Ontology rules also add **inferred tags** before search matching:
 
 ### Search Suggestions
 - Search-bar tag suggestions are segment-aware for connector-separated tags.
-- For a blank query or the first tag prefix in a query, the top 3 suggestion slots can be promoted from the active namespace's highest-scoring recently interacted matching tags.
+- For a blank query or the first tag prefix in a query, ordered calendar-day windows promote matching tags into the first suggestion slots. The default is `[1, 7, 30]`, and the command-menu editor can add, remove, or reorder 1–365 day windows; an empty list disables personalization.
+- Prefix matching happens against the complete candidate set before the visible suggestion limit is applied, so an interacted `shortcut` cannot be discarded merely because 50 unrelated tags rank above it globally and leave frequency-ranked `short-story` first.
 - Case-equivalent tags are collapsed in suggestions, and the most-used spelling is shown.
-- That history stores ordered positive tag-query sequences, credits successful non-empty searches with matches, credits newly added non-meta note tags, decays on each newly credited interaction rather than over wall-clock time, and then aggregates those decayed query scores at the tag level when ranking recent-tag suggestions.
-- Qualifying interactions also include server-backed note actions performed while the executed search is active, plus qualifying scroll persistence.
+- Searches themselves never earn credit. Intentional note engagements—edit selection, manual expansion, full-screen view, shell/todo command execution—increment the note's raw explicit/inherited searchable tags once per navigation flow. Collapse, suggestion selection, search execution, hover, render, and scroll are neutral.
+- Activity uses sparse per-calendar-day counts. A window sums the relevant daily buckets, selects its highest-count matching tag, and excludes tags chosen by earlier windows. No decay calculation or all-time score exists. The latest 365 populated days are retained, so unused calendar days consume no buckets.
+- In password-protected namespaces, all retained daily buckets live together in one authenticated encrypted payload. The database exposes only one random row UUID, ciphertext, nonce, and authentication tag—never dates, tag names, counts, queries, or changed-tag metadata.
 - A typed prefix can match either the start of the full tag or the start of any connector-separated segment.
   - Example: `wor` suggests `workspaces` and `databricks-workspaces`.
   - Example: `orksp` suggests neither.

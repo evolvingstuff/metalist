@@ -16,9 +16,11 @@ from app.api.deps import get_db
 from app.config import ACTIVE_NAMESPACE
 from app.config import KDF_TIME_COST
 from app.config import VERSION
+from app.db.migrations import CURRENT_DATABASE_VERSION
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
+from app.services.auth_service import migrate_restored_database_if_unlocked
 from app.services.backup_service import (
     BackupFileInfo,
     create_timestamped_backup,
@@ -354,19 +356,27 @@ def _reset_runtime_state_after_restore() -> bool:
 
     session = SafeSession()
     try:
+        connection = session.connection()
         with SafeSession.allow_reads("auth:backup_restore:settings"):
-            settings = fetch_settings(session.connection())
+            settings = fetch_settings(connection)
         if settings is None:
             raise RuntimeError("App settings missing after backup restore")
 
         password_required = bool(settings["encryption_enabled"])
         set_encryption_required(password_required)
+        database_version = migrate_restored_database_if_unlocked(
+            connection=connection,
+            password_required=password_required,
+        )
 
         with SafeSession.allow_reads("auth:backup_restore:runtime_stores"):
-            tab_state_store.bootstrap(connection=session.connection())
-            link_title_store.bootstrap(connection=session.connection())
-            reminder_store.bootstrap(connection=session.connection())
-            search_history_store.bootstrap(connection=session.connection())
+            tab_state_store.bootstrap(connection=connection)
+            link_title_store.bootstrap(connection=connection)
+            reminder_store.bootstrap(connection=connection)
+            if not password_required or database_version == CURRENT_DATABASE_VERSION:
+                search_history_store.bootstrap(connection=connection)
+            else:
+                search_history_store.reset()
 
         if password_required:
             return True
@@ -494,6 +504,8 @@ def login(
     auth.run_authenticated_database_migrations(dek=dek)
 
     set_session_dek(dek)
+    with SafeSession.allow_reads("auth:search_history_post_migration"):
+        search_history_store.bootstrap(connection=db.connection())
     activate_authenticated_logging(
         namespace=_active_diagnostics_namespace(),
         dek=dek,

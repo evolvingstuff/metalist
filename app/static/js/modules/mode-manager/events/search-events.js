@@ -8,7 +8,7 @@ import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
-import { primeActiveSearchInteractionState, recordSearchExecutionInteractionIfEligible } from '../services/search-interaction-service.js';
+import { primeActiveSearchInteractionState } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
 import { clearActiveDateFilterForSearchInput } from '../services/date-filter-indicator-service.js';
@@ -148,7 +148,6 @@ export function handleSearchInput(event) {
             }
             // Refresh the view with the search query (let errors crash)
             await actionRefreshAndMaybeSelect({ context: 'search' });
-            await recordSearchExecutionInteractionIfEligible(currentSearch);
             primeActiveSearchInteractionState();
         });
     };

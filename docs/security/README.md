@@ -70,7 +70,7 @@ Login Flow:
 4. Retrieve Encrypted DEK from database
 5. Decrypt DEK using KEK
 6. If `PRAGMA user_version` is behind, create an automatic namespace backup and run every database migration in order with the DEK.
-7. Verify migrated ciphertext metadata and advance the database version only after success.
+7. Purge obsolete SQLite pages/WAL data in the live database and advance its version. Historical backup files remain byte-for-byte unchanged.
 8. Discard KEK; keep only DEK in memory for session.
 9. Use DEK for all note operations.
 10. If the server started with encryption enabled, cache + note-store hydration is deferred.
@@ -226,7 +226,7 @@ recording decrypted user data:
 - Before an encrypted namespace is unlocked, persistent startup diagnostics are
   plaintext because no DEK exists in memory and decrypted vault data is not
   hydrated. Successful DEK unwrap switches the process to authenticated logging
-  before any note, rule, tab, reminder, or search-history decryption begins.
+  before any note, rule, tab, reminder, or tag-activity decryption begins.
 - While unlocked, every Loguru file record and every direct `stdout`/`stderr`
   write is stored as an independent `MLLOG1` AES-256-GCM envelope under the
   namespace DEK using a domain-separated HKDF logging key and a fresh random
@@ -271,7 +271,7 @@ recording decrypted user data:
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.13`.
-- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `2`.
+- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `4`.
 - Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
 
 Passwordless namespaces run pending migrations during startup. Encrypted namespaces remain usable for password verification at their old database version, then create a backup and run all intermediate migrations after the password unwraps the DEK. Migration functions are ordered, transactional, idempotent, and refuse databases newer than the running application.
@@ -279,6 +279,14 @@ Passwordless namespaces run pending migrations during startup. Encrypted namespa
 Database migration `0 → 1` adds ciphertext metadata for client preferences, command-palette usage, and tag-prefix settings. Existing non-empty payloads are encrypted during the next successful namespace login. Password creation/removal also rewrites client state in the same direction as the rest of the namespace data.
 
 Database migration `1 → 2` adds `namespace_content_migrations`, a namespace-local ledger for resumable content transformations. The ledger stores migration identity, status, timestamps, and aggregate counts only; it never stores note text or remote URLs.
+
+Database migration `2 → 3` removes the legacy search-history schema that exposed an unsalted deterministic query hash plus plaintext scores/timestamps and replaces it with an opaque payload table. Migration `3 → 4` intentionally deletes the incompatible query-score history and starts the tag-activity model empty. Tag activity is stored as at most one row with a random UUIDv4 and a versioned payload containing sparse per-day tag counts. In encrypted namespaces, the entire payload is protected with AES-256-GCM; its row UUID is authenticated as associated data, every rewrite uses a fresh nonce, and inspection reveals no dates, tag names, counts, or queries. Password transitions rewrite this aggregate payload with the rest of namespace state. After unlock, migration enables SQLite secure deletion, truncates the WAL, and vacuums only the live database. Historical backups and obsolete sidecars inside backup sets remain immutable; if restored, their database version is migrated only on the installed live copy.
+
+### Backup Immutability
+
+Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. Login and database migrations do not enumerate user-configured backup folders.
+
+Restore hashes the selected archive and every legacy sidecar before reading it, installs the database into the live destination, and hashes the sources again. Any byte change fails loudly. A restored passwordless database is migrated after installation; an encrypted older version stays locked and migrates after its own password unwraps its DEK. The source backup remains unchanged in either case. `BKP001` startup sanity rejects overwrite-capable archive modes, historical-backup transformation functions, backup-service imports from database migrations, archive replacement/move APIs, and deletion outside the explicit retention path. The gate cannot be suppressed.
 
 No remote-image content migration is active. Remote HTTP(S) image URLs remain encrypted note content and image bytes are never added to namespace databases or backups. Browser CSP restricts image loads to same-origin, `data:`, and `blob:` sources, so a remote `<img>` inserted during paste or editing cannot contact its host directly. Before pasted HTML enters the editor, MetaList registers remote image URLs with the authenticated in-memory proxy, replaces their load-bearing `src` with opaque process-local `/api2/remote-images/{token}` references, and displays the response through an in-memory `blob:` URL. Storage sanitization restores the original remote URL in the encrypted note instead of persisting either temporary reference. View rendering likewise removes remote `src` values and exposes only opaque proxy paths. The authenticated proxy resolves tokens from memory, validates public DNS targets, pins connections, repeats validation after redirects, strips ambient browser credentials/referrers, caps transfers at 10 MiB and decoded dimensions at 16 megapixels, and verifies an explicit image-format allowlist with Pillow. Proxy mappings and downloaded bytes are not persisted, responses use `Cache-Control: no-store`, in-page object URLs are revoked on unload, and mappings are purged when an encrypted namespace locks.
 
@@ -297,9 +305,9 @@ every canonical database under `~/MetaList/namespaces`. Use
 `main.py` runs the same read-only scan before every launcher startup, and
 `serve_namespace.py` runs it before every namespace-server startup. A passing
 scan is printed normally. Findings are classified as `MIGRATION` or `FATAL`.
-Only the three known version-0 client-state payloads handled by the authenticated
-`0 → 1` migration may defer encryption until login; startup continues solely so
-that migration can unwrap the DEK and rewrite them. Plaintext anywhere else,
+Only the known authenticated migrations—version-0 client-state payloads and
+version-2/3 search-history replacement—may defer remediation until login;
+startup continues solely so those migrations can unwrap the DEK and rewrite them. Plaintext anywhere else,
 incomplete/malformed encryption metadata, unknown storage, nonce reuse, schema
 damage, discovery failures, and current-version plaintext stop startup before
 any namespace listener launches. The standalone audit command still exits
@@ -319,12 +327,13 @@ Exit status is `0` only when at least one namespace is found and every encrypted
 namespace passes; any unreadable database, schema drift, unprotected sensitive
 column, malformed encryption metadata, or reused DEK nonce exits `1`.
 
-This is a logical storage-contract audit and does not decrypt data. It proves
-that sensitive live SQLite values use the application's ciphertext storage
-format, but cannot authenticate ciphertext without each namespace password and
-does not inspect stale bytes in freelist pages, WAL files, backups, logs, swap,
-or filesystem snapshots. Stop namespace processes and use SQLite secure-delete
-and vacuum/checkpoint procedures when physical remanence is in scope.
+This is primarily a logical storage-contract audit and does not decrypt data. It
+proves that sensitive live SQLite values use the application's ciphertext
+storage format, but cannot authenticate ciphertext without each namespace
+password. The authenticated `2 → 3` migration separately removes its legacy
+query identifiers from live freelist/WAL storage. Historical backups retain their original snapshot bytes and migrate only after restoration into the live database path.
+The audit itself still does not inspect arbitrary stale bytes in backups, logs,
+swap, or filesystem snapshots.
 
 ### Strengths
 - **Strong Key Derivation**: Memory-hard Argon2id protects against brute force
@@ -410,7 +419,7 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - Browser auth cookies use namespace-scoped names (`metalist_auth_<namespace>`), so sessions on different namespace ports do not overwrite each other in the browser's host-wide cookie jar.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
-- Explicit logout fails closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session. Idle expiry is disabled by default; when explicitly enabled, it invalidates browser authentication but keeps the hydrated server cache warm so re-login does not rebuild the namespace.
+- Explicit logout fails closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, tag activity, attachment metadata, undo/sync state, and ontology state before serving the locked session. Idle expiry is disabled by default; when explicitly enabled, it invalidates browser authentication but keeps the hydrated server cache warm so re-login does not rebuild the namespace.
 
 ### Authentication Route Boundary
 

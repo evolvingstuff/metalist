@@ -37,6 +37,7 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 import { SoundManagerModal } from '../modals/sound-manager-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
+import { SearchSuggestionWindowsModal } from '../modals/search-suggestion-windows-modal.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -53,6 +54,12 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
+import {
+    DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
+    parseSearchSuggestionWindowsValue,
+    serializeSearchSuggestionWindows,
+    setSearchSuggestionWindowsValue,
+} from '../mode-manager/services/search-suggestion-windows-service.js';
 
 import { shouldActivateCommandPaletteRowClick } from './click-activation-service.js';
 import { persistUsageBeforeActivation } from './activation-auth-policy.js';
@@ -295,6 +302,7 @@ class CommandPaletteController {
         this._soundManagerModal = null;
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
+        this._searchSuggestionWindowsModal = null;
 
         this._elements = null;
 
@@ -342,6 +350,8 @@ class CommandPaletteController {
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
                 resetAllPreferences: this.resetAllPreferences.bind(this),
+                resetSearchSuggestionHistory: this.resetSearchSuggestionHistory.bind(this),
+                openSearchSuggestionWindows: this.openSearchSuggestionWindows.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
@@ -492,6 +502,13 @@ class CommandPaletteController {
 
         const animatedTransitions = this._getBoolean('pref.animated_transitions', true);
         document.body.classList.toggle('pref-animated-transitions', animatedTransitions);
+
+        const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
+        if (storedSearchWindows === null) {
+            setSearchSuggestionWindowsValue(DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE);
+        } else {
+            setSearchSuggestionWindowsValue(storedSearchWindows);
+        }
 
         applyNoteLayoutSettings(document.body, this._readNoteLayoutSettings());
 
@@ -1091,6 +1108,49 @@ class CommandPaletteController {
 
     async resetAllPreferences() {
         await this._preferences.clearAll();
+        this._applyPreferenceEffectsFromStorage();
+    }
+
+    async resetSearchSuggestionHistory() {
+        if (this.isOpen()) {
+            this.close();
+        }
+        const confirmed = window.confirm(
+            'Reset all learned search-suggestion tag activity for this namespace? Notes, tabs, and saved searches will not be changed.',
+        );
+        if (!confirmed) {
+            return;
+        }
+        const result = await CommandGate.run('search.reset_suggestion_history', async () => {
+            const payload = await NotesAPI.resetSearchSuggestionHistory();
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Reset search suggestion history response missing body');
+            }
+            if (!Number.isInteger(payload.deletedCount) || payload.deletedCount < 0) {
+                throw new Error('Reset search suggestion history response requires deletedCount');
+            }
+            return payload;
+        });
+        if (result === null) {
+            throw new Error('Reset search suggestion history was blocked by another command');
+        }
+        ErrorHandler.showInfoBanner(
+            'Reset search suggestion activity.',
+            6000,
+        );
+    }
+
+    _readSearchSuggestionWindows() {
+        const storedValue = this._preferences.getRaw('pref.search_suggestion_windows');
+        if (storedValue === null) {
+            return parseSearchSuggestionWindowsValue(DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE);
+        }
+        return parseSearchSuggestionWindowsValue(storedValue);
+    }
+
+    async _saveSearchSuggestionWindows(windowDays) {
+        const serialized = serializeSearchSuggestionWindows(windowDays);
+        await this._preferences.setRaw('pref.search_suggestion_windows', serialized);
         this._applyPreferenceEffectsFromStorage();
     }
 
@@ -2154,6 +2214,20 @@ class CommandPaletteController {
             );
         }
         this._noteLayoutAppearanceModal.open();
+    }
+
+    async openSearchSuggestionWindows() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openSearchSuggestionWindows');
+        if (!isReady) {
+            return;
+        }
+        if (this._searchSuggestionWindowsModal === null) {
+            this._searchSuggestionWindowsModal = new SearchSuggestionWindowsModal(
+                this._readSearchSuggestionWindows.bind(this),
+                this._saveSearchSuggestionWindows.bind(this),
+            );
+        }
+        this._searchSuggestionWindowsModal.open();
     }
 }
 
