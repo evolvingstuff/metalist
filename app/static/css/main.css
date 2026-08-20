@@ -5076,6 +5076,13 @@ body.loading::after {
     color: white;
 }
 
+.error-banner-connection .error-banner-content {
+    background-color: #fff8e6;
+    color: #5b4820;
+    border: 1px solid #e8d49a;
+    box-shadow: 0 2px 8px rgba(91, 72, 32, 0.14);
+}
+
 .error-banner-icon {
     margin-right: 8px;
     font-size: 16px;

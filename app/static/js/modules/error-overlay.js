@@ -1,4 +1,12 @@
+import { isNetworkTransportError } from './api-failure-classification-service.js';
+
+
 let installed = false;
+
+
+export function shouldSuppressFatalOverlay(reason) {
+  return isNetworkTransportError(reason);
+}
 
 function ensureOverlay() {
   let overlay = document.getElementById('fatal-error-overlay');
@@ -59,6 +67,11 @@ export function installGlobalErrorOverlay() {
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event?.reason;
+    if (shouldSuppressFatalOverlay(reason)) {
+      event.preventDefault();
+      console.info('[ErrorOverlay] Connection failure is already shown in the status banner');
+      return;
+    }
     let msg = null;
     if (reason && typeof reason.message === 'string') {
       msg = reason.message;

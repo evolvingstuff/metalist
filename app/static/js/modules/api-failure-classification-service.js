@@ -1,3 +1,22 @@
+export function isNetworkTransportError(error) {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+    if (typeof error.name !== 'string' || typeof error.message !== 'string') {
+        return false;
+    }
+    if (error.name === 'AbortError') {
+        return true;
+    }
+    return error.name === 'TypeError' && (
+        error.message.includes('fetch')
+        || error.message.includes('Network request failed')
+        || error.message.includes('Failed to fetch')
+        || error.message.includes('Load failed')
+    );
+}
+
+
 export function classifyApiFailure(error, response) {
     if (typeof response === 'undefined') {
         throw new Error('classifyApiFailure requires response (use null)');
@@ -47,18 +66,13 @@ export function classifyApiFailure(error, response) {
     if (error.name === 'AbortError') {
         return {
             kind: 'network',
-            message: 'Request timed out. Please try again.',
+            message: 'The MetaList server is taking a little longer to respond. Editing is paused while we reconnect.',
         };
     }
-    if (error.name === 'TypeError' && (
-        error.message.includes('fetch')
-        || error.message.includes('Network request failed')
-        || error.message.includes('Failed to fetch')
-        || error.message.includes('Load failed')
-    )) {
+    if (isNetworkTransportError(error)) {
         return {
             kind: 'network',
-            message: 'Cannot reach server. Please check your internet connection.',
+            message: 'We\u2019ve lost touch with the MetaList server. Editing is paused while we reconnect.',
         };
     }
     return {

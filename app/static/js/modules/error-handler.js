@@ -81,7 +81,7 @@ export const ErrorHandler = {
     },
     
     /**
-     * Handle network errors - show error banner but keep interface visible
+     * Handle network errors - show a calm status banner but keep the interface visible
      */
     handleNetworkError(message) {
         if (typeof message !== 'string' || message.length === 0) {
@@ -100,7 +100,7 @@ export const ErrorHandler = {
                 ModeContext.setConnected(false);
             }
             ModeContext.setConnectionErrorBannerVisible(true);
-            this.showPersistentErrorBanner(message, 'error');
+            this.showPersistentErrorBanner(message, 'connection');
             this.disableEditingUI();
         }
         // If banner is already visible, don't create a new one
@@ -121,7 +121,7 @@ export const ErrorHandler = {
             if (ModeContext.connectionErrorBannerVisible) {
                 ModeContext.setConnectionErrorBannerVisible(false);
                 this.hideErrorBanner();
-                this.showSuccessBanner('Connection restored', 3000);
+                this.showSuccessBanner('Reconnected to MetaList. Editing is available again.', 3000);
                 this.enableEditingUI();
             }
         }

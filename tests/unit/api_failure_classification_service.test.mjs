@@ -32,14 +32,14 @@ test('transport failures are the only failures classified as disconnected', () =
         null,
     ), {
         kind: 'network',
-        message: 'Cannot reach server. Please check your internet connection.',
+        message: 'We\u2019ve lost touch with the MetaList server. Editing is paused while we reconnect.',
     });
     assert.deepEqual(classifyApiFailure(
         new DOMException('Timed out', 'AbortError'),
         null,
     ), {
         kind: 'network',
-        message: 'Request timed out. Please try again.',
+        message: 'The MetaList server is taking a little longer to respond. Editing is paused while we reconnect.',
     });
 });
 
