@@ -17,7 +17,7 @@
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
-| `⌘ + U` | Unformat current note content (strip rich formatting but keep links and images) |
+| `⌘ + U` | Remove formatting and inline imagery from the selected range or current note |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note has no visible content and no children, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
@@ -37,7 +37,7 @@
 - `⌘ + S` no-ops when the entire note is selected or when split would produce no content segment.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
 - `⌘ + S` records the full split as one undo/redo step.
-- `⌘ + U` removes formatting from the selected range, or from the entire active note when no text is selected. Whole-note removal rewrites stored content into plain HTML while preserving links/images, removes global and scoped Add Style meta tags, and removes scope delimiters that no surviving wrapped tag still uses. Range removal splits scopes around the selection so formatting outside it remains. Semantic tags such as `@todo` remain.
+- `⌘ + U` removes formatting and inline imagery from the selected range, or from the entire active note when no text is selected. Whole-note removal rewrites stored content into plain HTML while preserving links, removes all inline images plus global and scoped Add Style meta tags, and removes scope delimiters that no surviving wrapped tag still uses. Range removal deletes intersecting inline images and splits scopes around the selection so formatting outside it remains. Semantic tags such as `@todo` remain.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - In any non-normal sort order, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.

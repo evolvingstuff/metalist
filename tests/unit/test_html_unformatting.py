@@ -10,7 +10,7 @@ def test_unformat_note_content_html_strips_rich_text_wrappers() -> None:
     assert unformat_note_content_html(html) == "Title<br>Body copy"
 
 
-def test_unformat_note_content_html_preserves_links_and_images() -> None:
+def test_unformat_note_content_html_preserves_links_and_removes_images() -> None:
     html = (
         '<div><strong><a href="https://example.com" title="Example" style="color: red">Link <em>text</em></a></strong></div>'
         '<p><span style="font-size: 32px"><img src="https://example.com/image.png" alt="Example image" width="320"></span></p>'
@@ -18,7 +18,6 @@ def test_unformat_note_content_html_preserves_links_and_images() -> None:
 
     assert unformat_note_content_html(html) == (
         '<a href="https://example.com" title="Example">Link text</a>'
-        '<br><img src="https://example.com/image.png" alt="Example image" width="320">'
     )
 
 
@@ -26,3 +25,26 @@ def test_unformat_note_content_html_turns_lists_into_plain_lines() -> None:
     html = "<ul><li><strong>One</strong></li><li>Two</li></ul><ol><li>Three</li><li>Four</li></ol>"
 
     assert unformat_note_content_html(html) == "- One<br>- Two<br>1. Three<br>2. Four"
+
+
+def test_unformat_note_content_html_preserves_css_rendered_line_breaks() -> None:
+    html = (
+        "<div>Opening line</div>"
+        '<span style="white-space: pre-wrap">First paragraph\n\nSecond paragraph</span>'
+    )
+
+    assert unformat_note_content_html(html) == (
+        "Opening line<br>First paragraph<br><br>Second paragraph"
+    )
+
+
+def test_unformat_note_content_html_preserves_paragraph_spacing() -> None:
+    html = (
+        "<p>First paragraph</p>"
+        "<p><strong>Second paragraph</strong></p>"
+        "<p>Third paragraph</p>"
+    )
+
+    assert unformat_note_content_html(html) == (
+        "First paragraph<br><br>Second paragraph<br><br>Third paragraph"
+    )

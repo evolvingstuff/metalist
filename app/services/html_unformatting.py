@@ -41,10 +41,14 @@ _BLOCK_TAGS = frozenset(
 _TABLE_CONTAINER_TAGS = frozenset({"table", "thead", "tbody", "tfoot"})
 _TABLE_CELL_TAGS = frozenset({"td", "th"})
 _TEXT_WHITESPACE_RE = re.compile(r"[\t\n\r\f\v ]+")
+_TEXT_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
+_LINE_BREAK_PRESERVING_WHITE_SPACE_VALUES = frozenset(
+    {"break-spaces", "pre", "pre-line", "pre-wrap"}
+)
 
 
 class _HtmlNode:
-    __slots__ = ("kind", "tag", "attrs", "text", "children")
+    __slots__ = ("kind", "tag", "attrs", "text", "children", "preserve_line_breaks")
 
     def __init__(
         self,
@@ -54,12 +58,14 @@ class _HtmlNode:
         attrs: dict[str, str],
         text: str,
         children: list["_HtmlNode"],
+        preserve_line_breaks: bool,
     ) -> None:
         self.kind = kind
         self.tag = tag
         self.attrs = attrs
         self.text = text
         self.children = children
+        self.preserve_line_breaks = preserve_line_breaks
 
 
 @dataclass
@@ -71,7 +77,7 @@ class _ListFrame:
 class _HtmlTreeBuilder(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self._root = _create_element_node(tag="root", attrs={})
+        self._root = _create_element_node(tag="root", attrs={}, preserve_line_breaks=False)
         self._stack = [self._root]
         self._ignore_depth = 0
 
@@ -100,7 +106,12 @@ class _HtmlTreeBuilder(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._ignore_depth > 0 or data == "":
             return
-        self._stack[-1].children.append(_create_text_node(data))
+        self._stack[-1].children.append(
+            _create_text_node(
+                data,
+                preserve_line_breaks=self._stack[-1].preserve_line_breaks,
+            )
+        )
 
     def handle_comment(self, data: str) -> None:
         del data
@@ -124,7 +135,14 @@ class _HtmlTreeBuilder(HTMLParser):
                 continue
             normalized_attrs[normalized_name] = str(value)
 
-        node = _create_element_node(tag=normalized_tag, attrs=normalized_attrs)
+        node = _create_element_node(
+            tag=normalized_tag,
+            attrs=normalized_attrs,
+            preserve_line_breaks=_resolve_preserved_line_breaks(
+                attrs=normalized_attrs,
+                inherited=self._stack[-1].preserve_line_breaks,
+            ),
+        )
         self._stack[-1].children.append(node)
         if push:
             self._stack.append(node)
@@ -139,7 +157,15 @@ class _HtmlLineBuilder:
             return
         self._lines[-1].append(fragment)
 
-    def append_text(self, text: str) -> None:
+    def append_text(self, text: str, *, preserve_line_breaks: bool) -> None:
+        if preserve_line_breaks:
+            parts = _TEXT_LINE_BREAK_RE.split(text)
+            for index, part in enumerate(parts):
+                self.append_text(part, preserve_line_breaks=False)
+                if index < len(parts) - 1:
+                    self.newline(preserve_blank=True)
+            return
+
         normalized = _normalize_text(text)
         if normalized == "":
             return
@@ -161,6 +187,21 @@ class _HtmlLineBuilder:
     def ensure_block_break(self) -> None:
         if self.current_line_has_content():
             self.newline(preserve_blank=False)
+
+    def ensure_paragraph_spacing(self) -> None:
+        if self.current_line_has_content():
+            self.newline(preserve_blank=False)
+
+        trailing_empty_lines = 0
+        for line in reversed(self._lines):
+            if line:
+                break
+            trailing_empty_lines += 1
+        if trailing_empty_lines == len(self._lines):
+            return
+        while trailing_empty_lines < 2:
+            self._lines.append([])
+            trailing_empty_lines += 1
 
     def to_html(self) -> str:
         lines = ["".join(line).rstrip() for line in self._lines]
@@ -194,7 +235,7 @@ def _render_nodes(nodes: list[_HtmlNode], builder: _HtmlLineBuilder, list_stack:
 
 def _render_node(node: _HtmlNode, builder: _HtmlLineBuilder, list_stack: list[_ListFrame]) -> None:
     if node.kind == "text":
-        builder.append_text(node.text)
+        builder.append_text(node.text, preserve_line_breaks=node.preserve_line_breaks)
         return
     if node.kind != "element":
         raise TypeError(f"Unsupported HTML node kind: {node.kind}")
@@ -204,9 +245,6 @@ def _render_node(node: _HtmlNode, builder: _HtmlLineBuilder, list_stack: list[_L
         builder.newline(preserve_blank=True)
         return
     if tag == "img":
-        image_html = _serialize_image(node.attrs)
-        if image_html != "":
-            builder.append_html(image_html)
         return
     if tag == "a":
         _render_anchor(node, builder, list_stack)
@@ -238,6 +276,11 @@ def _render_node(node: _HtmlNode, builder: _HtmlLineBuilder, list_stack: list[_L
         return
     if tag in _TABLE_CELL_TAGS:
         _render_nodes(node.children, builder, list_stack)
+        return
+    if tag == "p":
+        builder.ensure_paragraph_spacing()
+        _render_nodes(node.children, builder, list_stack)
+        builder.ensure_paragraph_spacing()
         return
     if tag in _BLOCK_TAGS:
         builder.ensure_block_break()
@@ -299,38 +342,46 @@ def _list_item_prefix(list_stack: list[_ListFrame]) -> str:
     return "- "
 
 
-def _serialize_image(attrs: dict[str, str]) -> str:
-    src = _read_attr(attrs, "src")
-    if src == "":
-        return ""
-
-    attr_parts = [f'src="{escape(src, quote=True)}"']
-    for key in ("alt", "title", "width", "height"):
-        value = _read_attr(attrs, key)
-        if value == "":
+def _resolve_preserved_line_breaks(*, attrs: dict[str, str], inherited: bool) -> bool:
+    style = _read_attr(attrs, "style")
+    resolved_value = ""
+    has_white_space_declaration = False
+    for declaration in style.split(";"):
+        property_name, separator, property_value = declaration.partition(":")
+        if separator == "" or property_name.strip().lower() != "white-space":
             continue
-        attr_parts.append(f'{key}="{escape(value, quote=True)}"')
+        has_white_space_declaration = True
+        resolved_value = property_value.split("!important", maxsplit=1)[0].strip().lower()
 
-    return f"<img {' '.join(attr_parts)}>"
+    if not has_white_space_declaration:
+        return inherited
+    return resolved_value in _LINE_BREAK_PRESERVING_WHITE_SPACE_VALUES
 
 
-def _create_element_node(tag: str, attrs: dict[str, str]) -> _HtmlNode:
+def _create_element_node(
+    tag: str,
+    attrs: dict[str, str],
+    *,
+    preserve_line_breaks: bool,
+) -> _HtmlNode:
     return _HtmlNode(
         kind="element",
         tag=tag,
         attrs=attrs,
         text="",
         children=[],
+        preserve_line_breaks=preserve_line_breaks,
     )
 
 
-def _create_text_node(text: str) -> _HtmlNode:
+def _create_text_node(text: str, *, preserve_line_breaks: bool) -> _HtmlNode:
     return _HtmlNode(
         kind="text",
         tag="",
         attrs={},
         text=text,
         children=[],
+        preserve_line_breaks=preserve_line_breaks,
     )
 
 

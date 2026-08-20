@@ -144,7 +144,7 @@ Unclosed comments behave like unclosed wrappers:
 - The tag bar expands into view when note editing starts and contracts out of view when editing ends, unless `Animated transitions` is off in the command palette.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.
-- `Cmd/Ctrl+U` removes formatting from the selected range, or from the entire note when no range is selected. Range removal rewrites scoped delimiters around the selection so formatting outside it remains; whole-note removal removes rich HTML and Add Style tags while preserving links, images, and semantic tags such as `@todo`.
+- `Cmd/Ctrl+U` removes formatting and inline imagery from the selected range, or from the entire note when no range is selected. Range removal deletes intersecting inline images and rewrites scoped delimiters around the selection so formatting outside it remains; whole-note removal removes rich HTML, all inline images, and Add Style tags while preserving links and semantic tags such as `@todo`.
 
 ## Add from Selected Text
 - Selecting 1–25 characters inside a note adds **Add as Tag** to that note's context menu.
