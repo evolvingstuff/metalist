@@ -21,21 +21,30 @@ function escapeHtml(value) {
 
 
 export class SearchSuggestionWindowsModal extends BaseModal {
-    constructor(readWindows, saveWindows) {
+    constructor(readWindows, readShowWindowLabels, saveSettings) {
         super('searchSuggestionWindowsModal', 'search-suggestion-windows-modal');
         if (typeof readWindows !== 'function') {
             throw new Error('SearchSuggestionWindowsModal requires readWindows');
         }
-        if (typeof saveWindows !== 'function') {
-            throw new Error('SearchSuggestionWindowsModal requires saveWindows');
+        if (typeof readShowWindowLabels !== 'function') {
+            throw new Error('SearchSuggestionWindowsModal requires readShowWindowLabels');
+        }
+        if (typeof saveSettings !== 'function') {
+            throw new Error('SearchSuggestionWindowsModal requires saveSettings');
         }
         this._readWindows = readWindows;
-        this._saveWindows = saveWindows;
+        this._readShowWindowLabels = readShowWindowLabels;
+        this._saveSettings = saveSettings;
     }
 
     getInitialModalState() {
+        const showWindowLabels = this._readShowWindowLabels();
+        if (typeof showWindowLabels !== 'boolean') {
+            throw new Error('Search suggestion label preference must be boolean');
+        }
         return {
             windowDays: validateSearchSuggestionWindows(this._readWindows()),
+            showWindowLabels,
             saving: false,
             error: '',
         };
@@ -72,8 +81,6 @@ export class SearchSuggestionWindowsModal extends BaseModal {
                 <span class="search-window-slot">Slot ${index + 1}</span>
                 <input class="search-window-days-input" type="number" min="1" max="${MAX_SEARCH_SUGGESTION_WINDOW_DAYS}" value="${dayCount}" aria-label="Slot ${index + 1} window in days"${disabled}>
                 <span>days</span>
-                <button type="button" class="secondary-btn search-window-up" aria-label="Move slot ${index + 1} up"${index === 0 || saving ? ' disabled' : ''}>↑</button>
-                <button type="button" class="secondary-btn search-window-down" aria-label="Move slot ${index + 1} down"${index === windowDays.length - 1 || saving ? ' disabled' : ''}>↓</button>
                 <button type="button" class="secondary-btn search-window-remove"${disabled}>Remove</button>
             </div>
         `).join('');
@@ -81,6 +88,10 @@ export class SearchSuggestionWindowsModal extends BaseModal {
             ? '<p class="note-layout-description">No personalized slots. Base tag ordering will be used.</p>'
             : '';
         const error = typeof state.error === 'string' ? state.error : '';
+        if (typeof state.showWindowLabels !== 'boolean') {
+            throw new Error('Search suggestion modal label state must be boolean');
+        }
+        const showWindowLabelsChecked = state.showWindowLabels ? ' checked' : '';
 
         modalElement.innerHTML = `
             <div class="modal-content note-layout-appearance-modal-content">
@@ -89,6 +100,10 @@ export class SearchSuggestionWindowsModal extends BaseModal {
                 <div class="search-window-rows">${rows}</div>
                 ${emptyMessage}
                 <button type="button" class="secondary-btn" id="search-window-add-btn"${disabled}>Add slot</button>
+                <label class="search-window-label-toggle">
+                    <input type="checkbox" id="search-window-label-toggle"${showWindowLabelsChecked}${disabled}>
+                    <span>Show time-window labels in search suggestions</span>
+                </label>
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="search-window-save-btn" data-modal-enter-action${disabled}>${saving ? 'Saving…' : 'Save'}</button>
                     <button type="button" class="secondary-btn" id="search-window-cancel-btn"${disabled}>Cancel</button>
@@ -107,32 +122,26 @@ export class SearchSuggestionWindowsModal extends BaseModal {
         const rows = Array.from(modalElement.querySelectorAll('.search-window-row'));
         rows.forEach((row, index) => {
             const input = row.querySelector('.search-window-days-input');
-            const upButton = row.querySelector('.search-window-up');
-            const downButton = row.querySelector('.search-window-down');
             const removeButton = row.querySelector('.search-window-remove');
             if (!(input instanceof HTMLInputElement)) {
                 throw new Error('Search window input missing');
-            }
-            if (!(upButton instanceof HTMLButtonElement)) {
-                throw new Error('Search window up button missing');
-            }
-            if (!(downButton instanceof HTMLButtonElement)) {
-                throw new Error('Search window down button missing');
             }
             if (!(removeButton instanceof HTMLButtonElement)) {
                 throw new Error('Search window remove button missing');
             }
             input.onchange = () => this._changeWindow(index, input.value);
-            upButton.onclick = () => this._moveWindow(index, -1);
-            downButton.onclick = () => this._moveWindow(index, 1);
             removeButton.onclick = () => this._removeWindow(index);
         });
 
         const addButton = document.getElementById('search-window-add-btn');
+        const labelToggle = document.getElementById('search-window-label-toggle');
         const saveButton = document.getElementById('search-window-save-btn');
         const cancelButton = document.getElementById('search-window-cancel-btn');
         if (!(addButton instanceof HTMLButtonElement)) {
             throw new Error('Search window add button missing');
+        }
+        if (!(labelToggle instanceof HTMLInputElement) || labelToggle.type !== 'checkbox') {
+            throw new Error('Search window label checkbox missing');
         }
         if (!(saveButton instanceof HTMLButtonElement)) {
             throw new Error('Search window save button missing');
@@ -141,6 +150,9 @@ export class SearchSuggestionWindowsModal extends BaseModal {
             throw new Error('Search window cancel button missing');
         }
         addButton.onclick = () => this._addWindow(windowDays);
+        labelToggle.onchange = () => this.updateModalState({
+            showWindowLabels: labelToggle.checked,
+        });
         saveButton.onclick = async () => this._handleSave();
         cancelButton.onclick = () => this.close();
     }
@@ -155,17 +167,6 @@ export class SearchSuggestionWindowsModal extends BaseModal {
         } else {
             this.updateModalState({ error: validationError });
         }
-        this.renderModalContent();
-    }
-
-    _moveWindow(index, offset) {
-        const next = this.getModalState().windowDays.slice();
-        const target = index + offset;
-        if (target < 0 || target >= next.length) {
-            throw new Error('Search window move target is out of range');
-        }
-        [next[index], next[target]] = [next[target], next[index]];
-        this.updateModalState({ windowDays: next, error: '' });
         this.renderModalContent();
     }
 
@@ -196,9 +197,13 @@ export class SearchSuggestionWindowsModal extends BaseModal {
 
     async _handleSave() {
         const windowDays = validateSearchSuggestionWindows(this.getModalState().windowDays);
+        const showWindowLabels = this.getModalState().showWindowLabels;
+        if (typeof showWindowLabels !== 'boolean') {
+            throw new Error('Search suggestion label preference must be boolean');
+        }
         this.updateModalState({ saving: true, error: '' });
         this.renderModalContent();
-        await this._saveWindows(windowDays);
+        await this._saveSettings(windowDays, showWindowLabels);
         this.close();
     }
 }

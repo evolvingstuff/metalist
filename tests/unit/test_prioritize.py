@@ -403,7 +403,43 @@ def test_search_suggestions_route_uses_configured_limit(
     assert captured == {
         "query": "foo bar",
     }
-    assert result == {"suggestions": [f"tag-{index}" for index in range(7)]}
+    assert result == {
+        "suggestions": [f"tag-{index}" for index in range(7)],
+        "personalizedSuggestions": [],
+    }
+
+
+def test_search_suggestions_route_reports_each_promoting_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        notes_route.search_index,
+        "suggest_all_tag_completions",
+        lambda *, query: ["short-story", "shortcut", "short-selling"],
+    )
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda _request: "token")
+    monkeypatch.setattr(notes_route, "current_local_date", lambda: date(2026, 8, 20))
+    monkeypatch.setattr(
+        notes_route,
+        "list_recent_search_tag_selections_for_first_query",
+        lambda **_kwargs: [
+            notes_route.TagActivityWindowSelection(tag="shortcut", window_days=1),
+            notes_route.TagActivityWindowSelection(tag="short-selling", window_days=7),
+        ],
+    )
+
+    result = notes_route.search_suggestions(
+        object(),
+        {"query": "shor", "windowDays": [1, 7, 30]},
+    )
+
+    assert result == {
+        "suggestions": ["shortcut", "short-selling", "short-story"],
+        "personalizedSuggestions": [
+            {"tag": "shortcut", "windowDays": 1},
+            {"tag": "short-selling", "windowDays": 7},
+        ],
+    }
 
 
 def test_delete_tag_interactions_route_resets_active_namespace_history(
@@ -421,6 +457,27 @@ def test_delete_tag_interactions_route_resets_active_namespace_history(
 
     assert captured == {"token": "token"}
     assert result == {"deletedCount": 17}
+
+
+def test_get_tag_interactions_route_returns_search_suggestion_statistics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    statistics = {
+        "retentionPopulatedDayLimit": 365,
+        "days": [],
+    }
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda _request: "token")
+    monkeypatch.setattr(
+        notes_route,
+        "list_search_suggestion_statistics",
+        lambda *, token: captured.update(token=token) or statistics,
+    )
+
+    result = notes_route.get_tag_interactions(object())
+
+    assert captured == {"token": "token"}
+    assert result == statistics
 
 
 def test_tag_interactions_route_credits_the_note_not_the_search_query(

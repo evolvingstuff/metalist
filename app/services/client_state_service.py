@@ -35,6 +35,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
     "pref.theme": {"system", "light", "dark"},
     "pref.search_suggestion_windows": "tag_activity_windows",
+    "pref.show_search_suggestion_window_labels": {"true", "false"},
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(

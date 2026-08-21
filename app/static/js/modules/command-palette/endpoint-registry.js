@@ -63,6 +63,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
     const resetSearchSuggestionHistory = requireAction(actions, 'resetSearchSuggestionHistory');
     const openSearchSuggestionWindows = requireAction(actions, 'openSearchSuggestionWindows');
+    const openSearchSuggestionStatistics = requireAction(actions, 'openSearchSuggestionStatistics');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
@@ -256,6 +257,18 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => openSearchSuggestionWindows(),
         },
         {
+            id: 'form.search_suggestion_statistics',
+            kind: 'form',
+            label: 'Search suggestion statistics…',
+            execute: async () => openSearchSuggestionStatistics(),
+        },
+        {
+            id: 'action.reset_search_suggestion_history',
+            kind: 'action',
+            label: 'Reset search suggestion activity…',
+            execute: async () => resetSearchSuggestionHistory(),
+        },
+        {
             id: 'action.expand_all',
             kind: 'action',
             label: 'Expand all root notes (current view)',
@@ -281,12 +294,6 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Reset all preferences',
             execute: async () => resetAllPreferences(),
-        },
-        {
-            id: 'action.reset_search_suggestion_history',
-            kind: 'action',
-            label: 'Reset search suggestion activity…',
-            execute: async () => resetSearchSuggestionHistory(),
         },
         {
             id: 'form.add_password',

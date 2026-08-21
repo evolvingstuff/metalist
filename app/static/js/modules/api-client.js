@@ -503,6 +503,12 @@ export const NotesAPI = {
         });
     },
 
+    async getSearchSuggestionStatistics() {
+        return this._apiCall(CONFIG.API.NOTES.TAG_INTERACTIONS, {
+            method: 'GET',
+        });
+    },
+
     getNoteElement(noteId) {
         const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
         if (!noteElement) {

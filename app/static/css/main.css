@@ -451,6 +451,10 @@ html {
     width: min(560px, 92vw);
 }
 
+.search-suggestion-statistics-modal-content {
+    width: min(720px, 94vw);
+}
+
 .note-layout-description {
     margin: 0 0 18px;
     color: #6b7280;
@@ -514,7 +518,7 @@ html {
 
 .search-window-row {
     display: grid;
-    grid-template-columns: 64px minmax(70px, 100px) auto 38px 38px auto;
+    grid-template-columns: 64px minmax(70px, 100px) auto minmax(100px, 1fr);
     align-items: center;
     gap: 8px;
 }
@@ -532,12 +536,100 @@ html {
     background: var(--bg-color);
     color: var(--text-color);
     font: inherit;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.search-window-days-input::-webkit-inner-spin-button,
+.search-window-days-input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 .modal-content .search-window-row button {
     width: auto;
     min-width: 0;
     padding: 8px 10px;
+}
+
+.search-window-remove {
+    justify-self: start;
+}
+
+.search-window-label-toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 16px 0 4px;
+    cursor: pointer;
+}
+
+.modal-content .search-window-label-toggle input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.search-suggestion-statistics-windows,
+.search-suggestion-statistics-retention,
+.search-suggestion-statistics-empty,
+.search-suggestion-statistics-status {
+    margin: 0 0 14px;
+}
+
+.search-suggestion-statistics-days {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.search-suggestion-statistics-day {
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.search-suggestion-statistics-day summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 16px;
+    padding: 11px 13px;
+    cursor: pointer;
+    font-weight: 600;
+    background: var(--bg-color);
+    list-style: none;
+}
+
+html[data-theme="dark"] .search-suggestion-statistics-day summary {
+    background: var(--app-surface-2);
+}
+
+.search-suggestion-statistics-day summary::before {
+    content: "▸";
+}
+
+.search-suggestion-statistics-day[open] summary::before {
+    content: "▾";
+}
+
+.search-suggestion-statistics-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.search-suggestion-statistics-table th,
+.search-suggestion-statistics-table td {
+    padding: 8px 13px;
+    border-top: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.search-suggestion-statistics-table th:last-child,
+.search-suggestion-statistics-table td:last-child {
+    width: 90px;
+    text-align: right;
 }
 
 @media (max-width: 600px) {
@@ -547,7 +639,7 @@ html {
     }
 
     .search-window-row {
-        grid-template-columns: 56px minmax(60px, 1fr) auto 36px 36px;
+        grid-template-columns: 56px minmax(60px, 1fr) auto;
     }
 
     .search-window-remove {
@@ -3731,6 +3823,22 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
     font-size: 13px;
 }
 
+.controls .search-suggestion-tag {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.controls .search-suggestion-window-label {
+    margin-left: auto;
+    color: #7b8490;
+    font-family: inherit;
+    font-style: italic;
+    font-weight: 400;
+    white-space: nowrap;
+}
+
 .controls .search-suggestion:hover {
     background: rgba(0, 0, 0, 0.08);
     border-color: rgba(0, 0, 0, 0.08);
@@ -5445,6 +5553,10 @@ html[data-theme="dark"] .controls .search-suggestions {
 html[data-theme="dark"] .controls .search-suggestion {
     background: rgba(255, 255, 255, 0.06);
     color: #edf3ff;
+}
+
+html[data-theme="dark"] .controls .search-suggestion-window-label {
+    color: var(--app-text-muted);
 }
 
 html[data-theme="dark"] .controls .search-suggestion:hover {

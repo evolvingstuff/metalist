@@ -3,6 +3,7 @@ export const MAX_SEARCH_SUGGESTION_WINDOW_DAYS = 365;
 export const MAX_SEARCH_SUGGESTION_WINDOW_SLOTS = 20;
 
 let currentWindowDays = Object.freeze([1, 7, 30]);
+let shouldShowWindowLabels = true;
 
 export function getSearchSuggestionWindowsValidationError(windowDays) {
     if (!Array.isArray(windowDays)) {
@@ -53,4 +54,15 @@ export function setSearchSuggestionWindowsValue(value) {
 
 export function getSearchSuggestionWindowDays() {
     return currentWindowDays.slice();
+}
+
+export function setShowSearchSuggestionWindowLabelsValue(value) {
+    if (value !== 'true' && value !== 'false') {
+        throw new Error('Search suggestion window labels value must be true or false');
+    }
+    shouldShowWindowLabels = value === 'true';
+}
+
+export function getShowSearchSuggestionWindowLabels() {
+    return shouldShowWindowLabels;
 }

@@ -54,9 +54,11 @@ from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_history import (
+    TagActivityWindowSelection,
     current_local_date,
     is_first_search_tag_suggestion_context,
-    list_recent_search_tags_for_first_query,
+    list_search_suggestion_statistics,
+    list_recent_search_tag_selections_for_first_query,
     prioritize_first_search_tag_suggestions,
     record_note_interaction,
     reset_search_history,
@@ -528,9 +530,10 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     validate_tag_activity_windows(window_days)
     all_suggestions = search_index.suggest_all_tag_completions(query=query)
     suggestions = all_suggestions[:MAX_SEARCH_SUGGESTIONS]
+    personalized_selections: list[TagActivityWindowSelection] = []
     if is_first_search_tag_suggestion_context(query):
         token = _require_bearer_token(request)
-        recent_tags = list_recent_search_tags_for_first_query(
+        personalized_selections = list_recent_search_tag_selections_for_first_query(
             query=query,
             candidate_tags=all_suggestions,
             window_days=window_days,
@@ -540,11 +543,19 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
         suggestions = prioritize_first_search_tag_suggestions(
             query=query,
             base_suggestions=suggestions,
-            recent_tags=recent_tags,
+            recent_tags=[selection.tag for selection in personalized_selections],
             priority_slots=len(window_days),
         )
         suggestions = suggestions[:MAX_SEARCH_SUGGESTIONS]
-    return {"suggestions": suggestions}
+    personalized_suggestions = [
+        {"tag": selection.tag, "windowDays": selection.window_days}
+        for selection in personalized_selections
+        if selection.tag in suggestions
+    ]
+    return {
+        "suggestions": suggestions,
+        "personalizedSuggestions": personalized_suggestions,
+    }
 
 
 @router.post("/notes/prioritize-tag-suggestions")
@@ -587,6 +598,12 @@ def tag_interactions(request: Request, payload: dict) -> Dict[str, object]:
         interacted_on=current_local_date(),
     )
     return {"credited": credited}
+
+
+@router.get("/notes/tag-interactions")
+def get_tag_interactions(request: Request) -> Dict[str, object]:
+    token = _require_bearer_token(request)
+    return list_search_suggestion_statistics(token=token)
 
 
 @router.delete("/notes/tag-interactions")

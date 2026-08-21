@@ -11,7 +11,10 @@ from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.search_history import (
     DEFAULT_TAG_ACTIVITY_WINDOWS,
+    TagActivityWindowSelection,
     is_first_search_tag_suggestion_context,
+    list_search_suggestion_statistics,
+    list_recent_search_tag_selections_for_first_query,
     list_recent_search_tags_for_first_query,
     prioritize_first_search_tag_suggestions,
     record_note_interaction,
@@ -80,6 +83,13 @@ def test_note_interaction_credits_raw_inherited_tags_not_ontology_tags(
             token="token",
             today=date(2026, 8, 20),
         ) == ["shortcut"]
+        assert list_recent_search_tag_selections_for_first_query(
+            query="shor",
+            candidate_tags=["short-story", "shortcut", "inferred"],
+            window_days=DEFAULT_TAG_ACTIVITY_WINDOWS,
+            token="token",
+            today=date(2026, 8, 20),
+        ) == [TagActivityWindowSelection(tag="shortcut", window_days=1)]
     finally:
         search_history_module.search_history_store.clear_persisted_state_for_tests()
 
@@ -121,6 +131,63 @@ def test_daily_activity_reuses_one_bucket_and_one_database_row(
             "counts_by_date": {
                 "2026-08-20": {"journal": 3, "workday": 3},
             },
+        }
+    finally:
+        search_history_module.search_history_store.clear_persisted_state_for_tests()
+
+
+def test_search_suggestion_statistics_lists_daily_tag_credits_newest_first(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_memory_database(tmp_path, monkeypatch)
+    try:
+        index = _build_index(
+            [
+                SearchRecord(
+                    note_id="n1",
+                    content_text="Journal",
+                    tags="journal workday",
+                    tag_terms=frozenset({"journal", "workday"}),
+                )
+            ],
+            raw_tag_terms_by_id={"n1": frozenset({"journal", "workday"})},
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+        record_note_interaction(
+            note_id="n1",
+            interaction_type="edit",
+            token="token",
+            interacted_on=date(2026, 8, 18),
+        )
+        for interaction_type in ("expand", "fullscreen"):
+            record_note_interaction(
+                note_id="n1",
+                interaction_type=interaction_type,
+                token="token",
+                interacted_on=date(2026, 8, 20),
+            )
+
+        assert list_search_suggestion_statistics(token="token") == {
+            "retentionPopulatedDayLimit": 365,
+            "days": [
+                {
+                    "date": "2026-08-20",
+                    "totalTagCredits": 4,
+                    "tags": [
+                        {"tag": "journal", "count": 2},
+                        {"tag": "workday", "count": 2},
+                    ],
+                },
+                {
+                    "date": "2026-08-18",
+                    "totalTagCredits": 2,
+                    "tags": [
+                        {"tag": "journal", "count": 1},
+                        {"tag": "workday", "count": 1},
+                    ],
+                },
+            ],
         }
     finally:
         search_history_module.search_history_store.clear_persisted_state_for_tests()

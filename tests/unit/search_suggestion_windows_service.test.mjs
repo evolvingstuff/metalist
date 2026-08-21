@@ -5,9 +5,11 @@ import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     getSearchSuggestionWindowsValidationError,
     getSearchSuggestionWindowDays,
+    getShowSearchSuggestionWindowLabels,
     parseSearchSuggestionWindowsValue,
     serializeSearchSuggestionWindows,
     setSearchSuggestionWindowsValue,
+    setShowSearchSuggestionWindowLabelsValue,
 } from '../../app/static/js/modules/mode-manager/services/search-suggestion-windows-service.js';
 
 
@@ -34,4 +36,19 @@ test('search suggestion windows validate range, duplicates, and canonical persis
     assert.throws(() => parseSearchSuggestionWindowsValue('[0]'), /between 1 and 365/);
     assert.throws(() => parseSearchSuggestionWindowsValue('[366]'), /between 1 and 365/);
     assert.throws(() => parseSearchSuggestionWindowsValue('[7,7]'), /duplicates/);
+});
+
+
+test('search suggestion window labels are enabled by default and parse persisted booleans', (t) => {
+    t.after(() => setShowSearchSuggestionWindowLabelsValue('true'));
+
+    assert.equal(getShowSearchSuggestionWindowLabels(), true);
+    setShowSearchSuggestionWindowLabelsValue('false');
+    assert.equal(getShowSearchSuggestionWindowLabels(), false);
+    setShowSearchSuggestionWindowLabelsValue('true');
+    assert.equal(getShowSearchSuggestionWindowLabels(), true);
+    assert.throws(
+        () => setShowSearchSuggestionWindowLabelsValue('yes'),
+        /must be true or false/,
+    );
 });

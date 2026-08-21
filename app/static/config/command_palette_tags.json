@@ -65,6 +65,10 @@
       "tags": ["search", "suggestion", "history", "window", "windows", "days", "slots", "ranking", "recent", "order"]
     },
     {
+      "id": "form.search_suggestion_statistics",
+      "tags": ["search", "suggestion", "statistics", "stats", "history", "activity", "counts", "credits", "collected", "days", "tags", "ranking"]
+    },
+    {
       "id": "action.expand_all",
       "tags": ["expand", "all", "collapsed", "root", "top-level", "notes", "view"]
     },

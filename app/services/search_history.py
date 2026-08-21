@@ -38,6 +38,12 @@ class TagActivityState:
     counts_by_date: dict[str, dict[str, int]]
 
 
+@dataclass(frozen=True, slots=True)
+class TagActivityWindowSelection:
+    tag: str
+    window_days: int
+
+
 def current_local_date() -> date:
     return datetime.now().astimezone().date()
 
@@ -77,13 +83,13 @@ def _validate_counts_by_date_for_ranking(
                 raise TypeError("daily tag counts must be positive integers")
 
 
-def rank_tag_activity_windows(
+def rank_tag_activity_window_selections(
     *,
     counts_by_date: dict[str, dict[str, int]],
     candidate_tags: list[str],
     window_days: tuple[int, ...],
     today: date,
-) -> list[str]:
+) -> list[TagActivityWindowSelection]:
     _validate_counts_by_date_for_ranking(counts_by_date)
     if not isinstance(candidate_tags, list):
         raise TypeError("candidate_tags must be a list")
@@ -106,7 +112,7 @@ def rank_tag_activity_windows(
     for day_text, tag_counts in counts_by_date.items():
         parsed_counts.append((date.fromisoformat(day_text), tag_counts))
 
-    selected: list[str] = []
+    selections: list[TagActivityWindowSelection] = []
     selected_casefold: set[str] = set()
     for day_count in window_days:
         earliest_day = today - timedelta(days=day_count - 1)
@@ -133,8 +139,31 @@ def rank_tag_activity_windows(
             ),
         )
         selected_casefold.add(winner_casefold)
-        selected.append(candidate_by_casefold[winner_casefold])
-    return selected
+        selections.append(
+            TagActivityWindowSelection(
+                tag=candidate_by_casefold[winner_casefold],
+                window_days=day_count,
+            )
+        )
+    return selections
+
+
+def rank_tag_activity_windows(
+    *,
+    counts_by_date: dict[str, dict[str, int]],
+    candidate_tags: list[str],
+    window_days: tuple[int, ...],
+    today: date,
+) -> list[str]:
+    return [
+        selection.tag
+        for selection in rank_tag_activity_window_selections(
+            counts_by_date=counts_by_date,
+            candidate_tags=candidate_tags,
+            window_days=window_days,
+            today=today,
+        )
+    ]
 
 
 def _copy_counts_by_date(
@@ -308,17 +337,42 @@ class SearchHistoryStore:
         token: str,
         today: date,
     ) -> list[str]:
+        return [
+            selection.tag
+            for selection in self.list_recent_tag_selections(
+                candidate_tags=candidate_tags,
+                window_days=window_days,
+                token=token,
+                today=today,
+            )
+        ]
+
+    def list_recent_tag_selections(
+        self,
+        *,
+        candidate_tags: list[str],
+        window_days: tuple[int, ...],
+        token: str,
+        today: date,
+    ) -> list[TagActivityWindowSelection]:
         with self._lock:
             self.ensure_decrypted(token=token)
             counts_by_date: dict[str, dict[str, int]] = {}
             if self._state is not None:
                 counts_by_date = _copy_counts_by_date(self._state.counts_by_date)
-        return rank_tag_activity_windows(
+        return rank_tag_activity_window_selections(
             counts_by_date=counts_by_date,
             candidate_tags=candidate_tags,
             window_days=window_days,
             today=today,
         )
+
+    def copy_daily_counts(self, *, token: str) -> dict[str, dict[str, int]]:
+        with self._lock:
+            self.ensure_decrypted(token=token)
+            if self._state is None:
+                return {}
+            return _copy_counts_by_date(self._state.counts_by_date)
 
     def reset_history(self, *, token: str) -> int:
         with self._lock:
@@ -422,10 +476,62 @@ def list_recent_search_tags_for_first_query(
     )
 
 
+def list_recent_search_tag_selections_for_first_query(
+    *,
+    query: str,
+    candidate_tags: list[str],
+    window_days: tuple[int, ...],
+    token: str,
+    today: date,
+) -> list[TagActivityWindowSelection]:
+    if not isinstance(query, str):
+        raise TypeError("query must be a string")
+    prefix = _extract_first_search_tag_prefix(query)
+    if prefix is None:
+        return []
+    return search_history_store.list_recent_tag_selections(
+        candidate_tags=candidate_tags,
+        window_days=window_days,
+        token=token,
+        today=today,
+    )
+
+
 def reset_search_history(*, token: str) -> int:
     if not isinstance(token, str) or token == "":
         raise ValueError("token must be a non-empty string")
     return search_history_store.reset_history(token=token)
+
+
+def list_search_suggestion_statistics(*, token: str) -> dict[str, object]:
+    if not isinstance(token, str) or token == "":
+        raise ValueError("token must be a non-empty string")
+    counts_by_date = search_history_store.copy_daily_counts(token=token)
+    days: list[dict[str, object]] = []
+    for day_text in sorted(counts_by_date, reverse=True):
+        tag_counts = counts_by_date[day_text]
+        tags = [
+            {"tag": tag_name, "count": count}
+            for tag_name, count in sorted(
+                tag_counts.items(),
+                key=lambda tag_count_pair: (
+                    -tag_count_pair[1],
+                    tag_count_pair[0].casefold(),
+                    tag_count_pair[0],
+                ),
+            )
+        ]
+        days.append(
+            {
+                "date": day_text,
+                "totalTagCredits": sum(tag_counts.values()),
+                "tags": tags,
+            }
+        )
+    return {
+        "retentionPopulatedDayLimit": MAX_TAG_ACTIVITY_RETENTION_DAYS,
+        "days": days,
+    }
 
 
 def is_first_search_tag_suggestion_context(query: str) -> bool:

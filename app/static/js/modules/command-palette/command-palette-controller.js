@@ -38,6 +38,7 @@ import { SoundManagerModal } from '../modals/sound-manager-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { SearchSuggestionWindowsModal } from '../modals/search-suggestion-windows-modal.js';
+import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -58,6 +59,7 @@ import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     parseSearchSuggestionWindowsValue,
     serializeSearchSuggestionWindows,
+    setShowSearchSuggestionWindowLabelsValue,
     setSearchSuggestionWindowsValue,
 } from '../mode-manager/services/search-suggestion-windows-service.js';
 
@@ -303,6 +305,7 @@ class CommandPaletteController {
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
         this._searchSuggestionWindowsModal = null;
+        this._searchSuggestionStatisticsModal = null;
 
         this._elements = null;
 
@@ -352,6 +355,7 @@ class CommandPaletteController {
                 resetAllPreferences: this.resetAllPreferences.bind(this),
                 resetSearchSuggestionHistory: this.resetSearchSuggestionHistory.bind(this),
                 openSearchSuggestionWindows: this.openSearchSuggestionWindows.bind(this),
+                openSearchSuggestionStatistics: this.openSearchSuggestionStatistics.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
@@ -509,6 +513,13 @@ class CommandPaletteController {
         } else {
             setSearchSuggestionWindowsValue(storedSearchWindows);
         }
+        const showSearchWindowLabels = this._getBoolean(
+            'pref.show_search_suggestion_window_labels',
+            true,
+        );
+        setShowSearchSuggestionWindowLabelsValue(
+            showSearchWindowLabels ? 'true' : 'false',
+        );
 
         applyNoteLayoutSettings(document.body, this._readNoteLayoutSettings());
 
@@ -1148,9 +1159,19 @@ class CommandPaletteController {
         return parseSearchSuggestionWindowsValue(storedValue);
     }
 
-    async _saveSearchSuggestionWindows(windowDays) {
+    _readShowSearchSuggestionWindowLabels() {
+        return this._getBoolean('pref.show_search_suggestion_window_labels', true);
+    }
+
+    async _saveSearchSuggestionWindows(windowDays, showWindowLabels) {
+        if (typeof showWindowLabels !== 'boolean') {
+            throw new Error('showWindowLabels must be boolean');
+        }
         const serialized = serializeSearchSuggestionWindows(windowDays);
-        await this._preferences.setRaw('pref.search_suggestion_windows', serialized);
+        await this._preferences.setMany({
+            'pref.search_suggestion_windows': serialized,
+            'pref.show_search_suggestion_window_labels': showWindowLabels ? 'true' : 'false',
+        });
         this._applyPreferenceEffectsFromStorage();
     }
 
@@ -2224,10 +2245,27 @@ class CommandPaletteController {
         if (this._searchSuggestionWindowsModal === null) {
             this._searchSuggestionWindowsModal = new SearchSuggestionWindowsModal(
                 this._readSearchSuggestionWindows.bind(this),
+                this._readShowSearchSuggestionWindowLabels.bind(this),
                 this._saveSearchSuggestionWindows.bind(this),
             );
         }
         this._searchSuggestionWindowsModal.open();
+    }
+
+    async openSearchSuggestionStatistics() {
+        const isReady = await this._prepareForModalOpen(
+            'commandPalette.openSearchSuggestionStatistics',
+        );
+        if (!isReady) {
+            return;
+        }
+        if (this._searchSuggestionStatisticsModal === null) {
+            this._searchSuggestionStatisticsModal = new SearchSuggestionStatisticsModal(
+                NotesAPI.getSearchSuggestionStatistics.bind(NotesAPI),
+                this._readSearchSuggestionWindows.bind(this),
+            );
+        }
+        this._searchSuggestionStatisticsModal.open();
     }
 }
 
