@@ -26,6 +26,7 @@ from app.config import (
 from app.db.session import begin_writer
 from app.db.migrations import CURRENT_DATABASE_VERSION
 from app.db.migrations import MigrationResult
+from app.db.migrations import purge_migration_residue
 from app.db.migrations import read_database_version
 from app.db.migrations import run_database_migrations
 from app.db.notes_sql import fetch_all_for_cache
@@ -57,6 +58,31 @@ from app.services.backup_service import create_timestamped_backup
 from app.services.client_state_service import rewrite_client_state_storage
 from app.security.encryption import set_encryption_required
 from app.security.note_html import sanitize_note_html
+
+
+def migrate_restored_database_if_unlocked(
+    *,
+    connection,
+    password_required: bool,
+) -> int:
+    if not isinstance(password_required, bool):
+        raise TypeError("password_required must be a bool")
+    database_version = read_database_version(connection)
+    if database_version > CURRENT_DATABASE_VERSION:
+        raise RuntimeError(
+            f"Restored database version {database_version} is newer than supported version "
+            f"{CURRENT_DATABASE_VERSION}"
+        )
+    if password_required or database_version == CURRENT_DATABASE_VERSION:
+        return database_version
+    with connection:
+        run_database_migrations(
+            connection=connection,
+            encryption_enabled=False,
+            encryption_service=None,
+        )
+    purge_migration_residue(connection)
+    return CURRENT_DATABASE_VERSION
 
 
 class AuthService:
@@ -260,6 +286,12 @@ class AuthService:
                         encryption_enabled=True,
                         encryption_service=migration_encryption,
                     )
+            if migration_result.applied_versions:
+                connection.execute(f"PRAGMA user_version = {initial_version}")
+                connection.commit()
+                purge_migration_residue(connection)
+                connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION}")
+                connection.commit()
             return migration_result
         finally:
             maintenance_service.exit_maintenance()

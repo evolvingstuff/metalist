@@ -34,6 +34,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
     "pref.theme": {"system", "light", "dark"},
+    "pref.search_suggestion_windows": "tag_activity_windows",
+    "pref.show_search_suggestion_window_labels": {"true", "false"},
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
@@ -42,6 +44,7 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.reminder_ack_sound_enabled",
         "pref.reminder_popup_sound_id",
         "pref.reminder_ack_sound_id",
+        "pref.search_suggestion_falloff",
     }
 )
 
@@ -142,6 +145,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
         allowed_values = _ALLOWED_CLIENT_PREFERENCES[key]
         if allowed_values == "sound_id":
             _validate_sound_preference_value(key=key, value=value)
+        elif allowed_values == "tag_activity_windows":
+            _validate_tag_activity_windows_preference(key=key, value=value)
         elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value
@@ -153,6 +158,26 @@ def _validate_sound_preference_value(*, key: str, value: str) -> None:
         return
     if _UUID_PATTERN.fullmatch(value) is None:
         raise RuntimeError(f"Invalid client preference value for {key}: {value}")
+
+
+def _validate_tag_activity_windows_preference(*, key: str, value: str) -> None:
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise RuntimeError(f"Invalid client preference value for {key}: expected a list")
+    if len(parsed) > 20:
+        raise RuntimeError(f"Invalid client preference value for {key}: too many slots")
+    seen: set[int] = set()
+    for day_count in parsed:
+        if not isinstance(day_count, int) or isinstance(day_count, bool):
+            raise RuntimeError(f"Invalid client preference value for {key}: expected integers")
+        if day_count < 1 or day_count > 365:
+            raise RuntimeError(f"Invalid client preference value for {key}: out-of-range window")
+        if day_count in seen:
+            raise RuntimeError(f"Invalid client preference value for {key}: duplicate window")
+        seen.add(day_count)
+    canonical = json.dumps(parsed, separators=(",", ":"))
+    if canonical != value:
+        raise RuntimeError(f"Invalid client preference value for {key}: non-canonical JSON")
 
 
 def _validate_usage_state(usage_state: dict[str, object]) -> dict[str, dict[str, object]]:

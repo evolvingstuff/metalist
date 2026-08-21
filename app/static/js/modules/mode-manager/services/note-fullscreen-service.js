@@ -3,6 +3,7 @@ import { hydrateImageFilePreviews } from './file-image-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
 import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
+import { recordNoteInteractionIfNew } from './search-interaction-service.js';
 
 let activeOverlay = null;
 let previousFocusElement = null;
@@ -90,4 +91,5 @@ export async function openNoteFullscreen(noteId) {
     hydrateRemoteImageProxies(elements.tree);
     void queueMermaidDiagramRendering(elements.tree);
     elements.closeButton.focus();
+    await recordNoteInteractionIfNew(noteId, 'fullscreen');
 }

@@ -68,14 +68,14 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
-- For a blank search or the first tag prefix in a query, up to the top 3 suggestion slots are reserved for matching tags with the strongest recent interaction scores in the current namespace.
+- For a blank search or the first tag prefix in a query, the first suggestion slots can be personalized from ordered activity windows. The default windows are 1, 7, and 30 calendar days.
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
-- A successful non-empty search execution counts toward that recent-tag weighting when it has matching results.
-- Adding a new non-meta tag to a note also counts for that tag after the note is saved.
-- Later server-backed interactions in an active searched result set also count, including toggling todo/done, creating, moving, collapsing/expanding, saving, deleting, or entering edit mode on notes.
-- Scrolling can also qualify once it triggers the persisted tab-state server write while that search is active.
-- Recency weighting uses event-based exponential decay, so scores shift only when new qualifying search interactions are credited.
-- Recent-tag promotion ranks tags directly by summing those decayed interaction scores across the qualifying searches that include each tag, with most-recent interaction time breaking ties.
+- Search execution, typing, selecting a suggestion, scrolling, hovering, rendering, and collapsing do not earn credit.
+- Entering edit mode, manually expanding a note, entering full-screen note view, running a shell note, and toggling todo/done count as intentional note engagements. Multiple actions on the same note in one navigation flow are deduplicated; moving to another note or beginning a new search allows a later engagement to count again.
+- Each engagement increments every raw searchable tag on the note, including inherited tags and meta tags, before ontology inference. This lets an `@shell` child under `shortcut` credit both raw tags without rewarding unrelated inferred tags.
+- Counts are stored in sparse daily buckets. Days without activity have no bucket and do not consume retention capacity; the latest 365 populated days are retained.
+- Each configured window chooses its highest-count matching tag, excluding tags already chosen by earlier windows. The remaining suggestions retain normal namespace-frequency ordering.
+- `Cmd/Ctrl+/` → `Search suggestion time windows…` edits ordered slot values from 1–365 days and adds or removes slots. Its default-on checkbox shows muted right-aligned labels (`today`, `recent N days`) only on suggestions actually promoted by a window. Removing every slot disables personalization. `Search suggestion statistics…` shows every retained populated date and tag-credit count, while `Reset search suggestion activity…` clears only the learned aggregate.
 - While typing a partial tag token, suggestions are segment-aware for connector-separated tags: a prefix can match the start of the full tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`).
 - Example: `wor` can suggest `workspaces` and `databricks-workspaces`; `orksp` suggests neither.
 - When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.

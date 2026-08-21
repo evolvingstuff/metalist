@@ -1,25 +1,17 @@
 import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
-const SCROLL_INTERACTION_THRESHOLD_PX = 48;
-
 const stateByTabId = Object.create(null);
 
-function getActiveState() {
+function getActiveTabId() {
     const tabId = ModeContext.activeTabId;
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('ModeContext.activeTabId must be a non-empty string');
     }
-    const state = Object.prototype.hasOwnProperty.call(stateByTabId, tabId)
-        ? stateByTabId[tabId]
-        : null;
-    return {
-        tabId,
-        state,
-    };
+    return tabId;
 }
 
-function getExecutedQueryForActiveTab() {
+function getExecutedQuery() {
     const query = ModeContext.getExecutedSearchQuery();
     if (typeof query !== 'string') {
         throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
@@ -27,155 +19,55 @@ function getExecutedQueryForActiveTab() {
     return query;
 }
 
-function getCurrentScrollY() {
-    return Math.max(0, Math.round(window.scrollY));
-}
-
-function beginPendingInteraction({ requireScrollThreshold }) {
-    if (typeof requireScrollThreshold !== 'boolean') {
-        throw new Error('beginPendingInteraction requires boolean requireScrollThreshold');
-    }
-
-    const { tabId, state } = getActiveState();
-    if (!state) {
-        return null;
-    }
-
-    const executedQuery = getExecutedQueryForActiveTab();
-    if (state.query !== executedQuery) {
-        return null;
-    }
-    if (state.pending === true || state.recorded === true) {
-        return null;
-    }
-    if (state.hasSearchResults !== true) {
-        return null;
-    }
-    if (executedQuery.trim() === '') {
-        return null;
-    }
-    if (requireScrollThreshold) {
-        const currentScrollY = getCurrentScrollY();
-        if (Math.abs(currentScrollY - state.baselineScrollY) < SCROLL_INTERACTION_THRESHOLD_PX) {
-            return null;
-        }
-    }
-
-    state.pending = true;
-    stateByTabId[tabId] = state;
-    return executedQuery;
-}
-
 export function primeActiveSearchInteractionState() {
-    const tabId = ModeContext.activeTabId;
-    if (typeof tabId !== 'string' || tabId.length === 0) {
-        throw new Error('ModeContext.activeTabId must be a non-empty string');
-    }
-
-    const query = getExecutedQueryForActiveTab();
-    const previous = Object.prototype.hasOwnProperty.call(stateByTabId, tabId)
-        ? stateByTabId[tabId]
-        : null;
-    const sameQuery = previous !== null && previous.query === query;
-    const searchRootCountTotal = ModeContext.searchRootCountTotal;
-    if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
-        throw new Error('ModeContext.searchRootCountTotal must be a non-negative integer');
-    }
-
-    stateByTabId[tabId] = {
-        query,
-        baselineScrollY: getCurrentScrollY(),
-        hasSearchResults: query.trim() !== '' && searchRootCountTotal > 0,
-        pending: false,
-        recorded: sameQuery ? previous.recorded === true : false,
-    };
-}
-
-export function beginEditInteractionForActiveQuery() {
-    return beginPendingInteraction({ requireScrollThreshold: false });
-}
-
-export function finalizeRecordedInteraction(query) {
-    if (typeof query !== 'string' || query.length === 0) {
-        throw new Error('finalizeRecordedInteraction requires query string');
-    }
-    const { tabId, state } = getActiveState();
-    if (!state || state.query !== query) {
+    const tabId = getActiveTabId();
+    const query = getExecutedQuery();
+    if (!Object.prototype.hasOwnProperty.call(stateByTabId, tabId)) {
+        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
         return;
     }
-    state.pending = false;
-    state.recorded = true;
-    stateByTabId[tabId] = state;
+    const state = stateByTabId[tabId];
+    if (state.query !== query) {
+        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
+    }
 }
 
-export function cancelPendingInteraction(query) {
-    if (typeof query !== 'string' || query.length === 0) {
-        throw new Error('cancelPendingInteraction requires query string');
+export async function recordNoteInteractionIfNew(noteId, interactionType) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('recordNoteInteractionIfNew requires noteId');
     }
-    const { tabId, state } = getActiveState();
-    if (!state || state.query !== query) {
-        return;
+    if (typeof interactionType !== 'string' || interactionType.length === 0) {
+        throw new Error('recordNoteInteractionIfNew requires interactionType');
     }
-    state.pending = false;
-    stateByTabId[tabId] = state;
-}
-
-export async function recordScrollInteractionIfEligible() {
-    const query = beginPendingInteraction({ requireScrollThreshold: true });
-    if (query === null) {
+    primeActiveSearchInteractionState();
+    const tabId = getActiveTabId();
+    const state = stateByTabId[tabId];
+    if (state.engagedNoteId === noteId || state.pendingNoteId === noteId) {
         return false;
     }
-    return NotesAPI.recordSearchInteraction(query, 'scroll').then(
-        () => {
-            finalizeRecordedInteraction(query);
-            return true;
-        },
+    state.pendingNoteId = noteId;
+    const response = await NotesAPI.recordNoteInteraction(noteId, interactionType).then(
+        (payload) => payload,
         (error) => {
-            cancelPendingInteraction(query);
+            state.pendingNoteId = null;
             throw error;
-        }
-    );
-}
-
-export async function recordSearchExecutionInteractionIfEligible(query) {
-    if (typeof query !== 'string') {
-        throw new Error('recordSearchExecutionInteractionIfEligible requires query string');
-    }
-    if (query.trim() === '') {
-        return false;
-    }
-    const searchRootCountTotal = ModeContext.searchRootCountTotal;
-    if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
-        throw new Error('ModeContext.searchRootCountTotal must be a non-negative integer');
-    }
-    if (searchRootCountTotal === 0) {
-        return false;
-    }
-    const executedQuery = getExecutedQueryForActiveTab();
-    if (executedQuery !== query) {
-        return false;
-    }
-    return NotesAPI.recordSearchInteraction(query, 'search').then((response) => {
-        if (!response || typeof response !== 'object') {
-            throw new Error('Search execution interaction response missing');
-        }
-        return response.credited === true;
-    });
-}
-
-export async function recordCommandInteractionIfEligible() {
-    const query = beginPendingInteraction({ requireScrollThreshold: false });
-    if (query === null) {
-        return false;
-    }
-    return NotesAPI.recordSearchInteraction(query, 'command').then(
-        () => {
-            finalizeRecordedInteraction(query);
-            return true;
         },
-        (error) => {
-            cancelPendingInteraction(query);
-            throw error;
-        }
     );
+    if (!response || typeof response !== 'object') {
+        state.pendingNoteId = null;
+        throw new Error('Note interaction response missing');
+    }
+    if (typeof response.credited !== 'boolean') {
+        state.pendingNoteId = null;
+        throw new Error('Note interaction response requires credited boolean');
+    }
+    state.pendingNoteId = null;
+    state.engagedNoteId = noteId;
+    return response.credited;
+}
+
+export function resetNoteInteractionStateForTests() {
+    for (const tabId of Object.keys(stateByTabId)) {
+        delete stateByTabId[tabId];
+    }
 }

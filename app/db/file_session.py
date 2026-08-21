@@ -53,6 +53,7 @@ class FileSession:
                     )
                     anchor.row_factory = sqlite3.Row
                     anchor.execute("PRAGMA journal_mode=WAL")
+                    anchor.execute("PRAGMA secure_delete=ON")
                     anchor.execute("PRAGMA synchronous=NORMAL")
                     initialize_file_schema(anchor)
                     anchor.commit()
@@ -87,6 +88,7 @@ class FileSession:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA secure_delete=ON")
         connection.execute("PRAGMA synchronous=NORMAL")
         initialize_file_schema(connection)
         connection.commit()

@@ -30,6 +30,9 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             expandAll: noop,
             resetViewFilters: noop,
             resetAllPreferences: noop,
+            resetSearchSuggestionHistory: noop,
+            openSearchSuggestionWindows: noop,
+            openSearchSuggestionStatistics: noop,
             openKeyboardShortcutsHelp: noop,
             exportCurrentViewAsHtml: noop,
             attachFileToCurrentNote: noop,
@@ -111,6 +114,17 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('action.attach_file_to_current_note'), true);
     assert.equal(attachFileEndpoint.label, 'Attach file…');
     assert.equal(endpointIds.has('action.trim_unused_files'), true);
+    assert.equal(endpointIds.has('action.reset_search_suggestion_history'), true);
+    assert.equal(endpointIds.has('form.search_suggestion_windows'), true);
+    assert.equal(endpointIds.has('form.search_suggestion_statistics'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.search_suggestion_windows').label,
+        'Search suggestion time windows…',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.search_suggestion_statistics').label,
+        'Search suggestion statistics…',
+    );
     assert.equal(endpointIds.has('action.prioritize_tag_front'), true);
     assert.equal(endpointIds.has('action.prioritize_tag_back'), true);
     assert.equal(

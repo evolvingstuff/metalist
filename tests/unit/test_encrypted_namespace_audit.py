@@ -120,6 +120,59 @@ def _insert_encrypted_note(database_path: Path, *, note_id: str, nonce_byte: byt
     connection.close()
 
 
+def _replace_with_legacy_search_history(database_path: Path) -> None:
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute("DROP TABLE search_interaction_history")
+        connection.execute(
+            """
+            CREATE TABLE search_interaction_history (
+                query_hash TEXT PRIMARY KEY,
+                query_key TEXT NOT NULL,
+                query_key_encryption_nonce BLOB,
+                query_key_encryption_tag BLOB,
+                root_tag TEXT NOT NULL,
+                root_tag_encryption_nonce BLOB,
+                root_tag_encryption_tag BLOB,
+                tags_json TEXT NOT NULL,
+                tags_json_encryption_nonce BLOB,
+                tags_json_encryption_tag BLOB,
+                score REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                last_interacted_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO search_interaction_history VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            (
+                "deterministic-query-hash",
+                "YQ==",
+                b"1" * 12,
+                b"a" * 16,
+                "Yg==",
+                b"2" * 12,
+                b"b" * 16,
+                "Yw==",
+                b"3" * 12,
+                b"c" * 16,
+                1.0,
+                _NOW,
+                _NOW,
+                _NOW,
+            ),
+        )
+        connection.execute("PRAGMA user_version = 2")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_audit_scans_all_namespaces_and_skips_plaintext_namespaces(tmp_path: Path) -> None:
     namespaces_directory = tmp_path / "namespaces"
     encrypted_database = _create_namespace_database(
@@ -181,6 +234,26 @@ def test_audit_reports_plaintext_without_disclosing_values(tmp_path: Path) -> No
     assert "TOP SECRET" not in rendered
     assert "note-secret" not in rendered
     assert report.startup_allowed is False
+
+
+def test_audit_requires_authenticated_migration_for_legacy_search_history_schema(
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    _replace_with_legacy_search_history(database_path)
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is True
+    assert report.fatal_findings == ()
+    assert len(report.migration_findings) == 1
+    assert report.migration_findings[0].table == "search_interaction_history"
+    assert "deterministic" in report.migration_findings[0].message
 
 
 def test_startup_allows_only_known_password_dependent_migration_payloads(

@@ -6,7 +6,6 @@ import uuid
 
 from app.usecases.base import QueryCommand
 from app.usecases.create_note import apply_insert_note
-from app.usecases.update_content import _record_added_tag_activity
 from app.usecases.update_content import apply_update_content
 from app.services.store import NodeRecord
 from app.services.store import store
@@ -50,12 +49,6 @@ class CmdSplitNote(QueryCommand):
 
         sanitized_segments = [sanitize_note_html(segment) for segment in self.segments]
         apply_update_content(self.note_id, sanitized_segments[0], self.tags, self.token)
-        _record_added_tag_activity(
-            before_tags=before_tags,
-            after_tags=self.tags,
-            token=self.token,
-        )
-
         inserted_records: List[NodeRecord] = []
         anchor_note_id = self.note_id
         for segment in sanitized_segments[1:]:

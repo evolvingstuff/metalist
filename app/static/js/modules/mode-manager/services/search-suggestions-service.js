@@ -1,6 +1,13 @@
 import { NotesAPI } from '../../api-client.js';
 import { analyzeSearchQueryInput } from './search-syntax-service.js';
 import { syncSearchInputValue } from './search-input-service.js';
+import {
+    getSearchSuggestionWindowDays,
+    getShowSearchSuggestionWindowLabels,
+} from './search-suggestion-windows-service.js';
+import {
+    buildSearchSuggestionPresentation,
+} from './search-suggestion-window-labels-service.js';
 
 const SUGGESTION_DEBOUNCE_MS = 50;
 const HOVER_DISMISS_BOTTOM_BUFFER_PX = 25;
@@ -290,19 +297,25 @@ function updateSelectedSuggestion(container) {
     });
 }
 
-function renderSuggestions(searchInput, suggestions) {
+function renderSuggestions(searchInput, suggestions, personalizedSuggestions, showWindowLabels) {
     const container = getSearchSuggestionsContainer();
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
         hideSuggestions();
         return;
     }
 
-    const items = suggestions
-        .map((tag) => {
-            if (typeof tag !== 'string') {
-                throw new Error('Suggestion tags must be strings');
+    const presentation = buildSearchSuggestionPresentation(
+        suggestions,
+        personalizedSuggestions,
+        showWindowLabels,
+    );
+    const items = presentation
+        .map(({ tag, windowLabel }) => {
+            let labelHtml = '';
+            if (windowLabel !== '') {
+                labelHtml = `<span class="search-suggestion-window-label">${escapeHtml(windowLabel)}</span>`;
             }
-            return `<button type="button" class="search-suggestion" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`;
+            return `<button type="button" class="search-suggestion" data-tag="${escapeHtml(tag)}"><span class="search-suggestion-tag">${escapeHtml(tag)}</span>${labelHtml}</button>`;
         })
         .join('');
 
@@ -413,12 +426,18 @@ export function updateSearchSuggestions(searchInput, options) {
     const requestId = ++requestSerial;
     pendingTimer = setTimeout(async () => {
         pendingTimer = null;
-        const response = await NotesAPI.fetchSearchSuggestions(rawValue);
+        const response = await NotesAPI.fetchSearchSuggestions(
+            rawValue,
+            getSearchSuggestionWindowDays(),
+        );
         if (!response || typeof response !== 'object') {
             throw new Error('Search suggestions response missing');
         }
         if (!Array.isArray(response.suggestions)) {
             throw new Error('Search suggestions response requires suggestions array');
+        }
+        if (!Array.isArray(response.personalizedSuggestions)) {
+            throw new Error('Search suggestions response requires personalizedSuggestions array');
         }
         if (requestId !== requestSerial) {
             return;
@@ -426,7 +445,12 @@ export function updateSearchSuggestions(searchInput, options) {
         if (suppressSuggestionsUntilInputInteraction) {
             return;
         }
-        renderSuggestions(searchInput, response.suggestions);
+        renderSuggestions(
+            searchInput,
+            response.suggestions,
+            response.personalizedSuggestions,
+            getShowSearchSuggestionWindowLabels(),
+        );
     }, SUGGESTION_DEBOUNCE_MS);
 }
 

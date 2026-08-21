@@ -97,13 +97,6 @@ export const CommandGate = {
 
         return Promise.resolve()
             .then(() => asyncFn())
-            .then(async (result) => {
-                if (activeCommandServerCallCount > 0 && !name.startsWith('search.')) {
-                    const module = await import('./search-interaction-service.js');
-                    await module.recordCommandInteractionIfEligible();
-                }
-                return result;
-            })
             .finally(() => {
                 Logger.logAction('command_gate.finish', { name });
                 busy = false;

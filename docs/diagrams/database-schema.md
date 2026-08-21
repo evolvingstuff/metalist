@@ -50,4 +50,11 @@ erDiagram
         datetime created_at
         datetime updated_at
     }
+
+    TagActivityHistory {
+        string storage_id PK "Random UUIDv4"
+        string payload_json "Encrypted sparse daily tag counts when protected"
+        bytes payload_encryption_nonce "AES-GCM nonce"
+        bytes payload_encryption_tag "AES-GCM authentication tag"
+    }
 ```

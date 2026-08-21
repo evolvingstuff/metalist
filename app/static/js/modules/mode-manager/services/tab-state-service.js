@@ -3,7 +3,6 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from './scroll-anchor-service.js';
 import { CommandGate } from './command-gate-service.js';
-import { recordScrollInteractionIfEligible } from './search-interaction-service.js';
 import { buildSessionHeaders } from '../../session-auth.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
@@ -264,7 +263,6 @@ async function pollPersistScroll() {
     if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(tabId), nextScrollAnchor)) {
         ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
     }
-    await recordScrollInteractionIfEligible();
     await persistTabStateSnapshot();
     lastPersistedScrollByTab[tabId] = current;
 }

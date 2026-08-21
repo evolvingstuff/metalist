@@ -244,6 +244,26 @@ def _copy_database(source_path: Path, target_path: Path) -> None:
         source_connection.close()
 
 
+def _copy_immutable_database_source(source_path: Path, target_path: Path) -> None:
+    if not source_path.exists():
+        raise FileNotFoundError(f"Immutable database source not found: {source_path}")
+    if not source_path.is_file():
+        raise ValueError(f"Immutable database source must be a file: {source_path}")
+    source_uri = f"{source_path.resolve().as_uri()}?mode=ro&immutable=1"
+    source_connection = sqlite3.connect(
+        source_uri,
+        uri=True,
+        check_same_thread=False,
+    )
+    target_connection = sqlite3.connect(str(target_path), check_same_thread=False)
+    try:
+        source_connection.backup(target_connection)
+        target_connection.commit()
+    finally:
+        target_connection.close()
+        source_connection.close()
+
+
 def _checkpoint_database(database_path: Path) -> None:
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     try:
@@ -423,20 +443,24 @@ def read_backup_launch_profile(
 def _detect_encryption_enabled(database_path: Path) -> bool:
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     try:
-        table_row = connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings' LIMIT 1"
-        ).fetchone()
-        if table_row is None:
+        table_rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('app_settings', 'settings')"
+        ).fetchall()
+        table_names = {str(row[0]) for row in table_rows}
+        settings_table = "app_settings"
+        if settings_table not in table_names:
+            settings_table = "settings"
+        if settings_table not in table_names:
             return False
         settings_row = connection.execute(
-            "SELECT encryption_enabled FROM settings ORDER BY id ASC LIMIT 1"
+            f"SELECT encryption_enabled FROM {settings_table} ORDER BY id ASC LIMIT 1"
         ).fetchone()
         if settings_row is None:
             return False
         encryption_enabled = settings_row[0]
         if encryption_enabled not in (0, 1):
             raise RuntimeError(
-                f"settings.encryption_enabled must be 0 or 1, got {encryption_enabled!r}"
+                f"{settings_table}.encryption_enabled must be 0 or 1, got {encryption_enabled!r}"
             )
         return bool(encryption_enabled)
     finally:
@@ -713,7 +737,7 @@ def _create_archive_backup_for_paths(database_path: Path, backup_directory: Path
                 encoding="utf-8",
             )
 
-            with tarfile.open(backup_path, mode="w:gz") as archive_handle:
+            with tarfile.open(backup_path, mode="x:gz") as archive_handle:
                 archive_handle.add(manifest_path, arcname=_MANIFEST_FILENAME)
                 for _, snapshot_path in snapshot_entries:
                     archive_handle.add(snapshot_path, arcname=snapshot_path.name)
@@ -790,7 +814,7 @@ def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> N
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     with _BACKUP_LOCK:
-        _copy_database(backup_path, database_path)
+        _copy_immutable_database_source(backup_path, database_path)
         _checkpoint_database(database_path)
 
         related_file_database_path = _resolve_related_file_database_path(database_path)
@@ -800,7 +824,10 @@ def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> N
             database_path=database_path,
         )
         if related_file_backup_path.exists():
-            _copy_database(related_file_backup_path, related_file_database_path)
+            _copy_immutable_database_source(
+                related_file_backup_path,
+                related_file_database_path,
+            )
             _checkpoint_database(related_file_database_path)
         else:
             _reset_file_database_to_empty(related_file_database_path)
@@ -874,6 +901,29 @@ def create_timestamped_backup_for_paths(
     return _create_archive_backup_for_paths(database_path, backup_directory)
 
 
+def _restore_source_paths(*, backup_path: Path, database_path: Path) -> tuple[Path, ...]:
+    if _is_archive_backup_filename(backup_path.name):
+        return (backup_path,)
+    if not _is_legacy_primary_backup_filename(backup_path.name):
+        raise ValueError(f"Unsupported backup file: {backup_path.name}")
+
+    source_paths = [backup_path]
+    related_file_path = _resolve_related_file_backup_path(
+        backup_path.parent,
+        backup_path.name,
+        database_path=database_path,
+    )
+    if related_file_path.exists():
+        source_paths.append(related_file_path)
+    related_search_history_path = backup_path.parent / _derive_search_history_backup_filename(
+        filename=backup_path.name,
+        database_path=database_path,
+    )
+    if related_search_history_path.exists():
+        source_paths.append(related_search_history_path)
+    return tuple(source_paths)
+
+
 def _restore_backup_to_paths(
     backup_path: Path,
     database_path: Path,
@@ -888,18 +938,35 @@ def _restore_backup_to_paths(
         raise FileNotFoundError(f"Backup file not found: {backup_path}")
     if not backup_path.is_file():
         raise ValueError(f"Backup path is not a file: {backup_path}")
+    if backup_path.resolve() == database_path.resolve():
+        raise ValueError("Backup source and live database destination must differ")
 
-    if _is_archive_backup_filename(backup_path.name):
-        _restore_archive_backup_to_paths(
-            backup_path,
-            database_path,
-            source_namespace=source_namespace,
-        )
-        return
-    if _is_legacy_primary_backup_filename(backup_path.name):
-        _restore_legacy_backup_to_paths(backup_path, database_path)
-        return
-    raise ValueError(f"Unsupported backup file: {backup_path.name}")
+    immutable_source_paths = _restore_source_paths(
+        backup_path=backup_path,
+        database_path=database_path,
+    )
+    source_hashes = [
+        (source_path, _sha256_for_file(source_path))
+        for source_path in immutable_source_paths
+    ]
+    try:
+        if _is_archive_backup_filename(backup_path.name):
+            _restore_archive_backup_to_paths(
+                backup_path,
+                database_path,
+                source_namespace=source_namespace,
+            )
+        elif _is_legacy_primary_backup_filename(backup_path.name):
+            _restore_legacy_backup_to_paths(backup_path, database_path)
+        else:
+            raise ValueError(f"Unsupported backup file: {backup_path.name}")
+    finally:
+        for source_path, expected_hash in source_hashes:
+            if not source_path.exists():
+                raise RuntimeError(f"Restore source disappeared during restore: {source_path}")
+            actual_hash = _sha256_for_file(source_path)
+            if actual_hash != expected_hash:
+                raise RuntimeError(f"Restore source was modified during restore: {source_path}")
 
 
 def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:

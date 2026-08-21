@@ -41,6 +41,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
 - `Note timestamps` is off by default. When enabled, hovering the innermost note shows its created and last-updated date/time in the browser's local locale and time zone.
 - `Note Layout & Appearance…` stores namespace-scoped presets for top-level note size, child indentation, and vertical spacing. The defaults are `Larger`, `Standard`, and `Comfortable` respectively.
+- `Search suggestion time windows…` edits the ordered personalized slots. Each slot is a plain 1–365 day value; rows can be added or removed, and an empty list disables personalization. The default is 1, 7, and 30 days. A default-on checkbox controls whether personalized rows show muted right-aligned labels such as `today` or `recent 7 days` in the search-suggestion popup.
 - Session idle timeout is disabled by default. It is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`. Expiry requires browser reauthentication but preserves the hydrated server cache for a fast login; explicit logout still purges decrypted runtime state.
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
@@ -49,7 +50,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
   - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling files DB when present.
   - The completion modal shows one result row per namespace.
 - `Restore from backup…`: opens a restore picker for configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
-  - Restore reuses the same archive pipeline for both sources and recreates the sibling files DB from the archive contents. Legacy search-history sidecars are ignored.
+  - Restore reuses the same archive pipeline for both sources and recreates the sibling files DB from the archive contents. The source archive and legacy sidecars remain byte-for-byte unchanged; legacy search-history sidecars are ignored.
 - `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
@@ -58,6 +59,9 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Keyboard Shortcuts / Cheatsheet…`: opens the keyboard shortcuts cheatsheet from the command palette; `cheatsheet` is a searchable keyword.
 - `Version info…`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
 - `Note Layout & Appearance…`: previews and saves the note hierarchy presets. Search terms include `layout`, `appearance`, `font`, `size`, `spacing`, `indentation`, and `hierarchy`.
+- `Search suggestion time windows…`: edits the ordered personalized suggestion slots as plain day values; each slot accepts 1–365 calendar days and the order is significant. The same modal can show or hide time-window labels on promoted search suggestions.
+- `Search suggestion statistics…`: shows the authenticated in-memory daily aggregate used for personalization, including every retained date and tag-credit count. It does not collect search text or note content.
+- `Reset search suggestion activity…`: deletes the namespace's encrypted daily tag-count aggregate without changing notes, searches, tabs, or window configuration.
 - `Switch namespace…`: opens a simple namespace picker, leaves the current namespace tab open, and opens the selected non-current namespace in a new browser tab. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target. Each namespace still permits only one active browser tab/session.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS ports that skip both saved MetaList reservations and ports with active OS listeners, saves the profile, launches the namespace, and opens it. Launch-time port races fail without terminating the process that owns the port. Running namespace servers revalidate their on-disk namespace identity every five seconds and terminate themselves if their database or launch profile disappears.
 - `Manage namespace ports…`: opens a table of saved launch profiles from each namespace's main DB; saving this table only updates future launch profiles and does not switch tabs, launch namespaces, or restart the current process. Current-namespace port edits apply on the next MetaList launch.

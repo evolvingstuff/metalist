@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -59,6 +60,30 @@ def _encryption_service() -> EncryptionService:
     return service
 
 
+def _replace_search_history_with_legacy_schema(connection: sqlite3.Connection) -> None:
+    connection.execute("DROP TABLE search_interaction_history")
+    connection.execute(
+        """
+        CREATE TABLE search_interaction_history (
+            query_hash TEXT PRIMARY KEY,
+            query_key TEXT NOT NULL,
+            query_key_encryption_nonce BLOB,
+            query_key_encryption_tag BLOB,
+            root_tag TEXT NOT NULL,
+            root_tag_encryption_nonce BLOB,
+            root_tag_encryption_tag BLOB,
+            tags_json TEXT NOT NULL,
+            tags_json_encryption_nonce BLOB,
+            tags_json_encryption_tag BLOB,
+            score REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            last_interacted_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+
 def test_plaintext_namespace_advances_through_migrations_without_rewriting(tmp_path: Path) -> None:
     connection = _connection(tmp_path / "plain.db")
     _insert_settings(
@@ -77,7 +102,7 @@ def test_plaintext_namespace_advances_through_migrations_without_rewriting(tmp_p
 
     assert result.initial_version == 0
     assert result.final_version == CURRENT_DATABASE_VERSION
-    assert result.applied_versions == (1, 2)
+    assert result.applied_versions == (1, 2, 3, 4)
     assert result.rewritten_payload_count == 0
     assert read_database_version(connection) == CURRENT_DATABASE_VERSION
     row = connection.execute(
@@ -189,8 +214,8 @@ def test_database_version_two_adds_namespace_content_migration_ledger(
         encryption_service=None,
     )
 
-    assert CURRENT_DATABASE_VERSION == 2
-    assert result.applied_versions == (1, 2)
+    assert CURRENT_DATABASE_VERSION == 4
+    assert result.applied_versions == (1, 2, 3, 4)
     columns = {
         row[1]
         for row in connection.execute(
@@ -207,6 +232,85 @@ def test_database_version_two_adds_namespace_content_migration_ledger(
         "created_at",
         "updated_at",
     }
+    connection.close()
+
+
+def test_database_version_four_discards_legacy_query_scores(
+    tmp_path: Path,
+) -> None:
+    connection = _connection(tmp_path / "search-history-v3.db")
+    _insert_settings(
+        connection,
+        encryption_enabled=True,
+        preferences_json="{}",
+        usage_json="{}",
+        tag_prefix_json="{}",
+    )
+    service = _encryption_service()
+    _replace_search_history_with_legacy_schema(connection)
+    query_key = "private-tag"
+    query_ciphertext, query_nonce, query_tag = service.encrypt_for_storage(query_key)
+    root_ciphertext, root_nonce, root_tag = service.encrypt_for_storage(query_key)
+    tags_ciphertext, tags_nonce, tags_tag = service.encrypt_for_storage('["private-tag"]')
+    connection.execute(
+        """
+        INSERT INTO search_interaction_history (
+            query_hash,
+            query_key,
+            query_key_encryption_nonce,
+            query_key_encryption_tag,
+            root_tag,
+            root_tag_encryption_nonce,
+            root_tag_encryption_tag,
+            tags_json,
+            tags_json_encryption_nonce,
+            tags_json_encryption_tag,
+            score,
+            created_at,
+            last_interacted_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            hashlib.sha256(query_key.encode("utf-8")).hexdigest(),
+            query_ciphertext,
+            query_nonce,
+            query_tag,
+            root_ciphertext,
+            root_nonce,
+            root_tag,
+            tags_ciphertext,
+            tags_nonce,
+            tags_tag,
+            7.5,
+            _NOW,
+            _NOW,
+            _NOW,
+        ),
+    )
+    connection.execute("PRAGMA user_version = 2")
+
+    result = run_database_migrations(
+        connection=connection,
+        encryption_enabled=True,
+        encryption_service=service,
+    )
+
+    assert result.applied_versions == (3, 4)
+    columns = {
+        str(row["name"])
+        for row in connection.execute(
+            "PRAGMA table_info(search_interaction_history)"
+        ).fetchall()
+    }
+    assert columns == {
+        "storage_id",
+        "payload_json",
+        "payload_encryption_nonce",
+        "payload_encryption_tag",
+    }
+    row = connection.execute("SELECT * FROM search_interaction_history").fetchone()
+    assert row is None
     connection.close()
 
 
