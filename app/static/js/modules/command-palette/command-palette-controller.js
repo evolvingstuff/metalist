@@ -39,6 +39,7 @@ import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { SearchSuggestionWindowsModal } from '../modals/search-suggestion-windows-modal.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
+import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -306,6 +307,7 @@ class CommandPaletteController {
         this._noteLayoutAppearanceModal = null;
         this._searchSuggestionWindowsModal = null;
         this._searchSuggestionStatisticsModal = null;
+        this._confirmationModal = null;
 
         this._elements = null;
 
@@ -1123,15 +1125,23 @@ class CommandPaletteController {
     }
 
     async resetSearchSuggestionHistory() {
-        if (this.isOpen()) {
-            this.close();
-        }
-        const confirmed = window.confirm(
-            'Reset all learned search-suggestion tag activity for this namespace? Notes, tabs, and saved searches will not be changed.',
+        const confirmed = await this._confirmAction(
+            'commandPalette.resetSearchSuggestionHistory',
+            {
+                eyebrow: 'Search Suggestions',
+                title: 'Reset Suggestion Activity?',
+                description: 'Delete all learned search-suggestion tag activity for this namespace? Notes, tabs, and saved searches will not be changed.',
+                confirmLabel: 'Reset activity',
+                isDangerous: true,
+            },
         );
         if (!confirmed) {
-            return;
+            return false;
         }
+        return await this._performSearchSuggestionHistoryReset();
+    }
+
+    async _performSearchSuggestionHistoryReset() {
         const result = await CommandGate.run('search.reset_suggestion_history', async () => {
             const payload = await NotesAPI.resetSearchSuggestionHistory();
             if (!payload || typeof payload !== 'object') {
@@ -1145,10 +1155,18 @@ class CommandPaletteController {
         if (result === null) {
             throw new Error('Reset search suggestion history was blocked by another command');
         }
-        ErrorHandler.showInfoBanner(
-            'Reset search suggestion activity.',
-            6000,
-        );
+        return true;
+    }
+
+    async _confirmAction(commandName, context) {
+        const isReady = await this._prepareForModalOpen(commandName);
+        if (!isReady) {
+            return false;
+        }
+        if (this._confirmationModal === null) {
+            this._confirmationModal = new ConfirmationModal();
+        }
+        return await this._confirmationModal.openForConfirmation(context);
     }
 
     _readSearchSuggestionWindows() {
@@ -1385,12 +1403,15 @@ class CommandPaletteController {
     }
 
     async trimUnusedFiles() {
-        if (this.isOpen()) {
-            this.close();
-        }
-
-        const confirmed = window.confirm(
-            'Trim all files that are not referenced by any saved note? This cannot be undone.',
+        const confirmed = await this._confirmAction(
+            'commandPalette.trimUnusedFiles.confirm',
+            {
+                eyebrow: 'File Storage',
+                title: 'Trim Unused Files?',
+                description: 'Delete every file that is not referenced by a saved note? This cannot be undone.',
+                confirmLabel: 'Trim files',
+                isDangerous: true,
+            },
         );
         if (!confirmed) {
             return;
@@ -1419,7 +1440,10 @@ class CommandPaletteController {
             return;
         }
 
-        window.alert(`Trimmed ${result.deleted_count} unused file(s).`);
+        ErrorHandler.showInfoBanner(
+            `Trimmed ${result.deleted_count} unused file(s).`,
+            6000,
+        );
     }
 
     async _prioritizeTag(direction) {
@@ -2263,6 +2287,7 @@ class CommandPaletteController {
             this._searchSuggestionStatisticsModal = new SearchSuggestionStatisticsModal(
                 NotesAPI.getSearchSuggestionStatistics.bind(NotesAPI),
                 this._readSearchSuggestionWindows.bind(this),
+                this._performSearchSuggestionHistoryReset.bind(this),
             );
         }
         this._searchSuggestionStatisticsModal.open();

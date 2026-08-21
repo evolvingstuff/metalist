@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import app.usecases.add_selected_text_tag as add_tag_module
@@ -18,6 +18,7 @@ def test_command_uses_existing_namespace_variant_and_records_tag_only_update(mon
     record = _record(tags="machine-learning")
     applied: list[tuple[str, str, str, str]] = []
     undo_calls: list[dict[str, object]] = []
+    activity_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(add_tag_module.store, "get", lambda note_id: record)
     monkeypatch.setattr(
@@ -32,6 +33,12 @@ def test_command_uses_existing_namespace_variant_and_records_tag_only_update(mon
     )
     monkeypatch.setattr(add_tag_module, "record_update", lambda *args, **kwargs: undo_calls.append(kwargs))
     monkeypatch.setattr(add_tag_module, "generate_new_uuid", lambda: "update-1")
+    monkeypatch.setattr(add_tag_module, "current_local_date", lambda: date(2026, 8, 21))
+    monkeypatch.setattr(
+        add_tag_module,
+        "record_explicit_tag_additions",
+        lambda **kwargs: activity_calls.append(kwargs) or True,
+    )
 
     response = add_tag_module.CmdAddSelectedTextTag(
         note_id="note-a",
@@ -63,6 +70,14 @@ def test_command_uses_existing_namespace_variant_and_records_tag_only_update(mon
             "before_tags": "machine-learning",
             "after_tags": "machine-learning neural_networks",
             "viewport": {"scrollY": 0},
+        }
+    ]
+    assert activity_calls == [
+        {
+            "before_tags": "machine-learning",
+            "after_tags": "machine-learning neural_networks",
+            "token": "token",
+            "interacted_on": date(2026, 8, 21),
         }
     ]
 

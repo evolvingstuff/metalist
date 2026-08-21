@@ -25,11 +25,19 @@ from app.services.search_history_storage import (
     new_search_history_storage_id,
     serialize_search_history_payload,
 )
-from app.services.search_index import search_index
+from app.services.search_index import extract_tags_for_search, search_index
+from app.services.search_query import parse_search_query
 
 
 DEFAULT_TAG_ACTIVITY_WINDOWS = (1, 7, 30)
 SUPPORTED_NOTE_INTERACTION_TYPES = frozenset({"edit", "expand", "command", "fullscreen"})
+
+
+def _tag_activity_case_sort_key(tag_name: str) -> tuple[str, int, str]:
+    lowercase_penalty = 1
+    if tag_name == tag_name.casefold():
+        lowercase_penalty = 0
+    return tag_name.casefold(), lowercase_penalty, tag_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,6 +458,103 @@ def record_note_interaction(
     tags = tuple(sorted(search_index.list_raw_tag_terms_for_note(note_id)))
     return search_history_store.record_interaction(
         tags=tags,
+        token=token,
+        interacted_on=interacted_on,
+    )
+
+
+def record_explicit_tag_additions(
+    *,
+    before_tags: str,
+    after_tags: str,
+    token: str,
+    interacted_on: date,
+) -> bool:
+    if not isinstance(before_tags, str):
+        raise TypeError("before_tags must be a string")
+    if not isinstance(after_tags, str):
+        raise TypeError("after_tags must be a string")
+    if not isinstance(token, str) or token == "":
+        raise ValueError("token must be a non-empty string")
+    if not isinstance(interacted_on, date):
+        raise TypeError("interacted_on must be a date")
+
+    before_casefold = {
+        tag_name.casefold() for tag_name in extract_tags_for_search(before_tags)
+    }
+    added_by_casefold: dict[str, str] = {}
+    after_terms = sorted(
+        extract_tags_for_search(after_tags),
+        key=_tag_activity_case_sort_key,
+    )
+    for tag_name in after_terms:
+        tag_casefold = tag_name.casefold()
+        if tag_casefold in before_casefold or tag_casefold in added_by_casefold:
+            continue
+        added_by_casefold[tag_casefold] = tag_name
+    return search_history_store.record_interaction(
+        tags=tuple(added_by_casefold.values()),
+        token=token,
+        interacted_on=interacted_on,
+    )
+
+
+def _resolve_known_tag_term(tag_name: str) -> str | None:
+    if not isinstance(tag_name, str) or tag_name == "":
+        raise TypeError("tag_name must be a non-empty string")
+    exact_casefold_matches = [
+        candidate
+        for candidate in search_index.list_tag_suggestion_terms()
+        if candidate.casefold() == tag_name.casefold()
+    ]
+    if not exact_casefold_matches:
+        return None
+    return min(exact_casefold_matches, key=_tag_activity_case_sort_key)
+
+
+def record_search_suggestion_selection(
+    *, tag: str, token: str, interacted_on: date
+) -> bool:
+    if not isinstance(tag, str) or tag == "":
+        raise TypeError("tag must be a non-empty string")
+    if not isinstance(token, str) or token == "":
+        raise ValueError("token must be a non-empty string")
+    if not isinstance(interacted_on, date):
+        raise TypeError("interacted_on must be a date")
+    resolved_tag = _resolve_known_tag_term(tag)
+    if resolved_tag is None:
+        raise ValueError(f"Selected search suggestion is not a known tag: {tag}")
+    return search_history_store.record_interaction(
+        tags=(resolved_tag,),
+        token=token,
+        interacted_on=interacted_on,
+    )
+
+
+def record_tab_search_selection(
+    *, search_query: str, token: str, interacted_on: date
+) -> bool:
+    if not isinstance(search_query, str):
+        raise TypeError("search_query must be a string")
+    if not isinstance(token, str) or token == "":
+        raise ValueError("token must be a non-empty string")
+    if not isinstance(interacted_on, date):
+        raise TypeError("interacted_on must be a date")
+
+    parsed_query = parse_search_query(search_query)
+    requested_tags = {
+        tag_name
+        for clause in parsed_query.clauses
+        for tag_name in clause.required_tags
+    }
+    resolved_by_casefold: dict[str, str] = {}
+    for tag_name in sorted(requested_tags, key=_tag_activity_case_sort_key):
+        resolved_tag = _resolve_known_tag_term(tag_name)
+        if resolved_tag is None:
+            continue
+        resolved_by_casefold[resolved_tag.casefold()] = resolved_tag
+    return search_history_store.record_interaction(
+        tags=tuple(resolved_by_casefold.values()),
         token=token,
         interacted_on=interacted_on,
     )

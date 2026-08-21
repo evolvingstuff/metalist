@@ -86,7 +86,7 @@
     },
     {
       "id": "action.reset_search_suggestion_history",
-      "tags": ["reset", "clear", "search", "suggestion", "history", "activity", "ranking", "counts"]
+      "tags": ["reset", "clear", "search", "suggestion", "statistics", "stats", "history", "activity", "ranking", "counts"]
     },
     {
       "id": "form.add_password",

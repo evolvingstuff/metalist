@@ -497,6 +497,26 @@ export const NotesAPI = {
         });
     },
 
+    async recordSearchSuggestionSelection(tag) {
+        if (typeof tag !== 'string' || tag.length === 0) {
+            throw new Error('NotesAPI.recordSearchSuggestionSelection requires tag string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.SEARCH_SUGGESTION_INTERACTION, {
+            method: 'POST',
+            body: JSON.stringify({ tag }),
+        });
+    },
+
+    async recordTabSearchSelection(searchQuery) {
+        if (typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.recordTabSearchSelection requires searchQuery string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAB_SEARCH_INTERACTION, {
+            method: 'POST',
+            body: JSON.stringify({ searchQuery }),
+        });
+    },
+
     async resetSearchSuggestionHistory() {
         return this._apiCall(CONFIG.API.NOTES.TAG_INTERACTIONS, {
             method: 'DELETE',

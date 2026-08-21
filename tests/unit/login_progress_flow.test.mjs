@@ -90,6 +90,6 @@ test('post-login startup failures expose the underlying browser error', async ()
     assert.match(loginSource, /const errorMessage = error instanceof Error/);
     assert.match(loginSource, /const diagnosticMessage = `\$\{startupPhase\}: \$\{errorMessage\}`/);
     assert.match(loginSource, /loadingMessage\.textContent[\s\S]*\$\{diagnosticMessage\}/);
-    assert.match(loginSource, /window\.alert\(`[\s\S]*\$\{diagnosticMessage\}`\)/);
+    assert.doesNotMatch(loginSource, /window\.alert\(/);
     assert.match(loginSource, /throw new Error\(errorMessage\)/);
 });

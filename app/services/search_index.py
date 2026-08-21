@@ -365,6 +365,17 @@ class SearchIndex:
             )
             return frozenset(representatives.values())
 
+    def list_tag_suggestion_terms(self) -> FrozenSet[str]:
+        """Return canonical autocomplete vocabulary, including known meta tags."""
+        with self._lock:
+            representatives = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(),
+                partial_prefix="",
+            )
+            return frozenset(
+                tuple(representatives.values()) + tuple(list_known_meta_tag_terms())
+            )
+
     def list_tag_frequencies(self) -> Dict[str, int]:
         """Return tag term -> note count (excluding @meta tags)."""
         with self._lock:

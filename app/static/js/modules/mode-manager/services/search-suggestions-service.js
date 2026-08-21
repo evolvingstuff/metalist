@@ -247,7 +247,7 @@ export function hideSearchSuggestionsForSearchContextPointerMove(options) {
     return true;
 }
 
-function applySuggestion(searchInput, suggestion) {
+export async function applySearchSuggestion(searchInput, suggestion) {
     if (!searchInput || typeof searchInput.value !== 'string') {
         throw new Error('applySuggestion requires searchInput element');
     }
@@ -281,6 +281,10 @@ function applySuggestion(searchInput, suggestion) {
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     searchInput.focus();
     hideSuggestions({ invalidateRequests: true });
+    const response = await NotesAPI.recordSearchSuggestionSelection(suggestion);
+    if (!response || response.credited !== true) {
+        throw new Error('Search suggestion selection was not credited');
+    }
 }
 
 function updateSelectedSuggestion(container) {
@@ -326,7 +330,7 @@ function renderSuggestions(searchInput, suggestions, personalizedSuggestions, sh
     updateSelectedSuggestion(container);
 
     container.querySelectorAll('.search-suggestion').forEach((button) => {
-        button.addEventListener('mousedown', (event) => {
+        button.addEventListener('mousedown', async (event) => {
             if (event.button !== 0) {
                 return;
             }
@@ -335,7 +339,7 @@ function renderSuggestions(searchInput, suggestions, personalizedSuggestions, sh
             if (typeof tag !== 'string' || tag.length === 0) {
                 throw new Error('Suggestion tag missing from dataset');
             }
-            applySuggestion(searchInput, tag);
+            await applySearchSuggestion(searchInput, tag);
         });
     });
 }
@@ -490,7 +494,7 @@ export function initializeSearchSuggestions() {
         updateSearchSuggestions(searchInput, { source: 'search-input-click' });
     });
 
-    searchInput.addEventListener('keydown', (event) => {
+    searchInput.addEventListener('keydown', async (event) => {
         if (container.hidden) {
             return;
         }
@@ -524,7 +528,7 @@ export function initializeSearchSuggestions() {
             if (typeof tag !== 'string' || tag.length === 0) {
                 throw new Error('Suggestion tag missing from dataset');
             }
-            applySuggestion(searchInput, tag);
+            await applySearchSuggestion(searchInput, tag);
         }
     });
 }

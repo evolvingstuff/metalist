@@ -61,6 +61,8 @@ from app.services.search_history import (
     list_recent_search_tag_selections_for_first_query,
     prioritize_first_search_tag_suggestions,
     record_note_interaction,
+    record_search_suggestion_selection,
+    record_tab_search_selection,
     reset_search_history,
     validate_tag_activity_windows,
 )
@@ -594,6 +596,36 @@ def tag_interactions(request: Request, payload: dict) -> Dict[str, object]:
     credited = record_note_interaction(
         note_id=note_id,
         interaction_type=interaction_type,
+        token=token,
+        interacted_on=current_local_date(),
+    )
+    return {"credited": credited}
+
+
+@router.post("/notes/tag-interactions/search-suggestion")
+@transactional_route
+def search_suggestion_interaction(request: Request, payload: dict) -> Dict[str, object]:
+    token = _require_bearer_token(request)
+    tag = payload["tag"]
+    if not isinstance(tag, str) or tag == "":
+        raise TypeError("tag must be a non-empty string")
+    credited = record_search_suggestion_selection(
+        tag=tag,
+        token=token,
+        interacted_on=current_local_date(),
+    )
+    return {"credited": credited}
+
+
+@router.post("/notes/tag-interactions/tab-selection")
+@transactional_route
+def tab_search_interaction(request: Request, payload: dict) -> Dict[str, object]:
+    token = _require_bearer_token(request)
+    search_query = payload["searchQuery"]
+    if not isinstance(search_query, str):
+        raise TypeError("searchQuery must be a string")
+    credited = record_tab_search_selection(
+        search_query=search_query,
         token=token,
         interacted_on=current_local_date(),
     )

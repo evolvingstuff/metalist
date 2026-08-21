@@ -17,7 +17,10 @@ from app.services.search_history import (
     list_recent_search_tag_selections_for_first_query,
     list_recent_search_tags_for_first_query,
     prioritize_first_search_tag_suggestions,
+    record_explicit_tag_additions,
     record_note_interaction,
+    record_search_suggestion_selection,
+    record_tab_search_selection,
     reset_search_history,
 )
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
@@ -90,6 +93,132 @@ def test_note_interaction_credits_raw_inherited_tags_not_ontology_tags(
             token="token",
             today=date(2026, 8, 20),
         ) == [TagActivityWindowSelection(tag="shortcut", window_days=1)]
+    finally:
+        search_history_module.search_history_store.clear_persisted_state_for_tests()
+
+
+def test_explicit_tag_additions_credit_only_new_case_insensitive_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        search_history_module.search_history_store,
+        "record_interaction",
+        lambda **kwargs: recorded.append(kwargs) or True,
+    )
+
+    assert record_explicit_tag_additions(
+        before_tags="journal Existing",
+        after_tags="journal existing new-tag @shell NEW-TAG",
+        token="token",
+        interacted_on=date(2026, 8, 21),
+    ) is True
+    assert recorded == [
+        {
+            "tags": ("@shell", "new-tag"),
+            "token": "token",
+            "interacted_on": date(2026, 8, 21),
+        }
+    ]
+
+
+def test_search_suggestion_selection_credits_the_selected_known_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        search_history_module.search_index,
+        "list_tag_suggestion_terms",
+        lambda: frozenset({"@shell"}),
+    )
+    monkeypatch.setattr(
+        search_history_module.search_history_store,
+        "record_interaction",
+        lambda **kwargs: recorded.append(kwargs) or True,
+    )
+
+    assert record_search_suggestion_selection(
+        tag="@SHELL",
+        token="token",
+        interacted_on=date(2026, 8, 21),
+    ) is True
+    assert recorded == [
+        {
+            "tags": ("@shell",),
+            "token": "token",
+            "interacted_on": date(2026, 8, 21),
+        }
+    ]
+
+
+def test_tab_selection_credits_only_known_positive_tag_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, object]] = []
+    known_tags = {
+        "journal": "journal",
+        "shortcut": "shortcut",
+    }
+    monkeypatch.setattr(
+        search_history_module.search_index,
+        "list_tag_suggestion_terms",
+        lambda: frozenset(known_tags.values()),
+    )
+    monkeypatch.setattr(
+        search_history_module.search_history_store,
+        "record_interaction",
+        lambda **kwargs: recorded.append(kwargs) or True,
+    )
+
+    assert record_tab_search_selection(
+        search_query="journal -private OR shortcut 'quoted text'",
+        token="token",
+        interacted_on=date(2026, 8, 21),
+    ) is True
+    assert recorded == [
+        {
+            "tags": ("journal", "shortcut"),
+            "token": "token",
+            "interacted_on": date(2026, 8, 21),
+        }
+    ]
+
+
+def test_repeated_tab_selections_are_never_deduplicated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_memory_database(tmp_path, monkeypatch)
+    try:
+        index = _build_index(
+            [
+                SearchRecord(
+                    note_id="shortcut-note",
+                    content_text="Shortcut",
+                    tags="shortcut",
+                    tag_terms=frozenset({"shortcut"}),
+                )
+            ],
+            raw_tag_terms_by_id={"shortcut-note": frozenset({"shortcut"})},
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+        interaction_day = date(2026, 8, 21)
+
+        for _selection_number in range(4):
+            assert record_tab_search_selection(
+                search_query="shortcut",
+                token="token",
+                interacted_on=interaction_day,
+            ) is True
+
+        statistics = list_search_suggestion_statistics(token="token")
+        assert statistics["days"] == [
+            {
+                "date": "2026-08-21",
+                "totalTagCredits": 4,
+                "tags": [{"tag": "shortcut", "count": 4}],
+            }
+        ]
     finally:
         search_history_module.search_history_store.clear_persisted_state_for_tests()
 

@@ -28,6 +28,7 @@ import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-a
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
+import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
@@ -2875,28 +2876,33 @@ export function updateSearchContextsList() {
         
         // Add click handlers to each tab context item
         searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
-            item.addEventListener('click', (e) => {
+            item.addEventListener('click', async (e) => {
                 const tabId = e.currentTarget.getAttribute('data-tab-id');
                 if (!tabId) {
                     return;
                 }
+                const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
+                if (typeof searchQuery !== 'string') {
+                    throw new Error('Clicked tab executed search query must be a string');
+                }
+                const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
                 hideSearchContextsOverlay();
                 void CommandGate.run('tab.select', async () => {
                     if (tabId === ModeContext.activeTabId) {
-                        if (!ModeContext.isUntaggedView) {
-                            return;
+                        if (ModeContext.isUntaggedView) {
+                            ModeContext.setUntaggedView(false);
+                            syncSearchInputField();
+                            ModeContext.resetTabDiffCache(tabId, { preserveRootAnchor: false });
+                            clearCachedNotesDomForTab(tabId);
+                            clearActiveNotesDom();
+                            const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+                            await actionRefreshAndMaybeSelect({ context: 'untaggedView.dismissTab' });
                         }
-                        ModeContext.setUntaggedView(false);
-                        syncSearchInputField();
-                        ModeContext.resetTabDiffCache(tabId, { preserveRootAnchor: false });
-                        clearCachedNotesDomForTab(tabId);
-                        clearActiveNotesDom();
-                        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-                        await actionRefreshAndMaybeSelect({ context: 'untaggedView.dismissTab' });
-                        return;
+                    } else {
+                        await switchToTabContext(tabId, {});
                     }
-                    await switchToTabContext(tabId, {});
                 });
+                await activityPromise;
 	            });
 	        });
         

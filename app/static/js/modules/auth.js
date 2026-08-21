@@ -778,7 +778,6 @@ export const Auth = {
             const diagnosticMessage = `${startupPhase}: ${errorMessage}`;
             loadingMessage.textContent =
                 `Your password was accepted, but the workspace could not finish opening. ${diagnosticMessage}`;
-            window.alert(`MetaList workspace startup failed:\n\n${diagnosticMessage}`);
             if (error instanceof Error) {
                 throw error;
             }

@@ -13,6 +13,7 @@ from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.db.notes_sql import update_note_fields_preserving_updated_at as db_update_note_fields_preserving_updated_at
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
+from app.services.search_history import current_local_date, record_explicit_tag_additions
 
 
 def apply_update_content(note_id: str, content: str, tags: str, token: str) -> None:
@@ -101,6 +102,12 @@ class CmdUpdateContent(QueryCommand):
             before_tags=prev_tags,
             after_tags=self.tags,
             viewport=self.viewport,
+        )
+        record_explicit_tag_additions(
+            before_tags=prev_tags,
+            after_tags=self.tags,
+            token=self.token,
+            interacted_on=current_local_date(),
         )
 
         update_uuid = generate_new_uuid()

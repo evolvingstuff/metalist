@@ -2,6 +2,8 @@ import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
 const stateByTabId = Object.create(null);
+let activeContextTabId = null;
+let activeContextQuery = null;
 
 function getActiveTabId() {
     const tabId = ModeContext.activeTabId;
@@ -22,6 +24,16 @@ function getExecutedQuery() {
 export function primeActiveSearchInteractionState() {
     const tabId = getActiveTabId();
     const query = getExecutedQuery();
+    let enteredContext = activeContextTabId !== tabId;
+    if (activeContextQuery !== query) {
+        enteredContext = true;
+    }
+    activeContextTabId = tabId;
+    activeContextQuery = query;
+    if (enteredContext) {
+        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
+        return;
+    }
     if (!Object.prototype.hasOwnProperty.call(stateByTabId, tabId)) {
         stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
         return;
@@ -70,4 +82,6 @@ export function resetNoteInteractionStateForTests() {
     for (const tabId of Object.keys(stateByTabId)) {
         delete stateByTabId[tabId];
     }
+    activeContextTabId = null;
+    activeContextQuery = null;
 }

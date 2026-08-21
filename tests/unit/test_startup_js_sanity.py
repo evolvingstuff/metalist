@@ -56,6 +56,7 @@ def test_collect_startup_js_sanity_violations_reports_rule_hits(tmp_path: Path) 
         """
 function bad(a = 1, {x = 2}) {
   const y = foo || bar;
+  window.confirm('bad');
   try {
     internalCall();
   } catch (e) {
@@ -75,6 +76,7 @@ function bad(a = 1, {x = 2}) {
     assert ("JS001", "try block has no allowlisted external call") in summaries
     assert ("JS001", "catch must not return") in summaries
     assert ("JS001", "catch must throw (no silent handling)") in summaries
+    assert ("JS005", "native browser dialogs are forbidden") in summaries
 
 
 def test_assert_startup_js_sanity_passes_and_reports_count(tmp_path: Path, capsys) -> None:

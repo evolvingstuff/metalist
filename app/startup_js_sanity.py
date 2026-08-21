@@ -274,6 +274,8 @@ class _StartupJsChecker:
             self._check_defaulting_operator(node)
         elif node.type == "augmented_assignment_expression":
             self._check_defaulting_assignment(node)
+        elif node.type == "call_expression":
+            self._check_native_browser_dialog(node)
 
         for child in node.children:
             self._walk(child)
@@ -425,6 +427,26 @@ class _StartupJsChecker:
         operator = self._augmented_assignment_operator(node)
         if operator in {"||=", "??="}:
             self._add(node=node, rule_id="JS004", message="defaulting operator is forbidden")
+
+    def _check_native_browser_dialog(self, node: Node) -> None:
+        callee_name = self._call_expression_name(node)
+        forbidden_names = {
+            "alert",
+            "confirm",
+            "prompt",
+            "globalThis.alert",
+            "globalThis.confirm",
+            "globalThis.prompt",
+            "window.alert",
+            "window.confirm",
+            "window.prompt",
+        }
+        if callee_name in forbidden_names:
+            self._add(
+                node=node,
+                rule_id="JS005",
+                message="native browser dialogs are forbidden",
+            )
 
     def _binary_operator(self, node: Node) -> str | None:
         for child in node.children:

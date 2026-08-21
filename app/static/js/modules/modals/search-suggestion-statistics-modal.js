@@ -29,7 +29,7 @@ function pluralize(count, singular, plural) {
 
 
 export class SearchSuggestionStatisticsModal extends BaseModal {
-    constructor(loadStatistics, readWindows) {
+    constructor(loadStatistics, readWindows, resetStatistics) {
         super('searchSuggestionStatisticsModal', 'search-suggestion-statistics-modal');
         if (typeof loadStatistics !== 'function') {
             throw new Error('SearchSuggestionStatisticsModal requires loadStatistics');
@@ -37,14 +37,20 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (typeof readWindows !== 'function') {
             throw new Error('SearchSuggestionStatisticsModal requires readWindows');
         }
+        if (typeof resetStatistics !== 'function') {
+            throw new Error('SearchSuggestionStatisticsModal requires resetStatistics');
+        }
         this._loadStatistics = loadStatistics;
         this._readWindows = readWindows;
+        this._resetStatistics = resetStatistics;
         this._loadGeneration = 0;
     }
 
     getInitialModalState() {
         return {
             loading: true,
+            resetting: false,
+            confirmingReset: false,
             statistics: null,
         };
     }
@@ -69,8 +75,106 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (!this.isOpen || loadGeneration !== this._loadGeneration) {
             return;
         }
-        this.updateModalState({ loading: false, statistics });
+        this.updateModalState({
+            loading: false,
+            resetting: false,
+            confirmingReset: false,
+            statistics,
+        });
         this.renderModalContent();
+    }
+
+    _requestResetConfirmation() {
+        const state = this.getModalState();
+        if (state.loading === true || state.resetting === true || state.confirmingReset === true) {
+            throw new Error('Search suggestion statistics cannot confirm reset while busy');
+        }
+        this.updateModalState({ confirmingReset: true });
+        this.renderModalContent();
+    }
+
+    _cancelResetConfirmation() {
+        const state = this.getModalState();
+        if (state.confirmingReset !== true || state.resetting === true) {
+            throw new Error('Search suggestion statistics reset confirmation is not cancellable');
+        }
+        this.updateModalState({ confirmingReset: false });
+        this.renderModalContent();
+    }
+
+    async _resetActivity() {
+        const state = this.getModalState();
+        if (
+            state.loading === true
+            || state.resetting === true
+            || state.confirmingReset !== true
+        ) {
+            throw new Error('Search suggestion statistics cannot reset while busy');
+        }
+        this.updateModalState({ resetting: true });
+        this.renderModalContent();
+        const didReset = await this._resetStatistics();
+        if (typeof didReset !== 'boolean') {
+            throw new Error('Search suggestion statistics reset requires boolean result');
+        }
+        if (!this.isOpen) {
+            return;
+        }
+        if (!didReset) {
+            this.updateModalState({ resetting: false, confirmingReset: false });
+            this.renderModalContent();
+            return;
+        }
+        this._loadGeneration += 1;
+        const loadGeneration = this._loadGeneration;
+        const statistics = validateSearchSuggestionStatistics(await this._loadStatistics());
+        if (!this.isOpen || loadGeneration !== this._loadGeneration) {
+            return;
+        }
+        this.updateModalState({
+            loading: false,
+            resetting: false,
+            confirmingReset: false,
+            statistics,
+        });
+        this.renderModalContent();
+    }
+
+    _renderResetConfirmation(modalElement, state) {
+        const disabled = state.resetting ? ' disabled' : '';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
+        modalElement.innerHTML = `
+            <div class="modal-content search-suggestion-statistics-modal-content">
+                <div class="prioritize-modal-header">
+                    <p class="prioritize-modal-eyebrow">Search Suggestions</p>
+                    <h3>Reset Suggestion Activity?</h3>
+                </div>
+                <div class="alphabetize-root-notes-warning">
+                    <p>Delete all learned search-suggestion tag activity for this namespace?</p>
+                    <p>Notes, tabs, and saved searches will not be changed.</p>
+                </div>
+                <div class="form-actions alphabetize-root-notes-actions">
+                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-reset-cancel-btn"${disabled}>Cancel</button>
+                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-confirm-btn" data-modal-enter-action${disabled}>${resetLabel}</button>
+                </div>
+            </div>
+        `;
+        const cancelButton = document.getElementById(
+            'search-suggestion-statistics-reset-cancel-btn',
+        );
+        if (!(cancelButton instanceof HTMLButtonElement)) {
+            throw new Error('Search suggestion statistics reset cancel button missing');
+        }
+        cancelButton.onclick = () => this._cancelResetConfirmation();
+        const confirmButton = document.getElementById(
+            'search-suggestion-statistics-reset-confirm-btn',
+        );
+        if (!(confirmButton instanceof HTMLButtonElement)) {
+            throw new Error('Search suggestion statistics reset confirm button missing');
+        }
+        confirmButton.onclick = async () => {
+            await this._resetActivity();
+        };
     }
 
     renderModalContent() {
@@ -79,6 +183,17 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
             throw new Error('Search suggestion statistics modal element missing');
         }
         const state = this.getModalState();
+        if (
+            typeof state.loading !== 'boolean'
+            || typeof state.resetting !== 'boolean'
+            || typeof state.confirmingReset !== 'boolean'
+        ) {
+            throw new Error('Search suggestion statistics modal state is invalid');
+        }
+        if (state.confirmingReset) {
+            this._renderResetConfirmation(modalElement, state);
+            return;
+        }
         const windowDays = validateSearchSuggestionWindows(this._readWindows());
         const windowText = windowDays.length === 0
             ? 'None (personalization disabled)'
@@ -89,18 +204,27 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                 validateSearchSuggestionStatistics(state.statistics),
             );
         }
+        const resetDisabled = state.loading || state.resetting ? ' disabled' : '';
+        const closeDisabled = state.resetting ? ' disabled' : '';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
 
         modalElement.innerHTML = `
             <div class="modal-content search-suggestion-statistics-modal-content">
                 <h2>Search Suggestion Statistics</h2>
-                <p class="note-layout-description">Each qualifying note interaction credits every distinct raw tag on that note once, including inherited and meta tags. Search text and note contents are not collected.</p>
+                <p class="note-layout-description">Each qualifying note interaction credits every distinct raw tag on that note once, including inherited and meta tags. Adding explicit tags credits only the newly added tags. Accepting a suggestion credits that tag; clicking a tab credits its positive tag terms. Search text and note contents are not retained.</p>
                 <p class="search-suggestion-statistics-windows"><strong>Configured slots:</strong> ${escapeHtml(windowText)}</p>
                 ${body}
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="search-suggestion-statistics-close-btn" data-modal-enter-action>Close</button>
+                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-btn"${resetDisabled}>${resetLabel}</button>
+                    <button type="button" class="primary-btn" id="search-suggestion-statistics-close-btn" data-modal-enter-action${closeDisabled}>Close</button>
                 </div>
             </div>
         `;
+        const resetButton = document.getElementById('search-suggestion-statistics-reset-btn');
+        if (!(resetButton instanceof HTMLButtonElement)) {
+            throw new Error('Search suggestion statistics reset button missing');
+        }
+        resetButton.onclick = () => this._requestResetConfirmation();
         const closeButton = document.getElementById('search-suggestion-statistics-close-btn');
         if (!(closeButton instanceof HTMLButtonElement)) {
             throw new Error('Search suggestion statistics close button missing');

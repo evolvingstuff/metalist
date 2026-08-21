@@ -80,3 +80,40 @@ test('a new executed search starts a new engagement flow for the same note', asy
 
     assert.equal(callCount, 2);
 });
+
+
+test('returning to a prior tab context starts a new engagement flow', async (t) => {
+    const originalRecordNoteInteraction = NotesAPI.recordNoteInteraction;
+    const originalActiveTabId = ModeContext._activeTabId;
+    const originalQuery0 = ModeContext._tabExecutedSearchQuery['0'];
+    const originalQuery1 = ModeContext._tabExecutedSearchQuery['1'];
+    let callCount = 0;
+    NotesAPI.recordNoteInteraction = async () => {
+        callCount += 1;
+        return { credited: true };
+    };
+    ModeContext._tabExecutedSearchQuery['0'] = 'shortcut';
+    ModeContext._tabExecutedSearchQuery['1'] = 'journal';
+    ModeContext._activeTabId = '0';
+    resetNoteInteractionStateForTests();
+    t.after(() => {
+        NotesAPI.recordNoteInteraction = originalRecordNoteInteraction;
+        ModeContext._activeTabId = originalActiveTabId;
+        ModeContext._tabExecutedSearchQuery['0'] = originalQuery0;
+        if (typeof originalQuery1 === 'undefined') {
+            delete ModeContext._tabExecutedSearchQuery['1'];
+        } else {
+            ModeContext._tabExecutedSearchQuery['1'] = originalQuery1;
+        }
+        resetNoteInteractionStateForTests();
+    });
+
+    await recordNoteInteractionIfNew('shell-note', 'command');
+    ModeContext._activeTabId = '1';
+    primeActiveSearchInteractionState();
+    ModeContext._activeTabId = '0';
+    primeActiveSearchInteractionState();
+    await recordNoteInteractionIfNew('shell-note', 'command');
+
+    assert.equal(callCount, 2);
+});

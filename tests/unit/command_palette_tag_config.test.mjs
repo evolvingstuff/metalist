@@ -111,6 +111,8 @@ test('search suggestion history controls match reset and window queries', () => 
     assert.equal(windows.tags.includes('order'), true);
     assert.ok(reset, 'expected reset search suggestion history action');
     assert.equal(reset.tags.includes('counts'), true);
+    assert.equal(reset.tags.includes('statistics'), true);
+    assert.equal(reset.tags.includes('stats'), true);
     assert.ok(statistics, 'expected search suggestion statistics form');
     assert.equal(statistics.tags.includes('statistics'), true);
     assert.equal(statistics.tags.includes('collected'), true);

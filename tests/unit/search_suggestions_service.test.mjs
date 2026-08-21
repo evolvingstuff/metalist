@@ -21,6 +21,10 @@ function installSuggestionsContainer(t, container, notesContainer = null) {
     const originalWindow = globalThis.window;
     const originalSessionStorage = globalThis.sessionStorage;
     const originalLocalStorage = globalThis.localStorage;
+    const validationMessage = {
+        hidden: true,
+        textContent: '',
+    };
     globalThis.document = {
         getElementById(id) {
             if (id === 'search-suggestions') {
@@ -28,6 +32,9 @@ function installSuggestionsContainer(t, container, notesContainer = null) {
             }
             if (id === 'notes-container') {
                 return notesContainer;
+            }
+            if (id === 'search-validation-message') {
+                return validationMessage;
             }
             return null;
         },
@@ -198,4 +205,42 @@ test('keeps search suggestions open when pointer stays inside notes column and s
     assert.equal(container.hidden, false);
     assert.equal(container.style.display, 'flex');
     assert.equal(container.innerHTML, '<button class="search-suggestion">work</button>');
+});
+
+test('accepting a search suggestion records the selected tag exactly once', async (t) => {
+    const container = createSuggestionsContainer({});
+    installSuggestionsContainer(t, container);
+    const { NotesAPI } = await import('../../app/static/js/modules/api-client.js');
+    const { applySearchSuggestion } = await importSearchSuggestionsService();
+    const originalRecorder = NotesAPI.recordSearchSuggestionSelection;
+    const calls = [];
+    NotesAPI.recordSearchSuggestionSelection = async (tag) => {
+        calls.push(tag);
+        return { credited: true };
+    };
+    t.after(() => {
+        NotesAPI.recordSearchSuggestionSelection = originalRecorder;
+    });
+    const dispatchedEvents = [];
+    const searchInput = {
+        value: 'shor',
+        selectionStart: 4,
+        classList: {
+            toggle() {},
+        },
+        setSelectionRange(start, end) {
+            this.selectionStart = start;
+            this.selectionEnd = end;
+        },
+        dispatchEvent(event) {
+            dispatchedEvents.push(event.type);
+        },
+        focus() {},
+    };
+
+    await applySearchSuggestion(searchInput, 'shortcut');
+
+    assert.equal(searchInput.value, 'shortcut');
+    assert.deepEqual(dispatchedEvents, ['input']);
+    assert.deepEqual(calls, ['shortcut']);
 });

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from app.services.search_index import extract_tags_for_search, search_index
+from app.services.search_history import current_local_date, record_explicit_tag_additions
 from app.services.selected_text_tag import (
     find_equivalent_existing_tag,
     resolve_selected_text_tag,
@@ -88,6 +89,12 @@ class CmdAddSelectedTextTag(QueryCommand):
             before_tags=record.tags,
             after_tags=next_tags,
             viewport=self.viewport,
+        )
+        record_explicit_tag_additions(
+            before_tags=record.tags,
+            after_tags=next_tags,
+            token=self.token,
+            interacted_on=current_local_date(),
         )
 
         return {
