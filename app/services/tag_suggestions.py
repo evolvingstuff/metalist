@@ -568,7 +568,7 @@ def _build_prefix_content_remainder(*, term: str, prefix: str) -> str:
     if not raw_segments:
         raise ValueError("term must contain at least one segment")
     if not prefix_segments:
-        raise ValueError("prefix must contain at least one segment")
+        return "-".join(raw_segments)
 
     matched_segment_index = -1
     if term.casefold().startswith(prefix.casefold()):

@@ -528,6 +528,35 @@ def test_tag_suggestions_prefer_prefix_aligned_dot_tag_over_suffix_hyphen_match(
     assert suggestions[:2] == ["A.B", "Z-A"]
 
 
+def test_tag_suggestions_accept_connector_only_prefix_while_typing_dot_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("env", ".env"),
+            ("other", "environment"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix=".",
+        content_html="<p>environment configuration</p>",
+    )
+
+    assert suggestions == [".env"]
+
+
 def test_tag_suggestions_use_frequency_before_literal_length_for_equivalent_connector_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
