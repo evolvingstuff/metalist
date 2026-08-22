@@ -14,6 +14,10 @@ import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scro
 import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
 import { shouldExitEditingBeforeCollapseToggle } from '../services/collapse-editing-policy-service.js';
 import {
+    recordNoteInteractionIfNew,
+    recordStructuralNoteInteractionIfMoved,
+} from '../services/search-interaction-service.js';
+import {
     removeFormattingFromSelectedRange,
     resolveActiveFormattingRemovalRange,
     restoreFormattingRemovalSelection,
@@ -280,8 +284,7 @@ export async function toggleTodoDone(noteId) {
     });
 
     await NotesAPI.toggleTodo(noteId);
-    const module = await import('../services/search-interaction-service.js');
-    await module.recordNoteInteractionIfNew(noteId, 'command');
+    await recordNoteInteractionIfNew(noteId, 'command');
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
 }
 
@@ -341,8 +344,7 @@ export async function runShellNote(noteId, timeoutSeconds) {
     }
 
     const response = await NotesAPI.runShell(noteId, timeoutSeconds);
-    const module = await import('../services/search-interaction-service.js');
-    await module.recordNoteInteractionIfNew(noteId, 'command');
+    await recordNoteInteractionIfNew(noteId, 'command');
     return response;
 }
 
@@ -549,7 +551,8 @@ export async function moveNoteUp(noteId) {
         await actionSaveNote(noteId);
     }
 
-		await NotesAPI.moveNoteUp(noteId);
+    const moveResponse = await NotesAPI.moveNoteUp(noteId);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -585,7 +588,8 @@ export async function moveNoteDown(noteId) {
         await actionSaveNote(noteId);
     }
 
-		await NotesAPI.moveNoteDown(noteId);
+    const moveResponse = await NotesAPI.moveNoteDown(noteId);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -622,7 +626,8 @@ export async function moveNoteToTop(noteId) {
         await actionSaveNote(noteId);
     }
 
-    await NotesAPI.moveNoteToTop(noteId, ModeContext.searchQuery);
+    const moveResponse = await NotesAPI.moveNoteToTop(noteId, ModeContext.searchQuery);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -676,7 +681,8 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
         await actionSaveNote(noteId);
     }
 
-    await NotesAPI.moveNote(noteId, siblingId, normalizedPosition, newParentId);
+    const moveResponse = await NotesAPI.moveNote(noteId, siblingId, normalizedPosition, newParentId);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -729,7 +735,8 @@ export async function indentNote(noteId) {
         await actionSaveNote(noteId);
     }
 
-    await NotesAPI.indentNote(noteId, visiblePrevId);
+    const indentResponse = await NotesAPI.indentNote(noteId, visiblePrevId);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'indent', indentResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -760,7 +767,8 @@ export async function outdentNote(noteId) {
         await actionSaveNote(noteId);
     }
 
-    await NotesAPI.outdentNote(noteId, ModeContext.searchQuery);
+    const outdentResponse = await NotesAPI.outdentNote(noteId, ModeContext.searchQuery);
+    await recordStructuralNoteInteractionIfMoved(noteId, 'outdent', outdentResponse);
 
     if (ModeContext.isEditing) {
         hideCaretAfterProgrammaticEdit();
@@ -838,8 +846,7 @@ async function setNoteCollapse(noteId, collapsed) {
         await NotesAPI.collapseNote(noteId);
     } else {
         await NotesAPI.expandNote(noteId);
-        const module = await import('../services/search-interaction-service.js');
-        await module.recordNoteInteractionIfNew(noteId, 'expand');
+        await recordNoteInteractionIfNew(noteId, 'expand');
         if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
             ModeContext.markEditSessionExpandedPersisted();
         }

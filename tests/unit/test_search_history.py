@@ -243,7 +243,14 @@ def test_daily_activity_reuses_one_bucket_and_one_database_row(
         monkeypatch.setattr(search_history_module, "search_index", index)
         interaction_day = date(2026, 8, 20)
 
-        for interaction_type in ("edit", "expand", "fullscreen"):
+        for interaction_type in (
+            "edit",
+            "expand",
+            "fullscreen",
+            "move",
+            "indent",
+            "outdent",
+        ):
             assert record_note_interaction(
                 note_id="n1",
                 interaction_type=interaction_type,
@@ -258,7 +265,7 @@ def test_daily_activity_reuses_one_bucket_and_one_database_row(
         assert payload == {
             "version": 2,
             "counts_by_date": {
-                "2026-08-20": {"journal": 3, "workday": 3},
+                "2026-08-20": {"journal": 6, "workday": 6},
             },
         }
     finally:

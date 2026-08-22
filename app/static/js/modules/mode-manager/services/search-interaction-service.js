@@ -1,5 +1,6 @@
 import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { getLimitNoteCreditsPerSearchContext } from './search-suggestion-windows-service.js';
 
 const stateByTabId = Object.create(null);
 let activeContextTabId = null;
@@ -31,16 +32,28 @@ export function primeActiveSearchInteractionState() {
     activeContextTabId = tabId;
     activeContextQuery = query;
     if (enteredContext) {
-        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
+        stateByTabId[tabId] = {
+            query,
+            creditedNoteIds: new Set(),
+            pendingNoteIds: new Set(),
+        };
         return;
     }
     if (!Object.prototype.hasOwnProperty.call(stateByTabId, tabId)) {
-        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
+        stateByTabId[tabId] = {
+            query,
+            creditedNoteIds: new Set(),
+            pendingNoteIds: new Set(),
+        };
         return;
     }
     const state = stateByTabId[tabId];
     if (state.query !== query) {
-        stateByTabId[tabId] = { query, engagedNoteId: null, pendingNoteId: null };
+        stateByTabId[tabId] = {
+            query,
+            creditedNoteIds: new Set(),
+            pendingNoteIds: new Set(),
+        };
     }
 }
 
@@ -54,28 +67,53 @@ export async function recordNoteInteractionIfNew(noteId, interactionType) {
     primeActiveSearchInteractionState();
     const tabId = getActiveTabId();
     const state = stateByTabId[tabId];
-    if (state.engagedNoteId === noteId || state.pendingNoteId === noteId) {
+    const shouldLimitCredits = getLimitNoteCreditsPerSearchContext();
+    if (
+        shouldLimitCredits
+        && (state.creditedNoteIds.has(noteId) || state.pendingNoteIds.has(noteId))
+    ) {
         return false;
     }
-    state.pendingNoteId = noteId;
+    state.pendingNoteIds.add(noteId);
     const response = await NotesAPI.recordNoteInteraction(noteId, interactionType).then(
         (payload) => payload,
         (error) => {
-            state.pendingNoteId = null;
+            state.pendingNoteIds.delete(noteId);
             throw error;
         },
     );
     if (!response || typeof response !== 'object') {
-        state.pendingNoteId = null;
+        state.pendingNoteIds.delete(noteId);
         throw new Error('Note interaction response missing');
     }
     if (typeof response.credited !== 'boolean') {
-        state.pendingNoteId = null;
+        state.pendingNoteIds.delete(noteId);
         throw new Error('Note interaction response requires credited boolean');
     }
-    state.pendingNoteId = null;
-    state.engagedNoteId = noteId;
+    state.pendingNoteIds.delete(noteId);
+    if (response.credited) {
+        state.creditedNoteIds.add(noteId);
+    }
     return response.credited;
+}
+
+export async function recordStructuralNoteInteractionIfMoved(noteId, interactionType, mutationResponse) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('recordStructuralNoteInteractionIfMoved requires noteId');
+    }
+    if (interactionType !== 'move' && interactionType !== 'indent' && interactionType !== 'outdent') {
+        throw new Error('Structural interaction type must be move, indent, or outdent');
+    }
+    if (mutationResponse === null || typeof mutationResponse !== 'object') {
+        throw new Error('Structural interaction mutation response missing');
+    }
+    if (mutationResponse.status === 'noop') {
+        return false;
+    }
+    if (mutationResponse.status !== 'moved') {
+        throw new Error(`Unknown structural interaction status: ${mutationResponse.status}`);
+    }
+    return recordNoteInteractionIfNew(noteId, interactionType);
 }
 
 export function resetNoteInteractionStateForTests() {

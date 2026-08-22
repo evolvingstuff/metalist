@@ -5,10 +5,12 @@ import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     getSearchSuggestionWindowsValidationError,
     getSearchSuggestionWindowDays,
+    getLimitNoteCreditsPerSearchContext,
     getShowSearchSuggestionWindowLabels,
     parseSearchSuggestionWindowsValue,
     serializeSearchSuggestionWindows,
     setSearchSuggestionWindowsValue,
+    setLimitNoteCreditsPerSearchContextValue,
     setShowSearchSuggestionWindowLabelsValue,
 } from '../../app/static/js/modules/mode-manager/services/search-suggestion-windows-service.js';
 
@@ -24,6 +26,21 @@ test('search suggestion windows preserve configured order and slot count', (t) =
 
     setSearchSuggestionWindowsValue('[]');
     assert.deepEqual(getSearchSuggestionWindowDays(), []);
+});
+
+
+test('per-context note credit limiting is enabled by default and parses persisted booleans', (t) => {
+    t.after(() => setLimitNoteCreditsPerSearchContextValue('true'));
+
+    assert.equal(getLimitNoteCreditsPerSearchContext(), true);
+    setLimitNoteCreditsPerSearchContextValue('false');
+    assert.equal(getLimitNoteCreditsPerSearchContext(), false);
+    setLimitNoteCreditsPerSearchContextValue('true');
+    assert.equal(getLimitNoteCreditsPerSearchContext(), true);
+    assert.throws(
+        () => setLimitNoteCreditsPerSearchContextValue('yes'),
+        /must be true or false/,
+    );
 });
 
 

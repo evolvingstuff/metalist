@@ -21,11 +21,15 @@ const { ModeContextInstance: ModeContext } = await import(
 const {
     primeActiveSearchInteractionState,
     recordNoteInteractionIfNew,
+    recordStructuralNoteInteractionIfMoved,
     resetNoteInteractionStateForTests,
 } = await import('../../app/static/js/modules/mode-manager/services/search-interaction-service.js');
+const {
+    setLimitNoteCreditsPerSearchContextValue,
+} = await import('../../app/static/js/modules/mode-manager/services/search-suggestion-windows-service.js');
 
 
-test('note engagement deduplicates edit, expand, command, and full screen in one navigation flow', async (t) => {
+test('default limit credits each note once across the complete search context', async (t) => {
     const originalRecordNoteInteraction = NotesAPI.recordNoteInteraction;
     const originalQuery = ModeContext._tabExecutedSearchQuery['0'];
     const calls = [];
@@ -35,10 +39,12 @@ test('note engagement deduplicates edit, expand, command, and full screen in one
     };
     ModeContext._tabExecutedSearchQuery['0'] = 'shortcut';
     resetNoteInteractionStateForTests();
+    setLimitNoteCreditsPerSearchContextValue('true');
     t.after(() => {
         NotesAPI.recordNoteInteraction = originalRecordNoteInteraction;
         ModeContext._tabExecutedSearchQuery['0'] = originalQuery;
         resetNoteInteractionStateForTests();
+        setLimitNoteCreditsPerSearchContextValue('true');
     });
 
     assert.equal(await recordNoteInteractionIfNew('note-1', 'edit'), true);
@@ -48,11 +54,89 @@ test('note engagement deduplicates edit, expand, command, and full screen in one
     assert.deepEqual(calls, [{ noteId: 'note-1', interactionType: 'edit' }]);
 
     assert.equal(await recordNoteInteractionIfNew('note-2', 'expand'), true);
-    assert.equal(await recordNoteInteractionIfNew('note-1', 'command'), true);
+    assert.equal(await recordNoteInteractionIfNew('note-1', 'command'), false);
     assert.deepEqual(calls, [
         { noteId: 'note-1', interactionType: 'edit' },
         { noteId: 'note-2', interactionType: 'expand' },
+    ]);
+});
+
+
+test('disabled limit credits every qualifying interaction', async (t) => {
+    const originalRecordNoteInteraction = NotesAPI.recordNoteInteraction;
+    const originalQuery = ModeContext._tabExecutedSearchQuery['0'];
+    const calls = [];
+    NotesAPI.recordNoteInteraction = async (noteId, interactionType) => {
+        calls.push({ noteId, interactionType });
+        return { credited: true };
+    };
+    ModeContext._tabExecutedSearchQuery['0'] = '';
+    resetNoteInteractionStateForTests();
+    setLimitNoteCreditsPerSearchContextValue('false');
+    t.after(() => {
+        NotesAPI.recordNoteInteraction = originalRecordNoteInteraction;
+        ModeContext._tabExecutedSearchQuery['0'] = originalQuery;
+        resetNoteInteractionStateForTests();
+        setLimitNoteCreditsPerSearchContextValue('true');
+    });
+
+    assert.equal(await recordNoteInteractionIfNew('note-1', 'edit'), true);
+    assert.equal(await recordNoteInteractionIfNew('note-1', 'expand'), true);
+    assert.equal(await recordNoteInteractionIfNew('note-1', 'command'), true);
+    assert.deepEqual(calls, [
+        { noteId: 'note-1', interactionType: 'edit' },
+        { noteId: 'note-1', interactionType: 'expand' },
         { noteId: 'note-1', interactionType: 'command' },
+    ]);
+});
+
+
+test('successful structural actions participate in the per-context note limit', async (t) => {
+    const originalRecordNoteInteraction = NotesAPI.recordNoteInteraction;
+    const originalQuery = ModeContext._tabExecutedSearchQuery['0'];
+    const calls = [];
+    NotesAPI.recordNoteInteraction = async (noteId, interactionType) => {
+        calls.push({ noteId, interactionType });
+        return { credited: true };
+    };
+    ModeContext._tabExecutedSearchQuery['0'] = '';
+    resetNoteInteractionStateForTests();
+    setLimitNoteCreditsPerSearchContextValue('true');
+    t.after(() => {
+        NotesAPI.recordNoteInteraction = originalRecordNoteInteraction;
+        ModeContext._tabExecutedSearchQuery['0'] = originalQuery;
+        resetNoteInteractionStateForTests();
+        setLimitNoteCreditsPerSearchContextValue('true');
+    });
+
+    assert.equal(await recordNoteInteractionIfNew('brainstorm-note', 'edit'), true);
+    assert.equal(
+        await recordStructuralNoteInteractionIfMoved(
+            'brainstorm-note',
+            'outdent',
+            { status: 'moved' },
+        ),
+        false,
+    );
+    assert.equal(
+        await recordStructuralNoteInteractionIfMoved(
+            'other-note',
+            'move',
+            { status: 'moved' },
+        ),
+        true,
+    );
+    assert.equal(
+        await recordStructuralNoteInteractionIfMoved(
+            'noop-note',
+            'indent',
+            { status: 'noop' },
+        ),
+        false,
+    );
+    assert.deepEqual(calls, [
+        { noteId: 'brainstorm-note', interactionType: 'edit' },
+        { noteId: 'other-note', interactionType: 'move' },
     ]);
 });
 

@@ -37,7 +37,6 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 import { SoundManagerModal } from '../modals/sound-manager-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
-import { SearchSuggestionWindowsModal } from '../modals/search-suggestion-windows-modal.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import {
@@ -60,6 +59,7 @@ import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     parseSearchSuggestionWindowsValue,
     serializeSearchSuggestionWindows,
+    setLimitNoteCreditsPerSearchContextValue,
     setShowSearchSuggestionWindowLabelsValue,
     setSearchSuggestionWindowsValue,
 } from '../mode-manager/services/search-suggestion-windows-service.js';
@@ -305,7 +305,6 @@ class CommandPaletteController {
         this._soundManagerModal = null;
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
-        this._searchSuggestionWindowsModal = null;
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
 
@@ -355,8 +354,6 @@ class CommandPaletteController {
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
                 resetAllPreferences: this.resetAllPreferences.bind(this),
-                resetSearchSuggestionHistory: this.resetSearchSuggestionHistory.bind(this),
-                openSearchSuggestionWindows: this.openSearchSuggestionWindows.bind(this),
                 openSearchSuggestionStatistics: this.openSearchSuggestionStatistics.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
@@ -521,6 +518,13 @@ class CommandPaletteController {
         );
         setShowSearchSuggestionWindowLabelsValue(
             showSearchWindowLabels ? 'true' : 'false',
+        );
+        const limitNoteCreditsPerSearchContext = this._getBoolean(
+            'pref.limit_note_credits_per_search_context',
+            true,
+        );
+        setLimitNoteCreditsPerSearchContextValue(
+            limitNoteCreditsPerSearchContext ? 'true' : 'false',
         );
 
         applyNoteLayoutSettings(document.body, this._readNoteLayoutSettings());
@@ -1124,23 +1128,6 @@ class CommandPaletteController {
         this._applyPreferenceEffectsFromStorage();
     }
 
-    async resetSearchSuggestionHistory() {
-        const confirmed = await this._confirmAction(
-            'commandPalette.resetSearchSuggestionHistory',
-            {
-                eyebrow: 'Search Suggestions',
-                title: 'Reset Suggestion Activity?',
-                description: 'Delete all learned search-suggestion tag activity for this namespace? Notes, tabs, and saved searches will not be changed.',
-                confirmLabel: 'Reset activity',
-                isDangerous: true,
-            },
-        );
-        if (!confirmed) {
-            return false;
-        }
-        return await this._performSearchSuggestionHistoryReset();
-    }
-
     async _performSearchSuggestionHistoryReset() {
         const result = await CommandGate.run('search.reset_suggestion_history', async () => {
             const payload = await NotesAPI.resetSearchSuggestionHistory();
@@ -1181,14 +1168,28 @@ class CommandPaletteController {
         return this._getBoolean('pref.show_search_suggestion_window_labels', true);
     }
 
-    async _saveSearchSuggestionWindows(windowDays, showWindowLabels) {
+    _readLimitNoteCreditsPerSearchContext() {
+        return this._getBoolean('pref.limit_note_credits_per_search_context', true);
+    }
+
+    async _saveSearchSuggestionWindows(
+        windowDays,
+        showWindowLabels,
+        limitNoteCreditsPerSearchContext,
+    ) {
         if (typeof showWindowLabels !== 'boolean') {
             throw new Error('showWindowLabels must be boolean');
+        }
+        if (typeof limitNoteCreditsPerSearchContext !== 'boolean') {
+            throw new Error('limitNoteCreditsPerSearchContext must be boolean');
         }
         const serialized = serializeSearchSuggestionWindows(windowDays);
         await this._preferences.setMany({
             'pref.search_suggestion_windows': serialized,
             'pref.show_search_suggestion_window_labels': showWindowLabels ? 'true' : 'false',
+            'pref.limit_note_credits_per_search_context': (
+                limitNoteCreditsPerSearchContext ? 'true' : 'false'
+            ),
         });
         this._applyPreferenceEffectsFromStorage();
     }
@@ -2261,21 +2262,6 @@ class CommandPaletteController {
         this._noteLayoutAppearanceModal.open();
     }
 
-    async openSearchSuggestionWindows() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openSearchSuggestionWindows');
-        if (!isReady) {
-            return;
-        }
-        if (this._searchSuggestionWindowsModal === null) {
-            this._searchSuggestionWindowsModal = new SearchSuggestionWindowsModal(
-                this._readSearchSuggestionWindows.bind(this),
-                this._readShowSearchSuggestionWindowLabels.bind(this),
-                this._saveSearchSuggestionWindows.bind(this),
-            );
-        }
-        this._searchSuggestionWindowsModal.open();
-    }
-
     async openSearchSuggestionStatistics() {
         const isReady = await this._prepareForModalOpen(
             'commandPalette.openSearchSuggestionStatistics',
@@ -2287,6 +2273,9 @@ class CommandPaletteController {
             this._searchSuggestionStatisticsModal = new SearchSuggestionStatisticsModal(
                 NotesAPI.getSearchSuggestionStatistics.bind(NotesAPI),
                 this._readSearchSuggestionWindows.bind(this),
+                this._readShowSearchSuggestionWindowLabels.bind(this),
+                this._readLimitNoteCreditsPerSearchContext.bind(this),
+                this._saveSearchSuggestionWindows.bind(this),
                 this._performSearchSuggestionHistoryReset.bind(this),
             );
         }

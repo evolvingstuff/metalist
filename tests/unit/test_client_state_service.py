@@ -60,6 +60,7 @@ def test_save_client_preferences_round_trips_through_app_settings(
         "pref.theme": "dark",
         "pref.search_suggestion_windows": "[30,7,1]",
         "pref.show_search_suggestion_window_labels": "false",
+        "pref.limit_note_credits_per_search_context": "true",
     }
 
     saved = save_client_preferences(preferences=expected_preferences, token="")
