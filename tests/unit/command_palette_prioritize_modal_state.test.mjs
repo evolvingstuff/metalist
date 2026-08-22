@@ -19,7 +19,7 @@ function findContainingAsyncMethodStart(source, position) {
     return lastMatch.index;
 }
 
-test('command palette modal preparation saves and exits note editing', () => {
+test('command palette modal preparation saves, deselects, and refreshes note editing', () => {
     const source = readFileSync(CONTROLLER_PATH, 'utf8');
     const helperStart = source.indexOf('async _prepareForModalOpen(commandName) {');
     assert.notEqual(helperStart, -1, '_prepareForModalOpen helper should exist');
@@ -29,7 +29,7 @@ test('command palette modal preparation saves and exits note editing', () => {
 
     const helperSource = source.slice(helperStart, helperEnd);
     assert.match(helperSource, /CommandGate\.run\(`\$\{commandName\}\.exitEditing`, async \(\) => \{/);
-    assert.match(helperSource, /await actionSaveAndExitEditingWithoutRefreshing\(\);/);
+    assert.match(helperSource, /await actionDeselectNote\(\);/);
     assert.match(helperSource, /ModeContext\.setSearching\(false\);/);
     assert.match(helperSource, /this\.close\(\);/);
 });

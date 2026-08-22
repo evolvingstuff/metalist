@@ -18,7 +18,7 @@ This document defines the standard pattern for implementing modal dialogs in the
   - In searching state  
   - Any other "active" state that should be closed first
 - Caller responsible for cleaning state before attempting to open modal
-- Modal callers are expected to clean state before opening a modal.
+- When a caller exits note editing, it must complete the normal save/deselect/view-refresh flow before opening the modal. This restores view-only rendering such as cached URL titles instead of leaving the editor HTML visible behind the modal.
 
 ### 3. **Event Handling Integration**
 - Follow existing pattern in `keyboard-events.js` (like Esc key handler)
@@ -61,7 +61,7 @@ All modals extend BaseModal which provides:
 
 1. User triggers a modal from the command palette or another UI control.
 2. Handler checks current application state
-3. If editing/searching → save + exit editing and/or exit search first
+3. If editing/searching → save + deselect + refresh the note view and/or exit search first
 4. Attempt `new ModalClass().open()`
 5. BaseModal enforces clean state (throws error if dirty)
 6. Modal opens and updates `ModeContext.modalStack`
