@@ -30,7 +30,9 @@ from app.services.search_query import parse_search_query
 
 
 DEFAULT_TAG_ACTIVITY_WINDOWS = (1, 7, 30)
-SUPPORTED_NOTE_INTERACTION_TYPES = frozenset({"edit", "expand", "command", "fullscreen"})
+SUPPORTED_NOTE_INTERACTION_TYPES = frozenset(
+    {"edit", "expand", "command", "fullscreen", "move", "indent", "outdent"}
+)
 
 
 def _tag_activity_case_sort_key(tag_name: str) -> tuple[str, int, str]:

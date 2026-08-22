@@ -682,7 +682,9 @@ export const NotesAPI = {
     async moveNoteUp(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;
-        if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+        if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) {
+            return { status: 'noop' };
+        }
 
         const parentId = noteElement.dataset.parentId;
         let parentIdOrNull = null;
@@ -690,7 +692,7 @@ export const NotesAPI = {
             parentIdOrNull = parentId;
         }
                                 
-        await this.moveNote(
+        return await this.moveNote(
             noteId,
             DOMUtils.getNoteId(prevSibling),
             'BEFORE',
@@ -701,7 +703,9 @@ export const NotesAPI = {
     async moveNoteDown(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const nextSibling = noteElement.nextElementSibling;
-        if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+        if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) {
+            return { status: 'noop' };
+        }
 
         const parentId = noteElement.dataset.parentId;
         let parentIdOrNull = null;
@@ -709,7 +713,7 @@ export const NotesAPI = {
             parentIdOrNull = parentId;
         }
                                 
-        await this.moveNote(
+        return await this.moveNote(
             noteId,
             DOMUtils.getNoteId(nextSibling),
             'AFTER',

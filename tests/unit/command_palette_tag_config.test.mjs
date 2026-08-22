@@ -93,27 +93,23 @@ test('content volume sort matches character count query', () => {
     assert.equal(contentVolume.tags.includes('count'), true);
 });
 
-test('search suggestion history controls match reset and window queries', () => {
+test('combined search suggestion stats and settings form matches all related queries', () => {
     const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
     const payload = JSON.parse(source);
-    const windows = payload.endpoints.find(
-        (endpoint) => endpoint.id === 'form.search_suggestion_windows',
-    );
-    const reset = payload.endpoints.find(
-        (endpoint) => endpoint.id === 'action.reset_search_suggestion_history',
-    );
     const statistics = payload.endpoints.find(
         (endpoint) => endpoint.id === 'form.search_suggestion_statistics',
     );
 
-    assert.ok(windows, 'expected search suggestion windows form');
-    assert.equal(windows.tags.includes('slots'), true);
-    assert.equal(windows.tags.includes('order'), true);
-    assert.ok(reset, 'expected reset search suggestion history action');
-    assert.equal(reset.tags.includes('counts'), true);
-    assert.equal(reset.tags.includes('statistics'), true);
-    assert.equal(reset.tags.includes('stats'), true);
-    assert.ok(statistics, 'expected search suggestion statistics form');
-    assert.equal(statistics.tags.includes('statistics'), true);
-    assert.equal(statistics.tags.includes('collected'), true);
+    assert.ok(statistics, 'expected combined search suggestion form');
+    for (const tag of [
+        'statistics',
+        'collected',
+        'slots',
+        'order',
+        'suppress',
+        'deduplicate',
+        'reset',
+    ]) {
+        assert.equal(statistics.tags.includes(tag), true, `expected ${tag} tag`);
+    }
 });

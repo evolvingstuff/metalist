@@ -4,6 +4,7 @@ export const MAX_SEARCH_SUGGESTION_WINDOW_SLOTS = 20;
 
 let currentWindowDays = Object.freeze([1, 7, 30]);
 let shouldShowWindowLabels = true;
+let shouldLimitNoteCreditsPerSearchContext = true;
 
 export function getSearchSuggestionWindowsValidationError(windowDays) {
     if (!Array.isArray(windowDays)) {
@@ -65,4 +66,15 @@ export function setShowSearchSuggestionWindowLabelsValue(value) {
 
 export function getShowSearchSuggestionWindowLabels() {
     return shouldShowWindowLabels;
+}
+
+export function setLimitNoteCreditsPerSearchContextValue(value) {
+    if (value !== 'true' && value !== 'false') {
+        throw new Error('Search-context note credit limit value must be true or false');
+    }
+    shouldLimitNoteCreditsPerSearchContext = value === 'true';
+}
+
+export function getLimitNoteCreditsPerSearchContext() {
+    return shouldLimitNoteCreditsPerSearchContext;
 }

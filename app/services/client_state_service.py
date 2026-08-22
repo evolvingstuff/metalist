@@ -36,6 +36,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.theme": {"system", "light", "dark"},
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
+    "pref.limit_note_credits_per_search_context": {"true", "false"},
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(

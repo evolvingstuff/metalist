@@ -61,8 +61,6 @@ export function buildCommandPaletteEndpoints(deps) {
     const expandAll = requireAction(actions, 'expandAll');
     const resetViewFilters = requireAction(actions, 'resetViewFilters');
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
-    const resetSearchSuggestionHistory = requireAction(actions, 'resetSearchSuggestionHistory');
-    const openSearchSuggestionWindows = requireAction(actions, 'openSearchSuggestionWindows');
     const openSearchSuggestionStatistics = requireAction(actions, 'openSearchSuggestionStatistics');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
@@ -251,22 +249,10 @@ export function buildCommandPaletteEndpoints(deps) {
             apply: (next) => applyPreference('pref.theme', next),
         },
         {
-            id: 'form.search_suggestion_windows',
-            kind: 'form',
-            label: 'Search suggestion time windows…',
-            execute: async () => openSearchSuggestionWindows(),
-        },
-        {
             id: 'form.search_suggestion_statistics',
             kind: 'form',
-            label: 'Search suggestion statistics…',
+            label: 'Search suggestion stats & settings…',
             execute: async () => openSearchSuggestionStatistics(),
-        },
-        {
-            id: 'action.reset_search_suggestion_history',
-            kind: 'action',
-            label: 'Reset search suggestion activity…',
-            execute: async () => resetSearchSuggestionHistory(),
         },
         {
             id: 'action.expand_all',
