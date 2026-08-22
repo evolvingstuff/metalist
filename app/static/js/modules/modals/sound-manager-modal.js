@@ -105,7 +105,6 @@ export class SoundManagerModal extends BaseModal {
             <div class="modal-content sound-manager-modal-content">
                 <div class="sound-manager-header">
                     <h3>Sounds</h3>
-                    <button type="button" class="secondary-btn" data-sound-manager-close>Close</button>
                 </div>
                 <div class="sound-manager-usage">
                     ${usage ? `
@@ -136,6 +135,7 @@ export class SoundManagerModal extends BaseModal {
                 </div>
             </div>
         `;
+        this._installModalCloseButton();
     }
 
     _renderSoundRow(sound) {
@@ -185,10 +185,6 @@ export class SoundManagerModal extends BaseModal {
     async _handleClick(event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) {
-            return;
-        }
-        if (target.closest('[data-sound-manager-close]')) {
-            this.close();
             return;
         }
         if (target.closest('[data-sound-upload]')) {

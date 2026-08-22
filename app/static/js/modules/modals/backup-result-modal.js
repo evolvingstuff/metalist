@@ -222,18 +222,8 @@ export class BackupResultModal extends BaseModal {
                         </tbody>
                     </table>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="backup-result-ok-btn">OK</button>
-                </div>
             </div>
         `;
-
-        const okButton = document.getElementById('backup-result-ok-btn');
-        if (!(okButton instanceof HTMLButtonElement)) {
-            throw new Error('backup-result-ok-btn missing');
-        }
-        okButton.onclick = () => this.close();
-        setTimeout(() => okButton.focus(), 50);
     }
 
     _validateContext(context) {

@@ -154,23 +154,25 @@ export class BackupRestoreModal extends BaseModal {
         this.updateModalState(this.getInitialModalState());
     }
 
+    requestClose() {
+        const state = this.getModalState();
+        if (state.restored === true && state.activeNamespaceRestarted === true) {
+            this._beginPostRestoreReconnectAndReload();
+            return;
+        }
+        super.requestClose();
+    }
+
     handleKeyDown(event) {
         const topModal = ModeContext.topModal;
         if (topModal !== this.modalName) {
             return;
         }
 
-        const state = this.getModalState();
         if (event.key === 'Escape') {
-            if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
-                event.preventDefault();
-                event.stopPropagation();
-                this._beginPostRestoreReconnectAndReload();
-                return;
-            }
             event.preventDefault();
             event.stopPropagation();
-            this.close();
+            this.requestClose();
             return;
         }
         this.onKeyDown(event);
@@ -181,12 +183,7 @@ export class BackupRestoreModal extends BaseModal {
         if (!modalContent || modalContent.contains(event.target)) {
             return;
         }
-        const state = this.getModalState();
-        if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
-            this._beginPostRestoreReconnectAndReload();
-            return;
-        }
-        this.close();
+        this.requestClose();
     }
 
     onKeyDown(event) {
@@ -250,18 +247,9 @@ export class BackupRestoreModal extends BaseModal {
                     <div class="modal-content backup-restore-modal-content">
                         <h3>Restore Complete</h3>
                         <p>Backup restored successfully: <span class="backup-filename">${restoredFilename}</span></p>
-                        <p>Click OK to reload the app.</p>
-                        <div class="form-actions">
-                            <button type="button" class="primary-btn" id="backup-restore-success-ok-btn">OK</button>
-                        </div>
+                        <p>Close this modal to reload the app.</p>
                     </div>
                 `;
-                const okButton = document.getElementById('backup-restore-success-ok-btn');
-                if (!(okButton instanceof HTMLButtonElement)) {
-                    throw new Error('backup-restore-success-ok-btn missing');
-                }
-                okButton.onclick = () => this._beginPostRestoreReconnectAndReload();
-                setTimeout(() => okButton.focus(), 50);
                 return;
             }
 
@@ -271,17 +259,8 @@ export class BackupRestoreModal extends BaseModal {
                     <p>Backup restored successfully: <span class="backup-filename">${restoredFilename}</span></p>
                     <p>Restored into namespace <strong>${restoredTargetNamespace}</strong>.</p>
                     <p>${openNamespaceSuggested ? 'Use the namespace switcher to open it.' : 'You can continue using it now.'}</p>
-                    <div class="form-actions">
-                        <button type="button" class="primary-btn" id="backup-restore-finish-ok-btn">OK</button>
-                    </div>
                 </div>
             `;
-            const finishButton = document.getElementById('backup-restore-finish-ok-btn');
-            if (!(finishButton instanceof HTMLButtonElement)) {
-                throw new Error('backup-restore-finish-ok-btn missing');
-            }
-            finishButton.onclick = () => this.close();
-            setTimeout(() => finishButton.focus(), 50);
             return;
         }
 

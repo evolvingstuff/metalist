@@ -28,6 +28,7 @@ function ensureModalElement() {
     modalElement.style.display = 'none';
     modalElement.innerHTML = `
         <div class="modal-content image-file-insert-choice-modal-content">
+            <button type="button" class="modal-close-button" aria-label="Close" title="Close (Esc)">×</button>
             <h2 id="image-file-insert-choice-title">Handle image file</h2>
             <p id="image-file-insert-choice-description"></p>
             <div class="image-file-insert-choice-actions">
@@ -83,6 +84,7 @@ export function promptForImageFileInsertMode(options) {
     const embedButton = modalElement.querySelector('#image-file-insert-choice-embed');
     const attachButton = modalElement.querySelector('#image-file-insert-choice-attach');
     const cancelButton = modalElement.querySelector('#image-file-insert-choice-cancel');
+    const closeButton = modalElement.querySelector('.modal-close-button');
 
     if (!(descriptionElement instanceof HTMLElement)) {
         throw new Error('Image file insert choice description element missing');
@@ -95,6 +97,9 @@ export function promptForImageFileInsertMode(options) {
     }
     if (!(cancelButton instanceof HTMLButtonElement)) {
         throw new Error('Image file insert choice cancel button missing');
+    }
+    if (!(closeButton instanceof HTMLButtonElement)) {
+        throw new Error('Image file insert choice close button missing');
     }
 
     descriptionElement.textContent = buildChoiceDescription(imageCount, source);
@@ -133,6 +138,11 @@ export function promptForImageFileInsertMode(options) {
             }
             const cancelTarget = event.target.closest('#image-file-insert-choice-cancel');
             if (cancelTarget) {
+                finish(null);
+                return;
+            }
+            const closeTarget = event.target.closest('.modal-close-button');
+            if (closeTarget) {
                 finish(null);
             }
         };

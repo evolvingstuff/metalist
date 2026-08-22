@@ -58,6 +58,9 @@ class FakeElement {
         if (selector === '#image-file-insert-choice-cancel') {
             return this.cancelButton;
         }
+        if (selector === '.modal-close-button') {
+            return this.closeButton;
+        }
         return null;
     }
 
@@ -71,6 +74,8 @@ class FakeElement {
         this.attachButton.id = 'image-file-insert-choice-attach';
         this.cancelButton = new FakeButton('button');
         this.cancelButton.id = 'image-file-insert-choice-cancel';
+        this.closeButton = new FakeButton('button');
+        this.closeButton.className = 'modal-close-button';
     }
 
     get innerHTML() {
@@ -85,6 +90,9 @@ class FakeButton extends FakeElement {
 
     closest(selector) {
         if (selector === `#${this.id}`) {
+            return this;
+        }
+        if (selector === '.modal-close-button' && this.className === 'modal-close-button') {
             return this;
         }
         return null;
@@ -167,6 +175,22 @@ test('image file choice modal opens and resolves after the strict modal stack re
     });
 
     assert.equal(await choicePromise, 'attach');
+    assert.equal(ModeContext.topModal, null);
+    assert.equal(dom.modalElement.style.display, 'none');
+});
+
+
+test('image file choice modal resolves as cancelled from the standard close button', async (t) => {
+    const dom = installDom(t);
+    const [{ promptForImageFileInsertMode }, { ModeContextInstance: ModeContext }] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/services/image-file-insert-choice-modal-service.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+    ]);
+
+    const choicePromise = promptForImageFileInsertMode({ imageCount: 2, source: 'paste' });
+    dom.modalElement.listeners.click({ target: dom.modalElement.closeButton });
+
+    assert.equal(await choicePromise, null);
     assert.equal(ModeContext.topModal, null);
     assert.equal(dom.modalElement.style.display, 'none');
 });

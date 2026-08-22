@@ -119,17 +119,8 @@ export class VersionInfoModal extends BaseModal {
                 <h3>Version Info</h3>
                 ${bodyHtml}
                 <p class="error-message">${escapeHtml(error)}</p>
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="version-info-close-btn" data-modal-enter-action>Close</button>
-                </div>
             </div>
         `;
-
-        const closeButton = document.getElementById('version-info-close-btn');
-        if (!(closeButton instanceof HTMLButtonElement)) {
-            throw new Error('Version info close button missing');
-        }
-        closeButton.onclick = () => this.close();
     }
 
     buildInfoTableHtml(info) {

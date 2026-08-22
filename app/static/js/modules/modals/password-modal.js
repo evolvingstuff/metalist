@@ -502,9 +502,6 @@ class PasswordOperationModal extends BaseModal {
             <div class="modal-content">
                 <h3>Error</h3>
                 <p class="error-message">${error}</p>
-                <div class="form-actions">
-                    <button type="button" class="secondary-btn" id="close-btn">Close</button>
-                </div>
             </div>
         `;
     }
@@ -515,7 +512,6 @@ class PasswordOperationModal extends BaseModal {
     setupFormEventListeners() {
         const form = document.getElementById('password-form');
         const cancelBtn = document.getElementById('cancel-btn');
-        const closeBtn = document.getElementById('close-btn');
         const newPasswordInput = document.getElementById('new-password');
         const confirmPasswordInput = document.getElementById('confirm-password');
         const currentPasswordInput = document.getElementById('current-password');
@@ -578,10 +574,6 @@ class PasswordOperationModal extends BaseModal {
             cancelBtn.addEventListener('click', () => this.close());
         }
         
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.close());
-        }
-
         for (const passwordInput of [currentPasswordInput, newPasswordInput, confirmPasswordInput]) {
             if (passwordInput instanceof HTMLInputElement) {
                 passwordInput.addEventListener('input', () => this.syncSubmitAvailability());

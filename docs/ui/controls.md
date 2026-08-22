@@ -159,7 +159,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 
-App menus and modals close with `Escape` or an outside click. `Enter` activates the selected menu item or submits a modal's primary action in addition to the visible button.
+App menus close with `Escape` or an outside click. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
 
 When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 

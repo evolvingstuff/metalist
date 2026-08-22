@@ -67,6 +67,10 @@ export class BackupSettingsModal extends BaseModal {
         return [state.loading, state.saving, state.pickingFolder].includes(true);
     }
 
+    canRequestClose() {
+        return !this._hasActiveOperation();
+    }
+
     handleKeyDown(event) {
         if (!(event instanceof KeyboardEvent)) {
             throw new Error('BackupSettingsModal.handleKeyDown requires KeyboardEvent');
