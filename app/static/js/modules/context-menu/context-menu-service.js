@@ -225,6 +225,29 @@ function validateMenuItems(items, depth) {
         if (typeof item.label !== 'string' || item.label.trim() === '') {
             throw new Error(`Context menu item ${index} missing label`);
         }
+        if (item.kind === 'info') {
+            if (!Array.isArray(item.rows) || item.rows.length === 0) {
+                throw new Error(`Context menu info item ${index} missing rows`);
+            }
+            item.rows.forEach((row, rowIndex) => {
+                if (!row || typeof row !== 'object') {
+                    throw new Error(`Context menu info item ${index} row ${rowIndex} must be an object`);
+                }
+                if (typeof row.label !== 'string' || row.label.trim() === '') {
+                    throw new Error(`Context menu info item ${index} row ${rowIndex} missing label`);
+                }
+                if (typeof row.value !== 'string' || row.value.trim() === '') {
+                    throw new Error(`Context menu info item ${index} row ${rowIndex} missing value`);
+                }
+            });
+            if (item.enabled !== undefined || item.onSelect !== undefined || item.submenu !== undefined) {
+                throw new Error(`Context menu info item ${index} cannot be interactive`);
+            }
+            return;
+        }
+        if (item.kind !== undefined) {
+            throw new Error(`Context menu item ${index} has unknown kind: ${item.kind}`);
+        }
         if (typeof item.enabled !== 'boolean') {
             throw new Error(`Context menu item ${index} missing enabled boolean`);
         }
@@ -322,6 +345,27 @@ function renderMenuItems(menu, items, menuLevel) {
     }
     menu.innerHTML = '';
     items.forEach((item, index) => {
+        if (item.kind === 'info') {
+            const info = document.createElement('div');
+            info.className = 'context-menu-info';
+            info.setAttribute('role', 'group');
+            info.setAttribute('aria-label', item.label);
+            item.rows.forEach((rowData) => {
+                const row = document.createElement('div');
+                row.className = 'context-menu-info-row';
+                const label = document.createElement('span');
+                label.className = 'context-menu-info-label';
+                label.textContent = rowData.label;
+                const value = document.createElement('span');
+                value.className = 'context-menu-info-value';
+                value.textContent = rowData.value;
+                row.appendChild(label);
+                row.appendChild(value);
+                info.appendChild(row);
+            });
+            menu.appendChild(info);
+            return;
+        }
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'context-menu-item';

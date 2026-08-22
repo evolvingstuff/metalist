@@ -494,9 +494,6 @@ class CommandPaletteController {
         const showRhsPanel = this._getBoolean('pref.show_rhs_panel', false);
         document.body.classList.toggle('pref-show-rhs-panel', showRhsPanel);
 
-        const showNoteTimestamps = this._getBoolean('pref.show_note_timestamps', false);
-        document.body.classList.toggle('pref-show-note-timestamps', showNoteTimestamps);
-
         const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);
         document.body.classList.toggle('pref-show-perf-overlay', showPerfOverlay);
         if (!showPerfOverlay) {

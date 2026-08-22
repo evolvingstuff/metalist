@@ -54,7 +54,6 @@ def test_save_client_preferences_round_trips_through_app_settings(
     expected_preferences = {
         "pref.show_note_tags": "true",
         "pref.show_rhs_panel": "false",
-        "pref.show_note_timestamps": "true",
         "pref.animated_transitions": "false",
         "pref.reminder_surface_expanded": "false",
         "pref.theme": "dark",
@@ -78,7 +77,7 @@ def test_save_client_preferences_round_trips_through_app_settings(
         session.close()
 
 
-def test_save_client_preferences_drops_obsolete_reminder_sound_keys(
+def test_save_client_preferences_drops_obsolete_preferences(
     memory_settings_db,
 ) -> None:
     del memory_settings_db
@@ -91,6 +90,7 @@ def test_save_client_preferences_drops_obsolete_reminder_sound_keys(
             "pref.reminder_popup_sound_id": "11111111-1111-4111-8111-111111111111",
             "pref.reminder_ack_sound_enabled": "true",
             "pref.reminder_ack_sound_id": "builtin.default_chime",
+            "pref.show_note_timestamps": "true",
         }
     )
 

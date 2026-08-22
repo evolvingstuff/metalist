@@ -65,17 +65,11 @@ test('syncNoteTimestampDataset requires complete timestamp metadata', () => {
     );
 });
 
-test('timestamp popup CSS is preference-gated and targets only the innermost hovered note', () => {
+test('timestamps use the dark context-menu info footer instead of a hover preference', () => {
     const cssUrl = new URL('../../app/static/css/main.css', import.meta.url);
     const css = readFileSync(cssUrl, 'utf8');
 
-    assert.match(
-        css,
-        /body\.pref-show-note-timestamps \.note\[data-note-created-display\]\[data-note-updated-display\]::after/,
-    );
-    assert.match(
-        css,
-        /body\.pref-show-note-timestamps \.note:hover:not\(:has\(\.note:hover\)\)::after\s*\{/,
-    );
-    assert.doesNotMatch(css, /(?:^|\n)\.note:hover:not\(:has\(\.note:hover\)\)::after\s*\{/);
+    assert.doesNotMatch(css, /pref-show-note-timestamps/);
+    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?background:\s*#1f2937/);
+    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?color:\s*#f8fafc/);
 });

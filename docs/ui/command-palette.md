@@ -39,7 +39,6 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
-- `Note timestamps` is off by default. When enabled, hovering the innermost note shows its created and last-updated date/time in the browser's local locale and time zone.
 - `Note Layout & Appearance…` stores namespace-scoped presets for top-level note size, child indentation, and vertical spacing. The defaults are `Larger`, `Standard`, and `Comfortable` respectively.
 - `Search suggestion stats & settings…` is the single suggestion-personalization control surface. Its ordered 1–365 day slots and default-on time-window-label and one-credit-per-note-per-search-context toggles save immediately when changed. The modal also displays retained daily tag-credit statistics and provides the confirmed activity reset. An empty slot list disables personalization; the default slots are 1, 7, and 30 days.
 - Session idle timeout is disabled by default. It is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`. Expiry requires browser reauthentication but preserves the hydrated server cache for a fast login; explicit logout still purges decrypted runtime state.

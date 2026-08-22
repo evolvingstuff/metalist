@@ -160,7 +160,7 @@ function installFakeDom() {
 }
 
 
-test('pointer hover opens a submenu without stealing focus into the flyout', () => {
+test('context menu renders submenu actions and a non-interactive info footer', () => {
     const dom = installFakeDom();
     try {
         showContextMenu({
@@ -200,6 +200,43 @@ test('pointer hover opens a submenu without stealing focus into the flyout', () 
         assert.equal(submenu.children.length, 1);
         assert.equal(submenu.children[0].focusCount, 1);
         assert.equal(dom.fakeDocument.activeElement, submenu.children[0]);
+
+        hideContextMenu();
+        showContextMenu({
+            items: [
+                {
+                    id: 'copy-note',
+                    label: 'Copy Note',
+                    enabled: true,
+                    onSelect() {},
+                },
+                {
+                    id: 'note-timestamps',
+                    kind: 'info',
+                    label: 'Note timestamps',
+                    rows: [
+                        { label: 'Created', value: 'Aug 17, 2026, 11:00 AM' },
+                        { label: 'Updated', value: 'Aug 17, 2026, 12:45 PM' },
+                    ],
+                },
+            ],
+            position: { x: 100, y: 100 },
+        });
+
+        assert.equal(rootMenu.children.length, 2);
+        const footer = rootMenu.children[1];
+        assert.equal(footer.tagName, 'DIV');
+        assert.equal(footer.classList.contains('context-menu-info'), true);
+        assert.equal(footer.attributes.get('role'), 'group');
+        assert.equal(footer.attributes.get('aria-label'), 'Note timestamps');
+        assert.equal(footer.children.length, 2);
+        assert.deepEqual(
+            footer.children.map((row) => row.children.map((cell) => cell.textContent)),
+            [
+                ['Created', 'Aug 17, 2026, 11:00 AM'],
+                ['Updated', 'Aug 17, 2026, 12:45 PM'],
+            ],
+        );
     } finally {
         hideContextMenu();
         dom.restore();

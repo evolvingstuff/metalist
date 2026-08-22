@@ -657,6 +657,18 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
     if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
         throw new Error('Context menu event missing coordinates');
     }
+    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error(`Context menu note element missing: ${noteId}`);
+    }
+    const createdTimestamp = noteElement.dataset.noteCreatedDisplay;
+    const updatedTimestamp = noteElement.dataset.noteUpdatedDisplay;
+    if (typeof createdTimestamp !== 'string' || createdTimestamp.length === 0) {
+        throw new Error(`Context menu note missing created timestamp: ${noteId}`);
+    }
+    if (typeof updatedTimestamp !== 'string' || updatedTimestamp.length === 0) {
+        throw new Error(`Context menu note missing updated timestamp: ${noteId}`);
+    }
 
     const hasSelectedText = selectedTextRange instanceof Range;
     const selectedTextForTag = hasSelectedText
@@ -670,6 +682,10 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
     const context = {
         kind: 'note',
         noteId,
+        noteTimestamps: {
+            created: createdTimestamp,
+            updated: updatedTimestamp,
+        },
         imageContext,
         hasSelectedText,
         hasNoteClipboard,
@@ -929,7 +945,6 @@ function showViewContextMenu(event) {
         areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
         isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
         areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
-        areNoteTimestampsVisible: document.body.classList.contains('pref-show-note-timestamps'),
         canAddNoteAtTop: !ModeContext.isEditing,
     };
     const items = buildContextMenuItems(context, {
@@ -941,9 +956,6 @@ function showViewContextMenu(event) {
         },
         onToggleNoteTags: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_note_tags', nextValue);
-        },
-        onToggleNoteTimestamps: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_note_timestamps', nextValue);
         },
         onAddNoteAtTop: () => {
             void CommandGate.run('contextMenu.view.add_at_top', async () => {

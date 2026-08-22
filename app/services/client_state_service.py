@@ -22,7 +22,6 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_note_tags": {"true", "false"},
     "pref.show_tab_ui": {"true", "false"},
     "pref.show_rhs_panel": {"true", "false"},
-    "pref.show_note_timestamps": {"true", "false"},
     "pref.show_perf_overlay": {"true", "false"},
     "pref.animated_transitions": {"true", "false"},
     "pref.reminder_surface_expanded": {"true", "false"},
@@ -46,6 +45,7 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.reminder_popup_sound_id",
         "pref.reminder_ack_sound_id",
         "pref.search_suggestion_falloff",
+        "pref.show_note_timestamps",
     }
 )
 

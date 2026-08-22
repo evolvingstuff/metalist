@@ -91,7 +91,6 @@ export function buildCommandPaletteEndpoints(deps) {
         showNoteTags: false,
         showTabUi: false,
         showRhsPanel: false,
-        showNoteTimestamps: false,
         showPerfOverlay: false,
         animatedTransitions: true,
         theme: 'system',
@@ -138,21 +137,6 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_rhs_panel',
             defaultValue: defaults.showRhsPanel,
             apply: (next) => applyPreference('pref.show_rhs_panel', next),
-        },
-        {
-            id: 'pref.show_note_timestamps',
-            kind: 'boolean',
-            get label() {
-                return visibilityLabel(
-                    preferencesStore,
-                    'pref.show_note_timestamps',
-                    defaults.showNoteTimestamps,
-                    'note timestamps',
-                );
-            },
-            persistenceKey: 'pref.show_note_timestamps',
-            defaultValue: defaults.showNoteTimestamps,
-            apply: (next) => applyPreference('pref.show_note_timestamps', next),
         },
         {
             id: 'pref.show_perf_overlay',

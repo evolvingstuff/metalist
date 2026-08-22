@@ -36,14 +36,25 @@ function buildNoteHandlers(calls) {
     };
 }
 
+function buildNoteContext(overrides = {}) {
+    return {
+        kind: 'note',
+        noteId: 'note-123',
+        noteTimestamps: {
+            created: 'Aug 17, 2026, 11:00 AM',
+            updated: 'Aug 17, 2026, 12:45 PM',
+        },
+        ...overrides,
+    };
+}
+
 test('buildContextMenuItems prepends source action for a reference context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        {
-            kind: 'note',
+        buildNoteContext({
             noteId: 'host-note-123',
             referenceNoteId: 'source-note-456',
-        },
+        }),
         buildNoteHandlers(calls),
     );
 
@@ -70,12 +81,13 @@ test('buildContextMenuItems prepends source action for a reference context', () 
 test('buildContextMenuItems returns note actions for note context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123' },
+        buildNoteContext(),
         buildNoteHandlers(calls),
     );
+    const actionItems = items.filter((item) => item.kind !== 'info');
 
     assert.deepEqual(
-        items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
+        actionItems.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
             { id: 'copy-note', label: 'Copy Note', enabled: true },
             { id: 'add-sibling-note', label: 'Add Sibling Note', enabled: true },
@@ -89,7 +101,7 @@ test('buildContextMenuItems returns note actions for note context', () => {
     assert.equal(items[0].separated, undefined);
     assert.equal(items[5].separated, true);
 
-    for (const item of items) {
+    for (const item of actionItems) {
         item.onSelect();
     }
 
@@ -104,10 +116,82 @@ test('buildContextMenuItems returns note actions for note context', () => {
     ]);
 });
 
+test('buildContextMenuItems appends created and updated timestamps to note menus', () => {
+    const items = buildContextMenuItems(
+        buildNoteContext({
+            noteTimestamps: {
+                created: 'Aug 17, 2026, 11:00 AM',
+                updated: 'Aug 17, 2026, 12:45 PM',
+            },
+        }),
+        buildNoteHandlers([]),
+    );
+
+    assert.deepEqual(items.at(-1), {
+        id: 'note-timestamps',
+        kind: 'info',
+        label: 'Note timestamps',
+        rows: [
+            { label: 'Created', value: 'Aug 17, 2026, 11:00 AM' },
+            { label: 'Updated', value: 'Aug 17, 2026, 12:45 PM' },
+        ],
+    });
+});
+
+test('buildContextMenuItems keeps Updated when it equals Created', () => {
+    const items = buildContextMenuItems(
+        buildNoteContext({
+            noteTimestamps: {
+                created: 'Aug 17, 2026, 11:00 AM',
+                updated: 'Aug 17, 2026, 11:00 AM',
+            },
+        }),
+        buildNoteHandlers([]),
+    );
+
+    assert.deepEqual(items.at(-1).rows, [
+        { label: 'Created', value: 'Aug 17, 2026, 11:00 AM' },
+        { label: 'Updated', value: 'Aug 17, 2026, 11:00 AM' },
+    ]);
+});
+
+test('note context menu reads the rendered note timestamp dataset', async () => {
+    const source = await readFile(CONTEXT_MENU_EVENTS_URL, 'utf8');
+    const noteMenuStart = source.indexOf('function showNoteContextMenu(');
+    const noteMenuEnd = source.indexOf('function showLinkContextMenu(', noteMenuStart);
+
+    assert.ok(noteMenuStart >= 0);
+    assert.ok(noteMenuEnd > noteMenuStart);
+    const noteMenuSource = source.slice(noteMenuStart, noteMenuEnd);
+    assert.match(noteMenuSource, /noteElement\.dataset\.noteCreatedDisplay/);
+    assert.match(noteMenuSource, /noteElement\.dataset\.noteUpdatedDisplay/);
+    assert.match(
+        noteMenuSource,
+        /noteTimestamps:\s*\{\s*created:\s*createdTimestamp,\s*updated:\s*updatedTimestamp,/,
+    );
+});
+
+test('note context requires complete rendered timestamps', () => {
+    assert.throws(
+        () => buildContextMenuItems(
+            { kind: 'note', noteId: 'note-123' },
+            buildNoteHandlers([]),
+        ),
+        /noteTimestamps/,
+    );
+    assert.throws(
+        () => buildContextMenuItems(
+            buildNoteContext({ noteTimestamps: { created: 'Created value' } }),
+            buildNoteHandlers([]),
+        ),
+        /updated timestamp/,
+    );
+});
+
 test('buildContextMenuItems exposes full screen only for an eligible view-mode note', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', canViewFullscreen: true },
+        buildNoteContext({ canViewFullscreen: true }),
         buildNoteHandlers(calls),
     );
 
@@ -119,7 +203,7 @@ test('buildContextMenuItems exposes full screen only for an eligible view-mode n
     assert.deepEqual(calls, [['viewNoteFullscreen', 'note-123']]);
 
     const editingItems = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', canViewFullscreen: false },
+        buildNoteContext({ canViewFullscreen: false }),
         buildNoteHandlers([]),
     );
     assert.equal(editingItems.some((item) => item.id === 'view-note-fullscreen'), false);
@@ -137,7 +221,7 @@ test('buildContextMenuItems prepends image actions for note image context', () =
         filename: null,
     };
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', imageContext, canResizeImage: true },
+        buildNoteContext({ imageContext, canResizeImage: true }),
         {
             ...buildNoteHandlers(calls),
             onCopyImage: (context) => calls.push(['copyImage', context]),
@@ -147,8 +231,9 @@ test('buildContextMenuItems prepends image actions for note image context', () =
         },
     );
 
+    const actionItems = items.filter((item) => item.kind !== 'info');
     assert.deepEqual(
-        items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
+        actionItems.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
             { id: 'make-image-bigger', label: 'Make Bigger', enabled: true },
             { id: 'make-image-smaller', label: 'Make Smaller', enabled: true },
@@ -171,7 +256,7 @@ test('buildContextMenuItems prepends image actions for note image context', () =
     assert.equal(items[8].separated, undefined);
     assert.equal(items[12].separated, true);
 
-    for (const item of items) {
+    for (const item of actionItems) {
         if (typeof item.icon === 'string') {
             assert.equal(isContextMenuIconSupported(item.icon), true, `unsupported icon: ${item.icon}`);
         }
@@ -208,7 +293,7 @@ test('buildContextMenuItems hides image sizing actions while editing', () => {
         filename: null,
     };
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', imageContext, canResizeImage: false },
+        buildNoteContext({ imageContext, canResizeImage: false }),
         {
             ...buildNoteHandlers(calls),
             onCopyImage: (context) => calls.push(['copyImage', context]),
@@ -233,7 +318,7 @@ test('buildContextMenuItems hides image sizing actions while editing', () => {
 test('buildContextMenuItems shows text copy when selected text is present', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', hasSelectedText: true },
+        buildNoteContext({ hasSelectedText: true }),
         buildNoteHandlers(calls),
     );
 
@@ -246,12 +331,10 @@ test('buildContextMenuItems shows text copy when selected text is present', () =
 test('buildContextMenuItems shows add-as-tag for an eligible text selection', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        {
-            kind: 'note',
-            noteId: 'note-123',
+        buildNoteContext({
             hasSelectedText: true,
             selectedTextForTag: 'Neural Networks',
-        },
+        }),
         buildNoteHandlers(calls),
     );
 
@@ -269,15 +352,13 @@ test('buildContextMenuItems shows add-as-tag for an eligible text selection', ()
 test('buildContextMenuItems adds a connected Add Style submenu only for the editing note', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        {
-            kind: 'note',
-            noteId: 'note-123',
+        buildNoteContext({
             canAddStyle: true,
             styleOptions: [
                 { id: 'red', label: 'Red', tag: '@red' },
                 { id: 'markdown', label: 'Markdown', tag: '@markdown' },
             ],
-        },
+        }),
         buildNoteHandlers(calls),
     );
 
@@ -296,7 +377,7 @@ test('buildContextMenuItems adds a connected Add Style submenu only for the edit
     assert.deepEqual(calls, [['addStyle', 'note-123', '@red']]);
 
     const viewItems = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123' },
+        buildNoteContext(),
         buildNoteHandlers([]),
     );
     assert.equal(viewItems.some((item) => item.id === 'add-style'), false);
@@ -305,15 +386,13 @@ test('buildContextMenuItems adds a connected Add Style submenu only for the edit
 test('buildContextMenuItems places Remove Formatting directly beneath Add Style while editing', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        {
-            kind: 'note',
-            noteId: 'note-123',
+        buildNoteContext({
             canAddStyle: true,
             canRemoveFormatting: true,
             styleOptions: [
                 { id: 'red', label: 'Red', tag: '@red' },
             ],
-        },
+        }),
         buildNoteHandlers(calls),
     );
 
@@ -328,7 +407,7 @@ test('buildContextMenuItems places Remove Formatting directly beneath Add Style 
 test('buildContextMenuItems shows paste actions when note clipboard is available', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', hasNoteClipboard: true },
+        buildNoteContext({ hasNoteClipboard: true }),
         buildNoteHandlers(calls),
     );
 
@@ -343,7 +422,7 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
         ],
     );
     assert.deepEqual(
-        items.slice(-2).map((item) => ({ id: item.id, label: item.label })),
+        items.filter((item) => item.kind !== 'info').slice(-2).map((item) => ({ id: item.id, label: item.label })),
         [
             { id: 'export-note-html', label: 'Export Note as HTML' },
             { id: 'export-view-html', label: 'Export View as HTML' },
@@ -365,7 +444,7 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
 test('buildContextMenuItems adds a top note action to non-editing note context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', canAddNoteAtTop: true },
+        buildNoteContext({ canAddNoteAtTop: true }),
         buildNoteHandlers(calls),
     );
 
@@ -384,13 +463,11 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
             areTabsVisible: false,
             isCalendarVisible: true,
             areNoteTagsVisible: false,
-            areNoteTimestampsVisible: true,
         },
         {
             onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
             onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
             onToggleNoteTags: (nextValue) => calls.push(['toggleNoteTags', nextValue]),
-            onToggleNoteTimestamps: (nextValue) => calls.push(['toggleNoteTimestamps', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
     );
@@ -401,7 +478,6 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
             { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
             { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
             { id: 'toggle-note-tags', label: 'Show Tags in List', enabled: true },
-            { id: 'toggle-note-timestamps', label: 'Hide Note Timestamps', enabled: true },
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
@@ -413,12 +489,11 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
         ['toggleTabs', true],
         ['toggleCalendar', false],
         ['toggleNoteTags', true],
-        ['toggleNoteTimestamps', false],
         ['exportViewHtml'],
     ]);
 });
 
-test('view context menu persists the note timestamp visibility preference', async () => {
+test('view context menu no longer exposes the note timestamp visibility preference', async () => {
     const source = await readFile(CONTEXT_MENU_EVENTS_URL, 'utf8');
     const viewMenuStart = source.indexOf('function showViewContextMenu(event)');
     const viewMenuEnd = source.indexOf('function handleContextMenu(event)', viewMenuStart);
@@ -426,13 +501,13 @@ test('view context menu persists the note timestamp visibility preference', asyn
     assert.ok(viewMenuStart >= 0);
     assert.ok(viewMenuEnd > viewMenuStart);
     const viewMenuSource = source.slice(viewMenuStart, viewMenuEnd);
-    assert.match(
+    assert.doesNotMatch(
         viewMenuSource,
-        /areNoteTimestampsVisible: document\.body\.classList\.contains\('pref-show-note-timestamps'\)/,
+        /areNoteTimestampsVisible|pref-show-note-timestamps/,
     );
-    assert.match(
+    assert.doesNotMatch(
         viewMenuSource,
-        /onToggleNoteTimestamps:[\s\S]*CommandPalette\.applyPreference\('pref\.show_note_timestamps', nextValue\)/,
+        /onToggleNoteTimestamps|pref\.show_note_timestamps/,
     );
 });
 
@@ -444,7 +519,6 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             areTabsVisible: true,
             isCalendarVisible: true,
             areNoteTagsVisible: true,
-            areNoteTimestampsVisible: true,
             canAddNoteAtTop: true,
         },
         {
@@ -452,7 +526,6 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             onToggleTabs: () => {},
             onToggleCalendar: () => {},
             onToggleNoteTags: () => {},
-            onToggleNoteTimestamps: () => {},
             onExportViewHtml: () => {},
         },
     );
