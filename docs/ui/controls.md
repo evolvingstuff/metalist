@@ -132,7 +132,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range and `Remove Formatting` removes formatting only from that range. |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click notes view background | Open the view context menu with dynamic `Show/Hide Tabs`, `Show/Hide Calendar View`, `Show/Hide Tags in List`, `Show/Hide Note Timestamps`, and `Export View as HTML` actions |
-| Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships) |
+| Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships). If a note is being edited, it is saved and the view refresh completes first, restoring view-only rendering such as cached URL titles. |
 | Right-click left or right lane | Open the same view menu: show/hide tabs, calendar, note-list tags, or note timestamps, or export the current view as HTML |
 | Hover left side of search bar | Show the tab/search-context overlay |
 | Hover/click search input | Hide the tab/search-context overlay |
@@ -159,7 +159,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 
-App menus and modals close with `Escape` or an outside click. `Enter` activates the selected menu item or submits a modal's primary action in addition to the visible button.
+App menus close with `Escape` or an outside click. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
 
 When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 

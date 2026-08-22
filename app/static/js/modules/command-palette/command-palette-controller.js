@@ -1,6 +1,9 @@
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect, showPerfOverlayFromCache } from '../mode-manager/actions/ui-actions.js';
-import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
+import {
+    actionDeselectNote,
+    actionSaveAndExitEditingWithoutRefreshing,
+} from '../mode-manager/actions/selection-actions.js';
 import { FilesAPI, NotesAPI } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import {
@@ -1820,7 +1823,7 @@ class CommandPaletteController {
         }
         if (ModeContext.isEditing) {
             const result = await CommandGate.run(`${commandName}.exitEditing`, async () => {
-                await actionSaveAndExitEditingWithoutRefreshing();
+                await actionDeselectNote();
             });
             if (result === null) {
                 return false;

@@ -18,7 +18,7 @@ This document defines the standard pattern for implementing modal dialogs in the
   - In searching state  
   - Any other "active" state that should be closed first
 - Caller responsible for cleaning state before attempting to open modal
-- Modal callers are expected to clean state before opening a modal.
+- When a caller exits note editing, it must complete the normal save/deselect/view-refresh flow before opening the modal. This restores view-only rendering such as cached URL titles instead of leaving the editor HTML visible behind the modal.
 
 ### 3. **Event Handling Integration**
 - Follow existing pattern in `keyboard-events.js` (like Esc key handler)
@@ -51,6 +51,7 @@ All modals extend BaseModal which provides:
    - Sets modal-specific state in `ModeContext.modalState`
 
 3. **Common Event Handling**
+   - Every modal shows the same upper-right circular `×` close control as full-screen note view
    - `Escape` closes every modal
    - Clicking outside the modal content closes every modal
    - `Enter` activates the modal's single declared primary action; modals with multi-step or input-specific behavior implement the equivalent explicitly
@@ -60,7 +61,7 @@ All modals extend BaseModal which provides:
 
 1. User triggers a modal from the command palette or another UI control.
 2. Handler checks current application state
-3. If editing/searching → save + exit editing and/or exit search first
+3. If editing/searching → save + deselect + refresh the note view and/or exit search first
 4. Attempt `new ModalClass().open()`
 5. BaseModal enforces clean state (throws error if dirty)
 6. Modal opens and updates `ModeContext.modalStack`
@@ -110,11 +111,14 @@ function handleKeyDown(event) {
 5. Set up modal-specific event listeners
 
 ### Closing a Modal  
-1. Clean up modal-specific event listeners
-2. Remove modal-specific state
-3. Remove from modal stack
-4. Hide modal UI
-5. Return focus to application
+1. The user clicks the upper-right `×`, presses `Escape`, or clicks outside the modal content
+2. Clean up modal-specific event listeners
+3. Remove modal-specific state
+4. Remove from modal stack
+5. Hide modal UI
+6. Return focus to application
+
+Dismiss-only footer buttons labeled `Close` or `OK` are not used. Workflow actions such as `Save`, `Cancel`, `Back`, and destructive confirmations remain visible when they carry meaning beyond dismissing the modal.
 
 ### Modal Stacking
 - Modals can stack via `ModeContext.modalStack`

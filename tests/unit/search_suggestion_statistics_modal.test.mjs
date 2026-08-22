@@ -150,6 +150,7 @@ test('combined modal renders window controls, suppression, statistics, and reset
     const modal = createStatisticsModal({});
     modal.getModalState = () => createOpenModalState({});
     modal._bindControls = (windowDays) => assert.deepEqual(windowDays, [1, 7, 30]);
+    modal._installModalCloseButton = () => {};
 
     modal.renderModalContent();
 

@@ -374,7 +374,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                 </section>
                 <div class="form-actions">
                     <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-btn"${resetDisabled}>${resetLabel}</button>
-                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-close-btn"${disabled}>Close</button>
                 </div>
             </div>
         `;
@@ -403,7 +402,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         const labelToggle = document.getElementById('search-window-label-toggle');
         const creditLimitToggle = document.getElementById('search-context-credit-limit-toggle');
         const resetButton = document.getElementById('search-suggestion-statistics-reset-btn');
-        const closeButton = document.getElementById('search-suggestion-statistics-close-btn');
         if (!(addButton instanceof HTMLButtonElement)) {
             throw new Error('Search window add button missing');
         }
@@ -416,9 +414,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (!(resetButton instanceof HTMLButtonElement)) {
             throw new Error('Search suggestion statistics reset button missing');
         }
-        if (!(closeButton instanceof HTMLButtonElement)) {
-            throw new Error('Search suggestion statistics close button missing');
-        }
         addButton.onclick = async () => this._addWindow(windowDays);
         labelToggle.onchange = async () => this._changeBooleanSetting(
             'showWindowLabels',
@@ -429,7 +424,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
             creditLimitToggle.checked,
         );
         resetButton.onclick = () => this._requestResetConfirmation();
-        closeButton.onclick = () => this.close();
     }
 
     _buildStatisticsHtml(statistics) {

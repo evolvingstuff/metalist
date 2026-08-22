@@ -183,7 +183,6 @@ export class RandomPasswordModal extends BaseModal {
 
                 <div class="form-actions random-password-modal-actions">
                     <button type="button" class="primary-btn" id="password-regenerate-btn">Regenerate</button>
-                    <button type="button" class="secondary-btn" id="password-close-btn">Close</button>
                 </div>
 
                 <p id="password-generator-error" class="error-message">${error}</p>
@@ -289,11 +288,6 @@ export class RandomPasswordModal extends BaseModal {
             copyButton.onclick = async () => {
                 await this.copyResultToClipboard();
             };
-        }
-
-        const closeButton = document.getElementById('password-close-btn');
-        if (closeButton instanceof HTMLButtonElement) {
-            closeButton.onclick = () => this.close();
         }
 
         const resultOutput = document.getElementById('password-result-output');

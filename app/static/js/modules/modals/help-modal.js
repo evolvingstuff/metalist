@@ -32,19 +32,12 @@ export class HelpModal extends BaseModal {
 
         modalElement.innerHTML = `
             <div class="modal-content help-modal-content">
-                <span class="close">&times;</span>
                 <h2>Keyboard Shortcuts / Cheatsheet</h2>
                 <div class="help-shortcuts-container">
                     ${shortcutsHTML}
                 </div>
             </div>
         `;
-
-        // Add close button handler
-        const closeBtn = modalElement.querySelector('.close');
-        if (closeBtn) {
-            closeBtn.onclick = () => this.close();
-        }
 
         modalElement.style.display = 'block';
     }

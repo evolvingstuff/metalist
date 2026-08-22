@@ -116,6 +116,15 @@ export class DeleteNamespaceModal extends BaseModal {
         this.updateModalState(this.getInitialModalState());
     }
 
+    requestClose() {
+        const state = this.getModalState();
+        if (state.deleted === true) {
+            window.location.reload();
+            return;
+        }
+        super.requestClose();
+    }
+
     handleKeyDown(event) {
         const topModal = ModeContext.topModal;
         if (topModal !== this.modalName) {
@@ -125,7 +134,7 @@ export class DeleteNamespaceModal extends BaseModal {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            this.close();
+            this.requestClose();
             return;
         }
 
@@ -184,15 +193,8 @@ export class DeleteNamespaceModal extends BaseModal {
                 <div class="modal-content namespace-delete-modal-content">
                     <h3>Delete namespace</h3>
                     <p>${escapeHtml(successMessage)}</p>
-                    <div class="form-actions">
-                        <button type="button" class="primary-btn" id="delete-namespace-done-btn">OK</button>
-                    </div>
                 </div>
             `;
-            const doneButton = document.getElementById('delete-namespace-done-btn');
-            if (doneButton instanceof HTMLButtonElement) {
-                doneButton.onclick = () => window.location.reload();
-            }
             return;
         }
 

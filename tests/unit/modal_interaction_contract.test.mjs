@@ -4,6 +4,7 @@ import test from 'node:test';
 
 
 const BASE_MODAL_URL = new URL('../../app/static/js/modules/modals/base-modal.js', import.meta.url);
+const MAIN_CSS_URL = new URL('../../app/static/css/main.css', import.meta.url);
 const MODALS_ROOT_URL = new URL('../../app/static/js/modules/modals/', import.meta.url);
 const IMAGE_CHOICE_URL = new URL(
     '../../app/static/js/modules/mode-manager/services/image-file-insert-choice-modal-service.js',
@@ -27,19 +28,55 @@ function modalSourceEntries() {
 }
 
 
-test('BaseModal supports Escape, outside click, and declared Enter actions', () => {
+test('BaseModal supports a universal close button, Escape, outside click, and Enter actions', () => {
     const source = readFileSync(BASE_MODAL_URL, 'utf8');
 
+    assert.match(source, /className = 'modal-close-button'/);
+    assert.match(source, /textContent = '×'/);
+    assert.match(source, /title = 'Close \(Esc\)'/);
+    assert.match(source, /closeButton\.onclick = \(\) => this\.requestClose\(\)/);
     assert.match(source, /event\.key === 'Escape'/);
+    assert.match(source, /this\.requestClose\(\)/);
     assert.match(source, /event\.target === event\.currentTarget/);
     assert.match(source, /\[data-modal-enter-action\]/);
+});
+
+
+test('modal render replacement reinstalls the universal close button', () => {
+    const source = readFileSync(BASE_MODAL_URL, 'utf8');
+
+    assert.match(source, /_wrapModalContentRenderer\(\)/);
+    assert.match(source, /renderModalContent\.apply\(this, args\)/);
+    assert.match(source, /this\._installModalCloseButton\(\)/);
+});
+
+
+test('the universal modal close control is circular and upper-right aligned', () => {
+    const source = readFileSync(MAIN_CSS_URL, 'utf8');
+    const ruleStart = source.indexOf('.modal-content .modal-close-button');
+    const ruleEnd = source.indexOf('.modal-content .modal-close-button:hover', ruleStart);
+    assert.notEqual(ruleStart, -1);
+    assert.notEqual(ruleEnd, -1);
+    const ruleSource = source.slice(ruleStart, ruleEnd);
+
+    assert.match(ruleSource, /position:\s*absolute/);
+    assert.match(ruleSource, /top:\s*16px/);
+    assert.match(ruleSource, /right:\s*16px/);
+    assert.match(ruleSource, /border-radius:\s*50%/);
+});
+
+
+test('modal sources do not render dismiss-only Close or OK footer buttons', () => {
+    for (const { filename, source } of modalSourceEntries()) {
+        assert.doesNotMatch(source, />\s*(?:Close|OK)\s*</, `${filename} has a dismiss-only button`);
+    }
 });
 
 
 test('BaseModal outside-click detection survives modal content replacement during a click', () => {
     const source = readFileSync(BASE_MODAL_URL, 'utf8');
     const handlerStart = source.indexOf('    handleClickOutside(event) {');
-    const handlerEnd = source.indexOf('    // Subclass hooks', handlerStart);
+    const handlerEnd = source.indexOf('    _wrapModalContentRenderer()', handlerStart);
     assert.notEqual(handlerStart, -1);
     assert.notEqual(handlerEnd, -1);
     const handlerSource = source.slice(handlerStart, handlerEnd);
@@ -112,9 +149,11 @@ test('the only BaseModal outside-click override has an explicit equivalent handl
 });
 
 
-test('image insert choice supports Escape, outside click, and Enter', () => {
+test('image insert choice supports the universal close button, Escape, outside click, and Enter', () => {
     const source = readFileSync(IMAGE_CHOICE_URL, 'utf8');
 
+    assert.match(source, /class="modal-close-button"/);
+    assert.match(source, /title="Close \(Esc\)"/);
     assert.match(source, /event\.target === modalElement/);
     assert.match(source, /event\.key === 'Escape'/);
     assert.match(source, /event\.key === 'Enter'/);

@@ -477,7 +477,6 @@ export class OntologyModal extends BaseModal {
             <div class="modal-content ontology-modal-content">
                 <div class="ontology-modal-header">
                     <h2>Edit Tag Relationships</h2>
-                    <button class="ontology-close" data-action="close" aria-label="Close">×</button>
                 </div>
 
                 <div class="ontology-error" id="ontology-error" style="display:none"></div>
@@ -2470,11 +2469,6 @@ export class OntologyModal extends BaseModal {
 
             if (action === 'dialog-submit') {
                 this._submitDialog();
-                return;
-            }
-
-            if (action === 'close') {
-                this.close();
                 return;
             }
 

@@ -887,7 +887,6 @@ export class ReminderModal extends BaseModal {
             <div class="modal-content reminder-modal-content">
                 <div class="reminder-modal-header">
                     <h3>Reminders</h3>
-                    <button type="button" class="secondary-btn" data-reminder-close>Close</button>
                 </div>
                 <div class="reminder-modal-layout">
                     <section class="reminder-registry-pane">
@@ -969,6 +968,7 @@ export class ReminderModal extends BaseModal {
                 ${this._renderDefaultSoundSettings()}
             </div>
         `;
+        this._installModalCloseButton();
     }
 
     _renderSoundSettings() {
@@ -1366,10 +1366,6 @@ export class ReminderModal extends BaseModal {
     async _handleClick(event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) {
-            return;
-        }
-        if (target.closest('[data-reminder-close]')) {
-            this.close();
             return;
         }
         if (target.closest('[data-reminder-new]')) {

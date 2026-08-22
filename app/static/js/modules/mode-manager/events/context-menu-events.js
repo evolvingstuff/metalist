@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import {
+    actionDeselectNote,
     actionSaveAndExitEditingWithoutRefreshing,
     actionSelectNote,
     actionSwitchNotes,
@@ -226,7 +227,7 @@ async function openOntologyModalWithFocus(tag) {
 
     if (ModeContext.isEditing) {
         const result = await CommandGate.run('contextMenu.ontology.exit_editing', async () => {
-            await actionSaveAndExitEditingWithoutRefreshing();
+            await actionDeselectNote();
         });
         if (result === null) {
             return;

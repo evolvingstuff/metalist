@@ -365,6 +365,7 @@ html {
 }
 
 .modal-content {
+    position: relative;
     background-color: var(--bg-color);
     margin: 5% auto;
     padding: 20px;
@@ -807,16 +808,40 @@ html[data-theme="dark"] .search-suggestion-statistics-day summary {
     }
 }
 
-.close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
+.modal-content .modal-close-button,
+#ontology-modal .ontology-modal-content > .modal-close-button {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
+    font: 28px/1 Arial, sans-serif;
     cursor: pointer;
 }
 
-.close:hover {
-    color: var(--text-color);
+.modal-content .modal-close-button:hover,
+.modal-content .modal-close-button:focus-visible,
+#ontology-modal .ontology-modal-content > .modal-close-button:hover,
+#ontology-modal .ontology-modal-content > .modal-close-button:focus-visible {
+    background: var(--bg-color);
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.modal-content .modal-close-button:disabled,
+#ontology-modal .ontology-modal-content > .modal-close-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 body.ontology-modal-open #main-app {
@@ -913,24 +938,6 @@ body.ontology-modal-open #ontology-modal {
     margin: 0;
     text-align: left;
     color: rgba(255, 255, 255, 0.92);
-}
-
-.ontology-close {
-    appearance: none;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.8);
-    border-radius: 8px;
-    width: 36px;
-    height: 36px;
-    font-size: 20px;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-}
-
-.ontology-close:hover {
-    background: rgba(255, 255, 255, 0.1);
 }
 
 .ontology-search {

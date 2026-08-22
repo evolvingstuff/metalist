@@ -27,6 +27,7 @@ export class BaseModal {
         // Bind event handlers
         this.handleKeyDown = this.handleKeyDown.bind(this);
         this.handleClickOutside = this.handleClickOutside.bind(this);
+        this._wrapModalContentRenderer();
     }
     
     /**
@@ -46,6 +47,7 @@ export class BaseModal {
         
         // Show modal UI
         this.showModalElement();
+        this._installModalCloseButton();
         
         // Set up event listeners
         this.setupEventListeners();
@@ -165,7 +167,6 @@ export class BaseModal {
             modalElement.style.display = 'none';
             modalElement.innerHTML = `
                 <div class="modal-content">
-                    <span class="close">&times;</span>
                     <h2 id="${this.modalElementId}-title">Password Management</h2>
                     <div id="${this.modalElementId}-body">
                         <!-- Content will be dynamically inserted -->
@@ -234,7 +235,7 @@ export class BaseModal {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            this.close();
+            this.requestClose();
             return;
         }
         
@@ -275,8 +276,62 @@ export class BaseModal {
      */
     handleClickOutside(event) {
         if (event.target === event.currentTarget) {
-            this.close();
+            this.requestClose();
         }
+    }
+
+    _wrapModalContentRenderer() {
+        const renderModalContent = this.renderModalContent;
+        if (typeof renderModalContent !== 'function') {
+            return;
+        }
+        this.renderModalContent = (...args) => {
+            const result = renderModalContent.apply(this, args);
+            this._installModalCloseButton();
+            return result;
+        };
+    }
+
+    _installModalCloseButton() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!(modalElement instanceof HTMLElement)) {
+            throw new Error(`Modal element missing: ${this.modalElementId}`);
+        }
+        const modalContent = modalElement.querySelector('.modal-content');
+        if (!(modalContent instanceof HTMLElement)) {
+            throw new Error(`Modal content missing: ${this.modalElementId}`);
+        }
+        const directCloseButtons = Array.from(modalContent.children).filter((element) => (
+            element instanceof HTMLButtonElement
+            && element.classList.contains('modal-close-button')
+        ));
+        if (directCloseButtons.length > 1) {
+            throw new Error(`${this.modalName} has multiple modal close buttons`);
+        }
+        let closeButton = directCloseButtons[0];
+        if (!(closeButton instanceof HTMLButtonElement)) {
+            closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'modal-close-button';
+            closeButton.setAttribute('aria-label', 'Close');
+            closeButton.title = 'Close (Esc)';
+            closeButton.textContent = '×';
+            modalContent.prepend(closeButton);
+        }
+        closeButton.disabled = !this.canRequestClose();
+        closeButton.onclick = () => this.requestClose();
+        return closeButton;
+    }
+
+    requestClose() {
+        if (!this.canRequestClose()) {
+            return;
+        }
+        this.close();
+    }
+
+    canRequestClose() {
+        return true;
     }
     
     // Subclass hooks - override these in specific modals
