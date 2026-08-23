@@ -1480,25 +1480,6 @@ export class OntologyModal extends BaseModal {
             if (typeof event.stopImmediatePropagation === 'function') {
                 event.stopImmediatePropagation();
             }
-            if (hasSuggestions) {
-                let selectedIndex = this._dialogSelectedIndex;
-                if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= items.length) {
-                    selectedIndex = 0;
-                }
-                const button = items[selectedIndex];
-                if (!button) {
-                    return;
-                }
-                const tag = button.dataset.tag;
-                if (typeof tag !== 'string' || tag.trim() === '') {
-                    throw new Error('Dialog suggestion missing tag');
-                }
-                this._applyDialogSuggestion(tag);
-                if (state.autoSubmitOnSuggestion) {
-                    this._submitDialog();
-                }
-                return;
-            }
             this._submitDialog();
             return;
         }
