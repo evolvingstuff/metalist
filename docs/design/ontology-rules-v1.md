@@ -134,6 +134,12 @@ Implementation note (DOM):
 - Each suggestion shows a count badge with the number of notes containing that tag.
 - Arrow keys move selection (first item is selected by default); `Enter` applies the selected suggestion, fills the input, and blurs the field.
 
+### Relationship dialogs
+
+- The add/edit dialogs for implications, synonyms, incoming conditions, and tags keep their visible submit button.
+- While a dialog input is focused, `Enter` performs the same submit action as that button, using the current input even when suggestions are visible.
+- Suggestions remain selectable by clicking them; selecting one fills the input without submitting it.
+
 ### UI Mock
 
 ![Ontology UI mock](../tag-ui.jpg)
