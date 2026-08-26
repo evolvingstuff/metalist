@@ -8,6 +8,7 @@ from typing import Callable, FrozenSet, List, Optional, Tuple
 from app.services.content_formatting import find_consumed_content_wrapper_keys
 from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
+from app.services.content_formatting import render_standalone_link_title_html
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
@@ -630,23 +631,27 @@ def _render_link_body(
     )
     if is_password_preview:
         preview = "X" * len(preview)
-    escaped_preview = html.escape(preview)
+    preview_html = None
+    if not is_password_preview:
+        preview_html = render_standalone_link_title_html(preview)
+    if preview_html is None:
+        preview_html = html.escape(preview)
     if static_export:
         if is_password_preview:
             return (
                 '<span class="note-reference-link note-reference-link-static meta-credential-password">'
-                f'<span class="meta-credential-value">{escaped_preview}</span>'
+                f'<span class="meta-credential-value">{preview_html}</span>'
                 "</span>"
             )
         return (
             f'<span class="note-reference-link note-reference-link-static">'
-            f"{escaped_preview}"
+            f"{preview_html}"
             "</span>"
         )
     return (
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
         '<span class="note-reference-link-icon" aria-hidden="true" title="Link to reference source">&#8599;</span>'
-        f'<span class="note-reference-link-title">{escaped_preview}</span>'
+        f'<span class="note-reference-link-title">{preview_html}</span>'
         "</a>"
     )
 

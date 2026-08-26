@@ -500,9 +500,8 @@ def _render_plain_url_anchor(*, text: str, link_text: str, href_value: str) -> s
     if stripped != link_text:
         return f'<a href="{href_value}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
 
-    title = link_title_store.get_ok_title(link_text)
-    if title is None:
-        link_title_store.maybe_enqueue_fetch(link_text)
+    title_html = render_standalone_link_title_html(link_text)
+    if title_html is None:
         diagnostic = link_title_store.get_diagnostic(link_text)
         diagnostic_title_attr = ""
         if diagnostic is not None:
@@ -513,14 +512,38 @@ def _render_plain_url_anchor(*, text: str, link_text: str, href_value: str) -> s
             f'target="_blank" rel="noopener noreferrer">{link_text}</a>'
         )
 
-    escaped_title = html.escape(title)
-    escaped_domain = html.escape(display_domain_for_url(link_text))
     return (
         f'<a class="link-title" href="{href_value}" title="{href_value}" '
         'target="_blank" rel="noopener noreferrer">'
+        f"{title_html}"
+        "</a>"
+    )
+
+
+def render_standalone_link_title_html(text: str) -> str | None:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    stripped = text.strip()
+    if stripped == "":
+        return None
+
+    match = _PLAIN_URL_RE.fullmatch(stripped)
+    if match is None:
+        return None
+    link_text, trailing_suffix = _split_trailing_url_punctuation(match.group(0))
+    if link_text != stripped or trailing_suffix != "":
+        return None
+
+    title = link_title_store.get_ok_title(link_text)
+    if title is None:
+        link_title_store.maybe_enqueue_fetch(link_text)
+        return None
+
+    escaped_title = html.escape(title)
+    escaped_domain = html.escape(display_domain_for_url(link_text))
+    return (
         f'<span class="link-title-text">{escaped_title}</span>'
         f'<span class="link-title-domain"> · {escaped_domain}</span>'
-        "</a>"
     )
 
 

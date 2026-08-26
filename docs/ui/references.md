@@ -16,6 +16,7 @@
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
     - when the host note is collapsed, both note-reference modes render as a single compact link row showing the referenced note's first line; an embed never expands inside a collapsed host.
     - an expanded embed ends with a `↗ title` link that opens the source note in a temporary reference-source context; compact note references use the same treatment. Hovering the arrow shows `Link to reference source`.
+    - when that compact source preview is a standalone URL with a cached link title, it displays the same `title · domain` treatment as the source note instead of the raw URL. Inline/prose URLs remain raw.
     - right-click anywhere inside a rendered reference and choose **Go to Source** to open that source note with the same navigation behavior.
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
