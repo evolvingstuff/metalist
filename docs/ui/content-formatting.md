@@ -27,6 +27,7 @@
 ## Links In View Mode
 - Bare `http://...` and `https://...` text in rendered note content is auto-linked in view mode.
 - Standalone bare URLs can render as compact cached title links (`title · domain`) when the server already has a successful title fetch for that URL.
+- Compact note-reference previews reuse the same standalone URL rule, including collapsed embeds and expanded embed source links.
 - Unknown, failed, unsupported, or inline URLs render as raw URL links exactly as before. Failed standalone lookups can expose their status/retry timing through the browser's normal hover tooltip.
 - Title fetches are server-side background work; note rendering never waits on network I/O, and edit mode always shows the original stored URL. When background fetches complete, the server increments a link-title revision exposed by `/api2/auth/status`; the browser polling loop batches those changes and triggers a view refresh so newly resolved titles appear without a manual page reload.
 - Title extraction is generic HTML metadata parsing (`og:title`, `twitter:title`, `meta name=title`, `itemprop=name`, and `<title>`). It does not use domain-specific APIs.

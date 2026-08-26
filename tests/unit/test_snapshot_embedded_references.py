@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
+import sqlite3
 from typing import Dict, List, Optional
 
 import pytest
 
+from app.db.link_titles_sql import insert_link_title_row
+from app.db.schema import initialize_schema
+from app.services.link_titles import link_title_store
 from app.services.snapshot import build_view_state
 
 
@@ -44,6 +49,33 @@ TARGET_ID = "22222222-2222-2222-2222-222222222222"
 CHILD_ID = "33333333-3333-3333-3333-333333333333"
 OTHER_ID = "44444444-4444-4444-4444-444444444444"
 MISSING_ID = "99999999-9999-9999-9999-999999999999"
+
+
+def _bootstrap_cached_link_title(*, url: str, title: str) -> sqlite3.Connection:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    initialize_schema(connection)
+    now = datetime.now(timezone.utc)
+    insert_link_title_row(
+        connection,
+        url=url,
+        url_encryption_nonce=None,
+        url_encryption_tag=None,
+        title=title,
+        title_encryption_nonce=None,
+        title_encryption_tag=None,
+        status="ok",
+        last_error_kind=None,
+        last_checked_at=now,
+        last_success_at=now,
+        last_failure_at=None,
+        next_check_after=None,
+        failure_count=0,
+        created_at=now,
+        updated_at=now,
+    )
+    link_title_store.bootstrap(connection=connection)
+    return connection
 
 
 def _state_for(
@@ -348,6 +380,53 @@ def test_plain_reference_renders_link_mode_preview(monkeypatch: pytest.MonkeyPat
     assert "linked second line" not in rendered
     assert 'data-ref-mode="link"' in rendered
     assert "note-reference-toggle" not in rendered
+
+
+def test_link_reference_renders_cached_standalone_url_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    url = "https://www.youtube.com/watch?v=abc123"
+    connection = _bootstrap_cached_link_title(url=url, title="A Useful Video")
+    try:
+        notes = {
+            HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>[[{TARGET_ID}]]</div>", ""),
+            TARGET_ID: _Note(TARGET_ID, None, None, None, False, f"<div>{url}</div>", ""),
+        }
+        state = _state_for(
+            monkeypatch=monkeypatch,
+            notes=notes,
+            children_by_parent={None: [HOST_ID, TARGET_ID]},
+        )
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    rendered = state.payloads[HOST_ID]["content"]
+    assert '<span class="note-reference-link-title">' in rendered
+    assert '<span class="link-title-text">A Useful Video</span>' in rendered
+    assert '<span class="link-title-domain"> · youtube.com</span>' in rendered
+    assert url not in rendered
+
+
+def test_link_reference_keeps_inline_url_preview_raw(monkeypatch: pytest.MonkeyPatch) -> None:
+    url = "https://www.youtube.com/watch?v=abc123"
+    connection = _bootstrap_cached_link_title(url=url, title="A Useful Video")
+    try:
+        notes = {
+            HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>[[{TARGET_ID}]]</div>", ""),
+            TARGET_ID: _Note(TARGET_ID, None, None, None, False, f"<div>Watch {url}</div>", ""),
+        }
+        state = _state_for(
+            monkeypatch=monkeypatch,
+            notes=notes,
+            children_by_parent={None: [HOST_ID, TARGET_ID]},
+        )
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    rendered = state.payloads[HOST_ID]["content"]
+    assert f'<span class="note-reference-link-title">Watch {url}</span>' in rendered
+    assert 'class="link-title-text"' not in rendered
+    assert "A Useful Video" not in rendered
 
 
 def test_link_mode_preview_strips_nested_reference_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
