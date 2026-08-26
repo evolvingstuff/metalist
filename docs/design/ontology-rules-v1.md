@@ -137,8 +137,10 @@ Implementation note (DOM):
 ### Relationship dialogs
 
 - The add/edit dialogs for implications, synonyms, incoming conditions, and tags keep their visible submit button.
-- While a dialog input is focused, `Enter` performs the same submit action as that button, using the current input even when suggestions are visible.
-- Suggestions remain selectable by clicking them; selecting one fills the input without submitting it.
+- Suggestions open without an automatic selection; clicking a row selects it, and one `ArrowDown` selects the first row.
+- While a dialog input is focused, `Enter` performs the same submit action as that button when the user has not explicitly navigated to a suggestion.
+- Arrow-key navigation marks the highlighted suggestion as explicit; the next `Enter` fills the input with that suggestion without submitting the relationship.
+- Clicking a suggestion fills the input without submitting it and preserves that selection boundary for the next `Enter`.
 
 ### UI Mock
 
