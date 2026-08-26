@@ -381,6 +381,8 @@ export class OntologyModal extends BaseModal {
         this._dialogSuggestionTimer = null;
         this._dialogRequestSerial = 0;
         this._dialogSelectedIndex = -1;
+        this._dialogSuggestionWasExplicitlyNavigated = false;
+        this._dialogPointerSelectionPendingEnter = false;
         this._dialogSuggestionContext = null;
 
         this._handleSearchInput = this._handleSearchInput.bind(this);
@@ -1271,6 +1273,8 @@ export class OntologyModal extends BaseModal {
         }
         this._dialogRequestSerial += 1;
         this._dialogSelectedIndex = -1;
+        this._dialogSuggestionWasExplicitlyNavigated = false;
+        this._dialogPointerSelectionPendingEnter = false;
         this._dialogSuggestionContext = null;
     }
 
@@ -1279,6 +1283,7 @@ export class OntologyModal extends BaseModal {
         elements.suggestions.innerHTML = '';
         elements.suggestions.classList.add('is-hidden');
         this._dialogSelectedIndex = -1;
+        this._dialogSuggestionWasExplicitlyNavigated = false;
         this._dialogSuggestionContext = null;
     }
 
@@ -1319,7 +1324,8 @@ export class OntologyModal extends BaseModal {
             })
             .join('');
         elements.suggestions.classList.remove('is-hidden');
-        this._dialogSelectedIndex = 0;
+        this._dialogSelectedIndex = -1;
+        this._dialogSuggestionWasExplicitlyNavigated = false;
         this._updateDialogSuggestionSelection(elements.suggestions);
 
         elements.suggestions.querySelectorAll('.ontology-dialog-suggestion').forEach((button) => {
@@ -1336,7 +1342,10 @@ export class OntologyModal extends BaseModal {
                 this._applyDialogSuggestion(tag);
                 const state = this._dialogState;
                 if (state && state.autoSubmitOnSuggestion) {
+                    this._dialogPointerSelectionPendingEnter = false;
                     this._submitDialog();
+                } else {
+                    this._dialogPointerSelectionPendingEnter = true;
                 }
             });
             button.addEventListener('click', (event) => {
@@ -1356,14 +1365,17 @@ export class OntologyModal extends BaseModal {
             return;
         }
         if (!Number.isInteger(this._dialogSelectedIndex)) {
-            this._dialogSelectedIndex = 0;
+            throw new Error('dialog selected index must be an integer');
         }
-        if (this._dialogSelectedIndex < 0 || this._dialogSelectedIndex >= items.length) {
-            this._dialogSelectedIndex = 0;
+        if (this._dialogSelectedIndex < -1 || this._dialogSelectedIndex >= items.length) {
+            throw new Error('dialog selected index out of bounds');
         }
         items.forEach((item, index) => {
             item.classList.toggle('is-selected', index === this._dialogSelectedIndex);
         });
+        if (this._dialogSelectedIndex === -1) {
+            return;
+        }
         const selected = items[this._dialogSelectedIndex];
         if (selected && typeof selected.scrollIntoView === 'function') {
             selected.scrollIntoView({ block: 'nearest' });
@@ -1424,6 +1436,8 @@ export class OntologyModal extends BaseModal {
         if (!state || !state.showInput) {
             return;
         }
+        this._dialogSuggestionWasExplicitlyNavigated = false;
+        this._dialogPointerSelectionPendingEnter = false;
         this._clearDialogError();
         this._updateDialogSuggestions();
     }
@@ -1461,7 +1475,11 @@ export class OntologyModal extends BaseModal {
         if (event.key === 'ArrowDown' && hasSuggestions) {
             event.preventDefault();
             event.stopPropagation();
-            this._dialogSelectedIndex = Math.min(this._dialogSelectedIndex + 1, items.length - 1);
+            this._dialogPointerSelectionPendingEnter = false;
+            this._dialogSuggestionWasExplicitlyNavigated = true;
+            this._dialogSelectedIndex = this._dialogSelectedIndex === -1
+                ? 0
+                : Math.min(this._dialogSelectedIndex + 1, items.length - 1);
             this._updateDialogSuggestionSelection(container);
             return;
         }
@@ -1469,7 +1487,11 @@ export class OntologyModal extends BaseModal {
         if (event.key === 'ArrowUp' && hasSuggestions) {
             event.preventDefault();
             event.stopPropagation();
-            this._dialogSelectedIndex = Math.max(this._dialogSelectedIndex - 1, 0);
+            this._dialogPointerSelectionPendingEnter = false;
+            this._dialogSuggestionWasExplicitlyNavigated = true;
+            this._dialogSelectedIndex = this._dialogSelectedIndex === -1
+                ? items.length - 1
+                : Math.max(this._dialogSelectedIndex - 1, 0);
             this._updateDialogSuggestionSelection(container);
             return;
         }
@@ -1479,6 +1501,28 @@ export class OntologyModal extends BaseModal {
             event.stopPropagation();
             if (typeof event.stopImmediatePropagation === 'function') {
                 event.stopImmediatePropagation();
+            }
+            if (this._dialogPointerSelectionPendingEnter) {
+                this._dialogPointerSelectionPendingEnter = false;
+                this._hideDialogSuggestions();
+                return;
+            }
+            if (hasSuggestions && this._dialogSuggestionWasExplicitlyNavigated) {
+                let selectedIndex = this._dialogSelectedIndex;
+                if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= items.length) {
+                    selectedIndex = 0;
+                }
+                const button = items[selectedIndex];
+                if (!button) {
+                    throw new Error('Explicit dialog suggestion selection missing item');
+                }
+                const tag = button.dataset.tag;
+                if (typeof tag !== 'string' || tag.trim() === '') {
+                    throw new Error('Dialog suggestion missing tag');
+                }
+                this._dialogPointerSelectionPendingEnter = false;
+                this._applyDialogSuggestion(tag);
+                return;
             }
             this._submitDialog();
             return;
