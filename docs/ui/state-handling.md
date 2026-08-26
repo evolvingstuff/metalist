@@ -424,8 +424,10 @@ ModeContext = {
 - `tab-state-service.js` fetches `/api2/notes/tab-state` on startup and hydrates
   `ModeContext` so the UI mirrors whatever the previous window last displayed.
 - Tab IDs are server-assigned UUIDs and a `tabOrder` array defines display order.
-- The UI can reorder tabs by mutating `tabOrder` (e.g. via per-tab ↑/↓ controls) and
-  persisting the updated snapshot back to `/api2/notes/tab-state`.
+- The UI reorders tabs by dragging one tab row over another. A drop moves the dragged
+  tab into the hovered tab's former slot, updates `tabOrder`, and persists the updated
+  snapshot back to `/api2/notes/tab-state`. Hovering retains the normal pointer; the
+  grabbing cursor starts only after the browser begins a drag.
 - New tabs are created by duplicating a source tab so the new tab inherits its search/scroll state, then the search field is focused and its duplicated query text is fully selected so it can be replaced immediately.
 - If the source tab survives a server restart but its detached DOM cache does not, tab duplication still succeeds: the new tab keeps the duplicated tab-state metadata and the next `/notes/view` response bootstraps its DOM from the server.
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.

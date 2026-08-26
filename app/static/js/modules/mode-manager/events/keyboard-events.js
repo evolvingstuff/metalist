@@ -111,6 +111,9 @@ let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
 let noteClipboardRequiresBrowserValidation = false;
+let tabDragCandidateId = null;
+let draggedTabId = null;
+let ignoreClickAfterTabDragUntil = null;
 
 function isTagBarNoteShortcut(event) {
     if (!event) {
@@ -147,6 +150,13 @@ export function initKeyboardEvents() {
     document.addEventListener('visibilitychange', handleVisibilityChange, { capture: false });
     document.addEventListener('dragover', handleDragOverEvent, { capture: false });
     document.addEventListener('drop', handleDropEvent, { capture: false });
+    document.addEventListener('mousedown', handleTabDragCandidateMouseDown, { capture: true });
+    document.addEventListener('mouseup', clearTabDragCandidate, { capture: true });
+    document.addEventListener('dragstart', handleTabDragStart, { capture: true });
+    document.addEventListener('dragover', handleTabDragOver, { capture: true });
+    document.addEventListener('drop', handleTabDrop, { capture: true });
+    document.addEventListener('dragend', handleTabDragEnd, { capture: true });
+    document.addEventListener('click', handleTabDragClick, { capture: true });
     window.addEventListener('blur', handleWindowBlur, { capture: false });
     window.addEventListener('resize', handleSearchContextsViewportChange, { passive: true });
     initializeSearchContextsHover();
@@ -188,6 +198,7 @@ function invalidateTrustedNoteClipboard() {
 
 function handleWindowBlur() {
     invalidateTrustedNoteClipboard();
+    finishTabDrag();
 }
 
 function handleVisibilityChange() {
@@ -2797,6 +2808,152 @@ function handlePasteEvent(event) {
     }
 }
 
+function getTabContextItem(target) {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+    const item = target.closest('.tab-context-item');
+    if (!item) {
+        return null;
+    }
+    const searchContextsList = document.getElementById('search-contexts-list');
+    if (!searchContextsList || !searchContextsList.contains(item)) {
+        return null;
+    }
+    return item;
+}
+
+function getTabIdFromContextItem(item) {
+    if (!(item instanceof Element) || !item.classList.contains('tab-context-item')) {
+        throw new Error('getTabIdFromContextItem requires a tab context item');
+    }
+    const tabId = item.getAttribute('data-tab-id');
+    if (!tabId) {
+        throw new Error('Tab context item missing data-tab-id');
+    }
+    return tabId;
+}
+
+function clearTabDragCandidate() {
+    tabDragCandidateId = null;
+}
+
+function clearTabDragStyling() {
+    document.querySelectorAll('.tab-context-item.is-dragging, .tab-context-item.is-drop-target')
+        .forEach((item) => {
+            item.classList.remove('is-dragging', 'is-drop-target');
+        });
+    if (document.body) {
+        document.body.classList.remove('tab-drag-active');
+    }
+}
+
+function finishTabDrag() {
+    clearTabDragCandidate();
+    draggedTabId = null;
+    clearTabDragStyling();
+}
+
+function handleTabDragCandidateMouseDown(event) {
+    clearTabDragCandidate();
+    if (!event || event.button !== 0 || !(event.target instanceof Element)) {
+        return;
+    }
+    if (event.target.closest('.tab-context-action')) {
+        return;
+    }
+    const item = getTabContextItem(event.target);
+    if (!item || ModeContext.tabOrder.length < 2) {
+        return;
+    }
+    tabDragCandidateId = getTabIdFromContextItem(item);
+}
+
+function handleTabDragStart(event) {
+    const item = getTabContextItem(event.target);
+    if (!item) {
+        return;
+    }
+    const tabId = getTabIdFromContextItem(item);
+    if (tabDragCandidateId !== tabId || ModeContext.isLoading) {
+        event.preventDefault();
+        finishTabDrag();
+        return;
+    }
+    if (!event.dataTransfer) {
+        throw new Error('Tab dragstart requires dataTransfer');
+    }
+
+    draggedTabId = tabId;
+    item.classList.add('is-dragging');
+    document.body.classList.add('tab-drag-active');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', tabId);
+}
+
+function handleTabDragOver(event) {
+    if (draggedTabId === null) {
+        return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+    }
+
+    document.querySelectorAll('.tab-context-item.is-drop-target').forEach((item) => {
+        item.classList.remove('is-drop-target');
+    });
+    const hoveredItem = getTabContextItem(event.target);
+    if (hoveredItem && getTabIdFromContextItem(hoveredItem) !== draggedTabId) {
+        hoveredItem.classList.add('is-drop-target');
+    }
+}
+
+function handleTabDrop(event) {
+    if (draggedTabId === null) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    const sourceTabId = draggedTabId;
+    const hoveredItem = getTabContextItem(event.target);
+    const hoveredTabId = hoveredItem ? getTabIdFromContextItem(hoveredItem) : null;
+    ignoreClickAfterTabDragUntil = performance.now() + 500;
+    finishTabDrag();
+
+    if (hoveredTabId === null || hoveredTabId === sourceTabId) {
+        return;
+    }
+    void CommandGate.run('tab.drag_reorder', async () => {
+        await moveTabContext(sourceTabId, hoveredTabId);
+    });
+}
+
+function handleTabDragEnd() {
+    if (draggedTabId !== null) {
+        ignoreClickAfterTabDragUntil = performance.now() + 500;
+    }
+    finishTabDrag();
+}
+
+function handleTabDragClick(event) {
+    if (ignoreClickAfterTabDragUntil === null) {
+        return;
+    }
+    if (performance.now() > ignoreClickAfterTabDragUntil) {
+        ignoreClickAfterTabDragUntil = null;
+        return;
+    }
+    if (!getTabContextItem(event.target)) {
+        return;
+    }
+
+    ignoreClickAfterTabDragUntil = null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+}
+
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
@@ -2844,22 +3001,14 @@ export function updateSearchContextsList() {
         const canDelete = tabOrder.length > 1;
         const deleteClass = canDelete ? '' : 'is-disabled';
 
-        const canMoveUp = tabOrder.length > 1 && i > 0;
-        const canMoveDown = tabOrder.length > 1 && i < tabOrder.length - 1;
-
-        const moveUpClass = canMoveUp ? '' : 'is-hidden';
-        const moveDownClass = canMoveDown ? '' : 'is-hidden';
-
         const actions = `
             <span class="tab-context-action duplicate-context ${addClass}" data-source-tab-id="${tabId}" aria-disabled="${atLimit}">+</span>
             <span class="tab-context-action tab-context-action--danger delete-context ${deleteClass}" data-delete-tab-id="${tabId}" aria-disabled="${!canDelete}">-</span>
-            <span class="tab-context-action move-up-context ${moveUpClass}" data-move-tab-id="${tabId}">↑</span>
-            <span class="tab-context-action move-down-context ${moveDownClass}" data-move-tab-id="${tabId}">↓</span>
         `;
 
         const activeClass = isActive ? 'is-active' : '';
         contextsList.push(
-            `<div data-tab-id="${tabId}" class="tab-context-item ${activeClass}">`
+            `<div data-tab-id="${tabId}" class="tab-context-item ${activeClass}" draggable="true">`
             + `<span class="tab-context-index">${i + 1}:</span>`
             + `<span class="tab-context-query">${displayQuery}</span>`
             + `<span class="tab-context-actions">${actions}</span>`
@@ -2934,26 +3083,6 @@ export function updateSearchContextsList() {
 	            });
 	        });
 
-        searchContextsList.querySelectorAll('.move-up-context').forEach(moveBtn => {
-            moveBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
-	                void CommandGate.run('tab.move_up', async () => {
-	                    await moveTabContext(moveTabId, -1);
-	                });
-	            });
-	        });
-
-	        searchContextsList.querySelectorAll('.move-down-context').forEach(moveBtn => {
-	            moveBtn.addEventListener('click', (e) => {
-	                e.stopPropagation();
-	                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
-	                void CommandGate.run('tab.move_down', async () => {
-	                    await moveTabContext(moveTabId, 1);
-	                });
-	            });
-	        });
-        
     } else {
         searchContextsList.style.display = 'none';
         updateSearchContextsOverlayPlacement();
@@ -3276,15 +3405,15 @@ export async function openReferenceInCurrentTab(referenceNoteId) {
     await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_current_tab');
 }
 
-async function moveTabContext(tabId, delta) {
+async function moveTabContext(tabId, hoveredTabId) {
 	if (ModeContext.isEditing) {
 		await actionSaveAndExitEditingWithoutRefreshing();
 	}
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('tabId is required for tab reorder');
     }
-    if (delta !== -1 && delta !== 1) {
-        throw new Error('delta must be -1 or 1 for tab reorder');
+    if (typeof hoveredTabId !== 'string' || hoveredTabId.length === 0) {
+        throw new Error('hoveredTabId is required for tab reorder');
     }
 
     const tabOrder = ModeContext.tabOrder;
@@ -3295,12 +3424,13 @@ async function moveTabContext(tabId, delta) {
         return;
     }
 
-    const index = tabOrder.indexOf(tabId);
-    if (index === -1) {
-        return;
+    if (!tabOrder.includes(tabId)) {
+        throw new Error(`tabOrder missing dragged tab: ${tabId}`);
     }
-    const target = index + delta;
-    if (target < 0 || target >= tabOrder.length) {
+    if (!tabOrder.includes(hoveredTabId)) {
+        throw new Error(`tabOrder missing hovered tab: ${hoveredTabId}`);
+    }
+    if (tabId === hoveredTabId) {
         return;
     }
 
@@ -3315,7 +3445,7 @@ async function moveTabContext(tabId, delta) {
         ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
     }
 
-    ModeContext.moveTabInOrder(tabId, delta);
+    ModeContext.moveTabToHoveredSlot(tabId, hoveredTabId);
     updateSearchContextsList();
     await persistTabStateSnapshot();
 }
