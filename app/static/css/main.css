@@ -4343,9 +4343,25 @@ body.loading::after {
     color: #ccc;
 }
 
+.tab-context-item.is-dragging {
+    opacity: 0.55;
+}
+
 .tab-context-item:hover {
     background: rgba(255, 255, 255, 0.06);
     color: #fff;
+}
+
+.tab-context-item.is-drop-target {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+body.tab-drag-active,
+body.tab-drag-active * {
+    cursor: grabbing !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
 }
 
 .tab-context-item.is-active {

@@ -7,6 +7,7 @@ import {
     normalizeDateFilterMetric,
 } from './services/date-filter-service.js';
 import { ROOT_SORT_MODES, normalizeRootSortMode } from './services/root-sort-service.js';
+import { reorderTabOrderToHoveredSlot } from './services/tab-drag-service.js';
 import { createUuid } from '../uuid.js';
 
 class ModeContext {
@@ -1164,33 +1165,24 @@ class ModeContext {
         }
     }
 
-    moveTabInOrder(tabId, delta) {
+    moveTabToHoveredSlot(tabId, hoveredTabId) {
         if (typeof tabId !== 'string' || tabId.length === 0) {
             throw new Error('tabId must be a non-empty string');
         }
-        if (delta !== -1 && delta !== 1) {
-            throw new Error('delta must be -1 or 1');
+        if (typeof hoveredTabId !== 'string' || hoveredTabId.length === 0) {
+            throw new Error('hoveredTabId must be a non-empty string');
         }
         if (!this._tabs[tabId]) {
             throw new Error(`Unknown tabId: ${tabId}`);
+        }
+        if (!this._tabs[hoveredTabId]) {
+            throw new Error(`Unknown hoveredTabId: ${hoveredTabId}`);
         }
         if (!Array.isArray(this._tabOrder) || this._tabOrder.length === 0) {
             throw new Error('tabOrder must be a non-empty array');
         }
 
-        const currentIndex = this._tabOrder.indexOf(tabId);
-        if (currentIndex === -1) {
-            throw new Error(`tabOrder missing tabId: ${tabId}`);
-        }
-        const targetIndex = currentIndex + delta;
-        if (targetIndex < 0 || targetIndex >= this._tabOrder.length) {
-            throw new Error('tab move out of bounds');
-        }
-
-        const nextOrder = this._tabOrder.slice();
-        nextOrder[currentIndex] = nextOrder[targetIndex];
-        nextOrder[targetIndex] = tabId;
-        this._tabOrder = nextOrder;
+        this._tabOrder = reorderTabOrderToHoveredSlot(this._tabOrder, tabId, hoveredTabId);
 
         this._notifyListeners('tabOrder', this._tabOrder);
         this._emitTabStateMutation('moveTab');
