@@ -140,7 +140,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 > Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
-> Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line.
+> Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line. Overlapping inline fragments on the same visual line count as one line even when nested formatting uses different font sizes, such as a standalone link title followed by its smaller domain.
 > While editing, collapse arrows ignore content length and appear only for notes with children, because the edited note already shows its full content.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
 > Note expand/collapse transitions animate by default and are controlled by `Animated transitions` in the command palette.

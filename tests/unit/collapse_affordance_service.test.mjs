@@ -198,6 +198,41 @@ test('single rendered line box does not promote collapse despite tall element bo
     assert.equal(noteElement.dataset.canCollapse, 'false');
 });
 
+test('same-line title and smaller domain boxes do not promote collapse', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    installRangeRects(t, [
+        { top: 10, width: 310, height: 24 },
+        { top: 14, width: 120, height: 18 },
+    ]);
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const contentElement = createMeasuredContent({ rectHeight: 36, scrollHeight: 36 });
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: {
+            isCollapsed: 'false',
+            isCollapsible: 'false',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return null;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'false');
+});
+
 test('single-line status wrapper control does not promote collapse', async (t) => {
     installBrowserStorage(t);
     installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });

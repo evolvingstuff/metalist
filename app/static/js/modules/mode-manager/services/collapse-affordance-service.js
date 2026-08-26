@@ -7,6 +7,7 @@ const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
 const MULTILINE_HEIGHT_TOLERANCE = 1.35;
 const LINE_BOX_TOP_TOLERANCE_PX = 1.5;
+const SAME_LINE_VERTICAL_OVERLAP_RATIO = 0.5;
 
 function parsePixelValue(value) {
     if (typeof value !== 'string') {
@@ -43,6 +44,20 @@ function resolveLineHeightPx(contentElement) {
     return fontSize * 1.2;
 }
 
+function rectsShareRenderedLine(firstRect, secondRect) {
+    if (Math.abs(firstRect.top - secondRect.top) <= LINE_BOX_TOP_TOLERANCE_PX) {
+        return true;
+    }
+    const firstBottom = firstRect.top + firstRect.height;
+    const secondBottom = secondRect.top + secondRect.height;
+    const overlapHeight = Math.max(
+        0,
+        Math.min(firstBottom, secondBottom) - Math.max(firstRect.top, secondRect.top),
+    );
+    const shorterRectHeight = Math.min(firstRect.height, secondRect.height);
+    return overlapHeight >= shorterRectHeight * SAME_LINE_VERTICAL_OVERLAP_RATIO;
+}
+
 function countRenderedLineBoxes(contentElement) {
     if (!globalThis.document || typeof globalThis.document.createRange !== 'function') {
         return null;
@@ -61,17 +76,21 @@ function countRenderedLineBoxes(contentElement) {
         range.detach();
     }
 
-    const lineTops = [];
+    const renderedLines = [];
     for (const rect of rects) {
         if (typeof rect.top !== 'number') {
             throw new Error('Range rect missing top value');
         }
-        const hasExistingLine = lineTops.some((top) => Math.abs(top - rect.top) <= LINE_BOX_TOP_TOLERANCE_PX);
-        if (!hasExistingLine) {
-            lineTops.push(rect.top);
+        const matchingLineIndex = renderedLines.findIndex((lineRects) => {
+            return lineRects.some((lineRect) => rectsShareRenderedLine(lineRect, rect));
+        });
+        if (matchingLineIndex >= 0) {
+            renderedLines[matchingLineIndex].push(rect);
+        } else {
+            renderedLines.push([rect]);
         }
     }
-    return lineTops.length;
+    return renderedLines.length;
 }
 
 function getCollapseMeasurementElement(contentElement) {
