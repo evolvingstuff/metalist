@@ -107,7 +107,16 @@
                                 />
                             </svg>
                         </div>
-                        <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <input type="text" id="search-input" class="search-input interactive" aria-label="Search notes" title="Search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <svg
+                            class="search-input-empty-icon"
+                            viewBox="0 0 24 24"
+                            focusable="false"
+                            aria-hidden="true"
+                        >
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="m16 16 5 5" />
+                        </svg>
                         <div id="search-results-count" class="search-results-count">0</div>
                         <div id="search-suggestions" class="search-suggestions" hidden></div>
                     </div>

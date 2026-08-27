@@ -112,6 +112,7 @@ Unclosed comments behave like unclosed wrappers:
 
 ## Tag Suggestions
 - Suggestions appear only while the tag bar input is focused.
+- The tag bar keeps a muted tag icon inside the input before and during typing; hovering the field shows a `Tags` tooltip.
 - While typing inside a tag token, matching is segment-aware for connector-separated tags: a prefix can match the start of the whole tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`). Example: `wor` suggests both `workspaces` and `databricks-workspaces`, while `orksp` suggests neither.
 - The active typed prefix and note content provide complementary literal evidence. Once a prefix identifies a connector-separated segment, the remaining tag segments are matched against the note, so typing `GPT` in content containing `5.6 sol` promotes `GPT-5.6-sol` over more frequently used `GPT-*` tags.
 - A one-character non-meta prefix is too broad for general content/context ranking. Tags that actually co-occur with the note's explicit or inherited context are shown first, followed by exact standalone tags written in the current note; remaining matches are ranked by raw namespace usage: explicit assignments plus hierarchy inheritance, excluding ontology implications. Matching inherited tags participate normally instead of being relegated to the bottom; for example, `m` ranks `ML3` with 268 raw uses above `goat's-milk` with 13, while implication-heavy tags such as `math` do not receive inflated rank.
