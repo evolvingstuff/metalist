@@ -354,17 +354,26 @@ swap, or filesystem snapshots.
 - Security obsolescence (upgradeable KDF costs)
 
 **Not Protected Against:**
-- Memory dumps while server is running (keys in RAM)
-- Malicious server administrator (has access to memory)
+- Process-memory inspection or dumps while a namespace is unlocked; the server
+  holds the DEK and decrypted runtime stores in RAM.
+- Browser-process inspection, a sufficiently privileged browser extension, or
+  other client compromise while decrypted content is rendered.
+- A malicious local process or server administrator with access to application
+  memory or executable code.
 - Weak passwords (use password strength requirements)
-- Client-side attacks (assumes secure client)
 
 ## Implementation Notes
 
 ### Session Management
-- Each authenticated session maintains the DEK in memory (not the password or KEK)
+- An unlocked namespace process maintains the DEK in memory (not the password
+  or KEK) so it can serve authenticated sessions.
 - DEK is tied to authentication tokens
-- DEK cleared on logout or token expiry
+- Explicit logout removes the live DEK reference and purges decrypted runtime
+  stores. Optional idle browser-auth expiry intentionally keeps the hydrated
+  server cache warm for re-login and is not a memory-purge boundary.
+- Dropping references is not guaranteed forensic erasure: Python and browser
+  runtimes do not promise that released allocations are immediately
+  overwritten, so stale bytes may remain until reused or the process exits.
 - Server restart requires re-authentication
 
 ### Mutation Transaction Enforcement
@@ -385,6 +394,10 @@ swap, or filesystem snapshots.
 - Default behavior:
   - core dump disabling enabled by default
   - macOS hibernation/swap enforcement disabled by default (enable explicitly for strict mode).
+- Windows user-mode crash-dump policy is controlled by Windows and the host
+  administrator. MetaList does not claim to prevent Windows Error Reporting,
+  Task Manager, a debugger, or another sufficiently privileged process from
+  capturing its unlocked process memory.
 
 ## Remote Access / HTTPS
 

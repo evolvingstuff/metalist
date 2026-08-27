@@ -33,6 +33,20 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - The browser client drives interaction via `/api2` JSON endpoints.
 - Notes are loaded/decrypted into an in-memory store at startup; a post-startup DB read guard prevents accidental runtime SELECTs.
 
+## Security Boundary
+
+Password protection encrypts namespace data at rest. While a namespace is
+unlocked, the server must hold its data-encryption key and decrypted working
+data in process memory, and the browser holds the decrypted content currently
+rendered in the page. A sufficiently privileged local process, debugger,
+administrator, browser extension, or process-memory dump can therefore expose
+an unlocked namespace.
+
+Explicit logout removes the live key and purges decrypted runtime stores, but
+it cannot guarantee forensic overwriting of memory previously allocated by the
+Python or browser runtimes. Protect the host account and operating system, and
+see the detailed [security architecture and threat model](docs/security/README.md).
+
 ## Development
 
 ### Setup

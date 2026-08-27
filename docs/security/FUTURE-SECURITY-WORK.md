@@ -81,6 +81,10 @@ The following cannot be fully solved by additional MetaList application code:
   decrypted data rendered in the page.
 - Process-memory inspection may recover the in-memory data-encryption key or
   decrypted content during an authenticated session.
+- Explicit logout removes live references and decrypted runtime stores but does
+  not guarantee forensic overwriting of allocations previously used by Python
+  or the browser. Terminating the process provides a stronger cleanup boundary,
+  but cannot undo a dump captured while the namespace was unlocked.
 - A user who proceeds through an unexpected TLS certificate warning may connect
   to an impersonating server.
 - A compromised build, release account, dependency, or package repository could
@@ -88,8 +92,8 @@ The following cannot be fully solved by additional MetaList application code:
 
 Operational mitigations include using a trusted and patched computer, limiting
 browser extensions, treating unexpected certificate changes as suspicious,
-locking MetaList when it is not in use, and installing releases only from the
-expected project.
+locking MetaList when it is not in use, applying appropriate Windows crash-dump
+policy where required, and installing releases only from the expected project.
 
 ## Low-Priority or Excessive Controls for the Current Deployment
 
