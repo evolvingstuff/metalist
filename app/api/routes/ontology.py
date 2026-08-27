@@ -20,6 +20,7 @@ from app.services.ontology_rules_store import (
     update_rule_line,
 )
 from app.usecases.rename_tag import apply_rename_tag_everywhere
+from app.usecases.delete_tag import apply_delete_tag_everywhere
 from app.utils.text_utils import strip_html
 
 
@@ -226,6 +227,16 @@ def rename_tag(request: Request, payload: dict) -> dict:
     return apply_rename_tag_everywhere(old=old, new=new, token=token)
 
 
+@router.post("/delete-tag")
+@transactional_route
+def delete_tag(request: Request, payload: dict) -> dict:
+    tag = payload["tag"]
+    if not isinstance(tag, str) or tag.strip() == "":
+        raise HTTPException(status_code=400, detail="tag must be a non-empty string")
+    token = _maybe_bearer_token(request)
+    return apply_delete_tag_everywhere(tag=tag, token=token)
+
+
 @router.get("/focus")
 def focus_view(tag: str) -> dict:
     ontology = get_ontology()
@@ -422,8 +433,7 @@ def list_tags(q: str, limit: int) -> dict:
 
     if needle == "":
         ordered = sorted(tags, key=lambda tag: (-tag_counts.get(tag, 0), tag))
-        if limit > 0:
-            ordered = ordered[:limit]
+        ordered = ordered[:limit]
         payload = [
             {"tag": tag, "count": tag_counts.get(tag, 0)}
             for tag in ordered
@@ -446,8 +456,7 @@ def list_tags(q: str, limit: int) -> dict:
 
     matches.sort(key=lambda item: (item[0], item[1], item[2]))
     results = [item[2] for item in matches]
-    if limit > 0:
-        results = results[:limit]
+    results = results[:limit]
 
     payload = [
         {"tag": tag, "count": tag_counts.get(tag, 0)}

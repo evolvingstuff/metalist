@@ -129,7 +129,9 @@ Implementation note (DOM):
 
 ### Tag search
 
-- The search box opens with a dropdown showing **all tags**, sorted by frequency (most used first).
+- An empty search loads only the namespace-wide distinct-tag count; it does not materialize thousands of hidden suggestion rows. Typing opens a capped dropdown sorted by prefix, substring, fuzzy match, then frequency.
+- The footer reports the distinct catalog size as **N total unique tags** (explicit note tags plus tags referenced by ontology rules) and does not claim that every catalog entry is visible.
+- The dropdown is anchored to the search input, not the adjacent **Add new tag…** action, and keeps compact suggestion rows over the columns.
 - While typing, results prioritize **prefix matches**, then substring matches, then fuzzy (subsequence) matches.
 - Each suggestion shows a count badge with the number of notes containing that tag.
 - Arrow keys move selection (first item is selected by default); `Enter` applies the selected suggestion, fills the input, and blurs the field.
@@ -137,7 +139,10 @@ Implementation note (DOM):
 ### Relationship dialogs
 
 - The add/edit dialogs for implications, synonyms, incoming conditions, and tags keep their visible submit button.
+- **Add new tag…** presents only the tag input and actions; it omits redundant introductory copy and a redundant field label.
+- Editing the focused tag supports both rename and **Delete tag…**. Deletion requires a separate confirmation, removes the exact tag token from every note tag bar, and deletes every ontology rule that references the tag. Quoted text and regular-expression matchers with the same characters are not tag references and remain intact.
 - Suggestions open without an automatic selection; clicking a row selects it, and one `ArrowDown` selects the first row.
+- Search and relationship-dialog inputs explicitly reset inherited modal margins, keeping suggestion panels directly below the field for incoming conditions, implications, synonyms, and edits.
 - While a dialog input is focused, `Enter` performs the same submit action as that button when the user has not explicitly navigated to a suggestion.
 - Arrow-key navigation marks the highlighted suggestion as explicit; the next `Enter` fills the input with that suggestion without submitting the relationship.
 - Clicking a suggestion fills the input without submitting it and preserves that selection boundary for the next `Enter`.

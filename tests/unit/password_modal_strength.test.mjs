@@ -10,6 +10,11 @@ const MODAL_SOURCE_URL = new URL(
     '../../app/static/js/modules/modals/password-modal.js',
     import.meta.url,
 );
+const RANDOM_MODAL_SOURCE_URL = new URL(
+    '../../app/static/js/modules/modals/random-password-modal.js',
+    import.meta.url,
+);
+const MAIN_CSS_URL = new URL('../../app/static/css/main.css', import.meta.url);
 
 
 test('create and change password forms show locally computed strength', () => {
@@ -23,6 +28,22 @@ test('create and change password forms show locally computed strength', () => {
 
     const strengthMarkupUses = source.match(/\$\{this\.generateNewPasswordStrengthHTML\(\)\}/g) ?? [];
     assert.equal(strengthMarkupUses.length, 2);
+});
+
+
+test('create, change, and random password flows share one four-segment strength component', () => {
+    const passwordModalSource = readFileSync(MODAL_SOURCE_URL, 'utf8');
+    const randomModalSource = readFileSync(RANDOM_MODAL_SOURCE_URL, 'utf8');
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+
+    assert.match(passwordModalSource, /class="password-strength"/);
+    assert.match(randomModalSource, /class="password-strength"/);
+    assert.match(css, /\.password-strength-meter\s*\{[\s\S]*grid-template-columns:\s*repeat\(4,/);
+    assert.match(
+        css,
+        /\.password-strength\[data-score="4"\] \.password-strength-meter span:nth-child\(-n\+4\)/,
+    );
+    assert.doesNotMatch(css, /\.random-password-modal-content \.password-strength\s*\{/);
 });
 
 
@@ -48,6 +69,16 @@ test('password management exposes three explicit modal flows', () => {
     assert.match(source, /export class RemovePasswordModal/);
     assert.doesNotMatch(source, /id="remove-password-btn"/);
     assert.doesNotMatch(source, /id="change-password-btn"/);
+});
+
+
+test('create and change password forms begin with their fields instead of filler copy', () => {
+    const source = readFileSync(MODAL_SOURCE_URL, 'utf8');
+
+    assert.doesNotMatch(source, /Set a password to encrypt your notes/);
+    assert.doesNotMatch(source, /Enter your current password and choose a new one/);
+    assert.match(source, /<h3>Add Password<\/h3>\s*<form id="password-form">/);
+    assert.match(source, /<h3>Change Password<\/h3>\s*<form id="password-form" autocomplete="off">/);
 });
 
 

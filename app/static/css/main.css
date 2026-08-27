@@ -352,44 +352,69 @@ html {
     }
 }
 
-/* Modal Styles (for password management) */
+/* Shared modal shell. Modal contents are intentionally dark in every app theme. */
 .modal {
+    --modal-surface: #10151d;
+    --modal-surface-raised: #171e29;
+    --modal-surface-inset: #0a0e14;
+    --modal-border: rgba(205, 220, 241, 0.16);
+    --modal-border-strong: rgba(138, 180, 255, 0.42);
+    --modal-text: #edf3ff;
+    --modal-text-muted: #a5b0c0;
+    --modal-text-subtle: #7f8a9b;
+    --modal-accent: #8ab4ff;
+    --modal-danger: #ff8998;
+    --modal-success: #67d69d;
     display: none;
     position: fixed;
-    z-index: 1000;
+    z-index: 15000;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    box-sizing: border-box;
+    overflow: auto;
+    padding: clamp(12px, 3vh, 32px);
+    background: rgba(3, 7, 12, 0.76);
+    color: var(--modal-text);
+    color-scheme: dark;
+    backdrop-filter: blur(8px);
 }
 
 .modal-content {
     position: relative;
-    background-color: var(--bg-color);
-    margin: 5% auto;
-    padding: 20px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    width: 400px;
-    max-width: 90%;
-    max-height: 85vh;
+    width: min(460px, 100%);
+    max-width: 100%;
+    max-height: calc(100vh - clamp(24px, 6vh, 64px));
+    margin: auto;
+    padding: 24px;
+    box-sizing: border-box;
+    border: 1px solid var(--modal-border);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
+    color: var(--modal-text);
     overflow-y: auto;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow:
+        0 24px 70px rgba(0, 0, 0, 0.62),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.modal-content h2 {
-    margin-top: 0;
-    text-align: center;
-    color: var(--text-color);
+.modal-content h2,
+.modal-content h3 {
+    margin: 0 52px 10px 0;
+    text-align: left;
+    color: var(--modal-text);
+    line-height: 1.15;
 }
 
 .modal-content input {
     width: 100%;
     padding: 10px;
     margin: 10px 0;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+    background: var(--modal-surface-inset);
+    color: var(--modal-text);
     font-size: 16px;
     box-sizing: border-box;
 }
@@ -400,7 +425,7 @@ html {
     background-color: var(--primary-color);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     font-size: 16px;
     cursor: pointer;
 }
@@ -412,13 +437,13 @@ html {
 .modal-content .form-actions {
     flex-direction: row;
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: flex-end;
     align-items: center;
 }
 
 .modal-content .form-actions button {
     width: auto;
-    min-width: 140px;
+    min-width: 112px;
 }
 
 .image-file-insert-choice-modal-content {
@@ -438,6 +463,14 @@ html {
 
 .namespace-modal-content {
     width: min(640px, 94vw);
+}
+
+.create-namespace-modal-content {
+    width: min(520px, 100%);
+}
+
+.create-namespace-modal-content .namespace-modal-port-grid {
+    grid-template-columns: repeat(2, minmax(0, 160px));
 }
 
 .namespace-ports-modal-content {
@@ -862,11 +895,20 @@ body.ontology-modal-open #ontology-modal {
     pointer-events: auto;
 }
 
+#ontology-modal {
+    overflow: hidden;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: none;
+}
+
 #ontology-modal .modal-content.ontology-modal-content {
     width: min(1100px, 95vw);
+    max-width: 90%;
     height: calc(100vh - 120px);
     max-height: calc(100vh - 120px);
     margin: 60px auto;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -876,7 +918,10 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(255, 255, 255, 0.92);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
     overflow: hidden;
+    scrollbar-color: auto;
+    scrollbar-width: auto;
 }
 
 .ontology-busy {
@@ -950,10 +995,17 @@ body.ontology-modal-open #ontology-modal {
     gap: 10px;
 }
 
-#ontology-search-input {
-    width: auto;
+.ontology-search-input-wrap {
+    position: relative;
     flex: 1;
     min-width: 0;
+}
+
+#ontology-search-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
     padding: 12px 14px;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1225,7 +1277,7 @@ body.ontology-modal-open #ontology-modal {
 
 .ontology-modal-footer {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     gap: 20px;
     padding-top: 10px;
@@ -1325,6 +1377,8 @@ body.ontology-modal-open #ontology-modal {
 
 #ontology-dialog-input {
     width: 100%;
+    box-sizing: border-box;
+    margin: 0;
     padding: 12px 14px;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1436,6 +1490,19 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(255, 255, 255, 0.7);
 }
 
+#ontology-modal .ontology-dialog-danger {
+    margin-right: auto;
+    border-color: rgba(245, 101, 101, 0.45);
+    background: rgba(127, 29, 29, 0.32);
+    color: rgba(254, 202, 202, 0.96);
+}
+
+#ontology-modal .ontology-dialog-danger:hover {
+    border-color: rgba(248, 113, 113, 0.72);
+    background: rgba(153, 27, 27, 0.52);
+    color: #fff;
+}
+
 #ontology-modal .ontology-dialog-primary {
     border: none;
     color: #0a1724;
@@ -1455,8 +1522,14 @@ body.ontology-modal-open #ontology-modal {
     padding: 14px 18px 12px;
 }
 
+#help-modal {
+    align-items: center;
+    justify-content: center;
+}
+
 .help-modal-content h2 {
-    margin: 0 36px 0 0;
+    min-height: 42px;
+    margin: 0 56px 0 0;
     font-size: 1.55rem;
     line-height: 1.1;
 }
@@ -1697,7 +1770,7 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .random-password-modal-content {
-    width: min(760px, 92vw);
+    width: min(560px, 100%);
 }
 
 .random-password-modal-header {
@@ -1719,40 +1792,31 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .random-password-modal-top-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 160px;
-    gap: 14px;
-    align-items: end;
+    display: block;
 }
 
 .random-password-length-group {
     margin-bottom: 0;
 }
 
-.random-password-summary-card {
+.random-password-length-control {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    min-height: 64px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: #f7f9fc;
-    color: var(--text-color);
+    align-items: center;
+    gap: 12px;
 }
 
-.random-password-summary-label {
+.modal-content .form-group .random-password-length-control input {
+    flex: 0 0 60px;
+    width: 60px;
+    margin: 0;
+}
+
+.random-password-length-unit {
+    color: var(--modal-text-muted);
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #6b7280;
-}
-
-.random-password-summary-card strong {
-    font-size: 28px;
-    line-height: 1;
 }
 
 .random-password-modal-content textarea,
@@ -1782,8 +1846,8 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .password-strength {
-    margin: -2px 0 18px;
-    padding: 12px 14px;
+    margin: 0 0 14px;
+    padding: 11px 13px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
     background: #f7f9fc;
@@ -5766,6 +5830,8 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-modal {
+    overflow: hidden;
+    padding: 0;
     background-color: rgba(0, 0, 0, 0.72);
 }
 
@@ -5775,6 +5841,7 @@ html[data-theme="dark"] body.loading::after {
     color: #e6e6e6;
     border: 1px solid #2a2a2a;
     border-radius: 12px;
+    box-sizing: border-box;
     width: min(860px, 92vw);
     max-height: min(78vh, 720px);
     margin: 10vh auto;
@@ -5788,6 +5855,8 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-input {
+    box-sizing: border-box;
+    min-width: 0;
     width: 100%;
     padding: 10px 12px;
     background: #000;
@@ -6204,6 +6273,18 @@ html[data-theme="dark"] body.loading::after {
     }
 }
 
+@media (max-width: 520px) {
+    .reminder-toolbar,
+    .reminder-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .reminder-field-label {
+        min-height: 0;
+        margin-top: 6px;
+    }
+}
+
 .reminder-surface {
     position: fixed;
     right: 18px;
@@ -6446,7 +6527,7 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .sound-manager-modal-content {
-    width: min(900px, calc(100vw - 32px));
+    width: min(760px, calc(100vw - 32px));
     max-height: min(760px, calc(100vh - 32px));
     overflow: auto;
 }
@@ -6538,5 +6619,363 @@ html[data-theme="dark"] body.loading::after {
     .sound-manager-row {
         align-items: stretch;
         display: grid;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Unified dark modal visual system                                           */
+/* -------------------------------------------------------------------------- */
+
+.modal-content {
+    scrollbar-color: rgba(229, 235, 243, 0.34) transparent;
+    scrollbar-width: thin;
+}
+
+.modal-content > p,
+.modal-content .form-help,
+.modal-content .note-layout-description,
+.modal-content .version-info-status,
+.modal-content .search-suggestion-settings-status,
+.modal-content .search-suggestion-statistics-retention,
+.modal-content .search-suggestion-statistics-empty,
+.modal-content .search-suggestion-statistics-status,
+.modal-content .random-password-modal-description,
+.modal-content .sound-manager-usage,
+.modal-content .sound-manager-row-main span,
+.modal-content .sound-manager-status,
+.modal-content .reminder-row-details,
+.modal-content .reminder-row-next,
+.modal-content .reminder-empty {
+    color: var(--modal-text-muted);
+}
+
+.modal-content h4,
+.modal-content label,
+.modal-content legend,
+.modal-content th,
+.modal-content td {
+    color: var(--modal-text);
+}
+
+.modal-content a {
+    color: var(--modal-accent);
+}
+
+.modal-content input:not([type="checkbox"]):not([type="radio"]),
+.modal-content textarea,
+.modal-content select {
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+    background: var(--modal-surface-inset);
+    color: var(--modal-text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.modal-content input:not([type="checkbox"]):not([type="radio"]):focus,
+.modal-content textarea:focus,
+.modal-content select:focus {
+    border-color: var(--modal-border-strong);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(86, 149, 255, 0.16);
+}
+
+.modal-content input::placeholder,
+.modal-content textarea::placeholder {
+    color: var(--modal-text-subtle);
+}
+
+.modal-content input[type="checkbox"],
+.modal-content input[type="radio"] {
+    accent-color: #6fa5ff;
+}
+
+.modal-content .primary-btn,
+.modal-content button:not(.modal-close-button):not(.secondary-btn):not(.danger-btn) {
+    border: 1px solid rgba(146, 188, 255, 0.38);
+    background: linear-gradient(135deg, #307bd9, #2459ad);
+    color: #f8fbff;
+    box-shadow: 0 8px 20px rgba(13, 60, 125, 0.24);
+}
+
+.modal-content .primary-btn:not(:disabled):hover,
+.modal-content button:not(.modal-close-button):not(.secondary-btn):not(.danger-btn):not(:disabled):hover {
+    border-color: rgba(171, 207, 255, 0.58);
+    background: linear-gradient(135deg, #3c8aeb, #2b65c4);
+}
+
+.modal-content .secondary-btn {
+    border: 1px solid var(--modal-border);
+    background: rgba(255, 255, 255, 0.075);
+    color: var(--modal-text);
+    box-shadow: none;
+}
+
+.modal-content .secondary-btn:not(:disabled):hover {
+    border-color: rgba(229, 235, 243, 0.26);
+    background: rgba(255, 255, 255, 0.13);
+}
+
+.modal-content .danger-btn {
+    border: 1px solid rgba(255, 137, 152, 0.42);
+    background: rgba(190, 48, 67, 0.72);
+    color: #fff5f6;
+    box-shadow: none;
+}
+
+.modal-content .danger-btn:not(:disabled):hover {
+    background: rgba(215, 56, 77, 0.82);
+}
+
+.modal-content .modal-close-button {
+    top: 18px;
+    right: 18px;
+    width: 38px;
+    height: 38px;
+    border-color: var(--modal-border);
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--modal-text);
+    box-shadow: none;
+}
+
+.modal-content .modal-close-button:hover,
+.modal-content .modal-close-button:focus-visible {
+    border-color: rgba(229, 235, 243, 0.3);
+    background: rgba(255, 255, 255, 0.14);
+    outline-color: var(--modal-accent);
+}
+
+.modal-content .form-group {
+    margin-bottom: 14px;
+}
+
+.modal-content .form-group label {
+    margin-bottom: 6px;
+    color: var(--modal-text);
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+
+.modal-content .form-actions {
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.modal-content .error-message,
+.modal-content .sound-manager-error,
+.modal-content .sound-manager-empty,
+.modal-content .reminder-modal-error {
+    color: var(--modal-danger);
+}
+
+.modal-content .namespace-modal-radio-row,
+.modal-content .namespace-ports-table-wrap,
+.modal-content .search-suggestion-statistics-day,
+.modal-content .note-layout-preview,
+.modal-content .help-section,
+.modal-content .password-length,
+.modal-content .password-strength,
+.modal-content .reminder-row,
+.modal-content .reminder-weekdays label {
+    border-color: var(--modal-border);
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    box-shadow: none;
+}
+
+.modal-content .note-layout-preview-root,
+.modal-content .note-layout-preview-child {
+    border-color: var(--modal-border);
+    background: var(--modal-surface-inset);
+    color: var(--modal-text);
+}
+
+.modal-content .namespace-modal-badge,
+.modal-content .namespace-ports-table thead th,
+.modal-content .backup-result-table thead th {
+    background: rgba(138, 180, 255, 0.12);
+    color: #dbe7ff;
+}
+
+.modal-content .namespace-modal-status,
+.modal-content .version-info-table th,
+.modal-content .help-shortcuts-note,
+.modal-content .help-description-cell,
+.modal-content .help-keys,
+.modal-content .help-category,
+.modal-content .password-length-header > span,
+.modal-content .password-length-header strong,
+.modal-content .password-strength-header span,
+.modal-content .password-strength-header strong {
+    color: var(--modal-text-muted);
+}
+
+.modal-content .help-shortcuts-table .help-shortcut-row + .help-shortcut-row,
+.modal-content .namespace-ports-table th,
+.modal-content .namespace-ports-table td,
+.modal-content .version-info-table tr + tr,
+.modal-content .backup-result-table th,
+.modal-content .backup-result-table td,
+.modal-content .sound-manager-row,
+.modal-content .reminder-default-sound-settings {
+    border-color: var(--modal-border);
+}
+
+.modal-content .search-suggestion-statistics-day summary {
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+}
+
+.modal-content .progress-bar,
+.modal-content .password-length-meter,
+.modal-content .password-strength-meter span {
+    background: rgba(229, 235, 243, 0.14);
+}
+
+.modal-content .password-length[data-complete="true"] .password-length-header strong,
+.modal-content .password-length[data-complete="true"] .form-help,
+.modal-content .password-strength[data-score="3"] .password-strength-header strong,
+.modal-content .password-strength[data-score="4"] .password-strength-header strong {
+    color: #67d69d;
+}
+
+.modal-content .password-strength[data-score="0"] .password-strength-header strong,
+.modal-content .password-strength[data-score="1"] .password-strength-header strong {
+    color: #ff8998;
+}
+
+.modal-content .password-strength[data-score="2"] .password-strength-header strong {
+    color: #f4bd62;
+}
+
+.modal-content .backup-result-status-success {
+    background: rgba(58, 177, 112, 0.16);
+    color: #86e5b4;
+}
+
+.modal-content .backup-result-status-failed {
+    background: rgba(220, 72, 91, 0.18);
+    color: #ff9aa8;
+}
+
+.modal-content .namespace-delete-warning,
+.modal-content .alphabetize-root-notes-warning {
+    border-color: rgba(255, 137, 152, 0.32);
+    background: rgba(190, 48, 67, 0.12);
+    color: var(--modal-text);
+}
+
+.modal-content .namespace-delete-phrase {
+    border-color: rgba(255, 137, 152, 0.34);
+    background: rgba(190, 48, 67, 0.16);
+    color: #ffb3bd;
+}
+
+.modal-content .namespace-delete-namespace {
+    color: #ffb3bd;
+}
+
+.modal-content .prioritize-modal-tag-bar {
+    border-color: var(--modal-border);
+    background: var(--modal-surface-inset);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+}
+
+.modal-content input.prioritize-modal-tag-input {
+    color: var(--modal-text);
+}
+
+.modal-content input.prioritize-modal-tag-input::placeholder {
+    color: var(--modal-text-subtle);
+}
+
+.modal-content .reminder-form-pane {
+    border-color: var(--modal-border);
+}
+
+.modal-content .reminder-row-paused {
+    border-color: var(--modal-border);
+}
+
+.modal-content .reminder-row-paused .reminder-row-main strong,
+.modal-content .reminder-row-paused .reminder-row-main span,
+.modal-content .reminder-row-paused .reminder-row-main small {
+    color: var(--modal-text-subtle);
+}
+
+.modal-content .reminder-row-past-due,
+.modal-content .reminder-row-due,
+.modal-content .reminder-row-overdue,
+.modal-content .reminder-modal-warning {
+    color: #f4bd62;
+}
+
+.modal-content.random-password-modal-content textarea {
+    width: min(100%, 440px);
+    min-height: 96px;
+    max-height: 150px;
+    resize: vertical;
+}
+
+#session-timeout-minutes,
+#backup-retention-keep-count,
+#backup-settings-retention-count {
+    width: min(140px, 100%);
+}
+
+.random-password-modal-header {
+    margin-bottom: 14px;
+}
+
+.random-password-modal-description {
+    max-width: 64ch;
+    margin-top: 6px;
+}
+
+.random-password-modal-content .random-password-modal-actions {
+    margin-top: 12px;
+}
+
+.reminder-modal-content {
+    height: min(820px, calc(100vh - clamp(24px, 6vh, 64px)));
+    margin: 0 auto;
+}
+
+.command-palette-panel {
+    border-color: var(--modal-border);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
+    color: var(--modal-text);
+    box-shadow:
+        0 24px 70px rgba(0, 0, 0, 0.62),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+@media (max-width: 640px) {
+    .modal {
+        padding: 10px;
+    }
+
+    .modal-content {
+        max-height: calc(100vh - 20px);
+        padding: 20px 18px;
+        border-radius: 13px;
+    }
+
+    .modal-content h2,
+    .modal-content h3 {
+        margin-right: 44px;
+    }
+
+    .modal-content .modal-close-button {
+        top: 14px;
+        right: 14px;
+        width: 34px;
+        height: 34px;
+    }
+
+    .random-password-length-control {
+        align-items: center;
+        flex-direction: row;
+        gap: 10px;
     }
 }
