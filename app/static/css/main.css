@@ -2541,10 +2541,10 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 
 .note-collapse-toggle {
     position: absolute;
-    top: 5px;
-    left: -27px;
-    width: 23px;
-    height: 23px;
+    top: 3px;
+    left: -29px;
+    width: 27px;
+    height: 27px;
     display: none;
     align-items: center;
     justify-content: center;
@@ -2552,7 +2552,7 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     border: none;
     background: transparent;
     cursor: pointer;
-    font-size: 21px;
+    font-size: 23px;
     line-height: 1;
     color: rgba(0, 0, 0, 0.35);
     z-index: 5;
