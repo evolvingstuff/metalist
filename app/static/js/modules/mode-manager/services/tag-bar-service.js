@@ -164,11 +164,32 @@ function ensureTagBarElement(noteElement) {
     const input = document.createElement('input');
     input.classList.add(TAG_BAR_INPUT_CLASS);
     input.type = 'text';
-    input.placeholder = 'tags';
+    input.setAttribute('aria-label', 'Tags');
+    input.setAttribute('title', 'Tags');
     input.autocomplete = 'off';
     input.spellcheck = false;
 
     tagBar.appendChild(input);
+
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.classList.add('note-tag-bar-empty-icon');
+    icon.setAttribute('viewBox', '0 0 16 16');
+    icon.setAttribute('focusable', 'false');
+    icon.setAttribute('aria-hidden', 'true');
+
+    const tagPathData = 'M1.5 1.5h4l6.75 6.75a1.5 1.5 0 0 1 0 2.12l-1.88 1.88a1.5 1.5 0 0 1-2.12 0L1.5 5.5v-4ZM4.25 3.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z';
+
+    const backIconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    backIconPath.classList.add('note-tag-bar-empty-icon-back');
+    backIconPath.setAttribute('d', tagPathData);
+    backIconPath.setAttribute('transform', 'translate(4 0)');
+
+    const frontIconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    frontIconPath.classList.add('note-tag-bar-empty-icon-front');
+    frontIconPath.setAttribute('d', tagPathData);
+    frontIconPath.setAttribute('fill-rule', 'evenodd');
+    icon.append(backIconPath, frontIconPath);
+    tagBar.appendChild(icon);
 
     const suggestions = document.createElement('div');
     suggestions.classList.add('note-tag-suggestions');

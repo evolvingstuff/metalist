@@ -3464,6 +3464,8 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 
 .note-tag-bar-input {
     width: 100%;
+    box-sizing: border-box;
+    padding: 1px 2px 1px 22px;
     border: none;
     outline: none;
     background: transparent;
@@ -3473,8 +3475,21 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
-.note-tag-bar-input::placeholder {
-    color: rgba(0, 0, 0, 0.28);
+.note-tag-bar-empty-icon {
+    top: 50%;
+    left: 9px;
+    width: 15px;
+    height: 15px;
+    overflow: visible;
+    transform: translateY(-50%);
+}
+
+.note-tag-bar-empty-icon-back {
+    opacity: 0.72;
+}
+
+.note-tag-bar-empty-icon-front {
+    fill: rgba(245, 245, 245, 0.95);
 }
 
 .note-collapsed-children-indicator {
@@ -4169,7 +4184,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 .controls .search-input {
     width: var(--search-input-width);
     margin: 0;
-    padding: 0 12px;
+    padding: 0 12px 0 36px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 14px;
@@ -4186,8 +4201,24 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
 }
 
-.controls .search-input::placeholder {
-    color: rgba(0, 0, 0, 0.5);
+.search-input-empty-icon,
+.note-tag-bar-empty-icon {
+    position: absolute;
+    fill: none;
+    stroke: rgba(0, 0, 0, 0.38);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 1;
+    pointer-events: none;
+}
+
+.search-input-empty-icon {
+    top: 50%;
+    left: calc(50% - var(--search-input-half-width) + 12px);
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
 }
 
 /* Global Controls */
@@ -5612,10 +5643,6 @@ html[data-theme="dark"] .note-tag-bar-input {
     color: #edf3ff;
 }
 
-html[data-theme="dark"] .note-tag-bar-input::placeholder {
-    color: rgba(229, 235, 243, 0.34);
-}
-
 html[data-theme="dark"] .note-collapsed-children-indicator {
     color: rgba(229, 235, 243, 0.68);
 }
@@ -5641,8 +5668,13 @@ html[data-theme="dark"] .controls .search-input:focus {
     box-shadow: 0 0 0 2px rgba(138, 180, 255, 0.18);
 }
 
-html[data-theme="dark"] .controls .search-input::placeholder {
-    color: rgba(229, 235, 243, 0.34);
+html[data-theme="dark"] .search-input-empty-icon,
+html[data-theme="dark"] .note-tag-bar-empty-icon {
+    stroke: rgba(229, 235, 243, 0.42);
+}
+
+html[data-theme="dark"] .note-tag-bar-empty-icon-front {
+    fill: rgba(10, 13, 18, 0.94);
 }
 
 html[data-theme="dark"] .controls .search-input:-webkit-autofill,

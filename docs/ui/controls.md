@@ -60,6 +60,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Search Input Behavior
+- The search field keeps a muted search icon inside the input before and during typing; hovering the field shows a `Search` tooltip.
 - Pressing `Enter` while focused in the search input creates a new **root** note.
 - Pressing `Esc` while focused in the search input blurs the field and dismisses search suggestions, without clearing the current query or search results.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
