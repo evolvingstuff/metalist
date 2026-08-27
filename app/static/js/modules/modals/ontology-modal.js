@@ -6,6 +6,7 @@ const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
 const DIALOG_SUGGESTION_LIMIT = 8;
 const DIALOG_SUGGESTION_DEBOUNCE_MS = 50;
+const DIALOG_DELETE_TAG_RESULT = Object.freeze({ action: 'delete-tag' });
 
 function escapeHtml(value) {
     if (typeof value !== 'string') {
@@ -490,15 +491,17 @@ export class OntologyModal extends BaseModal {
 
                 <div class="ontology-search">
                     <div class="ontology-search-row">
-                        <input
-                            type="text"
-                            id="ontology-search-input"
-                            placeholder="Search tags…"
-                            autocomplete="off"
-                        />
+                        <div class="ontology-search-input-wrap">
+                            <input
+                                type="text"
+                                id="ontology-search-input"
+                                placeholder="Search tags…"
+                                autocomplete="off"
+                            />
+                            <div class="ontology-search-results" id="ontology-search-results"></div>
+                        </div>
                         <button class="ontology-add ontology-add-inline" data-action="add-tag">+ Add new tag…</button>
                     </div>
-                    <div class="ontology-search-results" id="ontology-search-results"></div>
                 </div>
 
                 <div class="ontology-columns">
@@ -522,8 +525,7 @@ export class OntologyModal extends BaseModal {
                 </div>
 
                 <div class="ontology-modal-footer">
-                    <div id="ontology-counts">Showing 0 of 0 tags</div>
-                    <div class="ontology-hints">esc to cancel • enter to focus</div>
+                    <div id="ontology-counts">0 total unique tags</div>
                 </div>
 
                 <div class="ontology-dialog-overlay" id="ontology-dialog-overlay">
@@ -545,6 +547,7 @@ export class OntologyModal extends BaseModal {
                             <div class="ontology-dialog-error" id="ontology-dialog-error" style="display:none"></div>
                         </div>
                         <div class="ontology-dialog-footer">
+                            <button class="ontology-dialog-danger" data-action="dialog-delete-tag">Delete tag…</button>
                             <button class="ontology-dialog-secondary" data-action="dialog-cancel">Cancel</button>
                             <button class="ontology-dialog-primary" data-action="dialog-submit">Save</button>
                         </div>
@@ -589,7 +592,7 @@ export class OntologyModal extends BaseModal {
     renderSkeleton() {
         this.renderFocusView(null);
         this.renderTagSearchResults([]);
-        this.renderCounts({ shown: 0, total: 0 });
+        this.renderTagCount(0);
         this.renderError(null);
     }
 
@@ -647,12 +650,9 @@ export class OntologyModal extends BaseModal {
         });
     }
 
-    renderCounts({ shown, total }) {
-        if (!Number.isInteger(shown) || shown < 0) {
-            throw new Error('renderCounts shown must be a non-negative integer');
-        }
+    renderTagCount(total) {
         if (!Number.isInteger(total) || total < 0) {
-            throw new Error('renderCounts total must be a non-negative integer');
+            throw new Error('renderTagCount total must be a non-negative integer');
         }
         const modalElement = document.getElementById(this.modalElementId);
         if (!modalElement) {
@@ -660,8 +660,7 @@ export class OntologyModal extends BaseModal {
         }
         const target = modalElement.querySelector('#ontology-counts');
         if (target) {
-            const suffix = total > shown ? '+' : '';
-            target.textContent = `Showing ${shown} of ${total}${suffix} total tags`;
+            target.textContent = `${total.toLocaleString()} total unique tags`;
         }
     }
 
@@ -862,12 +861,12 @@ export class OntologyModal extends BaseModal {
             if (this._suppressNextSearchResults) {
                 this._suppressNextSearchResults = false;
                 this.renderTagSearchResults([]);
-                this.renderCounts({ shown: 0, total: totalCount });
+                this.renderTagCount(totalCount);
                 return;
             }
 
             this.renderTagSearchResults(tags);
-            this.renderCounts({ shown: tags.length, total: totalCount });
+            this.renderTagCount(totalCount);
         })().catch((error) => {
             if (this._abortController !== controller) {
                 return;
@@ -977,6 +976,10 @@ export class OntologyModal extends BaseModal {
         if (!(submitButton instanceof HTMLElement)) {
             throw new Error('ontology dialog submit button missing');
         }
+        const deleteTagButton = overlay.querySelector('.ontology-dialog-danger');
+        if (!(deleteTagButton instanceof HTMLElement)) {
+            throw new Error('ontology dialog delete tag button missing');
+        }
         return {
             overlay,
             dialog,
@@ -988,6 +991,7 @@ export class OntologyModal extends BaseModal {
             suggestions,
             error,
             submitButton,
+            deleteTagButton,
         };
     }
 
@@ -1052,6 +1056,10 @@ export class OntologyModal extends BaseModal {
         if (typeof autoSubmitOnSuggestion !== 'boolean') {
             throw new Error('Dialog autoSubmitOnSuggestion must be boolean');
         }
+        const showDeleteTag = config.showDeleteTag;
+        if (typeof showDeleteTag !== 'boolean') {
+            throw new Error('Dialog showDeleteTag must be boolean');
+        }
 
         const focusTag = config.focusTag;
         if (mode === 'incoming') {
@@ -1080,6 +1088,7 @@ export class OntologyModal extends BaseModal {
                 resolve,
                 suggestOnEmpty,
                 autoSubmitOnSuggestion,
+                showDeleteTag,
             };
             this._renderDialog();
         });
@@ -1116,6 +1125,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: false,
             allowSuggestions: false,
+            showDeleteTag: false,
         });
         return result === true;
     }
@@ -1146,7 +1156,9 @@ export class OntologyModal extends BaseModal {
         elements.label.textContent = state.label;
         elements.input.placeholder = state.placeholder;
         elements.input.value = state.initialValue;
+        elements.input.setAttribute('aria-label', state.label.trim() === '' ? state.title : state.label);
         elements.submitButton.textContent = state.submitLabel;
+        elements.deleteTagButton.style.display = state.showDeleteTag ? '' : 'none';
 
         if (!state.showInput) {
             elements.label.style.display = 'none';
@@ -1155,7 +1167,7 @@ export class OntologyModal extends BaseModal {
             elements.suggestions.classList.add('is-hidden');
             elements.suggestions.style.display = 'none';
         } else {
-            elements.label.style.display = '';
+            elements.label.style.display = state.label.trim() === '' ? 'none' : '';
             elements.input.style.display = '';
             elements.suggestions.style.display = '';
         }
@@ -2096,7 +2108,7 @@ export class OntologyModal extends BaseModal {
             <div class="ontology-row ontology-focus">
                 <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(focusTag)}">${escapeHtml(focusTag)}</button>
                 <div class="ontology-row-actions">
-                    <button class="ontology-edit" data-action="rename-focus" aria-label="Rename">✎</button>
+                    <button class="ontology-edit" data-action="rename-focus" aria-label="Edit tag">✎</button>
                     <span class="ontology-spacer"></span>
                 </div>
             </div>
@@ -2248,6 +2260,7 @@ export class OntologyModal extends BaseModal {
             suggestOnEmpty: false,
             autoSubmitOnSuggestion: false,
             showInput: true,
+            showDeleteTag: false,
         });
         if (next === null) {
             return;
@@ -2328,6 +2341,7 @@ export class OntologyModal extends BaseModal {
             suggestOnEmpty: true,
             autoSubmitOnSuggestion: false,
             showInput: true,
+            showDeleteTag: false,
         });
         if (updatedText === null) {
             return;
@@ -2362,9 +2376,9 @@ export class OntologyModal extends BaseModal {
         }
 
         const next = await this._openDialog({
-            title: 'Rename tag',
-            description: 'Renames the tag everywhere (rules and note tag bars).',
-            label: 'New tag',
+            title: 'Edit tag',
+            description: '',
+            label: '',
             placeholder: 'new-tag-name',
             submitLabel: 'Rename',
             initialValue: focusTag,
@@ -2375,8 +2389,13 @@ export class OntologyModal extends BaseModal {
             suggestOnEmpty: false,
             autoSubmitOnSuggestion: false,
             showInput: true,
+            showDeleteTag: true,
         });
         if (next === null) {
+            return;
+        }
+        if (next === DIALOG_DELETE_TAG_RESULT) {
+            await this._deleteFocusedTag(focusTag);
             return;
         }
         if (typeof next !== 'string' || next.trim() === '') {
@@ -2408,6 +2427,38 @@ export class OntologyModal extends BaseModal {
         }
         this._rulesCache = null;
         await this.setFocusTag(trimmed);
+    }
+
+    async _deleteFocusedTag(focusTag) {
+        if (typeof focusTag !== 'string' || focusTag.trim() === '') {
+            throw new Error('deleteFocusedTag requires a focus tag');
+        }
+        const confirmed = await this._openConfirmDialog({
+            title: `Delete '${focusTag}'?`,
+            description: 'This removes the tag from all note tag bars and deletes every ontology relationship that references it. This cannot be undone.',
+            confirmLabel: 'Delete tag',
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        const payload = await this.runBlockingCommand('ontologyModal.deleteTag', async () => {
+            return fetchJson(`${ONTOLOGY_BASE}/delete-tag`, {
+                method: 'POST',
+                headers: buildAuthHeaders(),
+                body: JSON.stringify({ tag: focusTag }),
+            });
+        });
+        if (payload === null) {
+            return;
+        }
+
+        this._rulesCache = null;
+        this.clearSearchInput();
+        this.updateModalState({ focusTag: '', focusView: null, error: null });
+        this.renderFocusView(null);
+        await this.refreshTagSearch('');
+        this.focusSearchInput();
     }
 
     async _deleteRuleRequest(ruleId) {
@@ -2497,6 +2548,11 @@ export class OntologyModal extends BaseModal {
                 return;
             }
 
+            if (action === 'dialog-delete-tag') {
+                this._closeDialog(DIALOG_DELETE_TAG_RESULT);
+                return;
+            }
+
             if (action === 'focus') {
                 const tag = target.dataset.tag;
                 if (typeof tag !== 'string' || tag.trim() === '') {
@@ -2517,8 +2573,8 @@ export class OntologyModal extends BaseModal {
             if (action === 'add-tag') {
                 const newTag = await this._openDialog({
                     title: 'Add new tag',
-                    description: 'Create a tag to focus on in the relationships editor.',
-                    label: 'Tag',
+                    description: '',
+                    label: '',
                     placeholder: 'python',
                     submitLabel: 'Add tag',
                     initialValue: '',
@@ -2529,6 +2585,7 @@ export class OntologyModal extends BaseModal {
                     suggestOnEmpty: false,
                     autoSubmitOnSuggestion: false,
                     showInput: true,
+                    showDeleteTag: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2669,6 +2726,7 @@ export class OntologyModal extends BaseModal {
                     suggestOnEmpty: true,
                     autoSubmitOnSuggestion: false,
                     showInput: true,
+                    showDeleteTag: false,
                 });
                 if (ruleText === null) {
                     return;
@@ -2692,6 +2750,7 @@ export class OntologyModal extends BaseModal {
                     suggestOnEmpty: true,
                     autoSubmitOnSuggestion: false,
                     showInput: true,
+                    showDeleteTag: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2715,6 +2774,7 @@ export class OntologyModal extends BaseModal {
                     suggestOnEmpty: true,
                     autoSubmitOnSuggestion: false,
                     showInput: true,
+                    showDeleteTag: false,
                 });
                 if (newTag === null) {
                     return;

@@ -177,7 +177,6 @@ class PasswordOperationModal extends BaseModal {
         return `
             <div class="modal-content">
                 <h3>Add Password</h3>
-                <p>Set a password to encrypt your notes. Use ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters; spaces and passphrases are welcome. Common or predictable passwords will be rejected.</p>
                 
                 <form id="password-form">
                     <div class="form-group">
@@ -222,7 +221,6 @@ class PasswordOperationModal extends BaseModal {
         return `
             <div class="modal-content">
                 <h3>Change Password</h3>
-                <p>Enter your current password and choose a new one. Use ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters; spaces and passphrases are welcome. Common or predictable passwords will be rejected.</p>
                 
                 <form id="password-form" autocomplete="off">
                     <div class="form-group">
@@ -554,7 +552,7 @@ class PasswordOperationModal extends BaseModal {
                     
                     if (!isMatch) {
                         confirmPasswordInput.style.borderColor = 'var(--error-color)';
-                        confirmPasswordInput.style.backgroundColor = '#ffebee';
+                        confirmPasswordInput.style.backgroundColor = 'rgba(190, 48, 67, 0.18)';
                     } else {
                         confirmPasswordInput.style.borderColor = '';
                         confirmPasswordInput.style.backgroundColor = '';

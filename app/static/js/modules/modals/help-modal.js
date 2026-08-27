@@ -39,7 +39,7 @@ export class HelpModal extends BaseModal {
             </div>
         `;
 
-        modalElement.style.display = 'block';
+        modalElement.style.display = 'flex';
     }
 
     /**

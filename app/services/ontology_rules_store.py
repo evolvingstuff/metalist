@@ -532,6 +532,47 @@ def rename_tag_everywhere(*, old: str, new: str, token: str) -> None:
         _upsert_state_locked(rules=updated_rows, plaintext_by_id=updated_plaintext)
 
 
+def delete_tag_everywhere(*, tag: str) -> int:
+    if not isinstance(tag, str) or tag.strip() == "":
+        raise TypeError("tag must be a non-empty string")
+
+    normalized = tag.strip()
+    with _LOCK:
+        state = _STATE
+        if state is None:
+            raise RuntimeError("Ontology rules store not bootstrapped")
+        if not state.is_decrypted:
+            raise RuntimeError("Ontology rules not decrypted yet")
+
+        deleted_rule_ids: list[int] = []
+        for rule_id, line in state.plaintext_by_id.items():
+            rules = parse_rules_text(text=f"{line}\n", filename=f"ontology_rules:{rule_id}")
+            references_tag = any(
+                rule.rhs == normalized
+                or any(isinstance(atom, TagAtom) and atom.tag == normalized for atom in rule.lhs)
+                for rule in rules
+            )
+            if references_tag:
+                deleted_rule_ids.append(rule_id)
+
+        if not deleted_rule_ids:
+            return 0
+
+        with begin_writer() as connection:
+            for rule_id in deleted_rule_ids:
+                db_delete_rule(connection, rule_id)
+
+        deleted_rule_id_set = set(deleted_rule_ids)
+        updated_rows = [row for row in state.rules if row.id not in deleted_rule_id_set]
+        updated_plaintext = {
+            rule_id: line
+            for rule_id, line in state.plaintext_by_id.items()
+            if rule_id not in deleted_rule_id_set
+        }
+        _upsert_state_locked(rules=updated_rows, plaintext_by_id=updated_plaintext)
+        return len(deleted_rule_ids)
+
+
 def extract_ontology_tags(ontology: TagOntology) -> set[str]:
     tags: set[str] = set()
     for src, outs in ontology.implication_out_edges.items():

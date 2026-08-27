@@ -6,6 +6,15 @@ This document defines the standard pattern for implementing modal dialogs in the
 
 ## Design Principles
 
+### 0. **One Dark Visual System**
+- Every application modal uses the shared dark shell in `app/static/css/main.css`, independent of the page's light/dark preference.
+- Shared tokens on `.modal` define the surface, inset surface, borders, text hierarchy, accent, success, and danger colors.
+- `.modal-content` owns the standard panel, shadow, radius, padding, scrolling, headings, controls, buttons, and close control. Feature-specific modal CSS should define layout and width only where possible.
+- Dense information uses cards, tables, and split panes only when they improve scanning. Do not repeat a value in a large summary card beside the control that already displays it.
+- Default action rows are right-aligned on desktop and stack to full width on narrow screens.
+- The command palette retains its specialized layout while using the shared surface language. The ontology editor and its sub-dialogs keep their established standalone styling and are excluded from shared modal overrides.
+- Within the ontology exception, tag suggestions stay attached to the search input. The focused-tag edit dialog exposes confirmed whole-tag deletion, while **Add new tag…** avoids redundant description and label text.
+
 ### 1. **Centralized State Management**
 - **ALL modal state lives in ModeContext** - no exceptions
 - Modal-specific state stored in `ModeContext.modalState = {modalName: {...}}`
@@ -56,6 +65,12 @@ All modals extend BaseModal which provides:
    - Clicking outside the modal content closes every modal
    - `Enter` activates the modal's single declared primary action; modals with multi-step or input-specific behavior implement the equivalent explicitly
    - Focus management
+
+4. **Shared Visual Contract**
+   - Render the top-level panel with `.modal-content`; add a feature class only for specialized width/layout.
+   - Use `.form-group`, `.form-actions`, `.primary-btn`, `.secondary-btn`, and `.danger-btn` instead of redefining controls.
+   - Use the shared muted text, inset panel, warning, table, and status patterns before adding feature-specific colors.
+   - Keep the main content within the shared viewport-aware max height; only large workspaces such as reminders or ontology should declare a fixed working height.
 
 ### Modal Opening Flow
 

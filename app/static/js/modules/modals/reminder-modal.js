@@ -794,6 +794,7 @@ export class ReminderModal extends BaseModal {
             modalElement.style.display = 'none';
             document.body.appendChild(modalElement);
         }
+        this._render();
         modalElement.style.display = 'block';
     }
 

@@ -171,3 +171,72 @@ test('ontology relationship dialog retains its submit button', async () => {
     );
     assert.match(source, /if \(action === 'dialog-submit'\) \{\s*this\._submitDialog\(\);/);
 });
+
+
+test('focused tag editor offers confirmed whole-tag deletion', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+        new URL('../../app/static/js/modules/modals/ontology-modal.js', import.meta.url),
+        'utf8',
+    );
+
+    assert.match(source, /data-action="dialog-delete-tag"/);
+    assert.match(source, /data-action="rename-focus" aria-label="Edit tag"/);
+    assert.match(source, /Delete tag…/);
+    assert.match(source, /This removes the tag from all note tag bars and deletes every ontology relationship that references it\./);
+    assert.match(source, /fetchJson\(`\$\{ONTOLOGY_BASE\}\/delete-tag`/);
+    assert.match(source, /body: JSON\.stringify\(\{ tag: focusTag \}\)/);
+});
+
+
+test('add-new-tag dialog omits redundant description and field label', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+        new URL('../../app/static/js/modules/modals/ontology-modal.js', import.meta.url),
+        'utf8',
+    );
+    const addTagStart = source.indexOf("if (action === 'add-tag')");
+    const addTagEnd = source.indexOf("if (action === 'remove')", addTagStart);
+    assert.notEqual(addTagStart, -1);
+    assert.notEqual(addTagEnd, -1);
+    const addTagSource = source.slice(addTagStart, addTagEnd);
+
+    assert.match(addTagSource, /description: ''/);
+    assert.match(addTagSource, /label: ''/);
+    assert.doesNotMatch(addTagSource, /Create a tag to focus/);
+});
+
+
+test('tag suggestions are anchored to the search input instead of the whole action row', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+        new URL('../../app/static/js/modules/modals/ontology-modal.js', import.meta.url),
+        'utf8',
+    );
+    const css = await readFile(
+        new URL('../../app/static/css/main.css', import.meta.url),
+        'utf8',
+    );
+
+    assert.match(
+        source,
+        /<div class="ontology-search-input-wrap">[\s\S]*id="ontology-search-input"[\s\S]*id="ontology-search-results"[\s\S]*<\/div>[\s\S]*data-action="add-tag"/,
+    );
+    assert.match(css, /\.ontology-search-input-wrap\s*\{[\s\S]*position:\s*relative;[\s\S]*flex:\s*1;/);
+    assert.match(css, /#ontology-search-input\s*\{[\s\S]*margin:\s*0;/);
+    assert.match(css, /#ontology-dialog-input\s*\{[\s\S]*margin:\s*0;/);
+});
+
+
+test('ontology footer reports catalog size without redundant keyboard hints', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+        new URL('../../app/static/js/modules/modals/ontology-modal.js', import.meta.url),
+        'utf8',
+    );
+
+    assert.match(source, /`\$\{total\.toLocaleString\(\)\} total unique tags`/);
+    assert.doesNotMatch(source, /esc to cancel/);
+    assert.doesNotMatch(source, /enter to focus/);
+    assert.doesNotMatch(source, /Showing \$\{shown\}/);
+});

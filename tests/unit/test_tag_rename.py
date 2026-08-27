@@ -1,6 +1,31 @@
 import pytest
 
-from app.services.tag_rename import rename_tag_in_tag_bar, toggle_meta_tag_pair_in_tag_bar
+from app.services.tag_rename import (
+    delete_tag_from_tag_bar,
+    rename_tag_in_tag_bar,
+    toggle_meta_tag_pair_in_tag_bar,
+)
+
+
+def test_delete_tag_from_tag_bar_removes_bare_and_wrapped_tokens() -> None:
+    tags = "foo alpha [foo beta] {gamma foo} (foo)"
+    updated, changed = delete_tag_from_tag_bar(tags=tags, tag="foo")
+    assert changed is True
+    assert updated == " alpha [beta] {gamma} "
+
+
+def test_delete_tag_from_tag_bar_ignores_block_comments_and_partial_matches() -> None:
+    tags = "foo foobar /* foo */ barfoo"
+    updated, changed = delete_tag_from_tag_bar(tags=tags, tag="foo")
+    assert changed is True
+    assert updated == " foobar /* foo */ barfoo"
+
+
+def test_delete_tag_from_tag_bar_reports_unchanged_when_tag_is_absent() -> None:
+    tags = "alpha beta"
+    updated, changed = delete_tag_from_tag_bar(tags=tags, tag="foo")
+    assert changed is False
+    assert updated == tags
 
 
 def test_rename_tag_in_tag_bar_bare_tokens_preserves_whitespace() -> None:

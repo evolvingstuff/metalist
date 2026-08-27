@@ -14,6 +14,7 @@ from app.security.encryption import clear_encryption_key, encrypt, set_encryptio
 from app.services.ontology_rules_store import (
     bootstrap_ontology_rules_store,
     create_rule_line,
+    delete_tag_everywhere,
     delete_rule_line,
     ensure_rules_decrypted_and_compiled,
     get_ontology,
@@ -63,6 +64,51 @@ def test_ontology_rules_store_bootstrap_and_crud(
         delete_rule_line(rule_id=created_id)
         final_rules = dict(list_rule_lines())
         assert created_id not in final_rules
+    finally:
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
+def test_delete_tag_everywhere_removes_tag_rules_but_not_text_matchers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_temp_file_db(monkeypatch, tmp_path)
+    set_encryption_required(False)
+    SafeSession.use_memory_db()
+    try:
+        now = datetime.now(timezone.utc)
+        with begin_writer() as connection:
+            insert_rule(
+                connection,
+                rule_text="alpha => beta",
+                rule_encryption_nonce=None,
+                rule_encryption_tag=None,
+                created_at=now,
+                updated_at=now,
+            )
+            insert_rule(
+                connection,
+                rule_text="gamma => alpha",
+                rule_encryption_nonce=None,
+                rule_encryption_tag=None,
+                created_at=now,
+                updated_at=now,
+            )
+            insert_rule(
+                connection,
+                rule_text='"alpha" => keep',
+                rule_encryption_nonce=None,
+                rule_encryption_tag=None,
+                created_at=now,
+                updated_at=now,
+            )
+            bootstrap_ontology_rules_store(connection=connection)
+
+        deleted_count = delete_tag_everywhere(tag="alpha")
+
+        assert deleted_count == 2
+        assert list(dict(list_rule_lines()).values()) == ['"alpha" => keep']
     finally:
         set_encryption_required(False)
         SafeSession.use_file_db()

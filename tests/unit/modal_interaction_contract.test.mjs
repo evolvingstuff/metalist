@@ -51,6 +51,38 @@ test('modal render replacement reinstalls the universal close button', () => {
 });
 
 
+test('sound manager renders its modal panel before BaseModal installs shared chrome', () => {
+    const source = readModalSource('sound-manager-modal.js');
+    const openStart = source.indexOf('    open() {');
+    const openEnd = source.indexOf('    onOpen() {', openStart);
+    assert.notEqual(openStart, -1);
+    assert.notEqual(openEnd, -1);
+    const openSource = source.slice(openStart, openEnd);
+
+    const renderIndex = openSource.indexOf('this._render();');
+    const baseOpenIndex = openSource.indexOf('super.open();');
+    assert.notEqual(renderIndex, -1);
+    assert.notEqual(baseOpenIndex, -1);
+    assert.ok(renderIndex < baseOpenIndex, 'sound panel must exist before BaseModal installs its close control');
+});
+
+
+test('reminders render their modal panel before BaseModal installs shared chrome', () => {
+    const source = readModalSource('reminder-modal.js');
+    const showStart = source.indexOf('    showModalElement() {');
+    const showEnd = source.indexOf('    onOpen() {', showStart);
+    assert.notEqual(showStart, -1);
+    assert.notEqual(showEnd, -1);
+    const showSource = source.slice(showStart, showEnd);
+
+    const renderIndex = showSource.indexOf('this._render();');
+    const displayIndex = showSource.indexOf("modalElement.style.display = 'block';");
+    assert.notEqual(renderIndex, -1);
+    assert.notEqual(displayIndex, -1);
+    assert.ok(renderIndex < displayIndex, 'reminder panel must exist before BaseModal installs its close control');
+});
+
+
 test('the universal modal close control is circular and upper-right aligned', () => {
     const source = readFileSync(MAIN_CSS_URL, 'utf8');
     const ruleStart = source.indexOf('.modal-content .modal-close-button');
@@ -63,6 +95,84 @@ test('the universal modal close control is circular and upper-right aligned', ()
     assert.match(ruleSource, /top:\s*16px/);
     assert.match(ruleSource, /right:\s*16px/);
     assert.match(ruleSource, /border-radius:\s*50%/);
+});
+
+
+test('help modal header reserves the close control footprint above its first panel', () => {
+    const source = readFileSync(MAIN_CSS_URL, 'utf8');
+    const ruleStart = source.indexOf('.help-modal-content h2 {');
+    const ruleEnd = source.indexOf('.help-shortcuts-container', ruleStart);
+    assert.notEqual(ruleStart, -1);
+    assert.notEqual(ruleEnd, -1);
+    const ruleSource = source.slice(ruleStart, ruleEnd);
+
+    assert.match(ruleSource, /margin:\s*0 56px 0 0/);
+    assert.match(ruleSource, /min-height:\s*42px/);
+});
+
+
+test('help modal uses a centered flex overlay with internal panel scrolling', () => {
+    const source = readModalSource('help-modal.js');
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+
+    assert.match(source, /modalElement\.style\.display = 'flex'/);
+    assert.match(css, /#help-modal\s*\{[\s\S]*align-items:\s*center/);
+    assert.match(css, /#help-modal\s*\{[\s\S]*justify-content:\s*center/);
+    assert.match(css, /\.help-modal-content\s*\{[\s\S]*overflow-y:\s*auto/);
+});
+
+
+test('all app modals inherit the theme-independent dark visual system', () => {
+    const source = readFileSync(MAIN_CSS_URL, 'utf8');
+    const shellStart = source.indexOf('/* Shared modal shell. Modal contents are intentionally dark in every app theme. */');
+    const unifiedStart = source.indexOf('/* Unified dark modal visual system');
+
+    assert.notEqual(shellStart, -1);
+    assert.notEqual(unifiedStart, -1);
+    const shellSource = source.slice(shellStart, source.indexOf('.image-file-insert-choice-modal-content', shellStart));
+    const unifiedSource = source.slice(unifiedStart);
+
+    assert.match(shellSource, /\.modal\s*\{[\s\S]*--modal-surface:/);
+    assert.match(shellSource, /color-scheme:\s*dark/);
+    assert.match(shellSource, /z-index:\s*15000/);
+    assert.match(shellSource, /backdrop-filter:\s*blur\(/);
+    assert.match(shellSource, /\.modal-content\s*\{[\s\S]*background:\s*linear-gradient/);
+    assert.match(unifiedSource, /\.modal-content input:not\(\[type="checkbox"\]\)/);
+    assert.match(unifiedSource, /\.modal-content \.secondary-btn/);
+    assert.match(unifiedSource, /\.modal-content \.danger-btn/);
+
+    const specializedSurfaces = [
+        'namespace-modal-radio-row',
+        'search-suggestion-statistics-day',
+        'note-layout-preview',
+        'help-section',
+        'password-length',
+        'password-strength',
+        'reminder-row',
+        'backup-result-table thead th',
+        'sound-manager-row',
+        'prioritize-modal-tag-bar',
+        'command-palette-panel',
+    ];
+    for (const className of specializedSurfaces) {
+        assert.ok(unifiedSource.includes(className), `missing dark modal coverage for ${className}`);
+    }
+});
+
+
+test('ontology editor keeps its established visual system outside shared modal overrides', () => {
+    const source = readFileSync(MAIN_CSS_URL, 'utf8');
+    const unifiedStart = source.indexOf('/* Unified dark modal visual system');
+    assert.notEqual(unifiedStart, -1);
+    const unifiedSource = source.slice(unifiedStart);
+
+    assert.doesNotMatch(unifiedSource, /#ontology-modal/);
+    assert.doesNotMatch(unifiedSource, /\.ontology-dialog/);
+    assert.match(source, /#ontology-modal\s*\{[\s\S]*padding:\s*0;[\s\S]*backdrop-filter:\s*none/);
+    assert.match(
+        source,
+        /#ontology-modal \.modal-content\.ontology-modal-content\s*\{[\s\S]*max-width:\s*90%;[\s\S]*margin:\s*60px auto;[\s\S]*padding:\s*20px;[\s\S]*border-radius:\s*8px/,
+    );
 });
 
 

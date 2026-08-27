@@ -60,6 +60,7 @@ export class SoundManagerModal extends BaseModal {
             modalElement.style.display = 'none';
             document.body.appendChild(modalElement);
         }
+        this._render();
         super.open();
     }
 
