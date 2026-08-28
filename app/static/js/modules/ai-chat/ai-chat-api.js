@@ -65,6 +65,28 @@ export async function clearAiChatSession() {
 }
 
 
+export async function loadAiDebugSnapshot() {
+    const response = await fetchAi(CONFIG.API.AI.DEBUG, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to load agent debug trace');
+}
+
+
+export async function setAiDebugExactDetails(enabled) {
+    if (typeof enabled !== 'boolean') {
+        throw new Error('setAiDebugExactDetails requires boolean enabled');
+    }
+    const response = await fetchAi(CONFIG.API.AI.DEBUG, {
+        method: 'PUT',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ enabled }),
+    });
+    return await readJsonResponse(response, 'Failed to update agent debug detail visibility');
+}
+
+
 export async function copyAiChatResponse({ messageId, clientId }) {
     if (typeof messageId !== 'string' || messageId === '') {
         throw new Error('copyAiChatResponse requires messageId');

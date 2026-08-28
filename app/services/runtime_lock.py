@@ -24,6 +24,7 @@ from app.services.tab_state import tab_state_store
 from app.services.undo_state import reset_all_undo_state
 from app.services.view_cache import view_cache
 from app.services.ai_chat import ai_chat_store
+from app.services.agent.trace import agent_trace_store
 
 
 def _rebootstrap_encrypted_store_metadata() -> None:
@@ -48,6 +49,7 @@ def purge_decrypted_runtime_state() -> bool:
 
     view_cache.clear()
     ai_chat_store.reset()
+    agent_trace_store.reset()
     tab_state_store.reset()
     link_title_store.reset()
     reminder_store.reset()

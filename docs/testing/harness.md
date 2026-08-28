@@ -30,6 +30,19 @@ There is targeted JS unit coverage for external HTML paste sanitization:
 Node is still required for the `.mjs` JS unit tests and Mermaid diagram
 rendering, but not for the startup sanity gate.
 
+The read-only agent harness has focused coverage for typed action boundaries,
+the flat Ollama action envelope and inactive-placeholder projection, concise
+structured-failure presentation, Instructor mode/request handling and retry traces,
+transient context, read-only note tools, latest-run trace replacement, live
+Instructor attempt/retry status, session-only activity panels, API/session isolation,
+per-call Ollama wire bodies, action-status parsing, and the debugger UI contract:
+
+- `tests/unit/test_agent_runtime.py`
+- `tests/unit/test_ai_chat.py`
+- `tests/unit/test_ai_routes.py`
+- `tests/unit/ai_chat_panel_service.test.mjs`
+- `tests/unit/ai_chat_ui_contract.test.mjs`
+
 For deterministic browser automation, the server still exposes a
 `TEST_MODE`-only reset endpoint: `POST /api2/test/reset`.
 

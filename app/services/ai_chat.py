@@ -15,22 +15,41 @@ class AiChatSessionStore:
 
     def __init__(self) -> None:
         self._sessions: dict[str, list[dict[str, str]]] = {}
+        self._activities: dict[str, dict[str, list[dict[str, str]]]] = {}
         self._lock = Lock()
 
     def reset(self) -> None:
         with self._lock:
             self._sessions.clear()
+            self._activities.clear()
 
     def clear_session(self, *, session_key: str) -> None:
         self._validate_session_key(session_key)
         with self._lock:
             self._sessions.pop(session_key, None)
+            self._activities.pop(session_key, None)
 
-    def snapshot(self, *, session_key: str) -> dict[str, list[dict[str, str]]]:
+    def snapshot(self, *, session_key: str) -> dict[str, list[dict[str, object]]]:
         self._validate_session_key(session_key)
         with self._lock:
             messages = self._sessions.get(session_key, [])
-            return {"messages": [dict(message) for message in messages]}
+            session_activities: dict[str, list[dict[str, str]]] = {}
+            if session_key in self._activities:
+                session_activities = self._activities[session_key]
+            elif messages:
+                raise RuntimeError("AI activities missing for populated session")
+            return {
+                "messages": [
+                    {
+                        **message,
+                        "activities": [
+                            dict(activity)
+                            for activity in session_activities[message["id"]]
+                        ],
+                    }
+                    for message in messages
+                ]
+            }
 
     def start_turn(
         self,
@@ -46,10 +65,16 @@ class AiChatSessionStore:
         self._validate_message_text(model, label="model")
         with self._lock:
             messages = self._sessions.setdefault(session_key, [])
+            session_activities = self._activities.setdefault(session_key, {})
             if any(message["status"] == "streaming" for message in messages):
                 raise RuntimeError("AI chat session already streaming a turn")
             if len(messages) + 2 > _MAX_MESSAGES_PER_SESSION:
+                removed_message_ids = [message["id"] for message in messages[:2]]
                 del messages[:2]
+                for removed_message_id in removed_message_ids:
+                    if removed_message_id not in session_activities:
+                        raise RuntimeError("AI activity list missing for removed message")
+                    del session_activities[removed_message_id]
             user_message_id = str(uuid4())
             assistant_message_id = str(uuid4())
             messages.extend(
@@ -76,7 +101,33 @@ class AiChatSessionStore:
                     },
                 ]
             )
+            session_activities[user_message_id] = []
+            session_activities[assistant_message_id] = []
             return assistant_message_id
+
+    def append_activity(
+        self,
+        *,
+        session_key: str,
+        turn_id: str,
+        action: str,
+        status: str,
+        label: str,
+    ) -> None:
+        self._validate_session_key(session_key)
+        self._validate_message_text(turn_id, label="turn_id")
+        self._validate_message_text(action, label="action")
+        if status not in {"started", "completed"}:
+            raise ValueError(f"Unsupported AI activity status: {status}")
+        self._validate_message_text(label, label="label")
+        with self._lock:
+            self._require_streaming_turn(session_key=session_key, turn_id=turn_id)
+            session_activities = self._activities.get(session_key)
+            if session_activities is None or turn_id not in session_activities:
+                raise RuntimeError("AI activity list missing for streaming turn")
+            session_activities[turn_id].append(
+                {"action": action, "status": status, "label": label}
+            )
 
     def append_delta(
         self,

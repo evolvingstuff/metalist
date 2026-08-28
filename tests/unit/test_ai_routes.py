@@ -6,16 +6,24 @@ from fastapi import HTTPException, Response
 
 import app.api.routes.ai as ai_routes
 from app.services.ai_chat import AiChatSessionStore
+from app.services.agent.trace import AgentTraceStore
 from app.services.ollama_provider import OllamaProviderError
 
 
 def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None:
     store = AiChatSessionStore()
-    store.start_turn(
+    turn_id = store.start_turn(
         session_key="session-key",
         user_content="Hello",
         provider="ollama",
         model="qwen3:8b",
+    )
+    store.append_activity(
+        session_key="session-key",
+        turn_id=turn_id,
+        action="model_request",
+        status="started",
+        label="Waiting for Ollama · attempt 1 of 2",
     )
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
@@ -34,6 +42,14 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
     assert response.messages[1].status == "streaming"
     assert response.messages[1].rendered_content == ""
     assert response.messages[1].rendered_thinking == ""
+    assert [activity.model_dump() for activity in response.messages[1].activities] == [
+        {
+            "sequence": 1,
+            "action": "model_request",
+            "status": "started",
+            "label": "Waiting for Ollama · attempt 1 of 2",
+        }
+    ]
     assert http_response.headers["Cache-Control"] == "no-store"
 
 
@@ -217,6 +233,7 @@ def test_copy_ai_response_rejects_streaming_message(monkeypatch) -> None:
 
 def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
     store = AiChatSessionStore()
+    traces = AgentTraceStore()
     store.start_turn(
         session_key="session-a",
         user_content="A",
@@ -229,7 +246,10 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
         provider="ollama",
         model="qwen3:8b",
     )
+    traces.set_exact_details_enabled(session_key="session-a", enabled=True)
+    traces.start_run(session_key="session-a", model="qwen3:8b", user_message="A")
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes, "agent_trace_store", traces)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-a")
 
     http_response = Response()
@@ -239,23 +259,80 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
     assert http_response.headers["Cache-Control"] == "no-store"
     assert store.snapshot(session_key="session-a") == {"messages": []}
     assert len(store.snapshot(session_key="session-b")["messages"]) == 2
+    assert traces.snapshot(session_key="session-a") == {
+        "enabled": True,
+        "has_trace": False,
+        "run": {},
+    }
+
+
+def test_debug_trace_is_retained_before_exact_details_are_enabled(monkeypatch) -> None:
+    traces = AgentTraceStore()
+    monkeypatch.setattr(ai_routes, "agent_trace_store", traces)
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-a")
+
+    run_id = traces.start_run(
+        session_key="session-a",
+        model="qwen3:8b",
+        user_message="Why did this fail?",
+    )
+    traces.fail_run(
+        session_key="session-a",
+        run_id=run_id,
+        error="Validation failed",
+    )
+    initial_http_response = Response()
+    initial = ai_routes.get_ai_debug_snapshot(
+        response=initial_http_response,
+        token="auth-token",
+    )
+    enabled = ai_routes.put_ai_debug_details(
+        payload=ai_routes.AiDebugDetailToggleRequest(enabled=True),
+        response=Response(),
+        token="auth-token",
+    )
+
+    assert initial.enabled is False
+    assert initial.has_trace is True
+    assert initial.run["run_id"] == run_id
+    assert initial.run["status"] == "error"
+    assert initial_http_response.headers["Cache-Control"] == "no-store"
+    assert enabled.enabled is True
+    assert enabled.has_trace is True
+    assert enabled.run["run_id"] == run_id
+    assert traces.snapshot(session_key="session-b")["enabled"] is False
 
 
 def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) -> None:
     store = AiChatSessionStore()
 
-    class FakeProvider:
-        async def stream_chat(self, *, base_url, model, thinking_level, messages):
+    class FakeRuntime:
+        async def stream(
+            self,
+            *,
+            session_key,
+            base_url,
+            selected_model,
+            thinking_level,
+            canonical_messages,
+        ):
+            assert session_key == "session-key"
             assert base_url == "http://127.0.0.1:11434"
-            assert model == "qwen3:8b"
+            assert selected_model == "qwen3:8b"
             assert thinking_level == "low"
-            assert messages == [{"role": "user", "content": "Hello"}]
+            assert canonical_messages == [{"role": "user", "content": "Hello"}]
+            yield {
+                "type": "action_status",
+                "action": "planning",
+                "status": "started",
+                "label": "Planning next action",
+            }
             yield {"type": "thinking_delta", "text": "Think"}
             yield {"type": "content_delta", "text": "Hi"}
             yield {"type": "done"}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "ollama_provider", FakeProvider())
+    monkeypatch.setattr(ai_routes, "agent_runtime", FakeRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
 
     response = ai_routes.stream_ai_chat(
@@ -281,6 +358,12 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
 
     assert events == [
         {
+            "type": "action_status",
+            "action": "planning",
+            "status": "started",
+            "label": "Planning next action",
+        },
+        {
             "type": "thinking_delta",
             "text": "Think",
             "rendered_text": "<p>Think</p>",
@@ -295,19 +378,34 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     assert snapshot["messages"][1]["thinking"] == "Think"
     assert snapshot["messages"][1]["content"] == "Hi"
     assert snapshot["messages"][1]["status"] == "complete"
+    assert snapshot["messages"][1]["activities"] == [
+        {
+            "action": "planning",
+            "status": "started",
+            "label": "Planning next action",
+        }
+    ]
 
 
 def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
     store = AiChatSessionStore()
 
-    class FailingProvider:
-        async def stream_chat(self, *, base_url, model, thinking_level, messages):
-            del base_url, model, thinking_level, messages
+    class FailingRuntime:
+        async def stream(
+            self,
+            *,
+            session_key,
+            base_url,
+            selected_model,
+            thinking_level,
+            canonical_messages,
+        ):
+            del session_key, base_url, selected_model, thinking_level, canonical_messages
             raise OllamaProviderError("Ollama generation failed")
             yield
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "ollama_provider", FailingProvider())
+    monkeypatch.setattr(ai_routes, "agent_runtime", FailingRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
 
     response = ai_routes.stream_ai_chat(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from collections.abc import Callable
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
@@ -190,7 +191,41 @@ class OllamaProvider:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
-    ) -> AsyncIterator[dict[str, str]]:
+        on_request: Callable[[dict[str, object]], None],
+    ) -> AsyncIterator[dict[str, object]]:
+        wire_request = self._build_chat_wire_request(
+            base_url=base_url,
+            model=model,
+            thinking_level=thinking_level,
+            messages=messages,
+        )
+        on_request(wire_request)
+        url = wire_request["url"]
+        request_payload = wire_request["body"]
+        assert isinstance(url, str)
+        assert isinstance(request_payload, dict)
+        did_finish = False
+        try:
+            async with self._client() as client:
+                async with client.stream("POST", url, json=request_payload) as response:
+                    response.raise_for_status()
+                    async for event in self._stream_response_events(response=response):
+                        if event["type"] == "done":
+                            did_finish = True
+                        yield event
+        except httpx.HTTPError as exc:
+            raise OllamaProviderError("Ollama chat request failed") from exc
+        if not did_finish:
+            raise OllamaProviderError("Ollama stream ended before completion")
+
+    def _build_chat_wire_request(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        thinking_level: str,
+        messages: list[dict[str, str]],
+    ) -> dict[str, object]:
         normalized_model = validate_ollama_model(model)
         think_value = resolve_ollama_think_value(
             model=normalized_model,
@@ -204,40 +239,52 @@ class OllamaProvider:
             "think": think_value,
         }
         url = _api_url(base_url=base_url, endpoint="/chat")
-        did_finish = False
-        try:
-            async with self._client() as client:
-                async with client.stream("POST", url, json=request_payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if line == "":
-                            continue
-                        event = self._parse_stream_line(line)
-                        message = event["message"]
-                        # Ollama omits whichever optional stream channel is idle.
-                        normalized_message = {"thinking": "", "content": ""}
-                        normalized_message.update(message)
-                        thinking = normalized_message["thinking"]
-                        content = normalized_message["content"]
-                        if not isinstance(thinking, str) or not isinstance(content, str):
-                            raise OllamaProviderError("Ollama stream message fields must be strings")
-                        if thinking != "":
-                            yield {"type": "thinking_delta", "text": thinking}
-                        if content != "":
-                            yield {"type": "content_delta", "text": content}
-                        if "done" not in event:
-                            raise OllamaProviderError("Ollama stream event is missing done flag")
-                        done = event["done"]
-                        if not isinstance(done, bool):
-                            raise OllamaProviderError("Ollama stream event is missing done flag")
-                        if done:
-                            did_finish = True
-                            yield {"type": "done"}
-                            break
-        except httpx.HTTPError as exc:
-            raise OllamaProviderError("Ollama chat request failed") from exc
-        if not did_finish:
-            raise OllamaProviderError("Ollama stream ended before completion")
+        return {"method": "POST", "url": url, "body": request_payload}
+
+    async def _stream_response_events(
+        self,
+        *,
+        response: httpx.Response,
+    ) -> AsyncIterator[dict[str, object]]:
+        async for line in response.aiter_lines():
+            if line == "":
+                continue
+            event = self._parse_stream_line(line)
+            message = event["message"]
+            normalized_message = {"thinking": "", "content": ""}
+            normalized_message.update(message)
+            thinking = normalized_message["thinking"]
+            content = normalized_message["content"]
+            if not isinstance(thinking, str) or not isinstance(content, str):
+                raise OllamaProviderError("Ollama stream message fields must be strings")
+            if thinking != "":
+                yield {"type": "thinking_delta", "text": thinking}
+            if content != "":
+                yield {"type": "content_delta", "text": content}
+            if "done" not in event:
+                raise OllamaProviderError("Ollama stream event is missing done flag")
+            done = event["done"]
+            if not isinstance(done, bool):
+                raise OllamaProviderError("Ollama stream event is missing done flag")
+            if done:
+                usage = self._parse_usage(payload=event)
+                if usage:
+                    yield {"type": "done", "usage": usage}
+                else:
+                    yield {"type": "done"}
+                return
+
+    @staticmethod
+    def _parse_usage(*, payload: dict[str, object]) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        for field_name in ("prompt_eval_count", "eval_count"):
+            if field_name not in payload:
+                continue
+            value = payload[field_name]
+            if not isinstance(value, int) or value < 0:
+                raise OllamaProviderError(f"Ollama {field_name} must be a non-negative integer")
+            usage[field_name] = value
+        return usage
 
     @staticmethod
     def _parse_stream_line(line: str) -> dict[str, object]:
@@ -293,7 +340,7 @@ class OllamaProvider:
                 raise TypeError("Ollama chat message must be an object")
             if set(message) != {"role", "content"}:
                 raise ValueError("Ollama chat message must contain role and content")
-            if message["role"] not in {"user", "assistant"}:
+            if message["role"] not in {"system", "user", "assistant"}:
                 raise ValueError("Ollama chat message has unsupported role")
             if not isinstance(message["content"], str):
                 raise TypeError("Ollama chat message content must be a string")

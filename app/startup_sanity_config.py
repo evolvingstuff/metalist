@@ -17,7 +17,9 @@ PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "urllib.",
     "ollama_provider.",
     "client.get",
+    "client.create_with_completion",
     "client.stream",
+    "self._inference.infer_structured",
     "json.",
 )
 
@@ -29,6 +31,8 @@ PY_ALLOWED_EXCEPTION_NAMES = (
     "json.JSONDecodeError",
     "OllamaProviderError",
     "asyncio.CancelledError",
+    "StructuredInferenceError",
+    "InstructorRetryException",
 )
 
 JS_ALLOWED_TRY_CALLEE_NAMES = (
@@ -37,9 +41,11 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "clearAiChatSession",
     "copyAiChatResponse",
     "listOllamaModels",
+    "loadAiDebugSnapshot",
     "loadAiChatSession",
     "pullOllamaModel",
     "streamAiChat",
+    "setAiDebugExactDetails",
 )
 
 JS_ALLOWED_TRY_CALLEE_PREFIXES = (

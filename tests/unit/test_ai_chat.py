@@ -31,6 +31,13 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         delta_kind="content",
         text="4",
     )
+    store.append_activity(
+        session_key="session-a",
+        turn_id=first_turn,
+        action="model_request",
+        status="started",
+        label="Waiting for Ollama · attempt 1 of 2",
+    )
     store.complete_turn(session_key="session-a", turn_id=first_turn)
 
     session_a = store.snapshot(session_key="session-a")
@@ -40,6 +47,14 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
     assert session_a["messages"][1]["thinking"] == "I should add the numbers."
     assert session_a["messages"][1]["content"] == "4"
     assert session_a["messages"][1]["status"] == "complete"
+    assert session_a["messages"][1]["activities"] == [
+        {
+            "action": "model_request",
+            "status": "started",
+            "label": "Waiting for Ollama · attempt 1 of 2",
+        }
+    ]
+    assert session_a["messages"][0]["activities"] == []
     assert session_b == {"messages": []}
 
 
@@ -62,6 +77,13 @@ def test_chat_store_builds_ollama_history_without_thinking_trace() -> None:
         turn_id=turn_id,
         delta_kind="content",
         text="Hi there",
+    )
+    store.append_activity(
+        session_key="session-a",
+        turn_id=turn_id,
+        action="retry",
+        status="started",
+        label="Structured output invalid (ValidationError) · Instructor will retry",
     )
     store.complete_turn(session_key="session-a", turn_id=turn_id)
 
@@ -218,6 +240,8 @@ def test_ollama_provider_streams_model_pull_progress() -> None:
 
 
 def test_ollama_provider_streams_thinking_and_content_separately() -> None:
+    wire_requests: list[dict[str, object]] = []
+
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         assert str(request.url) == "http://127.0.0.1:11434/api/chat"
@@ -235,7 +259,8 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
                 b'{"message":{"role":"assistant","thinking":"One"},"done":false}\n'
                 b'{"message":{"role":"assistant","thinking":", two"},"done":false}\n'
                 b'{"message":{"role":"assistant","content":"1, 2"},"done":false}\n'
-                b'{"message":{"role":"assistant","content":"!"},"done":true}\n'
+                b'{"message":{"role":"assistant","content":"!"},"done":true,'
+                b'"prompt_eval_count":23,"eval_count":8}\n'
             ),
         )
 
@@ -248,17 +273,30 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
                 model="qwen3:8b",
                 thinking_level="low",
                 messages=[{"role": "user", "content": "Count to two"}],
+                on_request=wire_requests.append,
             )
         ]
 
     chunks = asyncio.run(collect_chunks())
 
+    assert wire_requests == [
+        {
+            "method": "POST",
+            "url": "http://127.0.0.1:11434/api/chat",
+            "body": {
+                "model": "qwen3:8b",
+                "messages": [{"role": "user", "content": "Count to two"}],
+                "stream": True,
+                "think": "low",
+            },
+        }
+    ]
     assert chunks == [
         {"type": "thinking_delta", "text": "One"},
         {"type": "thinking_delta", "text": ", two"},
         {"type": "content_delta", "text": "1, 2"},
         {"type": "content_delta", "text": "!"},
-        {"type": "done"},
+        {"type": "done", "usage": {"prompt_eval_count": 23, "eval_count": 8}},
     ]
 
 
@@ -281,6 +319,7 @@ def test_gpt_oss_requests_medium_thinking_level() -> None:
                 model="gpt-oss:20b",
                 thinking_level="medium",
                 messages=[{"role": "user", "content": "Hello"}],
+                on_request=lambda request: None,
             )
         ]
 

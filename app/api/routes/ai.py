@@ -6,7 +6,7 @@ import asyncio
 import html
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
@@ -17,17 +17,34 @@ from app.api.transactions import transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat import ai_chat_store
+from app.services.agent.context import AgentContextBuilder
+from app.services.agent.model_policy import SingleModelPolicy
+from app.services.agent.ollama_inference import OllamaInferenceAdapter
+from app.services.agent.permissions import AgentPermissionPolicy
+from app.services.agent.runtime import AgentExecutionError
+from app.services.agent.runtime import AgentRuntime
+from app.services.agent.tools import read_only_agent_tools
+from app.services.agent.trace import agent_trace_store
 from app.services.markdown_rendering import render_markdown_to_html
-from app.services.sync import set_clipboard
 from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import ollama_provider
 from app.services.ollama_provider import resolve_ollama_think_value
 from app.services.ollama_provider import validate_ollama_model
+from app.services.sync import set_clipboard
 from app.services.tokens import token_service
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+agent_runtime = AgentRuntime(
+    context_builder=AgentContextBuilder(),
+    inference=OllamaInferenceAdapter(provider=ollama_provider),
+    model_policy=SingleModelPolicy(),
+    permission_policy=AgentPermissionPolicy(),
+    tool_registry=read_only_agent_tools,
+    trace_store=agent_trace_store,
+)
 
 
 class AiModelsRequest(BaseModel):
@@ -93,6 +110,13 @@ class AiChatRequest(BaseModel):
         return self
 
 
+class AiChatActivity(BaseModel):
+    sequence: int = Field(..., ge=1)
+    action: str
+    status: Literal["started", "completed"]
+    label: str
+
+
 class AiChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant"]
@@ -104,6 +128,7 @@ class AiChatMessage(BaseModel):
     error: str
     provider: Literal["ollama"]
     model: str
+    activities: list[AiChatActivity]
 
 
 class AiSessionResponse(BaseModel):
@@ -112,6 +137,16 @@ class AiSessionResponse(BaseModel):
 
 class AiClearResponse(BaseModel):
     message: str
+
+
+class AiDebugDetailToggleRequest(BaseModel):
+    enabled: bool
+
+
+class AiDebugSnapshotResponse(BaseModel):
+    enabled: bool
+    has_trace: bool
+    run: dict[str, Any]
 
 
 class AiCopyMessageRequest(BaseModel):
@@ -197,6 +232,9 @@ def get_ai_session(
     snapshot = ai_chat_store.snapshot(session_key=session_key)
     messages: list[AiChatMessage] = []
     for message in snapshot["messages"]:
+        activities = message["activities"]
+        if not isinstance(activities, list):
+            raise TypeError("AI chat message activities must be a list")
         rendered_content = ""
         rendered_thinking = ""
         if message["role"] == "assistant" and message["content"] != "":
@@ -215,6 +253,15 @@ def get_ai_session(
                 error=message["error"],
                 provider=message["provider"],
                 model=message["model"],
+                activities=[
+                    AiChatActivity(
+                        sequence=index,
+                        action=activity["action"],
+                        status=activity["status"],
+                        label=activity["label"],
+                    )
+                    for index, activity in enumerate(activities, start=1)
+                ],
             )
         )
     return AiSessionResponse(messages=messages)
@@ -229,7 +276,38 @@ def clear_ai_session(
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
+    agent_trace_store.clear_trace(session_key=session_key)
     return AiClearResponse(message="Chat cleared")
+
+
+@router.get("/debug", response_model=AiDebugSnapshotResponse)
+def get_ai_debug_snapshot(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> AiDebugSnapshotResponse:
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    return AiDebugSnapshotResponse.model_validate(
+        agent_trace_store.snapshot(session_key=session_key)
+    )
+
+
+@router.put("/debug", response_model=AiDebugSnapshotResponse)
+@transactional_route
+def put_ai_debug_details(
+    payload: AiDebugDetailToggleRequest,
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> AiDebugSnapshotResponse:
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    agent_trace_store.set_exact_details_enabled(
+        session_key=session_key,
+        enabled=payload.enabled,
+    )
+    return AiDebugSnapshotResponse.model_validate(
+        agent_trace_store.snapshot(session_key=session_key)
+    )
 
 
 @router.post("/messages/{message_id}/copy", response_model=AiCopyMessageResponse)
@@ -303,11 +381,12 @@ def stream_ai_chat(
         accumulated_thinking = ""
         accumulated_content = ""
         try:
-            async for event in ollama_provider.stream_chat(
+            async for event in agent_runtime.stream(
+                session_key=session_key,
                 base_url=payload.base_url,
-                model=payload.model,
+                selected_model=payload.model,
                 thinking_level=payload.thinking_level,
-                messages=provider_messages,
+                canonical_messages=provider_messages,
             ):
                 event_type = event["type"]
                 outgoing_event = event
@@ -335,16 +414,24 @@ def stream_ai_chat(
                         **event,
                         "rendered_text": render_markdown_to_html(accumulated_content),
                     }
+                elif event_type == "action_status":
+                    ai_chat_store.append_activity(
+                        session_key=session_key,
+                        turn_id=turn_id,
+                        action=event["action"],
+                        status=event["status"],
+                        label=event["label"],
+                    )
                 elif event_type == "done":
                     ai_chat_store.complete_turn(
                         session_key=session_key,
                         turn_id=turn_id,
                     )
                 else:
-                    raise RuntimeError(f"Unknown Ollama stream event type: {event_type}")
+                    raise RuntimeError(f"Unknown agent stream event type: {event_type}")
                 yield f"{json.dumps(outgoing_event, separators=(',', ':'))}\n"
         # lint: allow-PY001 rationale="stream errors must be delivered after response headers are sent"
-        except OllamaProviderError as exc:
+        except (AgentExecutionError, OllamaProviderError) as exc:
             error_message = str(exc)
             ai_chat_store.fail_turn(
                 session_key=session_key,
@@ -358,6 +445,14 @@ def stream_ai_chat(
                 session_key=session_key,
                 turn_id=turn_id,
                 error="Response interrupted",
+            )
+            raise
+        # lint: allow-PY001 rationale="mark the streamed turn failed before re-raising internal errors"
+        except Exception:
+            ai_chat_store.fail_turn(
+                session_key=session_key,
+                turn_id=turn_id,
+                error="Internal agent error",
             )
             raise
 

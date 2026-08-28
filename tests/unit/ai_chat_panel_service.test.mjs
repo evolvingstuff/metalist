@@ -24,15 +24,24 @@ test('chat maximum width preserves the minimum notes area', () => {
 
 test('NDJSON parser retains incomplete tail while returning complete stream events', () => {
     const parsed = parseAiChatNdjsonBuffer(
-        '{"type":"thinking_delta","text":"hmm","rendered_text":"<p>hmm</p>"}\n'
+        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes"}\n'
+        + '{"type":"thinking_delta","text":"hmm","rendered_text":"<p>hmm</p>"}\n'
         + '{"type":"content_delta","text":"Hi","rendered_text":"<p>Hi',
     );
 
-    assert.deepEqual(parsed.events, [{
-        type: 'thinking_delta',
-        text: 'hmm',
-        rendered_text: '<p>hmm</p>',
-    }]);
+    assert.deepEqual(parsed.events, [
+        {
+            type: 'action_status',
+            action: 'search_notes',
+            status: 'started',
+            label: 'Searching notes',
+        },
+        {
+            type: 'thinking_delta',
+            text: 'hmm',
+            rendered_text: '<p>hmm</p>',
+        },
+    ]);
     assert.equal(
         parsed.remainder,
         '{"type":"content_delta","text":"Hi","rendered_text":"<p>Hi',
@@ -46,6 +55,22 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
         { type: 'done' },
     ]);
     assert.equal(completed.remainder, '');
+});
+
+
+test('NDJSON parser rejects malformed action status events', () => {
+    assert.throws(
+        () => parseAiChatNdjsonBuffer(
+            '{"type":"action_status","action":"search_notes","status":"started"}\n',
+        ),
+        /action_status requires label/,
+    );
+    assert.throws(
+        () => parseAiChatNdjsonBuffer(
+            '{"type":"action_status","action":"search_notes","status":"waiting","label":"Searching notes"}\n',
+        ),
+        /action_status status is invalid/,
+    );
 });
 
 

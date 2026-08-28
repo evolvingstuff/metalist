@@ -26,6 +26,10 @@ const CHAT_API_URL = new URL(
     '../../app/static/js/modules/ai-chat/ai-chat-api.js',
     import.meta.url,
 );
+const DEBUG_VIEW_URL = new URL(
+    '../../app/static/js/modules/ai-chat/ai-agent-debug-view.js',
+    import.meta.url,
+);
 
 
 test('chat panel markup has a resizer, transcript, thinking region, and composer', () => {
@@ -41,6 +45,52 @@ test('chat panel markup has a resizer, transcript, thinking region, and composer
         /id="ai-chat-model"[\s\S]*?id="ai-chat-thinking-level"[\s\S]*?id="ai-chat-send"/,
     );
     assert.match(template, /id="ai-chat-send"/);
+});
+
+
+test('agent debugger retains the latest trace and toggles exact detail visibility', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+    const debugView = readFileSync(DEBUG_VIEW_URL, 'utf8');
+
+    assert.match(template, /id="ai-chat-debug"[^>]*aria-pressed="false"/);
+    assert.match(template, /id="ai-agent-debug-dialog"/);
+    assert.match(template, /id="ai-agent-debug-enabled"[^>]*type="checkbox"/);
+    assert.match(template, /Current or most recent run only/);
+    assert.match(css, /\.ai-agent-debug-dialog[\s\S]*?width:\s*min\(1100px, 94vw\)/);
+    assert.match(css, /\.ai-agent-debug-event[\s\S]*?summary/);
+    assert.match(chatApi, /CONFIG\.API\.AI\.DEBUG/);
+    assert.match(chatApi, /export async function loadAiDebugSnapshot/);
+    assert.match(chatApi, /export async function setAiDebugExactDetails/);
+    assert.match(debugView, /payload\.has_trace/);
+    assert.match(debugView, /run\.events/);
+    assert.match(debugView, /document\.createElement\('details'\)/);
+    assert.match(debugView, /JSON\.stringify\(event\.detail, null, 2\)/);
+    assert.match(debugView, /Latest trace recorded\. Enable exact details to inspect payloads/);
+    assert.match(debugView, /this\._renderRun\(payload\.run, payload\.enabled\)/);
+    assert.doesNotMatch(debugView, /Debug capture is off/);
+    assert.doesNotMatch(debugView, /localStorage|sessionStorage/);
+    assert.match(controller, /event\.type === 'action_status'/);
+    assert.match(controller, /assistantMessage\.activities\.push/);
+    assert.match(controller, /article\.appendChild\(this\._renderActivities\(message\)\)/);
+    assert.match(css, /\.ai-chat-activity-panel\[data-action="retry"\]/);
+    assert.match(css, /\.ai-chat-activity-panel\[data-action="search_notes"\]/);
+    assert.match(controller, /AgentDebugView\.refreshIfOpen\(\)/);
+});
+
+
+test('failed assistant responses render a compact tinted error panel', () => {
+    const css = readFileSync(CSS_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+
+    assert.match(controller, /error\.className = 'ai-chat-message-error'/);
+    assert.match(controller, /error\.textContent = message\.error/);
+    assert.match(
+        css,
+        /\.ai-chat-message-error\s*\{[^}]*background:\s*#fef2f2;[^}]*border-left:\s*4px solid #ef4444;/s,
+    );
 });
 
 
@@ -267,6 +317,8 @@ test('streaming thinking renders honest progress and only discloses real reasoni
     assert.match(controller, /window\.clearInterval/);
     assert.match(controller, /`\$\{elapsedSeconds\}s`/);
     assert.doesNotMatch(controller, /Waiting for reasoning/);
+    assert.match(controller, /message\.role === 'assistant' && message\.thinking !== ''/);
+    assert.doesNotMatch(controller, /message\.thinking !== '' \|\| message\.status === 'streaming'/);
     assert.match(controller, /if \(hasThinkingText\)[\s\S]*?thinkingText\.textContent = message\.thinking/);
     assert.match(css, /@keyframes ai-chat-thinking-dot/);
     assert.match(css, /\.ai-chat-thinking-elapsed/);

@@ -51,6 +51,7 @@ from app.security.sensitive_logging import traceback_frame_summary
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.ai_chat import ai_chat_store
+from app.services.agent.trace import agent_trace_store
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
 from app.services.tab_state import tab_state_store
@@ -518,6 +519,7 @@ def login(
     search_history_store.ensure_decrypted(token="")
 
     ai_chat_store.reset()
+    agent_trace_store.reset()
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
     set_auth_cookie(request=request, response=response, token=token)
     login_rate_limiter.record_success(rate_limit_key)
@@ -536,6 +538,7 @@ def logout(
 ):
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
+    agent_trace_store.clear_session(session_key=session_key)
     token_service.revoke_token(token)
     if not purge_decrypted_runtime_state():
         clear_all_locks()
@@ -615,6 +618,7 @@ def create_passwordless_session(
         raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
 
     ai_chat_store.reset()
+    agent_trace_store.reset()
     token = token_service.create_token(_client_info(request), tab_id, dek=None)
     set_auth_cookie(request=request, response=response, token=token)
     clear_all_locks()
@@ -1057,6 +1061,7 @@ def create_password(
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
+    agent_trace_store.reset()
     clear_all_locks()
     return {"message": message}
 
@@ -1082,6 +1087,7 @@ def change_password(
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
+    agent_trace_store.reset()
     clear_all_locks()
     return {"message": message}
 
@@ -1099,6 +1105,7 @@ def remove_password(
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
+    agent_trace_store.reset()
     clear_all_locks()
     clear_encryption_key()
     deactivate_authenticated_logging()

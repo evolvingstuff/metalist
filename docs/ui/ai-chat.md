@@ -1,13 +1,15 @@
-# AI Chat (Phase 1)
+# AI Chat and Read-only Agent Harness
 
 ## Scope
-- MetaList can chat directly with an Ollama model through an authenticated server endpoint.
-- This first phase is deliberately standalone: note content, tags, search results, and other MetaList data are never added to prompts.
+- MetaList chats with an Ollama model through an authenticated, application-owned agent runtime.
+- The runtime can search and read hydrated notes but cannot create, edit, move, trash, or delete anything.
+- Note searches and reads use the existing in-memory `SearchIndex` and `NoteStore`; agent reads never query SQLite.
 - The current provider connection is labeled **temporary unmanaged Ollama**. MetaList can ask that process to download a model, but does not install, start, stop, or own the Ollama process yet.
+- Instructor owns JSON/Pydantic action-selection calls. Final prose still streams directly from Ollama. LiteLLM, skills, and remote providers remain deferred behind explicit seams.
 
 ## Configuration
 - Open `AI Agent Settings…` from the command palette or use the gear button in the chat header to configure the Ollama connection, view downloaded models, and save a selected model. The chat composer also provides immediate model and thinking-level selection beside Send.
-- Ollama is the only provider in Phase 1; the provider field is present so future providers can share the same configuration surface.
+- Ollama is currently the only provider; the provider field is present so future providers can share the same configuration surface.
 - The server accepts only explicit loopback base URLs: `localhost`, `127.0.0.1`, or `[::1]`, over HTTP or HTTPS. `localhost` is canonicalized to `127.0.0.1`, environment proxy settings are ignored, and redirects are not followed. Credentials, query strings, fragments, and non-root paths are rejected (`/api` is normalized to the root URL).
 - Opening the chat panel asks Ollama for its installed models so the composer selector is current. Saving a changed connection URL refreshes that list.
 - AI Agent Settings loads the models already downloaded in the displayed Ollama instance. Save persists the displayed connection and the explicitly selected downloaded model. Download is a separate action: the user chooses the exact name from the linked official Ollama library and explicitly starts the pull. MetaList does not scrape the library or depend on an undocumented catalog API. Status and byte progress stream from Ollama's supported `/api/pull` endpoint; success refreshes the downloaded-model list without selecting or saving the new model.
@@ -19,19 +21,35 @@
 - AI chat and the right-side activity calendar are mutually exclusive. Enabling either view atomically disables the other preference.
 - The panel occupies the right third of the viewport by default. The notes shell narrows into the remaining space instead of being covered.
 - Drag the panel's left separator to resize it. Chat remains at least 280 px wide and leaves at least 480 px for the notes area. The focused separator also supports Left/Right Arrow plus Home/End. The chosen width is saved as a client preference, restored after refresh, and temporarily clamped when the viewport is too narrow without replacing the saved preference.
-- The header provides clear, settings, and close actions. `Enter` sends; `Shift+Enter` inserts a newline.
+- The header provides debug trace, clear, settings, and close actions. `Enter` sends; `Shift+Enter` inserts a newline. Debug trace opens a large modal rather than squeezing execution details into the chat panel.
 - Dragging the message field's lower-right resize handle saves its height as a client preference and restores it after refresh.
 - While the current response is streaming, the composer remains editable so the next message can be drafted. Send, model selection, thinking-level selection, and transcript clearing remain disabled until that response finishes.
 - Right-click a completed assistant response and choose `Copy Response` to copy it as a MetaList note payload. The raw response Markdown is preserved and automatically tagged `@markdown @llm`; the system clipboard receives rendered rich HTML plus the raw Markdown as plain text. The copied response can be pasted as a sibling or child note, but reference-paste actions remain unavailable until it exists as a real MetaList note with its own UUID.
 
 ## Streaming and Session State
-- `/api2/ai/chat` streams typed NDJSON events: `thinking_delta`, `content_delta`, `done`, or `error`. The endpoint explicitly bypasses response compression and proxy buffering so small answer tokens reach the browser immediately rather than collecting until completion.
-- Thinking and answer content render separately. While waiting, the panel animates `Thinking…` and shows elapsed seconds without a misleading disclosure arrow. Thinking and answer events each include a cumulative server-rendered snapshot, so Markdown and completed LaTeX expressions format while text is still streaming. An open reasoning disclosure collapses when the first answer chunk arrives. The user can reopen it afterward, and that explicit choice is preserved while later answer chunks render. Mermaid source is finalized into a diagram when the turn completes. Models that do not emit reasoning cannot provide substantive intermediate text before their first answer token.
+- `/api2/ai/chat` streams typed NDJSON events: `action_status`, `thinking_delta`, `content_delta`, `done`, or `error`. The endpoint explicitly bypasses response compression and proxy buffering so small answer tokens reach the browser immediately rather than collecting until completion.
+- Action selection is a non-streaming Instructor + Ollama `JSON_SCHEMA` call. Instructor sends the flat fully required Pydantic schema through Ollama's native OpenAI-compatible `response_format`, validates the result, and performs one schema-guided retry for semantic validation failures. `kind` selects the action; inactive required fields are ignored placeholders, while active fields remain strictly validated before MetaList projects the result into the closed internal action union. The schema is not duplicated in the system prompt. Tool mode remains excluded because nominally tool-capable local models may emit JSON content without a tool call. Final synthesis remains direct, natural-language Ollama streaming.
+- Visible status events append compact tinted activity panels to the assistant turn. Model request/validation panels are violet, retry/failure panels are amber, note-tool panels are blue, and response-writing panels are green. The sequence remains visible after completion and after session rehydration, but is excluded from later model context.
+- Instructor hooks report `attempt N of M`, Ollama response receipt, schema validation, failure type, and retry/no-retry state as they happen. The same sequence is appended to the always-retained debug outline as `MODEL_STATUS` events; exact prompts/responses remain in the detailed attempt entries.
+- Thinking and answer content render separately. A `Thinking` disclosure exists only after the model emits real reasoning content, so Thinking Off never shows a misleading heading. Thinking and answer events each include a cumulative server-rendered snapshot, so Markdown and completed LaTeX expressions format while text is still streaming. An open reasoning disclosure collapses when the first answer chunk arrives. The user can reopen it afterward, and that explicit choice is preserved while later answer chunks render. Mermaid source is finalized into a diagram when the turn completes.
+- If structured retries are exhausted, chat shows a compact tinted failure panel and directs the user to Agent Debug instead of rendering Instructor's internal exception dump.
 - Assistant thinking and answers use MetaList's Markdown renderer while streaming, including completed LaTeX delimiters rendered as MathML. Fenced `mermaid` diagrams are rendered by the strict local Mermaid runtime after completion.
-- Chat transcript state lives only in server memory, keyed by the opaque authenticated session token hash. Refreshing the browser with the same login rehydrates the transcript; logout, password/auth reset, runtime lock purge, or server restart clears it.
+- Chat transcript and activity-panel state live only in server memory, keyed by the opaque authenticated session token hash. Refreshing the browser with the same login rehydrates both; logout, password/auth reset, runtime lock purge, or server restart clears them.
 - Transcript and streaming HTTP responses carry `Cache-Control: no-store`; the browser session request also explicitly bypasses its HTTP cache.
 - A session permits one active generation at a time, keeps at most 100 messages, and bounds each user, thinking, and answer field to 32,000 characters.
 - Failed turns remain visible in the transcript but are excluded from later Ollama prompt history.
+
+## Agent Context and Debugging
+- Canonical history contains only user messages and assistant-visible final responses.
+- Search results, loaded note text, structured actions, validation feedback, and temporary plans are working context for one run and are discarded afterward.
+- Future skill text will use the same transient working-context boundary; loading a skill during one run will not place it in later conversation history.
+- The current/latest debug trace is always retained in session memory so the debugger can be opened after a bug. Starting another run replaces it.
+- `Show exact prompts, model responses, and tool payloads` controls whether full JSON detail is rendered. It can be enabled after the run; it does not control capture.
+- The expandable outline includes one chronological `Ollama wire request` row for every model call: each action-selection attempt/retry, each later selection after a tool result, and final-response synthesis. Each row shows the method, endpoint, and complete outbound JSON body, whose ordered `messages` array includes the literal user message and the exact system/transient context present for that call. Structured bodies are captured at the HTTP transport after Instructor's transformation, and Instructor exclusively owns the one visible retry. The outline also includes raw structured responses, provider reasoning when returned, model settings/usage, policy decisions, tool arguments/results, timing, errors, and the final response.
+- Exact-detail visibility can change during or after a run without clearing the trace. Logout, runtime lock, auth reset, and server restart clear the trace and reset the visibility toggle; Clear Chat clears the trace without changing the toggle.
+- Traces are never written to SQLite, files, browser storage, or canonical conversation history.
+
+See `docs/design/agent-harness.md` for runtime components, tool limits, and extension seams.
 
 ## Planned Managed Runtime
 - A later phase will add an explicit-permission Ollama installer and a MetaList-owned local process with dynamic loopback binding, cloud features disabled, capability detection, and GPU/CPU-adaptive model recommendations.

@@ -1,4 +1,5 @@
 const AI_STREAM_EVENT_TYPES = new Set([
+    'action_status',
     'thinking_delta',
     'content_delta',
     'done',
@@ -38,6 +39,24 @@ function validateAiStreamEvent(event) {
     }
     if (typeof event.type !== 'string' || !AI_STREAM_EVENT_TYPES.has(event.type)) {
         throw new Error(`Unknown AI stream event type: ${event.type}`);
+    }
+    if (
+        event.type === 'action_status'
+        && (typeof event.action !== 'string' || event.action.length === 0)
+    ) {
+        throw new Error('action_status requires action');
+    }
+    if (
+        event.type === 'action_status'
+        && !['started', 'completed'].includes(event.status)
+    ) {
+        throw new Error('action_status status is invalid');
+    }
+    if (
+        event.type === 'action_status'
+        && (typeof event.label !== 'string' || event.label.length === 0)
+    ) {
+        throw new Error('action_status requires label');
     }
     if (
         (event.type === 'thinking_delta' || event.type === 'content_delta')

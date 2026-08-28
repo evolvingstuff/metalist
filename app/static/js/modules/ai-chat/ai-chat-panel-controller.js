@@ -6,6 +6,7 @@ import {
     loadAiChatSession,
     streamAiChat,
 } from './ai-chat-api.js';
+import { AgentDebugView } from './ai-agent-debug-view.js';
 import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
@@ -61,7 +62,44 @@ function validateMessage(message) {
     if (!['complete', 'streaming', 'error'].includes(message.status)) {
         throw new Error('AI chat message status is invalid');
     }
+    if (!Array.isArray(message.activities)) {
+        throw new Error('AI chat message activities must be an array');
+    }
+    for (const activity of message.activities) {
+        validateActivity(activity);
+    }
     return message;
+}
+
+
+const AI_ACTIVITY_ACTIONS = new Set([
+    'planning',
+    'model_request',
+    'validation',
+    'retry',
+    'search_notes',
+    'read_notes',
+    'respond',
+]);
+
+
+function validateActivity(activity) {
+    if (!activity || typeof activity !== 'object' || Array.isArray(activity)) {
+        throw new Error('AI chat activity must be an object');
+    }
+    if (!Number.isInteger(activity.sequence) || activity.sequence < 1) {
+        throw new Error('AI chat activity sequence must be a positive integer');
+    }
+    if (typeof activity.action !== 'string' || !AI_ACTIVITY_ACTIONS.has(activity.action)) {
+        throw new Error(`Unknown AI chat activity action: ${activity.action}`);
+    }
+    if (!['started', 'completed'].includes(activity.status)) {
+        throw new Error('AI chat activity status is invalid');
+    }
+    if (typeof activity.label !== 'string' || activity.label === '') {
+        throw new Error('AI chat activity label must be non-empty');
+    }
+    return activity;
 }
 
 
@@ -162,6 +200,7 @@ class AiChatPanelController {
             this._elements.input.style.height = `${savedComposerHeight}px`;
         }
         this._bindEvents();
+        await AgentDebugView.init();
         this._initialized = true;
         this._syncSettingsControls();
         const savedWidth = this._getPanelWidth();
@@ -647,6 +686,7 @@ class AiChatPanelController {
         this._messages = [];
         this._setStatus('', false);
         this._render();
+        await AgentDebugView.refreshIfOpen();
         this._elements.input.focus();
     }
 
@@ -684,6 +724,7 @@ class AiChatPanelController {
                 error: '',
                 provider: settings.provider,
                 model: settings.model,
+                activities: [],
             },
             {
                 id: `${localTurnId}-assistant`,
@@ -696,13 +737,14 @@ class AiChatPanelController {
                 error: '',
                 provider: settings.provider,
                 model: settings.model,
+                activities: [],
             },
         );
         const assistantMessage = this._messages[this._messages.length - 1];
         this._elements.input.value = '';
         this._setBusy(true);
         this._startThinkingFeedback();
-        this._setStatus('Thinking…', false);
+        this._setStatus('Planning next action…', false);
         this._render();
 
         try {
@@ -710,7 +752,17 @@ class AiChatPanelController {
                 settings,
                 message,
                 onEvent: (event) => {
-                    if (event.type === 'thinking_delta') {
+                    if (event.type === 'action_status') {
+                        assistantMessage.activities.push({
+                            sequence: assistantMessage.activities.length + 1,
+                            action: event.action,
+                            status: event.status,
+                            label: event.label,
+                        });
+                        const suffix = event.status === 'started' ? '…' : ' complete';
+                        this._setStatus(`${event.label}${suffix}`, false);
+                        void AgentDebugView.refreshIfOpen();
+                    } else if (event.type === 'thinking_delta') {
                         assistantMessage.thinking += event.text;
                         assistantMessage.rendered_thinking = event.rendered_text;
                     } else if (event.type === 'content_delta') {
@@ -722,9 +774,11 @@ class AiChatPanelController {
                         assistantMessage.rendered_content = event.rendered_text;
                     } else if (event.type === 'done') {
                         assistantMessage.status = 'complete';
+                        void AgentDebugView.refreshIfOpen();
                     } else if (event.type === 'error') {
                         assistantMessage.status = 'error';
                         assistantMessage.error = event.message;
+                        void AgentDebugView.refreshIfOpen();
                     } else {
                         throw new Error(`Unknown AI chat event: ${event.type}`);
                     }
@@ -786,7 +840,9 @@ class AiChatPanelController {
 
     _syncThinkingElapsed() {
         const elapsed = this._formatThinkingElapsed();
-        for (const element of this._elements.messages.querySelectorAll('.ai-chat-thinking-elapsed')) {
+        for (const element of this._elements.messages.querySelectorAll(
+            '.ai-chat-thinking-elapsed, .ai-chat-activity-elapsed',
+        )) {
             element.textContent = elapsed;
         }
     }
@@ -807,8 +863,12 @@ class AiChatPanelController {
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
             article.dataset.messageId = message.id;
 
-            if (message.role === 'assistant' && (message.thinking !== '' || message.status === 'streaming')) {
-                const hasThinkingText = message.thinking !== '';
+            if (message.role === 'assistant' && message.activities.length > 0) {
+                article.appendChild(this._renderActivities(message));
+            }
+
+            if (message.role === 'assistant' && message.thinking !== '') {
+                const hasThinkingText = true;
                 const isActivelyThinking = message.status === 'streaming' && message.content === '';
                 const thinking = document.createElement(hasThinkingText ? 'details' : 'div');
                 thinking.className = 'ai-chat-thinking';
@@ -891,6 +951,38 @@ class AiChatPanelController {
         }
         this._elements.clear.disabled = isClearDisabled;
         this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+    }
+
+    _renderActivities(message) {
+        const activities = document.createElement('div');
+        activities.className = 'ai-chat-activities';
+        for (const [index, activity] of message.activities.entries()) {
+            const panel = document.createElement('div');
+            panel.className = 'ai-chat-activity-panel';
+            panel.dataset.action = activity.action;
+            const isCurrent = message.status === 'streaming'
+                && message.content === ''
+                && index === message.activities.length - 1;
+            panel.classList.toggle('is-current', isCurrent);
+
+            const marker = document.createElement('span');
+            marker.className = 'ai-chat-activity-marker';
+            marker.setAttribute('aria-hidden', 'true');
+            marker.textContent = activity.status === 'completed' ? '✓' : '•';
+            const label = document.createElement('span');
+            label.className = 'ai-chat-activity-label';
+            label.textContent = activity.label;
+            panel.append(marker, label);
+            if (isCurrent) {
+                const elapsed = document.createElement('span');
+                elapsed.className = 'ai-chat-activity-elapsed';
+                elapsed.textContent = this._formatThinkingElapsed();
+                elapsed.setAttribute('aria-label', 'Elapsed time');
+                panel.appendChild(elapsed);
+            }
+            activities.appendChild(panel);
+        }
+        return activities;
     }
 }
 
