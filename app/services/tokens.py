@@ -235,6 +235,14 @@ class TokenService:
 
         return None
 
+    def get_session_key(self, token: str) -> str:
+        """Return the opaque, non-secret key for a currently valid session."""
+        if not self.verify_token(token):
+            raise RuntimeError("AI session key requires a valid authentication token")
+        token_hash = self._hash_token(token)
+        assert token_hash in self.tokens
+        return token_hash
+
     def get_dek(self, token: str) -> Optional[bytes]:
         """Get the DEK for a valid token.
 

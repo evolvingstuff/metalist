@@ -944,6 +944,7 @@ function showViewContextMenu(event) {
         kind: 'view',
         areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
         isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
+        isAiChatVisible: document.body.classList.contains('pref-show-ai-chat'),
         areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
         canAddNoteAtTop: !ModeContext.isEditing,
     };
@@ -953,6 +954,9 @@ function showViewContextMenu(event) {
         },
         onToggleCalendar: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_rhs_panel', nextValue);
+        },
+        onToggleAiChat: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_ai_chat', nextValue);
         },
         onToggleNoteTags: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_note_tags', nextValue);

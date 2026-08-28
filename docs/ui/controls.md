@@ -132,9 +132,9 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 | Right-click note | Open the note context menu (`Copy Note`, `View Full Screen`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). A dark, non-interactive footer at the bottom always shows the note's locally formatted `Created` and `Updated` date/times. `View Full Screen` is available only outside edit mode; it renders the selected note edge-to-edge with its complete descendant subtree but without ancestors, hides the menu and scroll-to-top controls, and closes with the upper-right `×` or `Esc`. While actively editing that note, `Add Style` opens a connected formatting flyout and `Remove Formatting` performs the same operation as `Cmd/Ctrl+U`. Paste actions appear only when a note has been copied. |
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range and `Remove Formatting` removes formatting only from that range. |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
-| Right-click notes view background | Open the view context menu with dynamic `Show/Hide Tabs`, `Show/Hide Calendar View`, `Show/Hide Tags in List`, and `Export View as HTML` actions |
+| Right-click notes view background | Outside edit mode, open the view context menu with dynamic `Show/Hide Tabs`, `Show/Hide Calendar View`, `Show/Hide AI Chat`, `Show/Hide Tags in List`, and `Export View as HTML` actions |
 | Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships). If a note is being edited, it is saved and the view refresh completes first, restoring view-only rendering such as cached URL titles. |
-| Right-click left or right lane | Open the same view menu: show/hide tabs, calendar, or note-list tags, or export the current view as HTML |
+| Right-click left or right lane | Open the same view menu: show/hide tabs, calendar, AI chat, or note-list tags, or export the current view as HTML |
 | Hover left side of search bar | Show the tab/search-context overlay |
 | Hover/click search input | Hide the tab/search-context overlay |
 
@@ -151,6 +151,8 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 ### Command Palette Utility Entries
 - Show/Hide tabs (label reflects current visibility)
 - Show/Hide calendar view (label reflects current visibility)
+- Show/Hide AI Chat (label reflects current visibility; opening chat closes the calendar)
+- AI Agent Settings… (temporary unmanaged loopback Ollama URL and installed model)
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
 - Restore from backup…
 - Logout

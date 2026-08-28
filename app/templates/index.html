@@ -69,6 +69,18 @@
             title="Menu (Cmd/Ctrl+/)"
         >≡</button>
         <button
+            id="chat-toggle-button"
+            class="chat-toggle-button interactive"
+            type="button"
+            aria-label="Show chat"
+            aria-pressed="false"
+            title="Show chat"
+        >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M4 5h16v11H9l-5 4z" />
+            </svg>
+        </button>
+        <button
             id="scroll-to-top-button"
             class="scroll-to-top-button interactive"
             type="button"
@@ -79,6 +91,41 @@
     <div id="tab-indicator">0</div>
     <div id="search-contexts-list"></div>
     <div id="backlinks-panel"></div>
+    <aside id="ai-chat-panel" class="ai-chat-panel" aria-label="AI chat">
+        <div
+            id="ai-chat-resizer"
+            class="ai-chat-resizer"
+            role="separator"
+            aria-label="Resize AI chat"
+            aria-orientation="vertical"
+            tabindex="0"
+        ></div>
+        <header class="ai-chat-header">
+            <div>
+                <h2>AI Chat</h2>
+                <div id="ai-chat-model-label" class="ai-chat-model-label">Ollama · not configured</div>
+            </div>
+            <div class="ai-chat-header-actions">
+                <button id="ai-chat-clear" type="button" title="Clear chat" aria-label="Clear chat">↺</button>
+                <button id="ai-chat-settings" type="button" title="AI agent settings" aria-label="AI agent settings">⚙</button>
+                <button id="ai-chat-close" type="button" title="Close AI chat" aria-label="Close AI chat">×</button>
+            </div>
+        </header>
+        <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
+        <form id="ai-chat-form" class="ai-chat-composer">
+            <textarea
+                id="ai-chat-input"
+                rows="3"
+                maxlength="32000"
+                placeholder="Message Ollama…"
+                aria-label="Message Ollama"
+            ></textarea>
+            <div class="ai-chat-composer-footer">
+                <span id="ai-chat-status" class="ai-chat-status"></span>
+                <button id="ai-chat-send" type="submit">Send</button>
+            </div>
+        </form>
+    </aside>
     <input id="file-reference-input" type="file" hidden aria-hidden="true" tabindex="-1">
     <div id="app">
         <div class="container">

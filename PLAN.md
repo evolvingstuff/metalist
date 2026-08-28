@@ -47,6 +47,8 @@ A shared cross-namespace sidecar is deferred because it needs lease/refcount, cr
 
 ## Phase 1 — Stabilize the Standalone Chat Spike
 
+Status: implemented, verified with automated tests plus an isolated browser/Ollama smoke test, and accepted by the human for checkpointing.
+
 ### Backend
 
 - Keep `app/services/ai_chat.py` as the token-fingerprint-scoped in-memory transcript store.

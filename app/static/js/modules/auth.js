@@ -5,6 +5,7 @@ import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
 import { ReminderSurface } from './reminder-surface-service.js';
+import { AiChatPanel } from './ai-chat/ai-chat-panel-controller.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
 import {
@@ -757,6 +758,12 @@ export const Auth = {
                 await window.ModeManager.init({});
                 startupPhase = 'initializing the command palette';
                 await CommandPalette.init();
+                startupPhase = 'initializing AI chat';
+                await AiChatPanel.init({
+                    getSettings: () => CommandPalette.getAiSettings(),
+                    setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
+                    openSettings: () => CommandPalette.openAiAgentSettings(),
+                });
                 startupPhase = 'finishing the startup introduction';
                 await this.waitForStartupIntro();
                 startupPhase = 'revealing the workspace';

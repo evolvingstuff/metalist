@@ -41,6 +41,18 @@ test('animated transitions preference matches motion queries', () => {
     assert.equal(animatedTransitions.tags.includes('disable'), true);
 });
 
+test('search result count preference matches count queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const resultCount = payload.endpoints.find(
+        (endpoint) => endpoint.id === 'pref.show_search_results_count',
+    );
+
+    assert.ok(resultCount, 'expected pref.show_search_results_count endpoint');
+    assert.equal(resultCount.tags.includes('count'), true);
+    assert.equal(resultCount.tags.includes('number'), true);
+});
+
 test('note timestamp preference is removed from command palette tags', () => {
     const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
     const payload = JSON.parse(source);

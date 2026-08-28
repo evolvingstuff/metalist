@@ -15,13 +15,17 @@ from app.models.database import SafeSession
 from app.security.encryption import get_encryption_service
 from app.security.encryption import get_encryption_service_with_token
 from app.security.encryption import is_encryption_required
+from app.services.ollama_provider import normalize_ollama_base_url
+from app.services.ollama_provider import validate_ollama_model
 
 
 _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_backlinks": {"true", "false"},
     "pref.show_note_tags": {"true", "false"},
     "pref.show_tab_ui": {"true", "false"},
+    "pref.show_search_results_count": {"true", "false"},
     "pref.show_rhs_panel": {"true", "false"},
+    "pref.show_ai_chat": {"true", "false"},
     "pref.show_perf_overlay": {"true", "false"},
     "pref.animated_transitions": {"true", "false"},
     "pref.reminder_surface_expanded": {"true", "false"},
@@ -36,6 +40,9 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
+    "pref.ai.provider": {"ollama"},
+    "pref.ai.ollama_base_url": "ollama_base_url",
+    "pref.ai.ollama_model": "ollama_model",
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
@@ -148,6 +155,10 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_sound_preference_value(key=key, value=value)
         elif allowed_values == "tag_activity_windows":
             _validate_tag_activity_windows_preference(key=key, value=value)
+        elif allowed_values == "ollama_base_url":
+            value = normalize_ollama_base_url(value)
+        elif allowed_values == "ollama_model":
+            value = validate_ollama_model(value)
         elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value

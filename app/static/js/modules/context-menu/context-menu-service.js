@@ -22,6 +22,9 @@ const CONTEXT_MENU_ICONS = {
         'M8 8h10v12H8z',
         'M6 16H4V4h10v2',
     ],
+    chat: [
+        'M4 5h16v11H9l-5 4z',
+    ],
     clear_formatting: [
         'M5 15 14 6l5 5-9 9H5z',
         'M12 18h8',

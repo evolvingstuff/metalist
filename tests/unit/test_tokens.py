@@ -102,3 +102,21 @@ def test_list_active_sessions_marks_disabled_timeout(reset_timeout_provider) -> 
     assert len(sessions) == 1
     assert sessions[0]["timeout_disabled"] is True
     assert sessions[0]["expires_in_minutes"] is None
+
+
+def test_session_key_is_stable_and_unavailable_after_revocation(reset_timeout_provider) -> None:
+    service = TokenService()
+    token = service.create_token(
+        client_info="test-client",
+        owner_tab_id="tab-1",
+        dek=None,
+    )
+
+    session_key = service.get_session_key(token)
+
+    assert len(session_key) == 64
+    assert session_key != token
+    assert service.get_session_key(token) == session_key
+    assert service.revoke_token(token) is True
+    with pytest.raises(RuntimeError, match="valid authentication token"):
+        service.get_session_key(token)

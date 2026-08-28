@@ -155,6 +155,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '#reference-source-indicator',
             '#root-sort-indicator',
             '#menu-button',
+            '#chat-toggle-button',
             '.add-note',
             '#trash-can',
             '.note-collapse-toggle',

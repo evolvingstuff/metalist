@@ -5,12 +5,17 @@ import test from 'node:test';
 
 const TEMPLATE_URL = new URL('../../app/templates/index.html', import.meta.url);
 const CSS_URL = new URL('../../app/static/css/main.css', import.meta.url);
+const COMMAND_PALETTE_CONTROLLER_URL = new URL(
+    '../../app/static/js/modules/command-palette/command-palette-controller.js',
+    import.meta.url,
+);
 
 
 test('enabled tabs expose a white outline folder indicator inside the hover trigger', async () => {
-    const [templateSource, cssSource] = await Promise.all([
+    const [templateSource, cssSource, commandPaletteControllerSource] = await Promise.all([
         readFile(TEMPLATE_URL, 'utf8'),
         readFile(CSS_URL, 'utf8'),
+        readFile(COMMAND_PALETTE_CONTROLLER_URL, 'utf8'),
     ]);
 
     const hoverZoneStart = templateSource.indexOf('id="tab-hover-zone"');
@@ -34,6 +39,22 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
     assert.match(
         cssSource,
         /\.controls \.search-results-count\s*\{[\s\S]*right: 6px;/,
+    );
+    assert.match(
+        cssSource,
+        /\.controls \.search-controls\s*\{[\s\S]*--search-input-width:\s*clamp\(140px, calc\(100% - 160px\), 500px\);/,
+    );
+    assert.match(
+        cssSource,
+        /@container search-shell \(max-width: 440px\)\s*\{[\s\S]*?\.controls \.search-results-count\s*\{[\s\S]*?display:\s*none;/,
+    );
+    assert.match(
+        cssSource,
+        /body:not\(\.pref-show-search-results-count\) \.controls \.search-results-count\s*\{[\s\S]*?display:\s*none;/,
+    );
+    assert.match(
+        commandPaletteControllerSource,
+        /'pref\.show_search_results_count',[\s\S]*?false,[\s\S]*?'pref-show-search-results-count'/,
     );
     assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: #000000;/);
     assert.match(

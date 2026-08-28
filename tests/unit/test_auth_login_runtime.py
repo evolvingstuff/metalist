@@ -128,7 +128,13 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
 
 def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(monkeypatch) -> None:
     events: list[str] = []
+    monkeypatch.setattr(auth_route.token_service, "get_session_key", lambda token: "session-key")
     monkeypatch.setattr(auth_route.token_service, "revoke_token", lambda token: events.append("token-revoked"))
+    monkeypatch.setattr(
+        auth_route.ai_chat_store,
+        "clear_session",
+        lambda *, session_key: events.append(f"chat-cleared:{session_key}"),
+    )
     monkeypatch.setattr(
         auth_route,
         "purge_decrypted_runtime_state",
@@ -147,6 +153,7 @@ def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(m
 
     assert result == {"message": "Logout successful"}
     assert events == [
+        "chat-cleared:session-key",
         "token-revoked",
         "plaintext-purged",
         "logging-deactivated",

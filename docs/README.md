@@ -19,6 +19,7 @@
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`
 - Reminders: `docs/ui/reminders.md`
+- Standalone Ollama chat: `docs/ui/ai-chat.md`
 - Modal architecture pattern: `docs/ui/modals.md`
 - Client state-handling philosophy: `docs/ui/state-handling.md`
 

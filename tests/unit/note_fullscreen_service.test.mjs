@@ -36,11 +36,11 @@ test('note full screen close control is anchored in the upper right', async () =
     assert.doesNotMatch(closeRule.groups.declarations, /left:/);
 });
 
-test('note full screen hides global menu and scroll-to-top controls', async () => {
+test('note full screen hides all global controls', async () => {
     const css = await readFile(MAIN_CSS_URL, 'utf8');
     assert.match(
         css,
-        /body\.note-fullscreen-open \.menu-button,\s*body\.note-fullscreen-open \.scroll-to-top-button\s*\{[^}]*display:\s*none/s,
+        /body\.note-fullscreen-open \.menu-button,\s*body\.note-fullscreen-open \.chat-toggle-button,\s*body\.note-fullscreen-open \.scroll-to-top-button\s*\{[^}]*display:\s*none/s,
     );
 });
 
