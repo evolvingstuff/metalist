@@ -214,6 +214,23 @@ test('chat messages use directional bubbles without repeated speaker labels', ()
 });
 
 
+test('completed AI responses have a right-click copy action with provenance tags', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+
+    assert.match(controller, /elements\.messages\.addEventListener\('contextmenu', this\._handleMessageContextMenu\)/);
+    assert.match(controller, /article\.dataset\.messageId = message\.id/);
+    assert.match(controller, /label:\s*'Copy Response'/);
+    assert.match(controller, /message\.status !== 'complete'/);
+    assert.match(controller, /copyAiChatResponse\(\{ messageId, clientId \}\)/);
+    assert.match(controller, /payload\.tags !== '@markdown @llm'/);
+    assert.match(controller, /ModeContext\.setClipboardMode\('note'\)/);
+    assert.match(controller, /ModeContext\.setClipboardNoteId\(null\)/);
+    assert.match(chatApi, /CONFIG\.API\.AI\.COPY_MESSAGE\(messageId\)/);
+    assert.match(chatApi, /body:\s*JSON\.stringify\(\{ client_id: clientId \}\)/);
+});
+
+
 test('completed assistant messages render server markdown and queue Mermaid diagrams', () => {
     const css = readFileSync(CSS_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');

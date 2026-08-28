@@ -65,6 +65,22 @@ export async function clearAiChatSession() {
 }
 
 
+export async function copyAiChatResponse({ messageId, clientId }) {
+    if (typeof messageId !== 'string' || messageId === '') {
+        throw new Error('copyAiChatResponse requires messageId');
+    }
+    if (typeof clientId !== 'string' || clientId === '') {
+        throw new Error('copyAiChatResponse requires clientId');
+    }
+    const response = await fetchAi(CONFIG.API.AI.COPY_MESSAGE(messageId), {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ client_id: clientId }),
+    });
+    return await readJsonResponse(response, 'Failed to copy AI response');
+}
+
+
 export async function listOllamaModels(settings) {
     if (!settings || typeof settings !== 'object') {
         throw new Error('listOllamaModels requires settings object');

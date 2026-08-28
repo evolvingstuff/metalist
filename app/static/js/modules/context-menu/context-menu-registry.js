@@ -221,6 +221,7 @@ function buildNoteContextItems(context, handlers) {
 
     const hasSelectedText = context.hasSelectedText === true;
     const hasNoteClipboard = context.hasNoteClipboard === true;
+    const hasReferenceClipboard = context.hasReferenceClipboard === true;
     const copyItem = {
         id: hasSelectedText ? 'copy-selection' : 'copy-note',
         label: hasSelectedText ? 'Copy' : 'Copy Note',
@@ -336,6 +337,11 @@ function buildNoteContextItems(context, handlers) {
                 enabled: true,
                 onSelect: () => onPasteNoteChild(noteId),
             },
+        );
+    }
+
+    if (hasReferenceClipboard) {
+        items.push(
             {
                 id: 'paste-reference',
                 label: 'Paste Sibling Reference',

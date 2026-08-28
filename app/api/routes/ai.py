@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal, Self
@@ -13,8 +14,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
+from app.models.utils import note_data_to_html
+from app.models.utils import render_note_data_read_only
 from app.services.ai_chat import ai_chat_store
 from app.services.markdown_rendering import render_markdown_to_html
+from app.services.sync import set_clipboard
 from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import ollama_provider
@@ -110,6 +114,34 @@ class AiClearResponse(BaseModel):
     message: str
 
 
+class AiCopyMessageRequest(BaseModel):
+    client_id: str = Field(..., min_length=1, max_length=128)
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized == "":
+            raise ValueError("Client id must not be blank")
+        return normalized
+
+
+class AiCopyMessageResponse(BaseModel):
+    message_id: str
+    html: str
+    plain_text: str
+    tags: str
+
+
+def _markdown_to_note_content_html(markdown_text: str) -> str:
+    if not isinstance(markdown_text, str) or markdown_text == "":
+        raise ValueError("AI response Markdown must be a non-empty string")
+    return "".join(
+        f"<div>{html.escape(line)}</div>"
+        for line in markdown_text.split("\n")
+    )
+
+
 @router.post("/models", response_model=AiModelsResponse)
 @transactional_route
 async def list_ai_models(
@@ -198,6 +230,58 @@ def clear_ai_session(
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
     return AiClearResponse(message="Chat cleared")
+
+
+@router.post("/messages/{message_id}/copy", response_model=AiCopyMessageResponse)
+@transactional_route
+def copy_ai_message(
+    message_id: str,
+    payload: AiCopyMessageRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> AiCopyMessageResponse:
+    if message_id.strip() == "":
+        raise HTTPException(status_code=404, detail="AI response not found")
+    session_key = token_service.get_session_key(token)
+    snapshot = ai_chat_store.snapshot(session_key=session_key)
+    matching_messages = [
+        message
+        for message in snapshot["messages"]
+        if message["id"] == message_id and message["role"] == "assistant"
+    ]
+    if len(matching_messages) == 0:
+        raise HTTPException(status_code=404, detail="AI response not found")
+    if len(matching_messages) != 1:
+        raise RuntimeError("AI chat session contains duplicate message ids")
+
+    message = matching_messages[0]
+    if message["status"] != "complete":
+        raise HTTPException(status_code=409, detail="AI response is not complete")
+    content = message["content"]
+    if content == "":
+        raise HTTPException(status_code=409, detail="AI response is empty")
+
+    tags = "@markdown @llm"
+    note_content = _markdown_to_note_content_html(content)
+    clipboard_record = {
+        "id": f"ai-chat:{message_id}",
+        "parent_id": None,
+        "prev_id": None,
+        "next_id": None,
+        "is_collapsed": False,
+        "content": note_content,
+        "tags": tags,
+    }
+    set_clipboard(payload.client_id, [clipboard_record])
+
+    rendered_tree = render_note_data_read_only(
+        {"content": note_content, "tags": tags, "children": []},
+    )
+    return AiCopyMessageResponse(
+        message_id=message_id,
+        html=note_data_to_html(rendered_tree),
+        plain_text=content,
+        tags=tags,
+    )
 
 
 @router.post("/chat")

@@ -143,6 +143,7 @@ export const CONFIG = {
             PULL_MODEL: `${API_AI_BASE}/models/pull`,
             SESSION: `${API_AI_BASE}/session`,
             CHAT: `${API_AI_BASE}/chat`,
+            COPY_MESSAGE: (messageId) => `${API_AI_BASE}/messages/${messageId}/copy`,
         }
     },
 

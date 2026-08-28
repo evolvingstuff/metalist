@@ -35,6 +35,7 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "fetch",
     "JSON.parse",
     "clearAiChatSession",
+    "copyAiChatResponse",
     "listOllamaModels",
     "loadAiChatSession",
     "pullOllamaModel",

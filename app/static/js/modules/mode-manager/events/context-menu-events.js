@@ -674,8 +674,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
     const selectedTextForTag = hasSelectedText
         ? normalizeSelectedTextForTagAction(selectedTextRange.toString())
         : null;
-    const hasNoteClipboard = (
-        ModeContext.clipboardMode === 'note'
+    const hasNoteClipboard = ModeContext.clipboardMode === 'note';
+    const hasReferenceClipboard = (
+        hasNoteClipboard
         && typeof ModeContext.clipboardNoteId === 'string'
         && ModeContext.clipboardNoteId.length > 0
     );
@@ -689,6 +690,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         imageContext,
         hasSelectedText,
         hasNoteClipboard,
+        hasReferenceClipboard,
         canResizeImage: !ModeContext.isEditing,
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,

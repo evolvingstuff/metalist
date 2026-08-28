@@ -22,6 +22,7 @@
 - The header provides clear, settings, and close actions. `Enter` sends; `Shift+Enter` inserts a newline.
 - Dragging the message field's lower-right resize handle saves its height as a client preference and restores it after refresh.
 - While the current response is streaming, the composer remains editable so the next message can be drafted. Send, model selection, thinking-level selection, and transcript clearing remain disabled until that response finishes.
+- Right-click a completed assistant response and choose `Copy Response` to copy it as a MetaList note payload. The raw response Markdown is preserved and automatically tagged `@markdown @llm`; the system clipboard receives rendered rich HTML plus the raw Markdown as plain text. The copied response can be pasted as a sibling or child note, but reference-paste actions remain unavailable until it exists as a real MetaList note with its own UUID.
 
 ## Streaming and Session State
 - `/api2/ai/chat` streams typed NDJSON events: `thinking_delta`, `content_delta`, `done`, or `error`. The endpoint explicitly bypasses response compression and proxy buffering so small answer tokens reach the browser immediately rather than collecting until completion.

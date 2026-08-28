@@ -1,6 +1,7 @@
 import {
     AiApiError,
     clearAiChatSession,
+    copyAiChatResponse,
     listOllamaModels,
     loadAiChatSession,
     streamAiChat,
@@ -12,6 +13,12 @@ import {
 import {
     queueMermaidDiagramRendering,
 } from '../mode-manager/services/mermaid-render-service.js';
+import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+import * as Logger from '../mode-manager/mode-logger.js';
+import { showContextMenu } from '../context-menu/context-menu-service.js';
+import {
+    writeRenderedNoteToSystemClipboard,
+} from '../mode-manager/services/note-clipboard-write-service.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     isThinkingLevelAvailableForModel,
@@ -81,6 +88,7 @@ class AiChatPanelController {
 
         this._handleVisibilityChanged = this._handleVisibilityChanged.bind(this);
         this._handleSettingsChanged = this._handleSettingsChanged.bind(this);
+        this._handleMessageContextMenu = this._handleMessageContextMenu.bind(this);
         this._handlePointerMove = this._handlePointerMove.bind(this);
         this._handlePointerUp = this._handlePointerUp.bind(this);
         this._handleResizerKeydown = this._handleResizerKeydown.bind(this);
@@ -182,6 +190,7 @@ class AiChatPanelController {
             elements.form.requestSubmit();
         });
         elements.input.addEventListener('pointerdown', this._handleComposerPointerDown);
+        elements.messages.addEventListener('contextmenu', this._handleMessageContextMenu);
         elements.model.addEventListener('change', () => void this._selectModel());
         elements.thinkingLevel.addEventListener(
             'change',
@@ -253,6 +262,84 @@ class AiChatPanelController {
             viewportWidth: window.innerWidth,
         });
         this._applyPanelWidth(width);
+    }
+
+    _handleMessageContextMenu(event) {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+        const article = target.closest('.ai-chat-message-assistant');
+        if (!(article instanceof HTMLElement) || !this._elements.messages.contains(article)) {
+            return;
+        }
+        const messageId = article.dataset.messageId;
+        if (typeof messageId !== 'string' || messageId === '') {
+            throw new Error('Assistant chat message is missing its message id');
+        }
+        const message = this._messages.find((candidate) => candidate.id === messageId);
+        if (!message) {
+            throw new Error(`Assistant chat message missing from controller state: ${messageId}`);
+        }
+        if (
+            message.status !== 'complete'
+            || message.content === ''
+            || message.id.startsWith('local-')
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        showContextMenu({
+            items: [
+                {
+                    id: 'copy-ai-response',
+                    label: 'Copy Response',
+                    icon: 'copy',
+                    enabled: true,
+                    onSelect: () => void this._copyAssistantMessage(message.id),
+                },
+            ],
+            position: { x: event.clientX, y: event.clientY },
+            onClose: null,
+        });
+    }
+
+    async _copyAssistantMessage(messageId) {
+        const clientId = ModeContext.clientId;
+        if (typeof clientId !== 'string' || clientId === '') {
+            throw new Error('Copying an AI response requires a client id');
+        }
+        try {
+            const payload = await copyAiChatResponse({ messageId, clientId });
+            if (
+                !payload
+                || typeof payload.html !== 'string'
+                || typeof payload.plain_text !== 'string'
+                || payload.tags !== '@markdown @llm'
+            ) {
+                throw new Error('Copied AI response payload is malformed');
+            }
+            await writeRenderedNoteToSystemClipboard({
+                renderedHtml: payload.html,
+                renderedPlainText: payload.plain_text,
+                logger: Logger,
+            });
+            if (ModeContext.clipboardMode !== 'note') {
+                ModeContext.setClipboardMode('note');
+            }
+            if (ModeContext.clipboardNoteId !== null) {
+                ModeContext.setClipboardNoteId(null);
+            }
+            this._setStatus('Copied response with @markdown @llm.', false);
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this._setStatus(error.message, true);
+            throw error;
+        }
     }
 
     _handleComposerPointerDown(event) {
@@ -718,6 +805,7 @@ class AiChatPanelController {
             validateMessage(message);
             const article = document.createElement('article');
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
+            article.dataset.messageId = message.id;
 
             if (message.role === 'assistant' && (message.thinking !== '' || message.status === 'streaming')) {
                 const hasThinkingText = message.thinking !== '';

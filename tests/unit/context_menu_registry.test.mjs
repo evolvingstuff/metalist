@@ -407,7 +407,10 @@ test('buildContextMenuItems places Remove Formatting directly beneath Add Style 
 test('buildContextMenuItems shows paste actions when note clipboard is available', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        buildNoteContext({ hasNoteClipboard: true }),
+        buildNoteContext({
+            hasNoteClipboard: true,
+            hasReferenceClipboard: true,
+        }),
         buildNoteHandlers(calls),
     );
 
@@ -439,6 +442,23 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
         ['pasteReference', 'note-123'],
         ['pasteReferenceChild', 'note-123'],
     ]);
+});
+
+test('synthetic note clipboard hides reference paste actions', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        buildNoteContext({
+            hasNoteClipboard: true,
+            hasReferenceClipboard: false,
+        }),
+        buildNoteHandlers(calls),
+    );
+    const actionIds = items.filter((item) => item.kind !== 'info').map((item) => item.id);
+
+    assert.equal(actionIds.includes('paste-note'), true);
+    assert.equal(actionIds.includes('paste-note-child'), true);
+    assert.equal(actionIds.includes('paste-reference'), false);
+    assert.equal(actionIds.includes('paste-reference-child'), false);
 });
 
 test('buildContextMenuItems adds a top note action to non-editing note context', () => {

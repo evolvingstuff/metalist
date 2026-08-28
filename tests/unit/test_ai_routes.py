@@ -113,6 +113,108 @@ def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> N
     assert "&lt;script&gt;" in rendered
 
 
+def test_copy_ai_response_writes_markdown_llm_note_clipboard(monkeypatch) -> None:
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-key",
+        user_content="Explain it",
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    raw_markdown = "# Result\n\nInline math: $x^2$."
+    note_content = (
+        "<div># Result</div>"
+        "<div></div>"
+        "<div>Inline math: $x^2$.</div>"
+    )
+    store.append_delta(
+        session_key="session-key",
+        turn_id=turn_id,
+        delta_kind="content",
+        text=raw_markdown,
+    )
+    store.complete_turn(session_key="session-key", turn_id=turn_id)
+    copied_payloads = []
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
+    monkeypatch.setattr(
+        ai_routes,
+        "set_clipboard",
+        lambda client_id, records: copied_payloads.append((client_id, records)),
+    )
+
+    response = ai_routes.copy_ai_message(
+        message_id=turn_id,
+        payload=ai_routes.AiCopyMessageRequest(client_id="client-123"),
+        token="auth-token",
+    )
+
+    assert response.message_id == turn_id
+    assert response.plain_text == raw_markdown
+    assert response.tags == "@markdown @llm"
+    assert "<h1>Result</h1>" in response.html
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML"' in response.html
+    assert copied_payloads == [
+        (
+            "client-123",
+            [
+                {
+                    "id": f"ai-chat:{turn_id}",
+                    "parent_id": None,
+                    "prev_id": None,
+                    "next_id": None,
+                    "is_collapsed": False,
+                    "content": note_content,
+                    "tags": "@markdown @llm",
+                }
+            ],
+        )
+    ]
+
+
+def test_copy_ai_response_rejects_user_message(monkeypatch) -> None:
+    store = AiChatSessionStore()
+    store.start_turn(
+        session_key="session-key",
+        user_content="Do not copy me",
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    user_message_id = store.snapshot(session_key="session-key")["messages"][0]["id"]
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
+
+    with pytest.raises(HTTPException) as exc_info:
+        ai_routes.copy_ai_message(
+            message_id=user_message_id,
+            payload=ai_routes.AiCopyMessageRequest(client_id="client-123"),
+            token="auth-token",
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+def test_copy_ai_response_rejects_streaming_message(monkeypatch) -> None:
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-key",
+        user_content="Wait for it",
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
+
+    with pytest.raises(HTTPException) as exc_info:
+        ai_routes.copy_ai_message(
+            message_id=turn_id,
+            payload=ai_routes.AiCopyMessageRequest(client_id="client-123"),
+            token="auth-token",
+        )
+
+    assert exc_info.value.status_code == 409
+
+
 def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
     store = AiChatSessionStore()
     store.start_turn(
