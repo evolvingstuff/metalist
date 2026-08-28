@@ -2436,14 +2436,21 @@ body.ai-chat-resizing * {
     white-space: pre-wrap;
 }
 
+.ai-chat-message-content.meta-markdown {
+    white-space: normal;
+}
+
 .ai-chat-thinking {
     color: #64748b;
     font-size: 12px;
 }
 
-.ai-chat-thinking summary {
-    cursor: pointer;
+.ai-chat-thinking-heading {
     font-weight: 600;
+}
+
+details.ai-chat-thinking > .ai-chat-thinking-heading {
+    cursor: pointer;
 }
 
 .ai-chat-thinking-dots {
@@ -2464,6 +2471,17 @@ body.ai-chat-resizing * {
     animation-delay: 300ms;
 }
 
+.ai-chat-thinking-elapsed {
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+    opacity: 0.78;
+}
+
+.ai-chat-thinking-elapsed:empty {
+    display: none;
+}
+
 @keyframes ai-chat-thinking-dot {
     0%,
     60%,
@@ -2478,13 +2496,11 @@ body.ai-chat-resizing * {
     }
 }
 
-.ai-chat-thinking pre {
+.ai-chat-thinking-content {
     margin: 8px 0 0;
     overflow-wrap: anywhere;
     color: #64748b;
-    font: inherit;
     line-height: 1.45;
-    white-space: pre-wrap;
 }
 
 .ai-chat-message-error,

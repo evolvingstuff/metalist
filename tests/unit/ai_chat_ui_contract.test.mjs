@@ -150,13 +150,45 @@ test('chat messages use directional bubbles without repeated speaker labels', ()
 });
 
 
-test('streaming thinking renders three animated dots', () => {
+test('completed assistant messages render server markdown and queue Mermaid diagrams', () => {
     const css = readFileSync(CSS_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
+    assert.match(controller, /'rendered_content'/);
+    assert.match(
+        controller,
+        /message\.role === 'assistant' && message\.rendered_content !== ''[\s\S]*?classList\.add\('meta-markdown'\)[\s\S]*?content\.innerHTML = message\.rendered_content/,
+    );
+    assert.match(controller, /await queueMermaidDiagramRendering\(this\._elements\.messages\)/);
+    assert.match(css, /\.ai-chat-message-content\.meta-markdown\s*\{[^}]*white-space:\s*normal;/s);
+});
+
+
+test('streaming thinking renders honest progress and only discloses real reasoning', () => {
+    const css = readFileSync(CSS_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+
+    assert.match(controller, /createElement\(hasThinkingText \? 'details' : 'div'\)/);
+    assert.match(controller, /hasThinkingText \? 'summary' : 'div'/);
     assert.match(controller, /ai-chat-thinking-dots/);
     assert.match(controller, /index < 3/);
+    assert.match(controller, /ai-chat-thinking-elapsed/);
+    assert.match(controller, /assistantMessage\.rendered_thinking = event\.rendered_text/);
+    assert.match(controller, /assistantMessage\.rendered_content = event\.rendered_text/);
+    assert.match(controller, /const isActivelyThinking = message\.status === 'streaming' && message\.content === ''/);
+    assert.match(controller, /let shouldOpenThinking = isActivelyThinking[\s\S]*?this\._expandedThinkingMessageIds\.has\(message\.id\)[\s\S]*?thinking\.open = shouldOpenThinking/);
+    assert.match(controller, /event\.type === 'content_delta'[\s\S]*?this\._stopThinkingFeedback\(\)/);
+    assert.match(controller, /assistantMessage\.content === ''[\s\S]*?_expandedThinkingMessageIds\.delete\(assistantMessage\.id\)/);
+    assert.match(controller, /thinking\.addEventListener\('toggle'[\s\S]*?_expandedThinkingMessageIds\.add\(message\.id\)/);
+    assert.match(controller, /ai-chat-thinking-content meta-markdown/);
+    assert.match(controller, /thinkingText\.innerHTML = message\.rendered_thinking/);
+    assert.match(controller, /window\.setInterval/);
+    assert.match(controller, /window\.clearInterval/);
+    assert.match(controller, /`\$\{elapsedSeconds\}s`/);
+    assert.doesNotMatch(controller, /Waiting for reasoning/);
+    assert.match(controller, /if \(hasThinkingText\)[\s\S]*?thinkingText\.textContent = message\.thinking/);
     assert.match(css, /@keyframes ai-chat-thinking-dot/);
+    assert.match(css, /\.ai-chat-thinking-elapsed/);
     assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 

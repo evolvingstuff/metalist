@@ -45,6 +45,12 @@ function validateAiStreamEvent(event) {
     ) {
         throw new Error(`${event.type} requires non-empty text`);
     }
+    if (
+        (event.type === 'thinking_delta' || event.type === 'content_delta')
+        && typeof event.rendered_text !== 'string'
+    ) {
+        throw new Error(`${event.type} requires rendered_text`);
+    }
     if (event.type === 'error' && (typeof event.message !== 'string' || event.message.length === 0)) {
         throw new Error('AI error event requires message');
     }

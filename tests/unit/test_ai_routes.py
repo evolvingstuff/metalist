@@ -29,8 +29,88 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
 
     assert len(response.messages) == 2
     assert response.messages[0].content == "Hello"
+    assert response.messages[0].rendered_content == ""
+    assert response.messages[0].rendered_thinking == ""
     assert response.messages[1].status == "streaming"
+    assert response.messages[1].rendered_content == ""
+    assert response.messages[1].rendered_thinking == ""
     assert http_response.headers["Cache-Control"] == "no-store"
+
+
+def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) -> None:
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-key",
+        user_content="Explain it",
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    store.append_delta(
+        session_key="session-key",
+        turn_id=turn_id,
+        delta_kind="content",
+        text=(
+            "# Result\n\n"
+            "Inline math: $x^2$.\n\n"
+            "```mermaid\nflowchart LR\nA-->B\n```"
+        ),
+    )
+    store.append_delta(
+        session_key="session-key",
+        turn_id=turn_id,
+        delta_kind="thinking",
+        text="## Reasoning\n\nUse $x^2$.",
+    )
+    store.complete_turn(session_key="session-key", turn_id=turn_id)
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+
+    response = ai_routes.get_ai_session(response=Response(), token="auth-token")
+    rendered = response.messages[1].rendered_content
+    rendered_thinking = response.messages[1].rendered_thinking
+
+    assert response.messages[0].rendered_content == ""
+    assert "<h1>Result</h1>" in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML"' in rendered
+    assert '<pre class="meta-mermaid-source">' in rendered
+    assert '<code class="language-mermaid">' in rendered
+    assert "<h2>Reasoning</h2>" in rendered_thinking
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML"' in rendered_thinking
+
+
+def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> None:
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-key",
+        user_content="Give me a link",
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    store.append_delta(
+        session_key="session-key",
+        turn_id=turn_id,
+        delta_kind="content",
+        text="[unsafe](javascript:alert(1)) <script>alert(2)</script>",
+    )
+    store.complete_turn(session_key="session-key", turn_id=turn_id)
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+
+    response = ai_routes.get_ai_session(response=Response(), token="auth-token")
+    rendered = response.messages[1].rendered_content
+
+    assert "javascript:" in rendered
+    assert 'href="javascript:' not in rendered
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
 
 
 def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
@@ -85,6 +165,9 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         token="auth-token",
     )
 
+    assert response.headers["content-encoding"] == "identity"
+    assert response.headers["x-accel-buffering"] == "no"
+
     async def read_events() -> list[dict[str, object]]:
         raw_chunks = [chunk async for chunk in response.body_iterator]
         return [json.loads(chunk) for chunk in raw_chunks]
@@ -93,8 +176,16 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     snapshot = store.snapshot(session_key="session-key")
 
     assert events == [
-        {"type": "thinking_delta", "text": "Think"},
-        {"type": "content_delta", "text": "Hi"},
+        {
+            "type": "thinking_delta",
+            "text": "Think",
+            "rendered_text": "<p>Think</p>",
+        },
+        {
+            "type": "content_delta",
+            "text": "Hi",
+            "rendered_text": "<p>Hi</p>",
+        },
         {"type": "done"},
     ]
     assert snapshot["messages"][1]["thinking"] == "Think"

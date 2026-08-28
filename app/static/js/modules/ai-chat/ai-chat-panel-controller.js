@@ -8,6 +8,9 @@ import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
 } from './ai-chat-panel-service.js';
+import {
+    queueMermaidDiagramRendering,
+} from '../mode-manager/services/mermaid-render-service.js';
 
 
 function requireElement(id, constructor) {
@@ -23,7 +26,18 @@ function validateMessage(message) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
         throw new Error('AI chat message must be an object');
     }
-    for (const key of ['id', 'role', 'content', 'thinking', 'status', 'error', 'provider', 'model']) {
+    for (const key of [
+        'id',
+        'role',
+        'content',
+        'rendered_content',
+        'thinking',
+        'rendered_thinking',
+        'status',
+        'error',
+        'provider',
+        'model',
+    ]) {
         if (typeof message[key] !== 'string') {
             throw new Error(`AI chat message ${key} must be a string`);
         }
@@ -42,7 +56,10 @@ class AiChatPanelController {
     constructor() {
         this._initialized = false;
         this._messages = [];
+        this._expandedThinkingMessageIds = new Set();
         this._isBusy = false;
+        this._thinkingStartedAtMs = 0;
+        this._thinkingTimerId = 0;
         this._getSettings = null;
         this._setVisible = null;
         this._openSettings = null;
@@ -243,8 +260,10 @@ class AiChatPanelController {
             if (!payload || !Array.isArray(payload.messages)) {
                 throw new Error('AI chat session response missing messages');
             }
+            this._expandedThinkingMessageIds.clear();
             this._messages = payload.messages.map(validateMessage);
             this._render();
+            await queueMermaidDiagramRendering(this._elements.messages);
         } catch (error) {
             if (!(error instanceof AiApiError)) {
                 throw error;
@@ -267,6 +286,7 @@ class AiChatPanelController {
             this._setStatus(error.message, true);
             throw error;
         }
+        this._expandedThinkingMessageIds.clear();
         this._messages = [];
         this._setStatus('', false);
         this._render();
@@ -294,7 +314,9 @@ class AiChatPanelController {
                 id: `${localTurnId}-user`,
                 role: 'user',
                 content: message,
+                rendered_content: '',
                 thinking: '',
+                rendered_thinking: '',
                 status: 'complete',
                 error: '',
                 provider: settings.provider,
@@ -304,7 +326,9 @@ class AiChatPanelController {
                 id: `${localTurnId}-assistant`,
                 role: 'assistant',
                 content: '',
+                rendered_content: '',
                 thinking: '',
+                rendered_thinking: '',
                 status: 'streaming',
                 error: '',
                 provider: settings.provider,
@@ -314,6 +338,7 @@ class AiChatPanelController {
         const assistantMessage = this._messages[this._messages.length - 1];
         this._elements.input.value = '';
         this._setBusy(true);
+        this._startThinkingFeedback();
         this._setStatus('Thinking…', false);
         this._render();
 
@@ -324,8 +349,14 @@ class AiChatPanelController {
                 onEvent: (event) => {
                     if (event.type === 'thinking_delta') {
                         assistantMessage.thinking += event.text;
+                        assistantMessage.rendered_thinking = event.rendered_text;
                     } else if (event.type === 'content_delta') {
+                        this._stopThinkingFeedback();
+                        if (assistantMessage.content === '') {
+                            this._expandedThinkingMessageIds.delete(assistantMessage.id);
+                        }
                         assistantMessage.content += event.text;
+                        assistantMessage.rendered_content = event.rendered_text;
                     } else if (event.type === 'done') {
                         assistantMessage.status = 'complete';
                     } else if (event.type === 'error') {
@@ -347,6 +378,7 @@ class AiChatPanelController {
             this._setStatus(error.message, true);
             throw error;
         } finally {
+            this._stopThinkingFeedback();
             this._setBusy(false);
         }
         this._setStatus(assistantMessage.status === 'error' ? assistantMessage.error : '', assistantMessage.status === 'error');
@@ -362,6 +394,39 @@ class AiChatPanelController {
         this._elements.input.disabled = isBusy;
         this._elements.send.disabled = isBusy;
         this._elements.clear.disabled = isBusy;
+    }
+
+    _startThinkingFeedback() {
+        if (this._thinkingTimerId !== 0 || this._thinkingStartedAtMs !== 0) {
+            throw new Error('Thinking feedback timer is already running');
+        }
+        this._thinkingStartedAtMs = Date.now();
+        this._thinkingTimerId = window.setInterval(() => {
+            this._syncThinkingElapsed();
+        }, 1000);
+    }
+
+    _stopThinkingFeedback() {
+        if (this._thinkingTimerId !== 0) {
+            window.clearInterval(this._thinkingTimerId);
+        }
+        this._thinkingTimerId = 0;
+        this._thinkingStartedAtMs = 0;
+    }
+
+    _formatThinkingElapsed() {
+        if (this._thinkingStartedAtMs === 0) {
+            return '';
+        }
+        const elapsedSeconds = Math.floor((Date.now() - this._thinkingStartedAtMs) / 1000);
+        return elapsedSeconds < 1 ? '' : `${elapsedSeconds}s`;
+    }
+
+    _syncThinkingElapsed() {
+        const elapsed = this._formatThinkingElapsed();
+        for (const element of this._elements.messages.querySelectorAll('.ai-chat-thinking-elapsed')) {
+            element.textContent = elapsed;
+        }
     }
 
     _setStatus(message, isError) {
@@ -380,14 +445,33 @@ class AiChatPanelController {
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
 
             if (message.role === 'assistant' && (message.thinking !== '' || message.status === 'streaming')) {
-                const thinking = document.createElement('details');
+                const hasThinkingText = message.thinking !== '';
+                const isActivelyThinking = message.status === 'streaming' && message.content === '';
+                const thinking = document.createElement(hasThinkingText ? 'details' : 'div');
                 thinking.className = 'ai-chat-thinking';
-                thinking.open = message.status === 'streaming';
-                const summary = document.createElement('summary');
-                summary.textContent = 'Thinking';
-                if (message.status === 'streaming') {
+                if (hasThinkingText) {
+                    let shouldOpenThinking = isActivelyThinking;
+                    if (this._expandedThinkingMessageIds.has(message.id)) {
+                        shouldOpenThinking = true;
+                    }
+                    thinking.open = shouldOpenThinking;
+                    thinking.addEventListener('toggle', () => {
+                        if (isActivelyThinking) {
+                            return;
+                        }
+                        if (thinking.open) {
+                            this._expandedThinkingMessageIds.add(message.id);
+                        } else {
+                            this._expandedThinkingMessageIds.delete(message.id);
+                        }
+                    });
+                }
+                const heading = document.createElement(hasThinkingText ? 'summary' : 'div');
+                heading.className = 'ai-chat-thinking-heading';
+                heading.textContent = 'Thinking';
+                if (isActivelyThinking) {
                     thinking.classList.add('is-streaming');
-                    summary.setAttribute('aria-label', 'Thinking…');
+                    heading.setAttribute('aria-label', 'Thinking…');
                     const dots = document.createElement('span');
                     dots.className = 'ai-chat-thinking-dots';
                     dots.setAttribute('aria-hidden', 'true');
@@ -396,18 +480,38 @@ class AiChatPanelController {
                         dot.textContent = '.';
                         dots.appendChild(dot);
                     }
-                    summary.appendChild(dots);
+                    heading.appendChild(dots);
+                    const elapsed = document.createElement('span');
+                    elapsed.className = 'ai-chat-thinking-elapsed';
+                    elapsed.textContent = this._formatThinkingElapsed();
+                    elapsed.setAttribute('aria-hidden', 'true');
+                    heading.appendChild(elapsed);
                 }
-                const thinkingText = document.createElement('pre');
-                thinkingText.textContent = message.thinking === '' ? 'Waiting for reasoning…' : message.thinking;
-                thinking.append(summary, thinkingText);
+                thinking.appendChild(heading);
+                if (hasThinkingText) {
+                    const thinkingText = document.createElement('div');
+                    thinkingText.className = 'ai-chat-thinking-content meta-markdown';
+                    thinkingText.setAttribute('data-markdown-rendered', 'true');
+                    if (message.rendered_thinking === '') {
+                        thinkingText.textContent = message.thinking;
+                    } else {
+                        thinkingText.innerHTML = message.rendered_thinking;
+                    }
+                    thinking.appendChild(thinkingText);
+                }
                 article.appendChild(thinking);
             }
 
             if (message.content !== '') {
                 const content = document.createElement('div');
                 content.className = 'ai-chat-message-content';
-                content.textContent = message.content;
+                if (message.role === 'assistant' && message.rendered_content !== '') {
+                    content.classList.add('meta-markdown');
+                    content.setAttribute('data-markdown-rendered', 'true');
+                    content.innerHTML = message.rendered_content;
+                } else {
+                    content.textContent = message.content;
+                }
                 article.appendChild(content);
             }
             if (message.status === 'error') {

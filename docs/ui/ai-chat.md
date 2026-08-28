@@ -20,8 +20,9 @@
 - The header provides clear, settings, and close actions. `Enter` sends; `Shift+Enter` inserts a newline.
 
 ## Streaming and Session State
-- `/api2/ai/chat` streams typed NDJSON events: `thinking_delta`, `content_delta`, `done`, or `error`.
-- Thinking and answer content render separately. The thinking disclosure remains open during generation and collapses when the response completes.
+- `/api2/ai/chat` streams typed NDJSON events: `thinking_delta`, `content_delta`, `done`, or `error`. The endpoint explicitly bypasses response compression and proxy buffering so small answer tokens reach the browser immediately rather than collecting until completion.
+- Thinking and answer content render separately. While waiting, the panel animates `Thinking…` and shows elapsed seconds without a misleading disclosure arrow. Thinking and answer events each include a cumulative server-rendered snapshot, so Markdown and completed LaTeX expressions format while text is still streaming. An open reasoning disclosure collapses when the first answer chunk arrives. The user can reopen it afterward, and that explicit choice is preserved while later answer chunks render. Mermaid source is finalized into a diagram when the turn completes. Models that do not emit reasoning cannot provide substantive intermediate text before their first answer token.
+- Completed assistant answers use MetaList's Markdown renderer, including LaTeX delimiters rendered as MathML and fenced `mermaid` diagrams rendered by the strict local Mermaid runtime. Streaming text remains plain until the completed session response supplies rendered HTML.
 - Chat transcript state lives only in server memory, keyed by the opaque authenticated session token hash. Refreshing the browser with the same login rehydrates the transcript; logout, password/auth reset, runtime lock purge, or server restart clears it.
 - Transcript and streaming HTTP responses carry `Cache-Control: no-store`; the browser session request also explicitly bypasses its HTTP cache.
 - A session permits one active generation at a time, keeps at most 100 messages, and bounds each user, thinking, and answer field to 32,000 characters.

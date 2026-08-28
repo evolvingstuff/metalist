@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.ai_chat import ai_chat_store
+from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import ollama_provider
@@ -66,7 +67,9 @@ class AiChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant"]
     content: str
+    rendered_content: str
     thinking: str
+    rendered_thinking: str
     status: Literal["complete", "streaming", "error"]
     error: str
     provider: Literal["ollama"]
@@ -103,7 +106,29 @@ def get_ai_session(
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
     snapshot = ai_chat_store.snapshot(session_key=session_key)
-    return AiSessionResponse(messages=snapshot["messages"])
+    messages: list[AiChatMessage] = []
+    for message in snapshot["messages"]:
+        rendered_content = ""
+        rendered_thinking = ""
+        if message["role"] == "assistant" and message["content"] != "":
+            rendered_content = render_markdown_to_html(message["content"])
+        if message["role"] == "assistant" and message["thinking"] != "":
+            rendered_thinking = render_markdown_to_html(message["thinking"])
+        messages.append(
+            AiChatMessage(
+                id=message["id"],
+                role=message["role"],
+                content=message["content"],
+                rendered_content=rendered_content,
+                thinking=message["thinking"],
+                rendered_thinking=rendered_thinking,
+                status=message["status"],
+                error=message["error"],
+                provider=message["provider"],
+                model=message["model"],
+            )
+        )
+    return AiSessionResponse(messages=messages)
 
 
 @router.delete("/session", response_model=AiClearResponse)
@@ -134,6 +159,8 @@ def stream_ai_chat(
     provider_messages = ai_chat_store.provider_messages(session_key=session_key)
 
     async def stream_events() -> AsyncIterator[str]:
+        accumulated_thinking = ""
+        accumulated_content = ""
         try:
             async for event in ollama_provider.stream_chat(
                 base_url=payload.base_url,
@@ -141,6 +168,7 @@ def stream_ai_chat(
                 messages=provider_messages,
             ):
                 event_type = event["type"]
+                outgoing_event = event
                 if event_type == "thinking_delta":
                     ai_chat_store.append_delta(
                         session_key=session_key,
@@ -148,6 +176,11 @@ def stream_ai_chat(
                         delta_kind="thinking",
                         text=event["text"],
                     )
+                    accumulated_thinking += event["text"]
+                    outgoing_event = {
+                        **event,
+                        "rendered_text": render_markdown_to_html(accumulated_thinking),
+                    }
                 elif event_type == "content_delta":
                     ai_chat_store.append_delta(
                         session_key=session_key,
@@ -155,6 +188,11 @@ def stream_ai_chat(
                         delta_kind="content",
                         text=event["text"],
                     )
+                    accumulated_content += event["text"]
+                    outgoing_event = {
+                        **event,
+                        "rendered_text": render_markdown_to_html(accumulated_content),
+                    }
                 elif event_type == "done":
                     ai_chat_store.complete_turn(
                         session_key=session_key,
@@ -162,7 +200,7 @@ def stream_ai_chat(
                     )
                 else:
                     raise RuntimeError(f"Unknown Ollama stream event type: {event_type}")
-                yield f"{json.dumps(event, separators=(',', ':'))}\n"
+                yield f"{json.dumps(outgoing_event, separators=(',', ':'))}\n"
         # lint: allow-PY001 rationale="stream errors must be delivered after response headers are sent"
         except OllamaProviderError as exc:
             error_message = str(exc)
@@ -184,5 +222,9 @@ def stream_ai_chat(
     return StreamingResponse(
         stream_events(),
         media_type="application/x-ndjson",
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"},
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-store",
+            "Content-Encoding": "identity",
+        },
     )
