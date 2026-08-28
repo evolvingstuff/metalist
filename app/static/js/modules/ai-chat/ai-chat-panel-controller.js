@@ -1,6 +1,7 @@
 import {
     AiApiError,
     clearAiChatSession,
+    listOllamaModels,
     loadAiChatSession,
     streamAiChat,
 } from './ai-chat-api.js';
@@ -11,6 +12,11 @@ import {
 import {
     queueMermaidDiagramRendering,
 } from '../mode-manager/services/mermaid-render-service.js';
+import {
+    AI_THINKING_LEVEL_OPTIONS,
+    isThinkingLevelAvailableForModel,
+    normalizeThinkingLevelForModel,
+} from './ai-thinking-level-service.js';
 
 
 function requireElement(id, constructor) {
@@ -60,7 +66,10 @@ class AiChatPanelController {
         this._isBusy = false;
         this._thinkingStartedAtMs = 0;
         this._thinkingTimerId = 0;
+        this._models = [];
+        this._isLoadingModels = false;
         this._getSettings = null;
+        this._saveSettings = null;
         this._setVisible = null;
         this._openSettings = null;
         this._elements = null;
@@ -73,12 +82,15 @@ class AiChatPanelController {
         this._handleWindowResize = this._handleWindowResize.bind(this);
     }
 
-    async init({ getSettings, setVisible, openSettings }) {
+    async init({ getSettings, saveSettings, setVisible, openSettings }) {
         if (this._initialized) {
             return;
         }
         if (typeof getSettings !== 'function') {
             throw new Error('AiChatPanel.init requires getSettings');
+        }
+        if (typeof saveSettings !== 'function') {
+            throw new Error('AiChatPanel.init requires saveSettings');
         }
         if (typeof setVisible !== 'function') {
             throw new Error('AiChatPanel.init requires setVisible');
@@ -87,6 +99,7 @@ class AiChatPanelController {
             throw new Error('AiChatPanel.init requires openSettings');
         }
         this._getSettings = getSettings;
+        this._saveSettings = saveSettings;
         this._setVisible = setVisible;
         this._openSettings = openSettings;
         this._elements = {
@@ -96,8 +109,9 @@ class AiChatPanelController {
             form: requireElement('ai-chat-form', HTMLFormElement),
             input: requireElement('ai-chat-input', HTMLTextAreaElement),
             send: requireElement('ai-chat-send', HTMLButtonElement),
+            model: requireElement('ai-chat-model', HTMLSelectElement),
+            thinkingLevel: requireElement('ai-chat-thinking-level', HTMLSelectElement),
             status: requireElement('ai-chat-status', HTMLElement),
-            modelLabel: requireElement('ai-chat-model-label', HTMLElement),
             clear: requireElement('ai-chat-clear', HTMLButtonElement),
             settings: requireElement('ai-chat-settings', HTMLButtonElement),
             close: requireElement('ai-chat-close', HTMLButtonElement),
@@ -105,9 +119,12 @@ class AiChatPanelController {
         };
         this._bindEvents();
         this._initialized = true;
-        this._syncSettingsLabel();
+        this._syncSettingsControls();
         this._syncResizerAria();
         this._syncToggleButton(document.body.classList.contains('pref-show-ai-chat'));
+        if (document.body.classList.contains('pref-show-ai-chat')) {
+            await this._loadModels();
+        }
         await this._loadSession();
     }
 
@@ -124,6 +141,11 @@ class AiChatPanelController {
             event.preventDefault();
             elements.form.requestSubmit();
         });
+        elements.model.addEventListener('change', () => void this._selectModel());
+        elements.thinkingLevel.addEventListener(
+            'change',
+            () => void this._selectThinkingLevel(),
+        );
         elements.close.addEventListener('click', () => void this._setVisible(false));
         elements.toggle.addEventListener('click', (event) => {
             event.preventDefault();
@@ -157,11 +179,21 @@ class AiChatPanelController {
         if (event.detail.isVisible) {
             this._syncResizerAria();
             this._elements.input.focus();
+            void this._loadModels();
         }
     }
 
-    _handleSettingsChanged() {
-        this._syncSettingsLabel();
+    _handleSettingsChanged(event) {
+        if (!event || !event.detail || typeof event.detail.reloadModels !== 'boolean') {
+            throw new Error('AI settings event is malformed');
+        }
+        this._syncSettingsControls();
+        if (
+            event.detail.reloadModels
+            && document.body.classList.contains('pref-show-ai-chat')
+        ) {
+            void this._loadModels();
+        }
     }
 
     _syncToggleButton(isVisible) {
@@ -241,17 +273,161 @@ class AiChatPanelController {
         window.removeEventListener('pointercancel', this._handlePointerUp);
     }
 
-    _syncSettingsLabel() {
+    _syncSettingsControls() {
         const settings = this._getSettings();
         if (!settings || typeof settings !== 'object') {
             throw new Error('AI settings snapshot missing');
         }
-        this._elements.modelLabel.textContent = settings.model === ''
-            ? 'Ollama · not configured'
-            : `Ollama · ${settings.model}`;
+        this._elements.model.replaceChildren();
+        if (this._models.length === 0) {
+            const option = document.createElement('option');
+            option.value = settings.model;
+            option.textContent = settings.model === '' ? 'No models' : settings.model;
+            this._elements.model.appendChild(option);
+        } else {
+            for (const model of this._models) {
+                if (typeof model !== 'string' || model === '') {
+                    throw new Error('Ollama model list contains invalid model');
+                }
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                this._elements.model.appendChild(option);
+            }
+            this._elements.model.value = settings.model;
+        }
+
+        const thinkingLevel = normalizeThinkingLevelForModel({
+            model: settings.model,
+            thinkingLevel: settings.thinkingLevel,
+        });
+        this._elements.thinkingLevel.replaceChildren();
+        for (const thinkingOption of AI_THINKING_LEVEL_OPTIONS) {
+            const option = document.createElement('option');
+            option.value = thinkingOption.value;
+            option.textContent = thinkingOption.label;
+            option.disabled = !isThinkingLevelAvailableForModel({
+                model: settings.model,
+                thinkingLevel: thinkingOption.value,
+            });
+            this._elements.thinkingLevel.appendChild(option);
+        }
+        this._elements.thinkingLevel.value = thinkingLevel;
         this._elements.input.placeholder = settings.model === ''
-            ? 'Configure Ollama to start chatting…'
+            ? 'Connect Ollama to start chatting…'
             : `Message ${settings.model}…`;
+        this._syncComposerControlsDisabled();
+    }
+
+    _syncComposerControlsDisabled() {
+        const settings = this._getSettings();
+        const hasModel = settings.model !== '';
+        let isModelDisabled = this._isBusy;
+        if (this._isLoadingModels) {
+            isModelDisabled = true;
+        }
+        if (this._models.length === 0) {
+            isModelDisabled = true;
+        }
+        this._elements.model.disabled = isModelDisabled;
+
+        let isThinkingLevelDisabled = this._isBusy;
+        if (this._isLoadingModels) {
+            isThinkingLevelDisabled = true;
+        }
+        if (!hasModel) {
+            isThinkingLevelDisabled = true;
+        }
+        this._elements.thinkingLevel.disabled = isThinkingLevelDisabled;
+
+        let isSendDisabled = this._isBusy;
+        if (this._isLoadingModels) {
+            isSendDisabled = true;
+        }
+        if (this._models.length === 0) {
+            isSendDisabled = true;
+        }
+        this._elements.send.disabled = isSendDisabled;
+    }
+
+    async _loadModels() {
+        if (this._isLoadingModels || this._isBusy) {
+            return;
+        }
+        this._isLoadingModels = true;
+        this._syncComposerControlsDisabled();
+        const settings = this._getSettings();
+        try {
+            const payload = await listOllamaModels(settings);
+            if (!payload || !Array.isArray(payload.models)) {
+                throw new Error('Ollama model response missing models');
+            }
+            this._models = payload.models;
+            if (this._models.length === 0) {
+                this._setStatus('Ollama is connected, but no models are installed.', true);
+                return;
+            }
+            let model = settings.model;
+            if (!this._models.includes(model)) {
+                model = this._models[0];
+            }
+            const thinkingLevel = normalizeThinkingLevelForModel({
+                model,
+                thinkingLevel: settings.thinkingLevel,
+            });
+            if (model !== settings.model || thinkingLevel !== settings.thinkingLevel) {
+                await this._saveSettings({
+                    provider: settings.provider,
+                    baseUrl: settings.baseUrl,
+                    model,
+                    thinkingLevel,
+                });
+            }
+            this._setStatus('', false);
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this._models = [];
+            this._setStatus(error.message, true);
+        } finally {
+            this._isLoadingModels = false;
+            this._syncSettingsControls();
+        }
+    }
+
+    async _selectModel() {
+        const settings = this._getSettings();
+        const model = this._elements.model.value;
+        if (model === '') {
+            throw new Error('AI model selection must not be empty');
+        }
+        const thinkingLevel = normalizeThinkingLevelForModel({
+            model,
+            thinkingLevel: settings.thinkingLevel,
+        });
+        await this._saveSettings({
+            provider: settings.provider,
+            baseUrl: settings.baseUrl,
+            model,
+            thinkingLevel,
+        });
+        this._elements.input.focus();
+    }
+
+    async _selectThinkingLevel() {
+        const settings = this._getSettings();
+        const thinkingLevel = normalizeThinkingLevelForModel({
+            model: settings.model,
+            thinkingLevel: this._elements.thinkingLevel.value,
+        });
+        await this._saveSettings({
+            provider: settings.provider,
+            baseUrl: settings.baseUrl,
+            model: settings.model,
+            thinkingLevel,
+        });
+        this._elements.input.focus();
     }
 
     async _loadSession() {
@@ -295,6 +471,13 @@ class AiChatPanelController {
 
     async _submitMessage() {
         if (this._isBusy) {
+            return;
+        }
+        if (this._isLoadingModels) {
+            return;
+        }
+        if (this._models.length === 0) {
+            this._setStatus('No installed Ollama models are available.', true);
             return;
         }
         const message = this._elements.input.value;
@@ -392,8 +575,8 @@ class AiChatPanelController {
         }
         this._isBusy = isBusy;
         this._elements.input.disabled = isBusy;
-        this._elements.send.disabled = isBusy;
         this._elements.clear.disabled = isBusy;
+        this._syncComposerControlsDisabled();
     }
 
     _startThinkingFeedback() {

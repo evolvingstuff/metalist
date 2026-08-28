@@ -101,10 +101,7 @@
             tabindex="0"
         ></div>
         <header class="ai-chat-header">
-            <div>
-                <h2>AI Chat</h2>
-                <div id="ai-chat-model-label" class="ai-chat-model-label">Ollama · not configured</div>
-            </div>
+            <h2>AI Chat</h2>
             <div class="ai-chat-header-actions">
                 <button id="ai-chat-clear" type="button" title="Clear chat" aria-label="Clear chat">↺</button>
                 <button id="ai-chat-settings" type="button" title="AI agent settings" aria-label="AI agent settings">⚙</button>
@@ -122,7 +119,18 @@
             ></textarea>
             <div class="ai-chat-composer-footer">
                 <span id="ai-chat-status" class="ai-chat-status"></span>
-                <button id="ai-chat-send" type="submit">Send</button>
+                <div class="ai-chat-composer-actions">
+                    <select id="ai-chat-model" aria-label="AI model">
+                        <option value="">Loading models…</option>
+                    </select>
+                    <select id="ai-chat-thinking-level" aria-label="Thinking level">
+                        <option value="off">Off</option>
+                        <option value="low" selected>Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                    <button id="ai-chat-send" type="submit">Send</button>
+                </div>
             </div>
         </form>
     </aside>

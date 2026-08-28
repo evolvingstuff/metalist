@@ -7,6 +7,7 @@ import pytest
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ollama_provider import OllamaProvider
 from app.services.ollama_provider import normalize_ollama_base_url
+from app.services.ollama_provider import resolve_ollama_think_value
 
 
 def test_chat_history_is_scoped_to_server_session_key() -> None:
@@ -171,7 +172,7 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
             "model": "qwen3:8b",
             "messages": [{"role": "user", "content": "Count to two"}],
             "stream": True,
-            "think": True,
+            "think": "low",
         }
         return httpx.Response(
             200,
@@ -191,6 +192,7 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
             async for chunk in provider.stream_chat(
                 base_url="http://127.0.0.1:11434",
                 model="qwen3:8b",
+                thinking_level="low",
                 messages=[{"role": "user", "content": "Count to two"}],
             )
         ]
@@ -223,6 +225,7 @@ def test_gpt_oss_requests_medium_thinking_level() -> None:
             async for chunk in provider.stream_chat(
                 base_url="http://127.0.0.1:11434",
                 model="gpt-oss:20b",
+                thinking_level="medium",
                 messages=[{"role": "user", "content": "Hello"}],
             )
         ]
@@ -230,3 +233,27 @@ def test_gpt_oss_requests_medium_thinking_level() -> None:
     chunks = asyncio.run(collect_chunks())
 
     assert chunks[-1] == {"type": "done"}
+
+
+@pytest.mark.parametrize(
+    ("thinking_level", "expected"),
+    [
+        ("off", False),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+    ],
+)
+def test_ollama_thinking_level_maps_to_native_api_value(thinking_level, expected) -> None:
+    assert resolve_ollama_think_value(
+        model="qwen3:8b",
+        thinking_level=thinking_level,
+    ) == expected
+
+
+def test_gpt_oss_rejects_disabled_thinking() -> None:
+    with pytest.raises(ValueError, match="does not support disabling thinking"):
+        resolve_ollama_think_value(
+            model="gpt-oss:20b",
+            thinking_level="off",
+        )

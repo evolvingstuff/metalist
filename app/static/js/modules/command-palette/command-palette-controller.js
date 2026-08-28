@@ -43,7 +43,11 @@ import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-moda
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
-import { listOllamaModels } from '../ai-chat/ai-chat-api.js';
+import {
+    AI_THINKING_LEVEL_OPTIONS,
+    DEFAULT_AI_THINKING_LEVEL,
+    validateAiThinkingLevel,
+} from '../ai-chat/ai-thinking-level-service.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -656,6 +660,11 @@ class CommandPaletteController {
             provider: this._getSelect('pref.ai.provider', ['ollama'], 'ollama'),
             baseUrl: this._preferences.getRaw('pref.ai.ollama_base_url') ?? 'http://127.0.0.1:11434',
             model: this._preferences.getRaw('pref.ai.ollama_model') ?? '',
+            thinkingLevel: this._getSelect(
+                'pref.ai.thinking_level',
+                AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
+                DEFAULT_AI_THINKING_LEVEL,
+            ),
         };
     }
 
@@ -672,12 +681,41 @@ class CommandPaletteController {
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
+        const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
             'pref.ai.ollama_base_url': settings.baseUrl.trim(),
             'pref.ai.ollama_model': settings.model.trim(),
+            'pref.ai.thinking_level': thinkingLevel,
         });
-        document.dispatchEvent(new CustomEvent('metalist:ai-settings-changed'));
+        document.dispatchEvent(new CustomEvent(
+            'metalist:ai-settings-changed',
+            { detail: { reloadModels: false } },
+        ));
+    }
+
+    async saveAiSettings(settings) {
+        await this._saveAiSettings(settings);
+    }
+
+    async _saveAiConnectionSettings(settings) {
+        if (!settings || typeof settings !== 'object') {
+            throw new Error('_saveAiConnectionSettings requires settings object');
+        }
+        if (settings.provider !== 'ollama') {
+            throw new Error('Unsupported AI provider');
+        }
+        if (typeof settings.baseUrl !== 'string' || settings.baseUrl.trim() === '') {
+            throw new Error('AI connection settings require baseUrl');
+        }
+        await this._preferences.setMany({
+            'pref.ai.provider': settings.provider,
+            'pref.ai.ollama_base_url': settings.baseUrl.trim(),
+        });
+        document.dispatchEvent(new CustomEvent(
+            'metalist:ai-settings-changed',
+            { detail: { reloadModels: true } },
+        ));
     }
 
     isOpen() {
@@ -2333,8 +2371,7 @@ class CommandPaletteController {
         if (this._aiAgentSettingsModal === null) {
             this._aiAgentSettingsModal = new AiAgentSettingsModal(
                 this.getAiSettings.bind(this),
-                this._saveAiSettings.bind(this),
-                listOllamaModels,
+                this._saveAiConnectionSettings.bind(this),
             );
         }
         this._aiAgentSettingsModal.open();

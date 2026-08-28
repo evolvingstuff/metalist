@@ -143,9 +143,10 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     store = AiChatSessionStore()
 
     class FakeProvider:
-        async def stream_chat(self, *, base_url, model, messages):
+        async def stream_chat(self, *, base_url, model, thinking_level, messages):
             assert base_url == "http://127.0.0.1:11434"
             assert model == "qwen3:8b"
+            assert thinking_level == "low"
             assert messages == [{"role": "user", "content": "Hello"}]
             yield {"type": "thinking_delta", "text": "Think"}
             yield {"type": "content_delta", "text": "Hi"}
@@ -160,6 +161,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             provider="ollama",
             base_url="http://127.0.0.1:11434",
             model="qwen3:8b",
+            thinking_level="low",
             message="Hello",
         ),
         token="auth-token",
@@ -197,8 +199,8 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
     store = AiChatSessionStore()
 
     class FailingProvider:
-        async def stream_chat(self, *, base_url, model, messages):
-            del base_url, model, messages
+        async def stream_chat(self, *, base_url, model, thinking_level, messages):
+            del base_url, model, thinking_level, messages
             raise OllamaProviderError("Ollama generation failed")
             yield
 
@@ -211,6 +213,7 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             provider="ollama",
             base_url="http://127.0.0.1:11434",
             model="qwen3:8b",
+            thinking_level="high",
             message="Hello",
         ),
         token="auth-token",
@@ -226,6 +229,17 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
     assert events == [{"type": "error", "message": "Ollama generation failed"}]
     assert snapshot["messages"][1]["status"] == "error"
     assert snapshot["messages"][1]["error"] == "Ollama generation failed"
+
+
+def test_chat_request_rejects_disabled_gpt_oss_thinking() -> None:
+    with pytest.raises(ValueError, match="does not support disabling thinking"):
+        ai_routes.AiChatRequest(
+            provider="ollama",
+            base_url="http://127.0.0.1:11434",
+            model="gpt-oss:20b",
+            thinking_level="off",
+            message="Hello",
+        )
 
 
 def test_model_discovery_maps_ollama_failure_to_bad_gateway(monkeypatch) -> None:

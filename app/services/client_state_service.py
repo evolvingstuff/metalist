@@ -43,6 +43,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.provider": {"ollama"},
     "pref.ai.ollama_base_url": "ollama_base_url",
     "pref.ai.ollama_model": "ollama_model",
+    "pref.ai.thinking_level": {"off", "low", "medium", "high"},
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(

@@ -761,6 +761,7 @@ export const Auth = {
                 startupPhase = 'initializing AI chat';
                 await AiChatPanel.init({
                     getSettings: () => CommandPalette.getAiSettings(),
+                    saveSettings: (settings) => CommandPalette.saveAiSettings(settings),
                     setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
                     openSettings: () => CommandPalette.openAiAgentSettings(),
                 });

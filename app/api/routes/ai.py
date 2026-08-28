@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
@@ -18,6 +18,7 @@ from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import ollama_provider
+from app.services.ollama_provider import resolve_ollama_think_value
 from app.services.ollama_provider import validate_ollama_model
 from app.services.tokens import token_service
 
@@ -43,6 +44,7 @@ class AiChatRequest(BaseModel):
     provider: Literal["ollama"]
     base_url: str
     model: str
+    thinking_level: Literal["off", "low", "medium", "high"]
     message: str = Field(..., max_length=32_000)
 
     @field_validator("base_url")
@@ -61,6 +63,14 @@ class AiChatRequest(BaseModel):
         if value.strip() == "":
             raise ValueError("Chat message must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def validate_thinking_level_for_model(self) -> Self:
+        resolve_ollama_think_value(
+            model=self.model,
+            thinking_level=self.thinking_level,
+        )
+        return self
 
 
 class AiChatMessage(BaseModel):
@@ -165,6 +175,7 @@ def stream_ai_chat(
             async for event in ollama_provider.stream_chat(
                 base_url=payload.base_url,
                 model=payload.model,
+                thinking_level=payload.thinking_level,
                 messages=provider_messages,
             ):
                 event_type = event["type"]

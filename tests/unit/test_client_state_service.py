@@ -142,12 +142,25 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.provider": "ollama",
         "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
         "pref.ai.ollama_model": "qwen3:8b",
+        "pref.ai.thinking_level": "low",
     }
 
     saved = save_client_preferences(preferences=expected_preferences, token="")
 
     assert saved == expected_preferences
     assert load_client_preferences(token="") == expected_preferences
+
+
+def test_save_client_preferences_rejects_unknown_ai_thinking_level(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Invalid client preference value"):
+        save_client_preferences(
+            preferences={"pref.ai.thinking_level": "extreme"},
+            token="",
+        )
 
 
 def test_save_client_preferences_rejects_unsafe_ollama_url(memory_settings_db) -> None:

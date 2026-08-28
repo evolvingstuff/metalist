@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await CommandPalette.init();
         await AiChatPanel.init({
             getSettings: () => CommandPalette.getAiSettings(),
+            saveSettings: (settings) => CommandPalette.saveAiSettings(settings),
             setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
             openSettings: () => CommandPalette.openAiAgentSettings(),
         });

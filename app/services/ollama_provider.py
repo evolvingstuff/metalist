@@ -13,6 +13,7 @@ import httpx
 _CONNECT_TIMEOUT_SECONDS = 5.0
 _READ_TIMEOUT_SECONDS = 300.0
 _ALLOWED_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_ALLOWED_THINKING_LEVELS = frozenset({"off", "low", "medium", "high"})
 
 
 class OllamaProviderError(RuntimeError):
@@ -64,6 +65,17 @@ def validate_ollama_model(model: str) -> str:
     if any(ord(character) < 32 for character in normalized):
         raise ValueError("Ollama model contains control characters")
     return normalized
+
+
+def resolve_ollama_think_value(*, model: str, thinking_level: str) -> bool | str:
+    normalized_model = validate_ollama_model(model)
+    if thinking_level not in _ALLOWED_THINKING_LEVELS:
+        raise ValueError(f"Unsupported Ollama thinking level: {thinking_level}")
+    if normalized_model.casefold().startswith("gpt-oss") and thinking_level == "off":
+        raise ValueError("GPT-OSS does not support disabling thinking")
+    if thinking_level == "off":
+        return False
+    return thinking_level
 
 
 def _api_url(*, base_url: str, endpoint: str) -> str:
@@ -121,15 +133,20 @@ class OllamaProvider:
         *,
         base_url: str,
         model: str,
+        thinking_level: str,
         messages: list[dict[str, str]],
     ) -> AsyncIterator[dict[str, str]]:
         normalized_model = validate_ollama_model(model)
+        think_value = resolve_ollama_think_value(
+            model=normalized_model,
+            thinking_level=thinking_level,
+        )
         self._validate_messages(messages)
         request_payload: dict[str, object] = {
             "model": normalized_model,
             "messages": messages,
             "stream": True,
-            "think": "medium" if normalized_model.casefold().startswith("gpt-oss") else True,
+            "think": think_value,
         }
         url = _api_url(base_url=base_url, endpoint="/chat")
         did_finish = False

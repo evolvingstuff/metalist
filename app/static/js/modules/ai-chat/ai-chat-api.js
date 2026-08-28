@@ -1,6 +1,7 @@
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { parseAiChatNdjsonBuffer } from './ai-chat-panel-service.js';
+import { validateAiThinkingLevel } from './ai-thinking-level-service.js';
 
 
 export class AiApiError extends Error {
@@ -90,6 +91,7 @@ export async function streamAiChat({ settings, message, onEvent }) {
     if (typeof onEvent !== 'function') {
         throw new Error('streamAiChat requires onEvent');
     }
+    const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
     const response = await fetchAi(CONFIG.API.AI.CHAT, {
         method: 'POST',
         headers: buildSessionHeaders(true),
@@ -97,6 +99,7 @@ export async function streamAiChat({ settings, message, onEvent }) {
             provider: settings.provider,
             base_url: settings.baseUrl,
             model: settings.model,
+            thinking_level: thinkingLevel,
             message,
         }),
     });

@@ -14,6 +14,18 @@ const ENDPOINTS_URL = new URL(
     import.meta.url,
 );
 const TAGS_URL = new URL('../../app/static/config/command_palette_tags.json', import.meta.url);
+const SETTINGS_MODAL_URL = new URL(
+    '../../app/static/js/modules/modals/ai-agent-settings-modal.js',
+    import.meta.url,
+);
+const COMMAND_CONTROLLER_URL = new URL(
+    '../../app/static/js/modules/command-palette/command-palette-controller.js',
+    import.meta.url,
+);
+const CHAT_API_URL = new URL(
+    '../../app/static/js/modules/ai-chat/ai-chat-api.js',
+    import.meta.url,
+);
 
 
 test('chat panel markup has a resizer, transcript, thinking region, and composer', () => {
@@ -24,6 +36,10 @@ test('chat panel markup has a resizer, transcript, thinking region, and composer
     assert.match(template, /id="ai-chat-resizer"[\s\S]*?tabindex="0"/);
     assert.match(template, /id="ai-chat-messages"/);
     assert.match(template, /id="ai-chat-input"/);
+    assert.match(
+        template,
+        /id="ai-chat-model"[\s\S]*?id="ai-chat-thinking-level"[\s\S]*?id="ai-chat-send"/,
+    );
     assert.match(template, /id="ai-chat-send"/);
 });
 
@@ -201,4 +217,27 @@ test('command menu contains chat toggle and AI agent configuration actions', () 
     assert.match(endpointSource, /id:\s*'form\.ai_agent_settings'/);
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'pref.show_ai_chat'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.ai_agent_settings'));
+});
+
+
+test('AI settings persist and submit a required thinking level', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+
+    assert.match(template, /id="ai-chat-model"/);
+    assert.match(template, /id="ai-chat-thinking-level"/);
+    assert.match(css, /\.ai-chat-composer-actions[\s\S]*?justify-content:\s*flex-end/);
+    assert.match(controller, /model:\s*requireElement\('ai-chat-model', HTMLSelectElement\)/);
+    assert.match(controller, /thinkingLevel:\s*requireElement\('ai-chat-thinking-level', HTMLSelectElement\)/);
+    assert.match(controller, /elements\.model\.addEventListener\('change', \(\) => void this\._selectModel\(\)\)/);
+    assert.match(controller, /await listOllamaModels\(settings\)/);
+    assert.doesNotMatch(modal, /id="ai-agent-model"/);
+    assert.doesNotMatch(modal, /id="ai-agent-thinking-level"/);
+    assert.match(commandController, /'pref\.ai\.thinking_level'/);
+    assert.match(commandController, /DEFAULT_AI_THINKING_LEVEL/);
+    assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
 });

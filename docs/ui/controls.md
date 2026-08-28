@@ -152,7 +152,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Show/Hide tabs (label reflects current visibility)
 - Show/Hide calendar view (label reflects current visibility)
 - Show/Hide AI Chat (label reflects current visibility; opening chat closes the calendar)
-- AI Agent Settings… (temporary unmanaged loopback Ollama URL and installed model)
+- AI Agent Settings… (temporary unmanaged loopback Ollama URL; model and thinking level are selected beside chat Send)
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
 - Restore from backup…
 - Logout
