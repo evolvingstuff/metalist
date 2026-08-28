@@ -85,12 +85,15 @@ export function buildCommandPaletteEndpoints(deps) {
     const setSortMode = requireAction(actions, 'setSortMode');
     const getIsUntaggedView = requireAction(actions, 'getIsUntaggedView');
     const setIsUntaggedView = requireAction(actions, 'setIsUntaggedView');
+    const openAiAgentSettings = requireAction(actions, 'openAiAgentSettings');
 
     const defaults = {
         showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
+        showSearchResultsCount: false,
         showRhsPanel: false,
+        showAiChat: false,
         showPerfOverlay: false,
         animatedTransitions: true,
         theme: 'system',
@@ -129,6 +132,21 @@ export function buildCommandPaletteEndpoints(deps) {
             apply: (next) => applyPreference('pref.show_tab_ui', next),
         },
         {
+            id: 'pref.show_search_results_count',
+            kind: 'boolean',
+            get label() {
+                return visibilityLabel(
+                    preferencesStore,
+                    'pref.show_search_results_count',
+                    defaults.showSearchResultsCount,
+                    'search result count',
+                );
+            },
+            persistenceKey: 'pref.show_search_results_count',
+            defaultValue: defaults.showSearchResultsCount,
+            apply: (next) => applyPreference('pref.show_search_results_count', next),
+        },
+        {
             id: 'pref.show_rhs_panel',
             kind: 'boolean',
             get label() {
@@ -137,6 +155,16 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_rhs_panel',
             defaultValue: defaults.showRhsPanel,
             apply: (next) => applyPreference('pref.show_rhs_panel', next),
+        },
+        {
+            id: 'pref.show_ai_chat',
+            kind: 'boolean',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_ai_chat', defaults.showAiChat, 'AI chat');
+            },
+            persistenceKey: 'pref.show_ai_chat',
+            defaultValue: defaults.showAiChat,
+            apply: (next) => applyPreference('pref.show_ai_chat', next),
         },
         {
             id: 'pref.show_perf_overlay',
@@ -237,6 +265,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Search suggestion stats & settings…',
             execute: async () => openSearchSuggestionStatistics(),
+        },
+        {
+            id: 'form.ai_agent_settings',
+            kind: 'form',
+            label: 'AI agent settings…',
+            execute: async () => openAiAgentSettings(),
         },
         {
             id: 'action.expand_all',

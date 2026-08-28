@@ -27,6 +27,7 @@
 - An actively edited note counts as the effective hovered note for the calendar. Its matching date stays highlighted while editing, and its date tooltip appears immediately instead of using the hover delay.
 
 ## Right-Click Controls
-- Right-click either lane to open the shared view menu with both tabs and calendar visibility actions.
-- `Cmd/Ctrl+/` also exposes dynamic `Show/Hide tabs` and `Show/Hide calendar view` actions.
+- Right-click either lane to open the shared view menu with tabs, calendar, and AI-chat visibility actions.
+- `Cmd/Ctrl+/` also exposes dynamic `Show/Hide tabs`, `Show/Hide calendar view`, and `Show/Hide AI Chat` actions.
+- The calendar and AI chat are mutually exclusive. Enabling AI chat turns the calendar preference off; enabling the calendar turns AI chat off.
 - The visible calendar keeps a 160px minimum rail width. In the intermediate desktop range the app shell moves left and the note area narrows as needed, reserving a non-overlapping calendar column beside the global controls. The side rails still hide at the narrow/mobile breakpoint.

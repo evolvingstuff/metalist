@@ -451,6 +451,7 @@ test('buildContextMenuItems adds a top note action to non-editing note context',
     const addNoteAtTop = items.find((item) => item.id === 'add-note-at-top');
     assert.ok(addNoteAtTop);
     assert.equal(addNoteAtTop.label, 'Add Note at Top');
+    assert.equal(addNoteAtTop.icon, undefined);
     addNoteAtTop.onSelect();
     assert.deepEqual(calls, [['addNoteAtTop']]);
 });
@@ -462,11 +463,13 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
             kind: 'view',
             areTabsVisible: false,
             isCalendarVisible: true,
+            isAiChatVisible: false,
             areNoteTagsVisible: false,
         },
         {
             onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
             onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
+            onToggleAiChat: (nextValue) => calls.push(['toggleAiChat', nextValue]),
             onToggleNoteTags: (nextValue) => calls.push(['toggleNoteTags', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
@@ -475,6 +478,7 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
     assert.deepEqual(
         items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
+            { id: 'toggle-ai-chat', label: 'Show Chat', enabled: true },
             { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
             { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
             { id: 'toggle-note-tags', label: 'Show Tags in List', enabled: true },
@@ -486,6 +490,7 @@ test('buildContextMenuItems returns view visibility toggles and export action', 
         item.onSelect();
     }
     assert.deepEqual(calls, [
+        ['toggleAiChat', true],
         ['toggleTabs', true],
         ['toggleCalendar', false],
         ['toggleNoteTags', true],
@@ -518,6 +523,7 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             kind: 'view',
             areTabsVisible: true,
             isCalendarVisible: true,
+            isAiChatVisible: false,
             areNoteTagsVisible: true,
             canAddNoteAtTop: true,
         },
@@ -525,14 +531,17 @@ test('buildContextMenuItems adds a top note action to non-editing blank view con
             onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
             onToggleTabs: () => {},
             onToggleCalendar: () => {},
+            onToggleAiChat: () => {},
             onToggleNoteTags: () => {},
             onExportViewHtml: () => {},
         },
     );
 
-    assert.equal(items[0].id, 'add-note-at-top');
-    assert.equal(items[0].label, 'Add Note at Top');
-    items[0].onSelect();
+    assert.equal(items[0].id, 'toggle-ai-chat');
+    assert.equal(items[1].id, 'add-note-at-top');
+    assert.equal(items[1].label, 'Add Note at Top');
+    assert.equal(items[1].icon, undefined);
+    items[1].onSelect();
     assert.deepEqual(calls, [['addNoteAtTop']]);
 });
 

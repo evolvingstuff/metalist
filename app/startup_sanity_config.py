@@ -15,17 +15,29 @@ PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "socket.",
     "subprocess.",
     "urllib.",
+    "ollama_provider.",
+    "client.get",
+    "client.stream",
+    "json.",
 )
 
 PY_ALLOWED_EXCEPTION_NAMES = (
     "TimeoutError",
     "ConnectionError",
     "OSError",
+    "httpx.HTTPError",
+    "json.JSONDecodeError",
+    "OllamaProviderError",
+    "asyncio.CancelledError",
 )
 
 JS_ALLOWED_TRY_CALLEE_NAMES = (
     "fetch",
     "JSON.parse",
+    "clearAiChatSession",
+    "listModels",
+    "loadAiChatSession",
+    "streamAiChat",
 )
 
 JS_ALLOWED_TRY_CALLEE_PREFIXES = (

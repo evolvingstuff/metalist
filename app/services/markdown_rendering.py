@@ -4,6 +4,7 @@ import html
 import re
 from dataclasses import dataclass
 from typing import List
+from urllib.parse import urlsplit
 
 from app.services.latex_rendering import render_latex_math_to_html
 
@@ -14,6 +15,7 @@ _ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^```([^\s`]*)\s*$")
 _TABLE_DELIMITER_CELL_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
 _AUTO_LINK_RE = re.compile(r"(?<![\"'=])(https?://[^\s<]+)")
+_ALLOWED_MARKDOWN_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +398,14 @@ def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder]) -
         link_text = text[start + 1 : open_paren]
         href = text[open_paren + 2 : close_paren].strip()
         if href == "":
+            output.append(text[start : close_paren + 1])
+            cursor = close_paren + 1
+            continue
+        parsed_href = urlsplit(html.unescape(href))
+        if (
+            parsed_href.scheme != ""
+            and parsed_href.scheme.casefold() not in _ALLOWED_MARKDOWN_LINK_SCHEMES
+        ):
             output.append(text[start : close_paren + 1])
             cursor = close_paren + 1
             continue

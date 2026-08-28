@@ -42,6 +42,8 @@ import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
+import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
+import { listOllamaModels } from '../ai-chat/ai-chat-api.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -310,6 +312,7 @@ class CommandPaletteController {
         this._noteLayoutAppearanceModal = null;
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
+        this._aiAgentSettingsModal = null;
 
         this._elements = null;
 
@@ -380,6 +383,7 @@ class CommandPaletteController {
                 setSortMode: this.setSortMode.bind(this),
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
                 setIsUntaggedView: this.setIsUntaggedView.bind(this),
+                openAiAgentSettings: this.openAiAgentSettings.bind(this),
             },
         });
 
@@ -491,8 +495,26 @@ class CommandPaletteController {
         const showTabUi = this._getBoolean('pref.show_tab_ui', false);
         document.body.classList.toggle('pref-show-tab-ui', showTabUi);
 
-        const showRhsPanel = this._getBoolean('pref.show_rhs_panel', false);
+        const showSearchResultsCount = this._getBoolean(
+            'pref.show_search_results_count',
+            false,
+        );
+        document.body.classList.toggle(
+            'pref-show-search-results-count',
+            showSearchResultsCount,
+        );
+
+        const showAiChat = this._getBoolean('pref.show_ai_chat', false);
+        const wasAiChatVisible = document.body.classList.contains('pref-show-ai-chat');
+        document.body.classList.toggle('pref-show-ai-chat', showAiChat);
+
+        const showRhsPanel = this._getBoolean('pref.show_rhs_panel', false) && !showAiChat;
         document.body.classList.toggle('pref-show-rhs-panel', showRhsPanel);
+        if (wasAiChatVisible !== showAiChat) {
+            document.dispatchEvent(new CustomEvent('metalist:ai-chat-visibility-changed', {
+                detail: { isVisible: showAiChat },
+            }));
+        }
 
         const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);
         document.body.classList.toggle('pref-show-perf-overlay', showPerfOverlay);
@@ -627,6 +649,35 @@ class CommandPaletteController {
             [NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing]: validated.verticalSpacing,
         });
         this._applyPreferenceEffectsFromStorage();
+    }
+
+    getAiSettings() {
+        return {
+            provider: this._getSelect('pref.ai.provider', ['ollama'], 'ollama'),
+            baseUrl: this._preferences.getRaw('pref.ai.ollama_base_url') ?? 'http://127.0.0.1:11434',
+            model: this._preferences.getRaw('pref.ai.ollama_model') ?? '',
+        };
+    }
+
+    async _saveAiSettings(settings) {
+        if (!settings || typeof settings !== 'object') {
+            throw new Error('_saveAiSettings requires settings object');
+        }
+        if (settings.provider !== 'ollama') {
+            throw new Error('Unsupported AI provider');
+        }
+        if (typeof settings.baseUrl !== 'string' || settings.baseUrl.trim() === '') {
+            throw new Error('AI settings require baseUrl');
+        }
+        if (typeof settings.model !== 'string' || settings.model.trim() === '') {
+            throw new Error('AI settings require model');
+        }
+        await this._preferences.setMany({
+            'pref.ai.provider': settings.provider,
+            'pref.ai.ollama_base_url': settings.baseUrl.trim(),
+            'pref.ai.ollama_model': settings.model.trim(),
+        });
+        document.dispatchEvent(new CustomEvent('metalist:ai-settings-changed'));
     }
 
     isOpen() {
@@ -1102,7 +1153,19 @@ class CommandPaletteController {
             throw new Error('applyPreference requires prefKey string');
         }
         if (typeof value === 'boolean') {
-            await this._preferences.setRaw(prefKey, value ? 'true' : 'false');
+            if (prefKey === 'pref.show_ai_chat' && value) {
+                await this._preferences.setMany({
+                    'pref.show_ai_chat': 'true',
+                    'pref.show_rhs_panel': 'false',
+                });
+            } else if (prefKey === 'pref.show_rhs_panel' && value) {
+                await this._preferences.setMany({
+                    'pref.show_rhs_panel': 'true',
+                    'pref.show_ai_chat': 'false',
+                });
+            } else {
+                await this._preferences.setRaw(prefKey, value ? 'true' : 'false');
+            }
             this._applyPreferenceEffectsFromStorage();
             if (prefKey === 'pref.show_perf_overlay' && value) {
                 const hadCache = showPerfOverlayFromCache();
@@ -2260,6 +2323,21 @@ class CommandPaletteController {
             );
         }
         this._noteLayoutAppearanceModal.open();
+    }
+
+    async openAiAgentSettings() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openAiAgentSettings');
+        if (!isReady) {
+            return;
+        }
+        if (this._aiAgentSettingsModal === null) {
+            this._aiAgentSettingsModal = new AiAgentSettingsModal(
+                this.getAiSettings.bind(this),
+                this._saveAiSettings.bind(this),
+                listOllamaModels,
+            );
+        }
+        this._aiAgentSettingsModal.open();
     }
 
     async openSearchSuggestionStatistics() {

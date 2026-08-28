@@ -4,6 +4,7 @@ const API_NOTES_BASE = `${API_BASE}/notes`;
 const API_AUTH_BASE = `${API_BASE}/auth`;
 const API_FILES_BASE = `${API_BASE}/files`;
 const API_REMINDERS_BASE = `${API_BASE}/reminders`;
+const API_AI_BASE = `${API_BASE}/ai`;
 const RUNTIME_FLAGS = globalThis.__METALIST_RUNTIME__;
 const STARTUP_ANIMATION_ENABLED = Boolean(
     RUNTIME_FLAGS &&
@@ -136,6 +137,11 @@ export const CONFIG = {
             RESUME: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/resume`,
             SKIP_NEXT: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/skip-next`,
             EVALUATE: `${API_REMINDERS_BASE}/evaluate`,
+        },
+        AI: {
+            MODELS: `${API_AI_BASE}/models`,
+            SESSION: `${API_AI_BASE}/session`,
+            CHAT: `${API_AI_BASE}/chat`,
         }
     },
 

@@ -7,6 +7,7 @@ import { ActivityTracker } from './modules/activity-tracker.js';
 import { CommandPalette } from './modules/command-palette/command-palette-controller.js';
 import { ReminderSurface } from './modules/reminder-surface-service.js';
 import { initializeNoteHtmlSanitizer } from './modules/note-html-sanitizer.js';
+import { AiChatPanel } from './modules/ai-chat/ai-chat-panel-controller.js';
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
@@ -39,6 +40,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
+        await AiChatPanel.init({
+            getSettings: () => CommandPalette.getAiSettings(),
+            setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
+            openSettings: () => CommandPalette.openAiAgentSettings(),
+        });
         await Auth.waitForStartupIntro();
         Auth.revealMainApp();
         await ReminderSurface.start();

@@ -58,6 +58,7 @@ from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.remote_images import router as api2_remote_images_router
+from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router
 from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
@@ -320,6 +321,7 @@ app.include_router(api2_sounds_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 app.include_router(api2_remote_images_router, prefix=API_PREFIX)
+app.include_router(api2_ai_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(dev.router, prefix="/dev", tags=["dev"])
     app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])

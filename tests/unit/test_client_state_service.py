@@ -53,6 +53,7 @@ def test_save_client_preferences_round_trips_through_app_settings(
 
     expected_preferences = {
         "pref.show_note_tags": "true",
+        "pref.show_search_results_count": "true",
         "pref.show_rhs_panel": "false",
         "pref.animated_transitions": "false",
         "pref.reminder_surface_expanded": "false",
@@ -131,6 +132,34 @@ def test_save_client_preferences_accepts_note_layout_keys(
 
     assert saved == expected_preferences
     assert load_client_preferences(token="") == expected_preferences
+
+
+def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) -> None:
+    del memory_settings_db
+
+    expected_preferences = {
+        "pref.show_ai_chat": "true",
+        "pref.ai.provider": "ollama",
+        "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
+        "pref.ai.ollama_model": "qwen3:8b",
+    }
+
+    saved = save_client_preferences(preferences=expected_preferences, token="")
+
+    assert saved == expected_preferences
+    assert load_client_preferences(token="") == expected_preferences
+
+
+def test_save_client_preferences_rejects_unsafe_ollama_url(memory_settings_db) -> None:
+    del memory_settings_db
+
+    with pytest.raises(ValueError, match="must not include credentials"):
+        save_client_preferences(
+            preferences={
+                "pref.ai.ollama_base_url": "http://user:secret@127.0.0.1:11434",
+            },
+            token="",
+        )
 
 
 def test_save_client_preferences_validates_search_suggestion_windows(

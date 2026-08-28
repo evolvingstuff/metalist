@@ -367,7 +367,6 @@ function buildNoteContextItems(context, handlers) {
         items.push({
             id: 'add-note-at-top',
             label: 'Add Note at Top',
-            icon: 'arrow_top',
             enabled: true,
             onSelect: () => onAddNoteAtTop(),
         });
@@ -493,6 +492,7 @@ function buildViewContextItems(context, handlers) {
     const onAddNoteAtTop = handlers.onAddNoteAtTop;
     const onToggleTabs = handlers.onToggleTabs;
     const onToggleCalendar = handlers.onToggleCalendar;
+    const onToggleAiChat = handlers.onToggleAiChat;
     const onToggleNoteTags = handlers.onToggleNoteTags;
     if (typeof onExportViewHtml !== 'function') {
         throw new Error('View context missing onExportViewHtml handler');
@@ -503,6 +503,9 @@ function buildViewContextItems(context, handlers) {
     if (typeof onToggleCalendar !== 'function') {
         throw new Error('View context missing onToggleCalendar handler');
     }
+    if (typeof onToggleAiChat !== 'function') {
+        throw new Error('View context missing onToggleAiChat handler');
+    }
     if (typeof onToggleNoteTags !== 'function') {
         throw new Error('View context missing onToggleNoteTags handler');
     }
@@ -512,11 +515,21 @@ function buildViewContextItems(context, handlers) {
     if (typeof context.isCalendarVisible !== 'boolean') {
         throw new Error('View context missing isCalendarVisible boolean');
     }
+    if (typeof context.isAiChatVisible !== 'boolean') {
+        throw new Error('View context missing isAiChatVisible boolean');
+    }
     if (typeof context.areNoteTagsVisible !== 'boolean') {
         throw new Error('View context missing areNoteTagsVisible boolean');
     }
 
     const items = [
+        {
+            id: 'toggle-ai-chat',
+            label: context.isAiChatVisible ? 'Hide Chat' : 'Show Chat',
+            icon: 'chat',
+            enabled: true,
+            onSelect: () => onToggleAiChat(!context.isAiChatVisible),
+        },
         {
             id: 'toggle-tabs',
             label: context.areTabsVisible ? 'Hide Tabs' : 'Show Tabs',
@@ -548,10 +561,9 @@ function buildViewContextItems(context, handlers) {
         if (typeof onAddNoteAtTop !== 'function') {
             throw new Error('Non-editing view context missing onAddNoteAtTop handler');
         }
-        items.unshift({
+        items.splice(1, 0, {
             id: 'add-note-at-top',
             label: 'Add Note at Top',
-            icon: 'arrow_top',
             enabled: true,
             onSelect: () => onAddNoteAtTop(),
         });

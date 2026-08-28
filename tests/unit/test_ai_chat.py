@@ -1,0 +1,232 @@
+import asyncio
+import json
+
+import httpx
+import pytest
+
+from app.services.ai_chat import AiChatSessionStore
+from app.services.ollama_provider import OllamaProvider
+from app.services.ollama_provider import normalize_ollama_base_url
+
+
+def test_chat_history_is_scoped_to_server_session_key() -> None:
+    store = AiChatSessionStore()
+
+    first_turn = store.start_turn(
+        session_key="session-a",
+        user_content="What is 2 + 2?",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+    store.append_delta(
+        session_key="session-a",
+        turn_id=first_turn,
+        delta_kind="thinking",
+        text="I should add the numbers.",
+    )
+    store.append_delta(
+        session_key="session-a",
+        turn_id=first_turn,
+        delta_kind="content",
+        text="4",
+    )
+    store.complete_turn(session_key="session-a", turn_id=first_turn)
+
+    session_a = store.snapshot(session_key="session-a")
+    session_b = store.snapshot(session_key="session-b")
+
+    assert [message["role"] for message in session_a["messages"]] == ["user", "assistant"]
+    assert session_a["messages"][1]["thinking"] == "I should add the numbers."
+    assert session_a["messages"][1]["content"] == "4"
+    assert session_a["messages"][1]["status"] == "complete"
+    assert session_b == {"messages": []}
+
+
+def test_chat_store_builds_ollama_history_without_thinking_trace() -> None:
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-a",
+        user_content="Hello",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+    store.append_delta(
+        session_key="session-a",
+        turn_id=turn_id,
+        delta_kind="thinking",
+        text="Private chain",
+    )
+    store.append_delta(
+        session_key="session-a",
+        turn_id=turn_id,
+        delta_kind="content",
+        text="Hi there",
+    )
+    store.complete_turn(session_key="session-a", turn_id=turn_id)
+
+    history = store.provider_messages(session_key="session-a")
+
+    assert history == [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there"},
+    ]
+
+
+def test_chat_store_excludes_failed_turn_from_later_provider_context() -> None:
+    store = AiChatSessionStore()
+    failed_turn_id = store.start_turn(
+        session_key="session-a",
+        user_content="This request failed",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+    store.fail_turn(
+        session_key="session-a",
+        turn_id=failed_turn_id,
+        error="Ollama disconnected",
+    )
+    store.start_turn(
+        session_key="session-a",
+        user_content="Try something else",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+
+    history = store.provider_messages(session_key="session-a")
+
+    assert history == [{"role": "user", "content": "Try something else"}]
+
+
+def test_chat_store_rejects_parallel_turns_in_one_session() -> None:
+    store = AiChatSessionStore()
+    store.start_turn(
+        session_key="session-a",
+        user_content="First",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+
+    with pytest.raises(RuntimeError, match="already streaming"):
+        store.start_turn(
+            session_key="session-a",
+            user_content="Second",
+            provider="ollama",
+            model="qwen3:latest",
+        )
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://localhost:11434/", "http://127.0.0.1:11434"),
+        ("http://127.0.0.1:11434/api", "http://127.0.0.1:11434"),
+        ("http://[::1]:11434", "http://[::1]:11434"),
+    ],
+)
+def test_ollama_base_url_accepts_only_explicit_loopback_hosts(base_url, expected) -> None:
+    assert normalize_ollama_base_url(base_url) == expected
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://ollama.internal:11434",
+        "http://192.168.1.10:11434",
+        "http://127.0.0.2:11434",
+        "http://localhost:0",
+    ],
+)
+def test_ollama_base_url_rejects_non_loopback_or_invalid_hosts(base_url) -> None:
+    with pytest.raises(ValueError):
+        normalize_ollama_base_url(base_url)
+
+
+def test_ollama_provider_lists_models_from_configured_host() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert str(request.url) == "http://127.0.0.1:11434/api/tags"
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {"name": "qwen3:8b", "model": "qwen3:8b"},
+                    {"name": "gemma3:latest", "model": "gemma3:latest"},
+                ]
+            },
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+
+    models = asyncio.run(provider.list_models(base_url="http://127.0.0.1:11434"))
+
+    assert models == ["gemma3:latest", "qwen3:8b"]
+
+
+def test_ollama_provider_streams_thinking_and_content_separately() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "http://127.0.0.1:11434/api/chat"
+        payload = json.loads(request.content)
+        assert payload == {
+            "model": "qwen3:8b",
+            "messages": [{"role": "user", "content": "Count to two"}],
+            "stream": True,
+            "think": True,
+        }
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/x-ndjson"},
+            content=(
+                b'{"message":{"role":"assistant","thinking":"One"},"done":false}\n'
+                b'{"message":{"role":"assistant","thinking":", two"},"done":false}\n'
+                b'{"message":{"role":"assistant","content":"1, 2"},"done":false}\n'
+                b'{"message":{"role":"assistant","content":"!"},"done":true}\n'
+            ),
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+    async def collect_chunks() -> list[dict[str, str]]:
+        return [
+            chunk
+            async for chunk in provider.stream_chat(
+                base_url="http://127.0.0.1:11434",
+                model="qwen3:8b",
+                messages=[{"role": "user", "content": "Count to two"}],
+            )
+        ]
+
+    chunks = asyncio.run(collect_chunks())
+
+    assert chunks == [
+        {"type": "thinking_delta", "text": "One"},
+        {"type": "thinking_delta", "text": ", two"},
+        {"type": "content_delta", "text": "1, 2"},
+        {"type": "content_delta", "text": "!"},
+        {"type": "done"},
+    ]
+
+
+def test_gpt_oss_requests_medium_thinking_level() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["think"] == "medium"
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/x-ndjson"},
+            content=b'{"message":{"role":"assistant","content":"ok"},"done":true}\n',
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+    async def collect_chunks() -> list[dict[str, str]]:
+        return [
+            chunk
+            async for chunk in provider.stream_chat(
+                base_url="http://127.0.0.1:11434",
+                model="gpt-oss:20b",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+        ]
+
+    chunks = asyncio.run(collect_chunks())
+
+    assert chunks[-1] == {"type": "done"}
