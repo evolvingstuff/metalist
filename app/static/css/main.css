@@ -2569,8 +2569,8 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 #ai-chat-thinking-level {
-    flex: 0 0 82px;
-    width: 82px;
+    flex: 0 0 138px;
+    width: 138px;
 }
 
 .ai-chat-composer-actions select:hover:not(:disabled),
@@ -2621,11 +2621,6 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     width: min(560px, 94vw);
 }
 
-.ai-agent-settings-description {
-    color: #64748b;
-    line-height: 1.5;
-}
-
 .ai-agent-settings-controls {
     display: grid;
     gap: 14px;
@@ -2640,7 +2635,8 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 .ai-agent-settings-controls input,
-.ai-agent-settings-controls select {
+.ai-agent-settings-controls select,
+.ai-agent-model-download-row input {
     width: 100%;
     box-sizing: border-box;
     padding: 9px 10px;
@@ -2649,6 +2645,52 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     background: #ffffff;
     color: #1e293b;
     font: inherit;
+}
+
+.ai-agent-model-download {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.ai-agent-model-download h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.ai-agent-model-download > p {
+    margin: 0 0 12px;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+.ai-agent-model-download-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 10px;
+}
+
+.ai-agent-model-download-row label {
+    display: grid;
+    gap: 6px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ai-agent-model-download-row button {
+    min-height: 40px;
+}
+
+.ai-agent-model-download progress {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.ai-agent-download-status {
+    min-height: 1.4em;
+    margin-top: 6px !important;
 }
 
 html[data-theme="dark"] .ai-chat-panel,
@@ -2667,10 +2709,19 @@ html[data-theme="dark"] .ai-chat-message-user {
 
 html[data-theme="dark"] .ai-chat-composer textarea,
 html[data-theme="dark"] .ai-agent-settings-controls input,
-html[data-theme="dark"] .ai-agent-settings-controls select {
+html[data-theme="dark"] .ai-agent-settings-controls select,
+html[data-theme="dark"] .ai-agent-model-download-row input {
     border-color: #475569;
     background: #0f172a;
     color: #e5e7eb;
+}
+
+html[data-theme="dark"] .ai-agent-model-download {
+    border-color: #334155;
+}
+
+html[data-theme="dark"] .ai-agent-model-download-row label {
+    color: #cbd5e1;
 }
 
 html[data-theme="dark"] .ai-chat-composer-actions select {

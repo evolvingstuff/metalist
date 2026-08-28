@@ -163,6 +163,60 @@ def test_ollama_provider_lists_models_from_configured_host() -> None:
     assert models == ["gemma3:latest", "qwen3:8b"]
 
 
+def test_ollama_provider_streams_model_pull_progress() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "http://127.0.0.1:11434/api/pull"
+        assert json.loads(request.content) == {
+            "model": "gemma3:4b",
+            "stream": True,
+            "insecure": False,
+        }
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/x-ndjson"},
+            content=(
+                b'{"status":"pulling manifest"}\n'
+                b'{"status":"pulling layer","total":100,"completed":25}\n'
+                b'{"status":"success"}\n'
+            ),
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+
+    async def collect_events() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in provider.stream_pull(
+                base_url="http://127.0.0.1:11434",
+                model="gemma3:4b",
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert events == [
+        {
+            "type": "progress",
+            "status": "pulling manifest",
+            "completed": 0,
+            "total": 0,
+        },
+        {
+            "type": "progress",
+            "status": "pulling layer",
+            "completed": 25,
+            "total": 100,
+        },
+        {
+            "type": "done",
+            "status": "success",
+            "completed": 100,
+            "total": 100,
+        },
+    ]
+
+
 def test_ollama_provider_streams_thinking_and_content_separately() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"

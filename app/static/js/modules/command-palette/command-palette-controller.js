@@ -668,6 +668,54 @@ class CommandPaletteController {
         };
     }
 
+    getAiChatPanelWidth() {
+        const rawWidth = this._preferences.getRaw('pref.ai.chat_width');
+        if (rawWidth === null) {
+            return null;
+        }
+        const width = Number(rawWidth);
+        if (
+            !Number.isInteger(width)
+            || width < 280
+            || width > 5000
+            || String(width) !== rawWidth
+        ) {
+            throw new Error('Stored AI chat width is invalid');
+        }
+        return width;
+    }
+
+    async saveAiChatPanelWidth(width) {
+        if (!Number.isInteger(width) || width < 280 || width > 5000) {
+            throw new Error('AI chat width must be an integer from 280 to 5000');
+        }
+        await this._preferences.setRaw('pref.ai.chat_width', String(width));
+    }
+
+    getAiChatComposerHeight() {
+        const rawHeight = this._preferences.getRaw('pref.ai.composer_height');
+        if (rawHeight === null) {
+            return null;
+        }
+        const height = Number(rawHeight);
+        if (
+            !Number.isInteger(height)
+            || height < 74
+            || height > 220
+            || String(height) !== rawHeight
+        ) {
+            throw new Error('Stored AI chat composer height is invalid');
+        }
+        return height;
+    }
+
+    async saveAiChatComposerHeight(height) {
+        if (!Number.isInteger(height) || height < 74 || height > 220) {
+            throw new Error('AI chat composer height must be an integer from 74 to 220');
+        }
+        await this._preferences.setRaw('pref.ai.composer_height', String(height));
+    }
+
     async _saveAiSettings(settings) {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiSettings requires settings object');
@@ -708,9 +756,13 @@ class CommandPaletteController {
         if (typeof settings.baseUrl !== 'string' || settings.baseUrl.trim() === '') {
             throw new Error('AI connection settings require baseUrl');
         }
+        if (typeof settings.model !== 'string' || settings.model.trim() === '') {
+            throw new Error('AI connection settings require model');
+        }
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
             'pref.ai.ollama_base_url': settings.baseUrl.trim(),
+            'pref.ai.ollama_model': settings.model.trim(),
         });
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',

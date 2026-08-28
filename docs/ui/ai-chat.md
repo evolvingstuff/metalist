@@ -3,22 +3,25 @@
 ## Scope
 - MetaList can chat directly with an Ollama model through an authenticated server endpoint.
 - This first phase is deliberately standalone: note content, tags, search results, and other MetaList data are never added to prompts.
-- The current provider connection is labeled **temporary unmanaged Ollama**. MetaList does not install, start, stop, or own the Ollama process yet.
+- The current provider connection is labeled **temporary unmanaged Ollama**. MetaList can ask that process to download a model, but does not install, start, stop, or own the Ollama process yet.
 
 ## Configuration
-- Open `AI Agent Settings…` from the command palette or use the gear button in the chat header to configure the Ollama connection. Model and thinking-level selection live in the chat composer beside Send.
+- Open `AI Agent Settings…` from the command palette or use the gear button in the chat header to configure the Ollama connection, view downloaded models, and save a selected model. The chat composer also provides immediate model and thinking-level selection beside Send.
 - Ollama is the only provider in Phase 1; the provider field is present so future providers can share the same configuration surface.
 - The server accepts only explicit loopback base URLs: `localhost`, `127.0.0.1`, or `[::1]`, over HTTP or HTTPS. `localhost` is canonicalized to `127.0.0.1`, environment proxy settings are ignored, and redirects are not followed. Credentials, query strings, fragments, and non-root paths are rejected (`/api` is normalized to the root URL).
 - Opening the chat panel asks Ollama for its installed models so the composer selector is current. Saving a changed connection URL refreshes that list.
+- AI Agent Settings loads the models already downloaded in the displayed Ollama instance. Save persists the displayed connection and the explicitly selected downloaded model. Download is a separate action: the user chooses the exact name from the linked official Ollama library and explicitly starts the pull. MetaList does not scrape the library or depend on an undocumented catalog API. Status and byte progress stream from Ollama's supported `/api/pull` endpoint; success refreshes the downloaded-model list without selecting or saving the new model.
 - Provider URL, selected model, and thinking level are namespace-scoped client preferences. In a password-protected namespace they use the existing encrypted client-state persistence path.
-- The compact selectors immediately left of Send choose the model and `Off`, `Low`, `Medium`, or `High` thinking level, with `Low` as the default. Changes persist immediately. MetaList sends native Ollama `think: false` for Off and the corresponding level string otherwise. Model support varies; GPT-OSS supports Low/Medium/High but cannot disable thinking, so Off is unavailable for GPT-OSS selections.
+- The compact selectors immediately left of Send choose the model and show `Thinking Off`, `Low Thinking`, `Medium Thinking`, or `High Thinking`, with Low as the default. Changes persist immediately. MetaList sends native Ollama `think: false` for Thinking Off and the corresponding level string otherwise. Model support varies; GPT-OSS supports Low/Medium/High but cannot disable thinking, so Thinking Off is unavailable for GPT-OSS selections.
 
 ## Panel Behavior
 - `Show/Hide AI Chat` is available from the command palette and from the notes-view right-click menu outside edit mode.
 - AI chat and the right-side activity calendar are mutually exclusive. Enabling either view atomically disables the other preference.
 - The panel occupies the right third of the viewport by default. The notes shell narrows into the remaining space instead of being covered.
-- Drag the panel's left separator to resize it. Chat remains at least 280 px wide and leaves at least 480 px for the notes area. The focused separator also supports Left/Right Arrow plus Home/End. Width is browser-memory-only and resets on refresh.
+- Drag the panel's left separator to resize it. Chat remains at least 280 px wide and leaves at least 480 px for the notes area. The focused separator also supports Left/Right Arrow plus Home/End. The chosen width is saved as a client preference, restored after refresh, and temporarily clamped when the viewport is too narrow without replacing the saved preference.
 - The header provides clear, settings, and close actions. `Enter` sends; `Shift+Enter` inserts a newline.
+- Dragging the message field's lower-right resize handle saves its height as a client preference and restores it after refresh.
+- While the current response is streaming, the composer remains editable so the next message can be drafted. Send, model selection, thinking-level selection, and transcript clearing remain disabled until that response finishes.
 
 ## Streaming and Session State
 - `/api2/ai/chat` streams typed NDJSON events: `thinking_delta`, `content_delta`, `done`, or `error`. The endpoint explicitly bypasses response compression and proxy buffering so small answer tokens reach the browser immediately rather than collecting until completion.

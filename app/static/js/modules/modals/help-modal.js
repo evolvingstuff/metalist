@@ -85,7 +85,7 @@ export class HelpModal extends BaseModal {
                     { keys: `${modKey}+X`, description: 'Cut selection, or whole note if none' },
                     { keys: `${modKey}+V`, description: 'Paste note as sibling in note-clipboard mode' },
                     { keys: `${modKey}+${shiftKey}+V`, description: 'Paste note as child in note-clipboard mode' },
-                    { keys: `${modKey}+R`, description: 'Copy embedded reference from last copied note' },
+                    { keys: `${modKey}+R`, description: 'Paste embedded reference from last copied note' },
                     { keys: `${modKey}+${shiftKey}+R`, description: 'Paste embedded reference as child note' },
                     { keys: `${modKey}+S`, description: 'Split note at selection/caret' },
                     { keys: `${modKey}+U`, description: 'Remove formatting from selection, or whole note if none' },

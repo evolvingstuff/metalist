@@ -102,6 +102,54 @@ test('chat layout defaults to one third and narrows the notes shell', () => {
 });
 
 
+test('chat width persists after resizing and restores through client preferences', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const main = readFileSync(
+        new URL('../../app/static/js/main.js', import.meta.url),
+        'utf8',
+    );
+    const auth = readFileSync(
+        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        'utf8',
+    );
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(controller, /AiChatPanel\.init requires getPanelWidth/);
+    assert.match(controller, /AiChatPanel\.init requires savePanelWidth/);
+    assert.match(controller, /const savedWidth = this\._getPanelWidth\(\)/);
+    assert.match(controller, /void this\._persistPanelWidth\(\)/);
+    assert.match(commandController, /getAiChatPanelWidth\(\)/);
+    assert.match(commandController, /saveAiChatPanelWidth\(width\)/);
+    assert.match(commandController, /'pref\.ai\.chat_width'/);
+    assert.match(main, /getPanelWidth:[\s\S]*?savePanelWidth:/);
+    assert.match(auth, /getPanelWidth:[\s\S]*?savePanelWidth:/);
+});
+
+
+test('resized chat composer height persists through client preferences', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const main = readFileSync(
+        new URL('../../app/static/js/main.js', import.meta.url),
+        'utf8',
+    );
+    const auth = readFileSync(
+        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        'utf8',
+    );
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(controller, /AiChatPanel\.init requires getComposerHeight/);
+    assert.match(controller, /AiChatPanel\.init requires saveComposerHeight/);
+    assert.match(controller, /const savedComposerHeight = this\._getComposerHeight\(\)/);
+    assert.match(controller, /void this\._saveComposerHeight\(height\)/);
+    assert.match(commandController, /getAiChatComposerHeight\(\)/);
+    assert.match(commandController, /saveAiChatComposerHeight\(height\)/);
+    assert.match(commandController, /'pref\.ai\.composer_height'/);
+    assert.match(main, /getComposerHeight:[\s\S]*?saveComposerHeight:/);
+    assert.match(auth, /getComposerHeight:[\s\S]*?saveComposerHeight:/);
+});
+
+
 test('notes keep symmetric gutters and spend gutter space before note width', () => {
     const css = readFileSync(CSS_URL, 'utf8');
 
@@ -209,6 +257,17 @@ test('streaming thinking renders honest progress and only discloses real reasoni
 });
 
 
+test('streaming keeps the next message editable while current-turn actions stay locked', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+
+    assert.doesNotMatch(controller, /this\._elements\.input\.disabled\s*=\s*isBusy/);
+    assert.match(controller, /let isModelDisabled = this\._isBusy/);
+    assert.match(controller, /let isThinkingLevelDisabled = this\._isBusy/);
+    assert.match(controller, /let isSendDisabled = this\._isBusy/);
+    assert.match(controller, /this\._elements\.clear\.disabled = isBusy/);
+});
+
+
 test('command menu contains chat toggle and AI agent configuration actions', () => {
     const endpointSource = readFileSync(ENDPOINTS_URL, 'utf8');
     const tagConfig = JSON.parse(readFileSync(TAGS_URL, 'utf8'));
@@ -231,6 +290,7 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(template, /id="ai-chat-model"/);
     assert.match(template, /id="ai-chat-thinking-level"/);
     assert.match(css, /\.ai-chat-composer-actions[\s\S]*?justify-content:\s*flex-end/);
+    assert.match(css, /#ai-chat-thinking-level\s*\{[\s\S]*?width:\s*138px/);
     assert.match(controller, /model:\s*requireElement\('ai-chat-model', HTMLSelectElement\)/);
     assert.match(controller, /thinkingLevel:\s*requireElement\('ai-chat-thinking-level', HTMLSelectElement\)/);
     assert.match(controller, /elements\.model\.addEventListener\('change', \(\) => void this\._selectModel\(\)\)/);
@@ -240,4 +300,34 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(commandController, /'pref\.ai\.thinking_level'/);
     assert.match(commandController, /DEFAULT_AI_THINKING_LEVEL/);
     assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
+    assert.match(modal, /id="ai-agent-installed-model"/);
+    assert.match(modal, /id="ai-agent-save"[^>]*>Save<\/button>/);
+    assert.match(modal, /baseUrlInput\.onchange = \(\) => void this\._loadInstalledModels\(\)/);
+    assert.doesNotMatch(modal, /_saveConnection/);
+});
+
+
+test('AI settings download a named Ollama model through the supported pull API', () => {
+    const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const downloadHandler = modal.slice(
+        modal.indexOf('async _handleDownload()'),
+        modal.indexOf('async _handleSave()'),
+    );
+
+    assert.match(modal, /id="ai-agent-download-model"/);
+    assert.match(modal, /href="https:\/\/ollama\.com\/library"/);
+    assert.match(modal, /id="ai-agent-download"/);
+    assert.match(modal, /id="ai-agent-download-progress"/);
+    assert.match(modal, /await pullOllamaModel\(/);
+    assert.match(chatApi, /CONFIG\.API\.AI\.PULL_MODEL/);
+    assert.match(chatApi, /export async function pullOllamaModel/);
+    assert.match(chatApi, /onEvent\(event\)/);
+    assert.doesNotMatch(modal, /Configure the temporary unmanaged Ollama connection/);
+    assert.match(modal, /Downloaded \$\{model\}\. Select it above when ready\./);
+    assert.match(downloadHandler, /if \(didComplete\) \{[\s\S]*?await this\._loadInstalledModels\(\)/);
+    assert.doesNotMatch(downloadHandler, /this\._saveSettings/);
+    assert.doesNotMatch(controller, /model = this\._models\[0\]/);
+    assert.match(controller, /option\.textContent = 'Select model'/);
 });

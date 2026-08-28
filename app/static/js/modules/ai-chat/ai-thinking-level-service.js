@@ -1,10 +1,10 @@
 export const DEFAULT_AI_THINKING_LEVEL = 'low';
 
 export const AI_THINKING_LEVEL_OPTIONS = Object.freeze([
-    Object.freeze({ value: 'off', label: 'Off' }),
-    Object.freeze({ value: 'low', label: 'Low' }),
-    Object.freeze({ value: 'medium', label: 'Medium' }),
-    Object.freeze({ value: 'high', label: 'High' }),
+    Object.freeze({ value: 'off', label: 'Thinking Off' }),
+    Object.freeze({ value: 'low', label: 'Low Thinking' }),
+    Object.freeze({ value: 'medium', label: 'Medium Thinking' }),
+    Object.freeze({ value: 'high', label: 'High Thinking' }),
 ]);
 
 const AI_THINKING_LEVEL_VALUES = new Set(

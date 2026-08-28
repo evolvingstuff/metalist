@@ -15,7 +15,7 @@
 | `⇧ + ⌘ + ↑` | Move the selected root note to the top of the current root view (including filtered/search views), or move a child note to the top of its siblings |
 | `⌘ + ↓` | Move current note down (one visible sibling) |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
-| `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
+| `⌘ + R` | Paste embedded reference from the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
 | `⌘ + U` | Remove formatting and inline imagery from the selected range or current note |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |

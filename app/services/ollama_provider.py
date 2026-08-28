@@ -128,6 +128,61 @@ class OllamaProvider:
             models.append(validate_ollama_model(model))
         return sorted(set(models), key=str.casefold)
 
+    async def stream_pull(
+        self,
+        *,
+        base_url: str,
+        model: str,
+    ) -> AsyncIterator[dict[str, object]]:
+        normalized_model = validate_ollama_model(model)
+        request_payload: dict[str, object] = {
+            "model": normalized_model,
+            "stream": True,
+            "insecure": False,
+        }
+        url = _api_url(base_url=base_url, endpoint="/pull")
+        did_finish = False
+        last_completed = 0
+        last_total = 0
+        try:
+            async with self._client() as client:
+                async with client.stream("POST", url, json=request_payload) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line == "":
+                            continue
+                        event = self._parse_pull_stream_line(line)
+                        status = event["status"]
+                        completed = event["completed"]
+                        total = event["total"]
+                        assert isinstance(status, str)
+                        assert isinstance(completed, int)
+                        assert isinstance(total, int)
+                        if total > 0:
+                            last_total = total
+                            last_completed = completed
+                        if status == "success":
+                            did_finish = True
+                            if last_total > 0:
+                                last_completed = last_total
+                            yield {
+                                "type": "done",
+                                "status": status,
+                                "completed": last_completed,
+                                "total": last_total,
+                            }
+                            break
+                        yield {
+                            "type": "progress",
+                            "status": status,
+                            "completed": completed,
+                            "total": total,
+                        }
+        except httpx.HTTPError as exc:
+            raise OllamaProviderError("Ollama model download failed") from exc
+        if not did_finish:
+            raise OllamaProviderError("Ollama model download ended before completion")
+
     async def stream_chat(
         self,
         *,
@@ -197,6 +252,37 @@ class OllamaProvider:
         if "message" not in event or not isinstance(event["message"], dict):
             raise OllamaProviderError("Ollama stream event is missing message")
         return event
+
+    @staticmethod
+    def _parse_pull_stream_line(line: str) -> dict[str, object]:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise OllamaProviderError("Ollama returned invalid model-download JSON") from exc
+        if not isinstance(event, dict):
+            raise OllamaProviderError("Ollama model-download event must be an object")
+        if "error" in event:
+            raise OllamaProviderError("Ollama reported a model download error")
+        if "status" not in event:
+            raise OllamaProviderError("Ollama model-download event is missing status")
+        status = event["status"]
+        if not isinstance(status, str) or status == "":
+            raise OllamaProviderError("Ollama model-download event is missing status")
+        completed = 0
+        if "completed" in event:
+            completed = event["completed"]
+        total = 0
+        if "total" in event:
+            total = event["total"]
+        if not isinstance(completed, int) or completed < 0:
+            raise OllamaProviderError("Ollama model-download completed value is invalid")
+        if not isinstance(total, int) or total < 0:
+            raise OllamaProviderError("Ollama model-download total value is invalid")
+        return {
+            "status": status,
+            "completed": completed,
+            "total": total,
+        }
 
     @staticmethod
     def _validate_messages(messages: list[dict[str, str]]) -> None:

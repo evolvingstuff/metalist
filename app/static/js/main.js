@@ -43,6 +43,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         await AiChatPanel.init({
             getSettings: () => CommandPalette.getAiSettings(),
             saveSettings: (settings) => CommandPalette.saveAiSettings(settings),
+            getPanelWidth: () => CommandPalette.getAiChatPanelWidth(),
+            savePanelWidth: (width) => CommandPalette.saveAiChatPanelWidth(width),
+            getComposerHeight: () => CommandPalette.getAiChatComposerHeight(),
+            saveComposerHeight: (height) => CommandPalette.saveAiChatComposerHeight(height),
             setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
             openSettings: () => CommandPalette.openAiAgentSettings(),
         });

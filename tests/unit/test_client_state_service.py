@@ -143,12 +143,42 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
         "pref.ai.ollama_model": "qwen3:8b",
         "pref.ai.thinking_level": "low",
+        "pref.ai.chat_width": "640",
+        "pref.ai.composer_height": "180",
     }
 
     saved = save_client_preferences(preferences=expected_preferences, token="")
 
     assert saved == expected_preferences
     assert load_client_preferences(token="") == expected_preferences
+
+
+@pytest.mark.parametrize("width", ["279", "5001", "640.5", "0640"])
+def test_save_client_preferences_rejects_invalid_ai_chat_width(
+    memory_settings_db,
+    width,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Invalid client preference value"):
+        save_client_preferences(
+            preferences={"pref.ai.chat_width": width},
+            token="",
+        )
+
+
+@pytest.mark.parametrize("height", ["73", "221", "180.5", "0180"])
+def test_save_client_preferences_rejects_invalid_ai_chat_composer_height(
+    memory_settings_db,
+    height,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Invalid client preference value"):
+        save_client_preferences(
+            preferences={"pref.ai.composer_height": height},
+            token="",
+        )
 
 
 def test_save_client_preferences_rejects_unknown_ai_thinking_level(

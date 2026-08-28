@@ -40,6 +40,22 @@ class AiModelsResponse(BaseModel):
     models: list[str]
 
 
+class AiModelPullRequest(BaseModel):
+    provider: Literal["ollama"]
+    base_url: str
+    model: str
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        return normalize_ollama_base_url(value)
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value: str) -> str:
+        return validate_ollama_model(value)
+
+
 class AiChatRequest(BaseModel):
     provider: Literal["ollama"]
     base_url: str
@@ -106,6 +122,37 @@ async def list_ai_models(
     except OllamaProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return AiModelsResponse(models=models)
+
+
+@router.post("/models/pull")
+@transactional_route
+def pull_ai_model(
+    payload: AiModelPullRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> StreamingResponse:
+    del token
+
+    async def stream_events() -> AsyncIterator[str]:
+        try:
+            async for event in ollama_provider.stream_pull(
+                base_url=payload.base_url,
+                model=payload.model,
+            ):
+                yield f"{json.dumps(event, separators=(',', ':'))}\n"
+        # lint: allow-PY001 rationale="pull errors must be delivered after response headers are sent"
+        except OllamaProviderError as exc:
+            error_event = {"type": "error", "message": str(exc)}
+            yield f"{json.dumps(error_event, separators=(',', ':'))}\n"
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="application/x-ndjson",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-store",
+            "Content-Encoding": "identity",
+        },
+    )
 
 
 @router.get("/session", response_model=AiSessionResponse)

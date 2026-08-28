@@ -70,6 +70,11 @@ class AiChatPanelController {
         this._isLoadingModels = false;
         this._getSettings = null;
         this._saveSettings = null;
+        this._getPanelWidth = null;
+        this._savePanelWidth = null;
+        this._getComposerHeight = null;
+        this._saveComposerHeight = null;
+        this._composerHeightBeforePointerInteraction = 0;
         this._setVisible = null;
         this._openSettings = null;
         this._elements = null;
@@ -79,10 +84,21 @@ class AiChatPanelController {
         this._handlePointerMove = this._handlePointerMove.bind(this);
         this._handlePointerUp = this._handlePointerUp.bind(this);
         this._handleResizerKeydown = this._handleResizerKeydown.bind(this);
+        this._handleComposerPointerDown = this._handleComposerPointerDown.bind(this);
+        this._handleComposerPointerUp = this._handleComposerPointerUp.bind(this);
         this._handleWindowResize = this._handleWindowResize.bind(this);
     }
 
-    async init({ getSettings, saveSettings, setVisible, openSettings }) {
+    async init({
+        getSettings,
+        saveSettings,
+        getPanelWidth,
+        savePanelWidth,
+        getComposerHeight,
+        saveComposerHeight,
+        setVisible,
+        openSettings,
+    }) {
         if (this._initialized) {
             return;
         }
@@ -92,6 +108,18 @@ class AiChatPanelController {
         if (typeof saveSettings !== 'function') {
             throw new Error('AiChatPanel.init requires saveSettings');
         }
+        if (typeof getPanelWidth !== 'function') {
+            throw new Error('AiChatPanel.init requires getPanelWidth');
+        }
+        if (typeof savePanelWidth !== 'function') {
+            throw new Error('AiChatPanel.init requires savePanelWidth');
+        }
+        if (typeof getComposerHeight !== 'function') {
+            throw new Error('AiChatPanel.init requires getComposerHeight');
+        }
+        if (typeof saveComposerHeight !== 'function') {
+            throw new Error('AiChatPanel.init requires saveComposerHeight');
+        }
         if (typeof setVisible !== 'function') {
             throw new Error('AiChatPanel.init requires setVisible');
         }
@@ -100,6 +128,10 @@ class AiChatPanelController {
         }
         this._getSettings = getSettings;
         this._saveSettings = saveSettings;
+        this._getPanelWidth = getPanelWidth;
+        this._savePanelWidth = savePanelWidth;
+        this._getComposerHeight = getComposerHeight;
+        this._saveComposerHeight = saveComposerHeight;
         this._setVisible = setVisible;
         this._openSettings = openSettings;
         this._elements = {
@@ -117,9 +149,17 @@ class AiChatPanelController {
             close: requireElement('ai-chat-close', HTMLButtonElement),
             toggle: requireElement('chat-toggle-button', HTMLButtonElement),
         };
+        const savedComposerHeight = this._getComposerHeight();
+        if (savedComposerHeight !== null) {
+            this._elements.input.style.height = `${savedComposerHeight}px`;
+        }
         this._bindEvents();
         this._initialized = true;
         this._syncSettingsControls();
+        const savedWidth = this._getPanelWidth();
+        if (savedWidth !== null) {
+            this._applyPanelWidth(savedWidth);
+        }
         this._syncResizerAria();
         this._syncToggleButton(document.body.classList.contains('pref-show-ai-chat'));
         if (document.body.classList.contains('pref-show-ai-chat')) {
@@ -141,6 +181,7 @@ class AiChatPanelController {
             event.preventDefault();
             elements.form.requestSubmit();
         });
+        elements.input.addEventListener('pointerdown', this._handleComposerPointerDown);
         elements.model.addEventListener('change', () => void this._selectModel());
         elements.thinkingLevel.addEventListener(
             'change',
@@ -214,6 +255,33 @@ class AiChatPanelController {
         this._applyPanelWidth(width);
     }
 
+    _handleComposerPointerDown(event) {
+        if (event.button !== 0) {
+            return;
+        }
+        this._composerHeightBeforePointerInteraction = Math.round(
+            this._elements.input.getBoundingClientRect().height,
+        );
+        window.addEventListener('pointerup', this._handleComposerPointerUp, { once: true });
+        window.addEventListener('pointercancel', this._handleComposerPointerUp, { once: true });
+    }
+
+    _handleComposerPointerUp(event) {
+        window.removeEventListener('pointerup', this._handleComposerPointerUp);
+        window.removeEventListener('pointercancel', this._handleComposerPointerUp);
+        if (event.type === 'pointercancel') {
+            return;
+        }
+        const height = Math.round(this._elements.input.getBoundingClientRect().height);
+        if (height === this._composerHeightBeforePointerInteraction) {
+            return;
+        }
+        if (!Number.isInteger(height) || height < 74 || height > 220) {
+            throw new Error('Rendered AI chat composer height is outside the persisted range');
+        }
+        void this._saveComposerHeight(height);
+    }
+
     _handleResizerKeydown(event) {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
             return;
@@ -235,6 +303,7 @@ class AiChatPanelController {
             viewportWidth: window.innerWidth,
         });
         this._applyPanelWidth(width);
+        void this._persistPanelWidth();
     }
 
     _handleWindowResize() {
@@ -246,6 +315,13 @@ class AiChatPanelController {
             throw new Error('_applyPanelWidth requires positive finite width');
         }
         document.documentElement.style.setProperty('--ai-chat-width', `${width}px`);
+        this._setResizerAria(width);
+    }
+
+    _setResizerAria(width) {
+        if (!Number.isFinite(width) || width <= 0) {
+            throw new Error('_setResizerAria requires positive finite width');
+        }
         this._elements.resizer.setAttribute('aria-valuenow', String(width));
         this._elements.resizer.setAttribute('aria-valuemin', '280');
         this._elements.resizer.setAttribute(
@@ -263,7 +339,7 @@ class AiChatPanelController {
             pointerClientX: window.innerWidth - requestedWidth,
             viewportWidth: window.innerWidth,
         });
-        this._applyPanelWidth(width);
+        this._setResizerAria(width);
     }
 
     _handlePointerUp() {
@@ -271,6 +347,15 @@ class AiChatPanelController {
         window.removeEventListener('pointermove', this._handlePointerMove);
         window.removeEventListener('pointerup', this._handlePointerUp);
         window.removeEventListener('pointercancel', this._handlePointerUp);
+        void this._persistPanelWidth();
+    }
+
+    async _persistPanelWidth() {
+        const width = Math.round(this._elements.panel.getBoundingClientRect().width);
+        if (!Number.isInteger(width) || width < 280 || width > 5000) {
+            throw new Error('Rendered AI chat width is outside the persisted range');
+        }
+        await this._savePanelWidth(width);
     }
 
     _syncSettingsControls() {
@@ -279,12 +364,19 @@ class AiChatPanelController {
             throw new Error('AI settings snapshot missing');
         }
         this._elements.model.replaceChildren();
+        const hasSelectedModel = this._models.includes(settings.model);
         if (this._models.length === 0) {
             const option = document.createElement('option');
-            option.value = settings.model;
-            option.textContent = settings.model === '' ? 'No models' : settings.model;
+            option.value = '';
+            option.textContent = 'No models';
             this._elements.model.appendChild(option);
         } else {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Select model';
+            option.disabled = true;
+            option.selected = !hasSelectedModel;
+            this._elements.model.appendChild(option);
             for (const model of this._models) {
                 if (typeof model !== 'string' || model === '') {
                     throw new Error('Ollama model list contains invalid model');
@@ -294,11 +386,12 @@ class AiChatPanelController {
                 option.textContent = model;
                 this._elements.model.appendChild(option);
             }
-            this._elements.model.value = settings.model;
+            this._elements.model.value = hasSelectedModel ? settings.model : '';
         }
 
+        const selectedModel = hasSelectedModel ? settings.model : '';
         const thinkingLevel = normalizeThinkingLevelForModel({
-            model: settings.model,
+            model: selectedModel,
             thinkingLevel: settings.thinkingLevel,
         });
         this._elements.thinkingLevel.replaceChildren();
@@ -307,21 +400,21 @@ class AiChatPanelController {
             option.value = thinkingOption.value;
             option.textContent = thinkingOption.label;
             option.disabled = !isThinkingLevelAvailableForModel({
-                model: settings.model,
+                model: selectedModel,
                 thinkingLevel: thinkingOption.value,
             });
             this._elements.thinkingLevel.appendChild(option);
         }
         this._elements.thinkingLevel.value = thinkingLevel;
-        this._elements.input.placeholder = settings.model === ''
-            ? 'Connect Ollama to start chatting…'
-            : `Message ${settings.model}…`;
+        this._elements.input.placeholder = hasSelectedModel
+            ? `Message ${settings.model}…`
+            : 'Select a model to start chatting…';
         this._syncComposerControlsDisabled();
     }
 
     _syncComposerControlsDisabled() {
         const settings = this._getSettings();
-        const hasModel = settings.model !== '';
+        const hasModel = this._models.includes(settings.model);
         let isModelDisabled = this._isBusy;
         if (this._isLoadingModels) {
             isModelDisabled = true;
@@ -347,6 +440,9 @@ class AiChatPanelController {
         if (this._models.length === 0) {
             isSendDisabled = true;
         }
+        if (!hasModel) {
+            isSendDisabled = true;
+        }
         this._elements.send.disabled = isSendDisabled;
     }
 
@@ -367,21 +463,19 @@ class AiChatPanelController {
                 this._setStatus('Ollama is connected, but no models are installed.', true);
                 return;
             }
-            let model = settings.model;
-            if (!this._models.includes(model)) {
-                model = this._models[0];
-            }
-            const thinkingLevel = normalizeThinkingLevelForModel({
-                model,
-                thinkingLevel: settings.thinkingLevel,
-            });
-            if (model !== settings.model || thinkingLevel !== settings.thinkingLevel) {
-                await this._saveSettings({
-                    provider: settings.provider,
-                    baseUrl: settings.baseUrl,
-                    model,
-                    thinkingLevel,
+            if (this._models.includes(settings.model)) {
+                const thinkingLevel = normalizeThinkingLevelForModel({
+                    model: settings.model,
+                    thinkingLevel: settings.thinkingLevel,
                 });
+                if (thinkingLevel !== settings.thinkingLevel) {
+                    await this._saveSettings({
+                        provider: settings.provider,
+                        baseUrl: settings.baseUrl,
+                        model: settings.model,
+                        thinkingLevel,
+                    });
+                }
             }
             this._setStatus('', false);
         } catch (error) {
@@ -485,9 +579,8 @@ class AiChatPanelController {
             return;
         }
         const settings = this._getSettings();
-        if (settings.model === '') {
-            this._setStatus('Configure an Ollama model first.', true);
-            await this._openSettings();
+        if (!this._models.includes(settings.model)) {
+            this._setStatus('Select an installed Ollama model first.', true);
             return;
         }
 
@@ -574,7 +667,6 @@ class AiChatPanelController {
             throw new Error('_setBusy requires boolean');
         }
         this._isBusy = isBusy;
-        this._elements.input.disabled = isBusy;
         this._elements.clear.disabled = isBusy;
         this._syncComposerControlsDisabled();
     }

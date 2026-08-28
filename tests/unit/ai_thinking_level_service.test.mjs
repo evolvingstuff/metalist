@@ -16,6 +16,10 @@ test('AI thinking levels expose the product abstraction with low default', () =>
         AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
         ['off', 'low', 'medium', 'high'],
     );
+    assert.deepEqual(
+        AI_THINKING_LEVEL_OPTIONS.map((option) => option.label),
+        ['Thinking Off', 'Low Thinking', 'Medium Thinking', 'High Thinking'],
+    );
     for (const thinkingLevel of ['off', 'low', 'medium', 'high']) {
         assert.equal(validateAiThinkingLevel(thinkingLevel), thinkingLevel);
     }

@@ -44,6 +44,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.ollama_base_url": "ollama_base_url",
     "pref.ai.ollama_model": "ollama_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
+    "pref.ai.chat_width": "ai_chat_width",
+    "pref.ai.composer_height": "ai_chat_composer_height",
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
@@ -160,6 +162,10 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             value = normalize_ollama_base_url(value)
         elif allowed_values == "ollama_model":
             value = validate_ollama_model(value)
+        elif allowed_values == "ai_chat_width":
+            _validate_ai_chat_width_preference(key=key, value=value)
+        elif allowed_values == "ai_chat_composer_height":
+            _validate_ai_chat_composer_height_preference(key=key, value=value)
         elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value
@@ -170,6 +176,22 @@ def _validate_sound_preference_value(*, key: str, value: str) -> None:
     if value == _BUILTIN_DEFAULT_SOUND_ID:
         return
     if _UUID_PATTERN.fullmatch(value) is None:
+        raise RuntimeError(f"Invalid client preference value for {key}: {value}")
+
+
+def _validate_ai_chat_width_preference(*, key: str, value: str) -> None:
+    if re.fullmatch(r"[1-9][0-9]*", value) is None:
+        raise RuntimeError(f"Invalid client preference value for {key}: {value}")
+    width = int(value)
+    if width < 280 or width > 5000:
+        raise RuntimeError(f"Invalid client preference value for {key}: {value}")
+
+
+def _validate_ai_chat_composer_height_preference(*, key: str, value: str) -> None:
+    if re.fullmatch(r"[1-9][0-9]*", value) is None:
+        raise RuntimeError(f"Invalid client preference value for {key}: {value}")
+    height = int(value)
+    if height < 74 or height > 220:
         raise RuntimeError(f"Invalid client preference value for {key}: {value}")
 
 

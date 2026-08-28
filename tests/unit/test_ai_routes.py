@@ -262,3 +262,52 @@ def test_model_discovery_maps_ollama_failure_to_bad_gateway(monkeypatch) -> None
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail == "Could not connect to Ollama"
+
+
+def test_model_pull_route_streams_progress_from_ollama(monkeypatch) -> None:
+    class FakeProvider:
+        async def stream_pull(self, *, base_url, model):
+            assert base_url == "http://127.0.0.1:11434"
+            assert model == "gemma3:4b"
+            yield {
+                "type": "progress",
+                "status": "pulling layer",
+                "completed": 50,
+                "total": 100,
+            }
+            yield {
+                "type": "done",
+                "status": "success",
+                "completed": 100,
+                "total": 100,
+            }
+
+    monkeypatch.setattr(ai_routes, "ollama_provider", FakeProvider())
+
+    response = ai_routes.pull_ai_model(
+        payload=ai_routes.AiModelPullRequest(
+            provider="ollama",
+            base_url="http://127.0.0.1:11434",
+            model="gemma3:4b",
+        ),
+        token="auth-token",
+    )
+
+    async def read_events() -> list[dict[str, object]]:
+        raw_chunks = [chunk async for chunk in response.body_iterator]
+        return [json.loads(chunk) for chunk in raw_chunks]
+
+    assert asyncio.run(read_events()) == [
+        {
+            "type": "progress",
+            "status": "pulling layer",
+            "completed": 50,
+            "total": 100,
+        },
+        {
+            "type": "done",
+            "status": "success",
+            "completed": 100,
+            "total": 100,
+        },
+    ]
