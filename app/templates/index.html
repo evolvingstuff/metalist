@@ -103,7 +103,13 @@
         <header class="ai-chat-header">
             <h2>AI Chat</h2>
             <div class="ai-chat-header-actions">
-                <button id="ai-chat-debug" type="button" title="Agent debug trace" aria-label="Agent debug trace" aria-pressed="false">☷</button>
+                <button id="ai-chat-diagnostics-toggle" type="button" title="Show diagnostic activity" aria-label="Show diagnostic activity" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                        <circle cx="12" cy="12" r="2.5"></circle>
+                    </svg>
+                </button>
+                <button id="ai-chat-debug" type="button" title="Agent debug trace" aria-label="Agent debug trace" aria-haspopup="dialog" aria-controls="ai-agent-debug-dialog" aria-expanded="false">☷</button>
                 <button id="ai-chat-clear" type="button" title="Clear chat" aria-label="Clear chat">↺</button>
                 <button id="ai-chat-settings" type="button" title="AI agent settings" aria-label="AI agent settings">⚙</button>
                 <button id="ai-chat-close" type="button" title="Close AI chat" aria-label="Close AI chat">×</button>
@@ -148,7 +154,7 @@
         </header>
         <div class="ai-agent-debug-toolbar">
             <label>
-                <input id="ai-agent-debug-enabled" type="checkbox">
+                <input id="ai-agent-debug-enabled" type="checkbox" checked>
                 Show exact prompts, model responses, and tool payloads
             </label>
             <span id="ai-agent-debug-status" role="status"></span>

@@ -76,6 +76,27 @@ export class PreferencesStore {
         await persistClientPreferences(this._snapshot());
     }
 
+    async removeMany(keys) {
+        if (!Array.isArray(keys) || keys.length === 0) {
+            throw new Error('PreferencesStore.removeMany requires non-empty keys array');
+        }
+        const uniqueKeys = new Set(keys);
+        if (uniqueKeys.size !== keys.length) {
+            throw new Error('PreferencesStore.removeMany requires unique keys');
+        }
+        for (const key of keys) {
+            if (typeof key !== 'string' || key.length === 0) {
+                throw new Error('PreferencesStore.removeMany requires non-empty string keys');
+            }
+        }
+        const nextState = this._snapshot();
+        for (const key of keys) {
+            delete nextState[key];
+        }
+        await persistClientPreferences(nextState);
+        this._state = nextState;
+    }
+
     async clearAll() {
         this._state = {};
         await persistClientPreferences(this._snapshot());

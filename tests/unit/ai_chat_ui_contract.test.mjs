@@ -18,6 +18,10 @@ const SETTINGS_MODAL_URL = new URL(
     '../../app/static/js/modules/modals/ai-agent-settings-modal.js',
     import.meta.url,
 );
+const PROMPT_MODAL_URL = new URL(
+    '../../app/static/js/modules/modals/agent-prompt-editor-modal.js',
+    import.meta.url,
+);
 const COMMAND_CONTROLLER_URL = new URL(
     '../../app/static/js/modules/command-palette/command-palette-controller.js',
     import.meta.url,
@@ -55,9 +59,11 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const debugView = readFileSync(DEBUG_VIEW_URL, 'utf8');
 
-    assert.match(template, /id="ai-chat-debug"[^>]*aria-pressed="false"/);
+    assert.match(template, /id="ai-chat-debug"[^>]*aria-haspopup="dialog"/);
+    assert.match(template, /id="ai-chat-debug"[^>]*aria-expanded="false"/);
+    assert.match(template, /id="ai-chat-diagnostics-toggle"[^>]*aria-pressed="false"/);
     assert.match(template, /id="ai-agent-debug-dialog"/);
-    assert.match(template, /id="ai-agent-debug-enabled"[^>]*type="checkbox"/);
+    assert.match(template, /id="ai-agent-debug-enabled"[^>]*type="checkbox"[^>]*checked/);
     assert.match(template, /Current or most recent run only/);
     assert.match(css, /\.ai-agent-debug-dialog[\s\S]*?width:\s*min\(1100px, 94vw\)/);
     assert.match(css, /\.ai-agent-debug-event[\s\S]*?summary/);
@@ -70,11 +76,25 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(debugView, /JSON\.stringify\(event\.detail, null, 2\)/);
     assert.match(debugView, /Latest trace recorded\. Enable exact details to inspect payloads/);
     assert.match(debugView, /this\._renderRun\(payload\.run, payload\.enabled\)/);
+    assert.match(debugView, /this\._closeFromBackdropClick\(event\)/);
+    assert.match(debugView, /event\.target !== this\._elements\.dialog/);
+    assert.match(debugView, /this\._elements\.dialog\.getBoundingClientRect\(\)/);
+    assert.match(debugView, /this\._elements\.dialog\.close\(\)/);
+    assert.match(debugView, /setAttribute\('aria-expanded', 'false'\)/);
+    assert.doesNotMatch(debugView, /classList\.toggle\('is-active'/);
+    assert.doesNotMatch(css, /#ai-chat-debug\.is-active/);
     assert.doesNotMatch(debugView, /Debug capture is off/);
     assert.doesNotMatch(debugView, /localStorage|sessionStorage/);
     assert.match(controller, /event\.type === 'action_status'/);
     assert.match(controller, /assistantMessage\.activities\.push/);
     assert.match(controller, /article\.appendChild\(this\._renderActivities\(message\)\)/);
+    assert.match(controller, /collapseCompletedActivityPairs\(message\.activities\)/);
+    assert.match(controller, /const nextVisibility = !this\._showDiagnosticActivities/);
+    assert.match(controller, /String\(this\._showDiagnosticActivities\)/);
+    assert.match(controller, /await this\._saveDiagnosticsVisible\(nextVisibility\)/);
+    assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(message\)/);
+    assert.match(controller, /`Working · \$\{latestActivity\.label\}`/);
+    assert.match(css, /\.ai-chat-working-indicator/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="retry"\]/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="search_notes"\]/);
     assert.match(controller, /AgentDebugView\.refreshIfOpen\(\)/);
@@ -173,6 +193,30 @@ test('chat width persists after resizing and restores through client preferences
     assert.match(commandController, /'pref\.ai\.chat_width'/);
     assert.match(main, /getPanelWidth:[\s\S]*?savePanelWidth:/);
     assert.match(auth, /getPanelWidth:[\s\S]*?savePanelWidth:/);
+});
+
+
+test('developer diagnostic panel visibility defaults hidden and persists by namespace', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const main = readFileSync(
+        new URL('../../app/static/js/main.js', import.meta.url),
+        'utf8',
+    );
+    const auth = readFileSync(
+        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        'utf8',
+    );
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(controller, /this\._showDiagnosticActivities = false/);
+    assert.match(controller, /AiChatPanel\.init requires getDiagnosticsVisible/);
+    assert.match(controller, /AiChatPanel\.init requires saveDiagnosticsVisible/);
+    assert.match(controller, /this\._showDiagnosticActivities = this\._getDiagnosticsVisible\(\)/);
+    assert.match(commandController, /getAiChatDiagnosticsVisible\(\)/);
+    assert.match(commandController, /saveAiChatDiagnosticsVisible\(isVisible\)/);
+    assert.match(commandController, /'pref\.ai\.show_diagnostics'/);
+    assert.match(main, /getDiagnosticsVisible:[\s\S]*?saveDiagnosticsVisible:/);
+    assert.match(auth, /getDiagnosticsVisible:[\s\S]*?saveDiagnosticsVisible:/);
 });
 
 
@@ -337,14 +381,37 @@ test('streaming keeps the next message editable while current-turn actions stay 
 });
 
 
-test('command menu contains chat toggle and AI agent configuration actions', () => {
+test('command menu contains chat, AI configuration, and prompt editor actions', () => {
     const endpointSource = readFileSync(ENDPOINTS_URL, 'utf8');
     const tagConfig = JSON.parse(readFileSync(TAGS_URL, 'utf8'));
 
     assert.match(endpointSource, /id:\s*'pref\.show_ai_chat'/);
     assert.match(endpointSource, /id:\s*'form\.ai_agent_settings'/);
+    assert.match(endpointSource, /id:\s*'form\.agent_prompts'/);
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'pref.show_ai_chat'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.ai_agent_settings'));
+    assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
+});
+
+
+test('agent prompt editor inspects, overrides, and resets all runtime prompts', () => {
+    const css = readFileSync(CSS_URL, 'utf8');
+    const modal = readFileSync(PROMPT_MODAL_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+
+    assert.match(modal, /<h2>Agent Prompts<\/h2>/);
+    assert.match(modal, /id="agent-prompt-system"/);
+    assert.match(modal, /id="agent-prompt-final-response"/);
+    assert.match(modal, /id="agent-prompt-tool-result"/);
+    assert.match(modal, /Restore packaged defaults/);
+    assert.match(modal, /Save overrides/);
+    assert.match(modal, /apply to the next run/);
+    assert.match(modal, /not conversation history/);
+    assert.match(commandController, /AGENT_PROMPT_PREFERENCE_KEYS/);
+    assert.match(commandController, /_preferences\.removeMany/);
+    assert.match(chatApi, /export async function loadAgentPromptDefaults/);
+    assert.match(css, /\.agent-prompt-editor-modal-content[\s\S]*?width:\s*min\(1100px, 96vw\)/);
 });
 
 

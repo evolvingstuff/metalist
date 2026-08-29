@@ -143,6 +143,10 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
         "pref.ai.ollama_model": "qwen3:8b",
         "pref.ai.thinking_level": "low",
+        "pref.ai.show_diagnostics": "false",
+        "pref.ai.prompt.system": "Custom MetaList agent",
+        "pref.ai.prompt.final_response": "FINAL\n{basis}",
+        "pref.ai.prompt.tool_result": "TOOL {action_name}\n{payload_json}",
         "pref.ai.chat_width": "640",
         "pref.ai.composer_height": "180",
     }
@@ -191,6 +195,39 @@ def test_save_client_preferences_rejects_unknown_ai_thinking_level(
             preferences={"pref.ai.thinking_level": "extreme"},
             token="",
         )
+
+
+def test_save_client_preferences_rejects_invalid_ai_diagnostic_visibility(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Invalid client preference value"):
+        save_client_preferences(
+            preferences={"pref.ai.show_diagnostics": "sometimes"},
+            token="",
+        )
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("pref.ai.prompt.system", "   "),
+        ("pref.ai.prompt.final_response", "Missing basis"),
+        ("pref.ai.prompt.final_response", "{basis} {unknown}"),
+        ("pref.ai.prompt.tool_result", "{action_name}"),
+        ("pref.ai.prompt.tool_result", "{action_name} {payload_json} {unknown}"),
+    ],
+)
+def test_save_client_preferences_rejects_invalid_agent_prompts(
+    memory_settings_db,
+    key,
+    value,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(ValueError):
+        save_client_preferences(preferences={key: value}, token="")
 
 
 def test_save_client_preferences_rejects_unsafe_ollama_url(memory_settings_db) -> None:

@@ -6,6 +6,8 @@ from fastapi import HTTPException, Response
 
 import app.api.routes.ai as ai_routes
 from app.services.ai_chat import AiChatSessionStore
+from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
+from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
 from app.services.agent.trace import AgentTraceStore
 from app.services.ollama_provider import OllamaProviderError
 
@@ -50,6 +52,20 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
             "label": "Waiting for Ollama · attempt 1 of 2",
         }
     ]
+    assert http_response.headers["Cache-Control"] == "no-store"
+
+
+def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
+    http_response = Response()
+
+    response = ai_routes.get_ai_prompt_defaults(
+        response=http_response,
+        token="auth-token",
+    )
+
+    assert response.system_prompt == DEFAULT_AGENT_PROMPTS.system_prompt
+    assert response.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
+    assert response.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
     assert http_response.headers["Cache-Control"] == "no-store"
 
 
@@ -266,7 +282,7 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
     }
 
 
-def test_debug_trace_is_retained_before_exact_details_are_enabled(monkeypatch) -> None:
+def test_debug_trace_defaults_to_exact_details_and_can_hide_them_afterward(monkeypatch) -> None:
     traces = AgentTraceStore()
     monkeypatch.setattr(ai_routes, "agent_trace_store", traces)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-a")
@@ -286,21 +302,21 @@ def test_debug_trace_is_retained_before_exact_details_are_enabled(monkeypatch) -
         response=initial_http_response,
         token="auth-token",
     )
-    enabled = ai_routes.put_ai_debug_details(
-        payload=ai_routes.AiDebugDetailToggleRequest(enabled=True),
+    hidden = ai_routes.put_ai_debug_details(
+        payload=ai_routes.AiDebugDetailToggleRequest(enabled=False),
         response=Response(),
         token="auth-token",
     )
 
-    assert initial.enabled is False
+    assert initial.enabled is True
     assert initial.has_trace is True
     assert initial.run["run_id"] == run_id
     assert initial.run["status"] == "error"
     assert initial_http_response.headers["Cache-Control"] == "no-store"
-    assert enabled.enabled is True
-    assert enabled.has_trace is True
-    assert enabled.run["run_id"] == run_id
-    assert traces.snapshot(session_key="session-b")["enabled"] is False
+    assert hidden.enabled is False
+    assert hidden.has_trace is True
+    assert hidden.run["run_id"] == run_id
+    assert traces.snapshot(session_key="session-b")["enabled"] is True
 
 
 def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) -> None:
@@ -315,12 +331,16 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             selected_model,
             thinking_level,
             canonical_messages,
+            prompts,
         ):
             assert session_key == "session-key"
             assert base_url == "http://127.0.0.1:11434"
             assert selected_model == "qwen3:8b"
             assert thinking_level == "low"
             assert canonical_messages == [{"role": "user", "content": "Hello"}]
+            assert prompts.system_prompt == "Custom system prompt"
+            assert prompts.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
+            assert prompts.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
             yield {
                 "type": "action_status",
                 "action": "planning",
@@ -334,6 +354,11 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "agent_runtime", FakeRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
+    monkeypatch.setattr(
+        ai_routes,
+        "load_client_preferences",
+        lambda *, token: {SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt"},
+    )
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
@@ -399,14 +424,16 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             selected_model,
             thinking_level,
             canonical_messages,
+            prompts,
         ):
-            del session_key, base_url, selected_model, thinking_level, canonical_messages
+            del session_key, base_url, selected_model, thinking_level, canonical_messages, prompts
             raise OllamaProviderError("Ollama generation failed")
             yield
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "agent_runtime", FailingRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(

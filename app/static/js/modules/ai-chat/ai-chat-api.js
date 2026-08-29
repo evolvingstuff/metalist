@@ -65,6 +65,15 @@ export async function clearAiChatSession() {
 }
 
 
+export async function loadAgentPromptDefaults() {
+    const response = await fetchAi(CONFIG.API.AI.PROMPT_DEFAULTS, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to load packaged agent prompts');
+}
+
+
 export async function loadAiDebugSnapshot() {
     const response = await fetchAi(CONFIG.API.AI.DEBUG, {
         headers: buildSessionHeaders(false),

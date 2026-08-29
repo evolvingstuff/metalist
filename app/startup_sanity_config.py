@@ -43,6 +43,7 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "listOllamaModels",
     "loadAiDebugSnapshot",
     "loadAiChatSession",
+    "loadAgentPromptDefaults",
     "pullOllamaModel",
     "streamAiChat",
     "setAiDebugExactDetails",

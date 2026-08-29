@@ -43,6 +43,11 @@ import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-moda
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
+import { AgentPromptEditorModal } from '../modals/agent-prompt-editor-modal.js';
+import {
+    AGENT_PROMPT_PREFERENCE_KEYS,
+    validateAgentPromptSet,
+} from '../ai-chat/agent-prompt-service.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     DEFAULT_AI_THINKING_LEVEL,
@@ -317,6 +322,7 @@ class CommandPaletteController {
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
         this._aiAgentSettingsModal = null;
+        this._agentPromptEditorModal = null;
 
         this._elements = null;
 
@@ -388,6 +394,7 @@ class CommandPaletteController {
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
                 setIsUntaggedView: this.setIsUntaggedView.bind(this),
                 openAiAgentSettings: this.openAiAgentSettings.bind(this),
+                openAgentPromptEditor: this.openAgentPromptEditor.bind(this),
             },
         });
 
@@ -692,6 +699,20 @@ class CommandPaletteController {
         await this._preferences.setRaw('pref.ai.chat_width', String(width));
     }
 
+    getAiChatDiagnosticsVisible() {
+        return this._getBoolean('pref.ai.show_diagnostics', false);
+    }
+
+    async saveAiChatDiagnosticsVisible(isVisible) {
+        if (typeof isVisible !== 'boolean') {
+            throw new Error('AI chat diagnostic visibility must be boolean');
+        }
+        await this._preferences.setRaw(
+            'pref.ai.show_diagnostics',
+            isVisible ? 'true' : 'false',
+        );
+    }
+
     getAiChatComposerHeight() {
         const rawHeight = this._preferences.getRaw('pref.ai.composer_height');
         if (rawHeight === null) {
@@ -768,6 +789,35 @@ class CommandPaletteController {
             'metalist:ai-settings-changed',
             { detail: { reloadModels: true } },
         ));
+    }
+
+    _readAgentPromptOverrides() {
+        return {
+            systemPrompt: this._preferences.getRaw(
+                AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt,
+            ),
+            finalResponsePrompt: this._preferences.getRaw(
+                AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt,
+            ),
+            toolResultPrompt: this._preferences.getRaw(
+                AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt,
+            ),
+        };
+    }
+
+    async _saveAgentPromptOverrides(settings) {
+        const prompts = validateAgentPromptSet(settings);
+        await this._preferences.setMany({
+            [AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt]: prompts.systemPrompt,
+            [AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt]: prompts.finalResponsePrompt,
+            [AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt]: prompts.toolResultPrompt,
+        });
+    }
+
+    async _resetAgentPromptOverrides() {
+        await this._preferences.removeMany(
+            Object.values(AGENT_PROMPT_PREFERENCE_KEYS),
+        );
     }
 
     isOpen() {
@@ -2427,6 +2477,23 @@ class CommandPaletteController {
             );
         }
         this._aiAgentSettingsModal.open();
+    }
+
+    async openAgentPromptEditor() {
+        const isReady = await this._prepareForModalOpen(
+            'commandPalette.openAgentPromptEditor',
+        );
+        if (!isReady) {
+            return;
+        }
+        if (this._agentPromptEditorModal === null) {
+            this._agentPromptEditorModal = new AgentPromptEditorModal(
+                this._readAgentPromptOverrides.bind(this),
+                this._saveAgentPromptOverrides.bind(this),
+                this._resetAgentPromptOverrides.bind(this),
+            );
+        }
+        this._agentPromptEditorModal.open();
     }
 
     async openSearchSuggestionStatistics() {

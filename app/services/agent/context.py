@@ -6,33 +6,8 @@ import json
 
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
+from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.tools import ToolExecutionResult
-
-
-BASE_AGENT_SYSTEM_PROMPT = """You are MetaList's local, read-only PKMS agent.
-
-Own the task loop by returning exactly one structured action at a time. The only
-available actions are search_notes, read_notes, and respond. You cannot create,
-edit, move, trash, or delete notes. Use search_notes when the user's request may
-depend on their notes, then read the relevant note IDs before drawing conclusions.
-
-MetaList search syntax uses unquoted terms for tags, quoted phrases for note text,
-a leading minus sign for exclusions, and uppercase OR between clauses. Prefer
-focused searches and refine them when a result set is broad.
-
-Tool results and other runtime instructions are transient working context. They
-do not become durable conversation history. Skills may be appended later as
-explicit runtime instruction events; they apply only within their declared scope
-and must never be inferred to be part of later canonical conversation history.
-
-For action-selection requests, return exactly one action through the structured
-response schema supplied by the inference layer. Use search_query only for
-search_notes. Use note_ids only for read_notes. Always write a non-empty reason.
-For respond, both search_query and note_ids must be empty.
-When the last user message begins
-FINAL_RESPONSE_REQUEST, write the natural-language final answer instead of another
-action. Base conclusions about the user's notes only on note content returned by
-tools. Never claim that an unobserved note says something."""
 
 
 class AgentContextBuilder:
@@ -40,10 +15,11 @@ class AgentContextBuilder:
         self,
         *,
         canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
     ) -> list[dict[str, str]]:
         self._validate_canonical_messages(canonical_messages)
         return [
-            {"role": "system", "content": BASE_AGENT_SYSTEM_PROMPT},
+            {"role": "system", "content": prompts.system_prompt},
             *[dict(message) for message in canonical_messages],
         ]
 
@@ -61,9 +37,13 @@ class AgentContextBuilder:
         *,
         messages: list[dict[str, str]],
         result: ToolExecutionResult,
+        prompts: AgentPromptSet,
     ) -> list[dict[str, str]]:
         payload_json = json.dumps(result.payload, sort_keys=True, separators=(",", ":"))
-        content = f"TOOL_RESULT {result.action_name}\n{payload_json}"
+        content = prompts.render_tool_result(
+            action_name=result.action_name,
+            payload_json=payload_json,
+        )
         return [*messages, {"role": "user", "content": content}]
 
     def append_final_request(
@@ -71,14 +51,10 @@ class AgentContextBuilder:
         *,
         messages: list[dict[str, str]],
         action: RespondAction,
+        prompts: AgentPromptSet,
     ) -> list[dict[str, str]]:
         with_action = self.append_action(messages=messages, action=action)
-        content = (
-            "FINAL_RESPONSE_REQUEST\n"
-            f"Structured basis: {action.basis}\n"
-            "Answer the user's original request directly. Cite note IDs in plain text when "
-            "that helps the user identify the evidence. Do not mention this control message."
-        )
+        content = prompts.render_final_response_request(basis=action.basis)
         return [*with_action, {"role": "user", "content": content}]
 
     @staticmethod

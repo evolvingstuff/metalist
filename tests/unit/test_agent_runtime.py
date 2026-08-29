@@ -15,6 +15,7 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
+from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.tools import ToolPermission
@@ -184,6 +185,7 @@ def _collect_runtime_events(runtime: AgentRuntime) -> list[dict[str, object]]:
                 canonical_messages=[
                     {"role": "user", "content": "What did I decide about storage?"}
                 ],
+                prompts=DEFAULT_AGENT_PROMPTS,
             )
         ]
 
@@ -460,7 +462,7 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     assert any("Decision: keep SQLite" in message["content"] for message in final_context)
 
     snapshot = traces.snapshot(session_key="session-a")
-    assert snapshot["enabled"] is False
+    assert snapshot["enabled"] is True
     assert snapshot["has_trace"] is True
     run = snapshot["run"]
     assert run["status"] == "complete"
@@ -628,6 +630,7 @@ def test_context_builder_does_not_carry_transient_tool_or_future_skill_events() 
     ]
     first_run_context = builder.build_initial_messages(
         canonical_messages=canonical_messages,
+        prompts=DEFAULT_AGENT_PROMPTS,
     )
     transient_context = [
         *first_run_context,
@@ -637,6 +640,7 @@ def test_context_builder_does_not_carry_transient_tool_or_future_skill_events() 
 
     next_run_context = builder.build_initial_messages(
         canonical_messages=canonical_messages,
+        prompts=DEFAULT_AGENT_PROMPTS,
     )
 
     assert len(transient_context) == len(next_run_context) + 2
@@ -646,11 +650,36 @@ def test_context_builder_does_not_carry_transient_tool_or_future_skill_events() 
     assert all("SKILL_CONTENT" not in message["content"] for message in next_run_context)
 
 
-def test_trace_store_always_keeps_latest_run_and_exact_details_default_off() -> None:
+def test_context_builder_uses_packaged_prompt_resources() -> None:
+    builder = AgentContextBuilder()
+    initial_messages = builder.build_initial_messages(
+        canonical_messages=[{"role": "user", "content": "Hello"}],
+        prompts=DEFAULT_AGENT_PROMPTS,
+    )
+
+    assert initial_messages[0] == {
+        "role": "system",
+        "content": DEFAULT_AGENT_PROMPTS.system_prompt,
+    }
+    assert DEFAULT_AGENT_PROMPTS.render_tool_result(
+        action_name="search_notes",
+        payload_json='{"notes":[]}',
+    ) == 'TOOL_RESULT search_notes\n{"notes":[]}'
+    assert DEFAULT_AGENT_PROMPTS.render_final_response_request(
+        basis="No retrieval was needed.",
+    ) == (
+        "FINAL_RESPONSE_REQUEST\n"
+        "Structured basis: No retrieval was needed.\n"
+        "Answer the user's original request directly. Cite note IDs in plain text when "
+        "that helps the user identify the evidence. Do not mention this control message."
+    )
+
+
+def test_trace_store_always_keeps_latest_run_and_exact_details_default_on() -> None:
     traces = AgentTraceStore()
 
     assert traces.snapshot(session_key="session-a") == {
-        "enabled": False,
+        "enabled": True,
         "has_trace": False,
         "run": {},
     }
@@ -678,14 +707,14 @@ def test_trace_store_always_keeps_latest_run_and_exact_details_default_off() -> 
     assert snapshot["run"]["run_id"] == second_run_id
     assert snapshot["run"]["run_id"] != first_run_id
     assert snapshot["run"]["events"] == []
-    assert snapshot["enabled"] is False
-    assert traces.snapshot(session_key="session-b")["enabled"] is False
+    assert snapshot["enabled"] is True
+    assert traces.snapshot(session_key="session-b")["enabled"] is True
 
-    traces.set_exact_details_enabled(session_key="session-a", enabled=True)
-    assert traces.snapshot(session_key="session-a")["enabled"] is True
-    assert traces.snapshot(session_key="session-a")["run"]["run_id"] == second_run_id
     traces.set_exact_details_enabled(session_key="session-a", enabled=False)
     assert traces.snapshot(session_key="session-a")["enabled"] is False
+    assert traces.snapshot(session_key="session-a")["run"]["run_id"] == second_run_id
+    traces.set_exact_details_enabled(session_key="session-a", enabled=True)
+    assert traces.snapshot(session_key="session-a")["enabled"] is True
     assert traces.snapshot(session_key="session-a")["run"]["run_id"] == second_run_id
 
 

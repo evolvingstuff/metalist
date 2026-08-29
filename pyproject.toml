@@ -53,6 +53,9 @@ include-package-data = true
 py-modules = ["main"]
 script-files = ["convert-from-legacy.py", "scripts/generate-lan-cert.sh"]
 
+[tool.setuptools.package-data]
+"app.services.agent.prompts" = ["*.md"]
+
 [tool.setuptools.dynamic]
 version = {attr = "app.version.__version__"}
 

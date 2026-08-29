@@ -73,6 +73,10 @@
       "tags": ["ai", "agent", "assistant", "ollama", "model", "models", "provider", "connection", "url", "configure", "configuration", "settings"]
     },
     {
+      "id": "form.agent_prompts",
+      "tags": ["ai", "agent", "assistant", "prompt", "prompts", "system", "instructions", "ollama", "inspect", "edit", "alter", "override", "defaults", "developer", "settings"]
+    },
+    {
       "id": "action.expand_all",
       "tags": ["expand", "all", "collapsed", "root", "top-level", "notes", "view"]
     },

@@ -22,6 +22,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openVersionInfo: noop,
             openNoteLayoutAppearance: noop,
             openAiAgentSettings: noop,
+            openAgentPromptEditor: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -92,6 +93,11 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
     assert.equal(endpointIds.has('form.note_layout_appearance'), true);
+    assert.equal(endpointIds.has('form.agent_prompts'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.agent_prompts').label,
+        'Agent prompts…',
+    );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.note_layout_appearance').label,
         'Note Layout & Appearance…',

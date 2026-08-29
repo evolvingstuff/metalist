@@ -80,7 +80,7 @@ function validateTraceEvent(event) {
 class AgentDebugViewController {
     constructor() {
         this._initialized = false;
-        this._snapshot = { enabled: false, has_trace: false, run: {} };
+        this._snapshot = { enabled: true, has_trace: false, run: {} };
         this._elements = null;
     }
 
@@ -114,13 +114,34 @@ class AgentDebugViewController {
         this._elements.close.addEventListener('click', () => this._elements.dialog.close());
         this._elements.refresh.addEventListener('click', () => void this._loadSnapshot());
         this._elements.enabled.addEventListener('change', () => void this._toggleExactDetails());
+        this._elements.dialog.addEventListener('click', (event) => {
+            this._closeFromBackdropClick(event);
+        });
+        this._elements.dialog.addEventListener('close', () => {
+            this._elements.button.setAttribute('aria-expanded', 'false');
+        });
     }
 
     async _open() {
         if (!this._elements.dialog.open) {
             this._elements.dialog.showModal();
         }
+        this._elements.button.setAttribute('aria-expanded', 'true');
         await this._loadSnapshot();
+    }
+
+    _closeFromBackdropClick(event) {
+        if (event.target !== this._elements.dialog) {
+            return;
+        }
+        const bounds = this._elements.dialog.getBoundingClientRect();
+        const isInsideDialog = event.clientX >= bounds.left
+            && event.clientX <= bounds.right
+            && event.clientY >= bounds.top
+            && event.clientY <= bounds.bottom;
+        if (!isInsideDialog) {
+            this._elements.dialog.close();
+        }
     }
 
     async _loadSnapshot() {
@@ -157,8 +178,6 @@ class AgentDebugViewController {
     _render() {
         const payload = this._snapshot;
         this._elements.enabled.checked = payload.enabled;
-        this._elements.button.classList.toggle('is-active', payload.has_trace);
-        this._elements.button.setAttribute('aria-pressed', String(payload.has_trace));
         this._elements.events.replaceChildren();
         if (!payload.has_trace) {
             this._renderEmpty('No agent run has been recorded in this session yet.');

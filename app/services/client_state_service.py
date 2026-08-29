@@ -15,6 +15,12 @@ from app.models.database import SafeSession
 from app.security.encryption import get_encryption_service
 from app.security.encryption import get_encryption_service_with_token
 from app.security.encryption import is_encryption_required
+from app.services.agent.prompt_settings import FINAL_RESPONSE_PROMPT_PREFERENCE_KEY
+from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
+from app.services.agent.prompt_settings import TOOL_RESULT_PROMPT_PREFERENCE_KEY
+from app.services.agent.prompt_settings import validate_final_response_prompt
+from app.services.agent.prompt_settings import validate_system_prompt
+from app.services.agent.prompt_settings import validate_tool_result_prompt
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import validate_ollama_model
 
@@ -44,6 +50,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.ollama_base_url": "ollama_base_url",
     "pref.ai.ollama_model": "ollama_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
+    "pref.ai.show_diagnostics": {"true", "false"},
+    SYSTEM_PROMPT_PREFERENCE_KEY: "agent_system_prompt",
+    FINAL_RESPONSE_PROMPT_PREFERENCE_KEY: "agent_final_response_prompt",
+    TOOL_RESULT_PROMPT_PREFERENCE_KEY: "agent_tool_result_prompt",
     "pref.ai.chat_width": "ai_chat_width",
     "pref.ai.composer_height": "ai_chat_composer_height",
 }
@@ -166,6 +176,12 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":
             _validate_ai_chat_composer_height_preference(key=key, value=value)
+        elif allowed_values == "agent_system_prompt":
+            value = validate_system_prompt(value)
+        elif allowed_values == "agent_final_response_prompt":
+            value = validate_final_response_prompt(value)
+        elif allowed_values == "agent_tool_result_prompt":
+            value = validate_tool_result_prompt(value)
         elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value

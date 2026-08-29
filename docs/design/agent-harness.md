@@ -43,6 +43,7 @@ Harness rule: if a model call must return JSON/Pydantic data, it goes through In
 ### Working context
 
 - System prompt, structured actions, tool results, and final-response instruction for one run.
+- The three packaged Markdown prompts can be replaced by namespace-scoped client-preference overrides from `Agent prompts…`. The runtime resolves one validated immutable prompt set at run start, so edits affect the next run and cannot change an in-flight run.
 - Built append-only during the active run and discarded when it ends.
 - Future skill content must be appended here as a versioned event; it must not be inserted into old prompt tokens or copied into canonical history.
 
@@ -53,7 +54,7 @@ Harness rule: if a model call must return JSON/Pydantic data, it goes through In
 - Instructor hook states are appended live while a call is running: attempt start, Ollama response received, validation, retry/final failure, and success. Exact transformed model requests, every retry response/error, schemas, provider reasoning, usage, policy decisions, tool arguments/results, timing, final response, and errors are captured.
 - Every call to Ollama appends its own `OLLAMA_REQUEST` entry before the response: each Instructor action-selection attempt (including retries and later post-tool selections) and the direct final-response stream. The entry contains the HTTP method, endpoint, and complete JSON body with the ordered messages used at that moment, including canonical user messages and transient tool/final-response instructions. Structured bodies are captured from the HTTP transport after Instructor adds the native `json_schema` response format; the OpenAI-compatible transport does not perform hidden retries.
 - The debugger does not substitute a standalone system-prompt entry for a request. The system prompt appears in its real position inside each outbound request's `body.messages` array alongside the corresponding user message.
-- Logout, runtime lock, auth reset, or process restart clears the trace and resets exact-detail visibility. Clear Chat removes the trace while preserving the current visibility toggle.
+- Logout, runtime lock, auth reset, or process restart clears the trace and resets exact-detail visibility to its on-by-default state. Clear Chat removes the trace while preserving the current visibility toggle.
 - No trace rows or payloads are persisted to SQLite, files, browser storage, or canonical conversation history.
 
 ## Read-only Tools
@@ -75,26 +76,28 @@ No create, edit, move, trash, delete, SQL, filesystem, or shell action exists in
 
 ## UI
 
-- Live `action_status` events append compact activity panels to the assistant turn instead of replacing one status line. Panels distinguish model waits/validation, Instructor retries, note search/read tools, and final-response writing with different tinted backgrounds. They remain in the session transcript but never enter canonical model history.
+- Live `action_status` events append compact activity panels to the assistant turn instead of replacing one status line. Panels distinguish model waits/validation, Instructor retries, note search/read tools, and final-response writing with different tinted backgrounds. An identical adjacent started/completed pair renders as one panel whose marker advances from a bullet to a check, avoiding duplicate tool rows without collapsing distinct phases. They remain in the session transcript but never enter canonical model history.
 - Each structured call reports its current attempt and maximum attempt count. Validation/provider failures identify the failure type and whether Instructor will retry; the exact error remains available in the debug trace.
 - Exhausted structured retries produce a short user-facing error panel that directs the user to Agent Debug; Instructor's full exception and attempt payloads are not dumped into the chat.
 - The `Thinking` disclosure renders only when the selected model actually emits reasoning content. Thinking Off therefore never shows a misleading `Thinking` heading.
-- The chat-header trace button opens a large debugger modal.
-- `Show exact prompts, model responses, and tool payloads` controls detail visibility and can be changed before, during, or after a run. It never controls whether the latest trace is retained.
+- The chat header has a default-off eye toggle that hides or reveals all developer diagnostic activity panels without deleting their state. Its namespace-scoped preference survives refresh and restart. While those panels are hidden, an active response still shows one compact `Working` indicator with the latest phase and elapsed time; it disappears when answer content begins. The trace launcher is never styled as selected merely because a trace exists. Its large debugger modal closes from `×`, Escape, or a backdrop click.
+- `Show exact prompts, model responses, and tool payloads` is checked by default. It controls detail visibility and can be changed before, during, or after a run. It never controls whether the latest trace is retained.
 - The debugger renders the latest run as a chronological expandable outline. Enabling exact details exposes each row's full JSON payload.
 
 ## Main Files
 
 - Runtime: `app/services/agent/runtime.py`
 - Actions: `app/services/agent/actions.py`
-- Prompt/context: `app/services/agent/context.py`
+- Prompt resources: `app/services/agent/prompts/*.md`
+- Prompt loading/override validation/context assembly: `app/services/agent/prompts/__init__.py`, `app/services/agent/prompt_settings.py`, `app/services/agent/context.py`
 - Model policy: `app/services/agent/model_policy.py`
 - Permissions/tools: `app/services/agent/permissions.py`, `app/services/agent/tools.py`
 - Transient trace: `app/services/agent/trace.py`
 - Ollama seam: `app/services/agent/ollama_inference.py`, `app/services/ollama_provider.py`
 - API: `app/api/routes/ai.py`
 - Debug UI: `app/static/js/modules/ai-chat/ai-agent-debug-view.js`
-- Tests: `tests/unit/test_agent_runtime.py`, `tests/unit/test_ai_chat.py`, `tests/unit/test_ai_routes.py`
+- Prompt editor UI: `app/static/js/modules/modals/agent-prompt-editor-modal.js`
+- Tests: `tests/unit/test_agent_prompt_settings.py`, `tests/unit/test_agent_runtime.py`, `tests/unit/test_ai_chat.py`, `tests/unit/test_ai_routes.py`, `tests/unit/agent_prompt_service.test.mjs`
 
 ## Deferred Seams
 

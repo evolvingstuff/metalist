@@ -86,6 +86,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const getIsUntaggedView = requireAction(actions, 'getIsUntaggedView');
     const setIsUntaggedView = requireAction(actions, 'setIsUntaggedView');
     const openAiAgentSettings = requireAction(actions, 'openAiAgentSettings');
+    const openAgentPromptEditor = requireAction(actions, 'openAgentPromptEditor');
 
     const defaults = {
         showBacklinks: true,
@@ -271,6 +272,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'AI agent settings…',
             execute: async () => openAiAgentSettings(),
+        },
+        {
+            id: 'form.agent_prompts',
+            kind: 'form',
+            label: 'Agent prompts…',
+            execute: async () => openAgentPromptEditor(),
         },
         {
             id: 'action.expand_all',

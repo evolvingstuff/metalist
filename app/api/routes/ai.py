@@ -21,10 +21,13 @@ from app.services.agent.context import AgentContextBuilder
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
 from app.services.agent.permissions import AgentPermissionPolicy
+from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
+from app.services.agent.prompt_settings import resolve_agent_prompt_set
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
+from app.services.client_state_service import load_client_preferences
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import normalize_ollama_base_url
@@ -59,6 +62,12 @@ class AiModelsRequest(BaseModel):
 
 class AiModelsResponse(BaseModel):
     models: list[str]
+
+
+class AiPromptDefaultsResponse(BaseModel):
+    system_prompt: str
+    final_response_prompt: str
+    tool_result_prompt: str
 
 
 class AiModelPullRequest(BaseModel):
@@ -189,6 +198,20 @@ async def list_ai_models(
     except OllamaProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return AiModelsResponse(models=models)
+
+
+@router.get("/prompts/defaults", response_model=AiPromptDefaultsResponse)
+def get_ai_prompt_defaults(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> AiPromptDefaultsResponse:
+    del token
+    response.headers["Cache-Control"] = "no-store"
+    return AiPromptDefaultsResponse(
+        system_prompt=DEFAULT_AGENT_PROMPTS.system_prompt,
+        final_response_prompt=DEFAULT_AGENT_PROMPTS.final_response_prompt,
+        tool_result_prompt=DEFAULT_AGENT_PROMPTS.tool_result_prompt,
+    )
 
 
 @router.post("/models/pull")
@@ -369,6 +392,9 @@ def stream_ai_chat(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
+    prompts = resolve_agent_prompt_set(
+        preferences=load_client_preferences(token=token),
+    )
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,
         user_content=payload.message,
@@ -387,6 +413,7 @@ def stream_ai_chat(
                 selected_model=payload.model,
                 thinking_level=payload.thinking_level,
                 canonical_messages=provider_messages,
+                prompts=prompts,
             ):
                 event_type = event["type"]
                 outgoing_event = event

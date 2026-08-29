@@ -141,6 +141,7 @@ export const CONFIG = {
         AI: {
             MODELS: `${API_AI_BASE}/models`,
             PULL_MODEL: `${API_AI_BASE}/models/pull`,
+            PROMPT_DEFAULTS: `${API_AI_BASE}/prompts/defaults`,
             SESSION: `${API_AI_BASE}/session`,
             DEBUG: `${API_AI_BASE}/debug`,
             CHAT: `${API_AI_BASE}/chat`,

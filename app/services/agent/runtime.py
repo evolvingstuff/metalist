@@ -24,6 +24,7 @@ from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
+from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
 from app.services.agent.trace import AgentTraceStore
 
@@ -42,6 +43,7 @@ class _RunContext:
     base_url: str
     selected_model: str
     thinking_level: str
+    prompts: AgentPromptSet
 
 
 @dataclass(slots=True)
@@ -78,6 +80,7 @@ class AgentRuntime:
         selected_model: str,
         thinking_level: str,
         canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
     ) -> AsyncIterator[dict[str, object]]:
         run, messages = self._start_run(
             session_key=session_key,
@@ -85,6 +88,7 @@ class AgentRuntime:
             selected_model=selected_model,
             thinking_level=thinking_level,
             canonical_messages=canonical_messages,
+            prompts=prompts,
         )
         # lint: allow-PY001 rationale="record every run failure in the session trace before re-raising"
         try:
@@ -115,9 +119,11 @@ class AgentRuntime:
         selected_model: str,
         thinking_level: str,
         canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
     ) -> tuple[_RunContext, list[dict[str, str]]]:
         messages = self._context_builder.build_initial_messages(
             canonical_messages=canonical_messages,
+            prompts=prompts,
         )
         run_id = self._trace_store.start_run(
             session_key=session_key,
@@ -130,6 +136,7 @@ class AgentRuntime:
             base_url=base_url,
             selected_model=selected_model,
             thinking_level=thinking_level,
+            prompts=prompts,
         )
         return run, messages
 
@@ -360,6 +367,7 @@ class AgentRuntime:
         return self._context_builder.append_tool_result(
             messages=with_action,
             result=result,
+            prompts=run.prompts,
         )
 
     async def _stream_final_response(
@@ -376,6 +384,7 @@ class AgentRuntime:
         final_messages = self._context_builder.append_final_request(
             messages=messages,
             action=action,
+            prompts=run.prompts,
         )
         yield self._status_event("respond", "started", "Writing response")
         started_at = time.perf_counter()

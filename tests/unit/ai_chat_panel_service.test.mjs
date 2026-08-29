@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
+    collapseCompletedActivityPairs,
     parseAiChatNdjsonBuffer,
 } from '../../app/static/js/modules/ai-chat/ai-chat-panel-service.js';
 
@@ -19,6 +20,45 @@ test('chat maximum width preserves the minimum notes area', () => {
     assert.equal(calculateAiChatMaximumWidth(1200), 720);
     assert.equal(calculateAiChatMaximumWidth(2000), 1520);
     assert.equal(calculateAiChatMaximumWidth(760), 280);
+});
+
+
+test('completed activity collapses only its identical preceding started panel', () => {
+    const activities = [
+        {
+            sequence: 1,
+            action: 'read_notes',
+            status: 'started',
+            label: 'Reading 2 notes',
+        },
+        {
+            sequence: 2,
+            action: 'read_notes',
+            status: 'completed',
+            label: 'Reading 2 notes',
+        },
+        {
+            sequence: 3,
+            action: 'planning',
+            status: 'started',
+            label: 'Preparing action selection',
+        },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [
+        activities[1],
+        activities[2],
+    ]);
+});
+
+
+test('activity collapse preserves distinct lifecycle labels and phases', () => {
+    const activities = [
+        { action: 'respond', status: 'started', label: 'Writing response' },
+        { action: 'respond', status: 'completed', label: 'Response complete' },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), activities);
 });
 
 

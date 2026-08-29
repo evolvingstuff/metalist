@@ -33,6 +33,31 @@ export function calculateAiChatPanelWidth({ pointerClientX, viewportWidth }) {
 }
 
 
+export function collapseCompletedActivityPairs(activities) {
+    if (!Array.isArray(activities)) {
+        throw new Error('collapseCompletedActivityPairs requires an activity array');
+    }
+    const displayedActivities = [];
+    for (const activity of activities) {
+        if (!activity || typeof activity !== 'object' || Array.isArray(activity)) {
+            throw new Error('AI chat activity must be an object');
+        }
+        const previous = displayedActivities[displayedActivities.length - 1];
+        const completesPrevious = activity.status === 'completed'
+            && previous
+            && previous.status === 'started'
+            && previous.action === activity.action
+            && previous.label === activity.label;
+        if (completesPrevious) {
+            displayedActivities[displayedActivities.length - 1] = activity;
+        } else {
+            displayedActivities.push(activity);
+        }
+    }
+    return displayedActivities;
+}
+
+
 function validateAiStreamEvent(event) {
     if (!event || typeof event !== 'object' || Array.isArray(event)) {
         throw new Error('AI stream event must be an object');

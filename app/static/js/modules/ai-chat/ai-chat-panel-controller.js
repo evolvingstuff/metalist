@@ -10,6 +10,7 @@ import { AgentDebugView } from './ai-agent-debug-view.js';
 import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
+    collapseCompletedActivityPairs,
 } from './ai-chat-panel-service.js';
 import {
     queueMermaidDiagramRendering,
@@ -108,6 +109,7 @@ class AiChatPanelController {
         this._initialized = false;
         this._messages = [];
         this._expandedThinkingMessageIds = new Set();
+        this._showDiagnosticActivities = false;
         this._isBusy = false;
         this._thinkingStartedAtMs = 0;
         this._thinkingTimerId = 0;
@@ -117,6 +119,8 @@ class AiChatPanelController {
         this._saveSettings = null;
         this._getPanelWidth = null;
         this._savePanelWidth = null;
+        this._getDiagnosticsVisible = null;
+        this._saveDiagnosticsVisible = null;
         this._getComposerHeight = null;
         this._saveComposerHeight = null;
         this._composerHeightBeforePointerInteraction = 0;
@@ -140,6 +144,8 @@ class AiChatPanelController {
         saveSettings,
         getPanelWidth,
         savePanelWidth,
+        getDiagnosticsVisible,
+        saveDiagnosticsVisible,
         getComposerHeight,
         saveComposerHeight,
         setVisible,
@@ -160,6 +166,12 @@ class AiChatPanelController {
         if (typeof savePanelWidth !== 'function') {
             throw new Error('AiChatPanel.init requires savePanelWidth');
         }
+        if (typeof getDiagnosticsVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires getDiagnosticsVisible');
+        }
+        if (typeof saveDiagnosticsVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires saveDiagnosticsVisible');
+        }
         if (typeof getComposerHeight !== 'function') {
             throw new Error('AiChatPanel.init requires getComposerHeight');
         }
@@ -176,6 +188,8 @@ class AiChatPanelController {
         this._saveSettings = saveSettings;
         this._getPanelWidth = getPanelWidth;
         this._savePanelWidth = savePanelWidth;
+        this._getDiagnosticsVisible = getDiagnosticsVisible;
+        this._saveDiagnosticsVisible = saveDiagnosticsVisible;
         this._getComposerHeight = getComposerHeight;
         this._saveComposerHeight = saveComposerHeight;
         this._setVisible = setVisible;
@@ -190,6 +204,10 @@ class AiChatPanelController {
             model: requireElement('ai-chat-model', HTMLSelectElement),
             thinkingLevel: requireElement('ai-chat-thinking-level', HTMLSelectElement),
             status: requireElement('ai-chat-status', HTMLElement),
+            diagnosticsToggle: requireElement(
+                'ai-chat-diagnostics-toggle',
+                HTMLButtonElement,
+            ),
             clear: requireElement('ai-chat-clear', HTMLButtonElement),
             settings: requireElement('ai-chat-settings', HTMLButtonElement),
             close: requireElement('ai-chat-close', HTMLButtonElement),
@@ -199,9 +217,14 @@ class AiChatPanelController {
         if (savedComposerHeight !== null) {
             this._elements.input.style.height = `${savedComposerHeight}px`;
         }
+        this._showDiagnosticActivities = this._getDiagnosticsVisible();
+        if (typeof this._showDiagnosticActivities !== 'boolean') {
+            throw new Error('Stored AI chat diagnostic visibility must be boolean');
+        }
         this._bindEvents();
         await AgentDebugView.init();
         this._initialized = true;
+        this._syncDiagnosticActivityToggle();
         this._syncSettingsControls();
         const savedWidth = this._getPanelWidth();
         if (savedWidth !== null) {
@@ -243,6 +266,10 @@ class AiChatPanelController {
             void this._setVisible(!isVisible);
         });
         elements.settings.addEventListener('click', () => void this._openSettings());
+        elements.diagnosticsToggle.addEventListener(
+            'click',
+            () => void this._toggleDiagnosticActivities(),
+        );
         elements.clear.addEventListener('click', () => void this._clearSession());
         elements.resizer.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) {
@@ -293,6 +320,26 @@ class AiChatPanelController {
         this._elements.toggle.setAttribute('aria-pressed', String(isVisible));
         this._elements.toggle.setAttribute('aria-label', actionLabel);
         this._elements.toggle.title = actionLabel;
+    }
+
+    _syncDiagnosticActivityToggle() {
+        const actionLabel = this._showDiagnosticActivities
+            ? 'Hide diagnostic activity'
+            : 'Show diagnostic activity';
+        this._elements.diagnosticsToggle.setAttribute(
+            'aria-pressed',
+            String(this._showDiagnosticActivities),
+        );
+        this._elements.diagnosticsToggle.setAttribute('aria-label', actionLabel);
+        this._elements.diagnosticsToggle.title = actionLabel;
+    }
+
+    async _toggleDiagnosticActivities() {
+        const nextVisibility = !this._showDiagnosticActivities;
+        await this._saveDiagnosticsVisible(nextVisibility);
+        this._showDiagnosticActivities = nextVisibility;
+        this._syncDiagnosticActivityToggle();
+        this._render();
     }
 
     _handlePointerMove(event) {
@@ -863,8 +910,20 @@ class AiChatPanelController {
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
             article.dataset.messageId = message.id;
 
-            if (message.role === 'assistant' && message.activities.length > 0) {
+            if (
+                this._showDiagnosticActivities
+                && message.role === 'assistant'
+                && message.activities.length > 0
+            ) {
                 article.appendChild(this._renderActivities(message));
+            }
+            if (
+                !this._showDiagnosticActivities
+                && message.role === 'assistant'
+                && message.status === 'streaming'
+                && message.content === ''
+            ) {
+                article.appendChild(this._renderWorkingIndicator(message));
             }
 
             if (message.role === 'assistant' && message.thinking !== '') {
@@ -956,13 +1015,14 @@ class AiChatPanelController {
     _renderActivities(message) {
         const activities = document.createElement('div');
         activities.className = 'ai-chat-activities';
-        for (const [index, activity] of message.activities.entries()) {
+        const displayedActivities = collapseCompletedActivityPairs(message.activities);
+        for (const [index, activity] of displayedActivities.entries()) {
             const panel = document.createElement('div');
             panel.className = 'ai-chat-activity-panel';
             panel.dataset.action = activity.action;
             const isCurrent = message.status === 'streaming'
                 && message.content === ''
-                && index === message.activities.length - 1;
+                && index === displayedActivities.length - 1;
             panel.classList.toggle('is-current', isCurrent);
 
             const marker = document.createElement('span');
@@ -983,6 +1043,35 @@ class AiChatPanelController {
             activities.appendChild(panel);
         }
         return activities;
+    }
+
+    _renderWorkingIndicator(message) {
+        const indicator = document.createElement('div');
+        indicator.className = 'ai-chat-working-indicator';
+        indicator.setAttribute('role', 'status');
+
+        const label = document.createElement('span');
+        label.className = 'ai-chat-working-label';
+        const latestActivity = message.activities[message.activities.length - 1];
+        label.textContent = latestActivity
+            ? `Working · ${latestActivity.label}`
+            : 'Working';
+
+        const dots = document.createElement('span');
+        dots.className = 'ai-chat-thinking-dots';
+        dots.setAttribute('aria-hidden', 'true');
+        for (let index = 0; index < 3; index += 1) {
+            const dot = document.createElement('span');
+            dot.textContent = '.';
+            dots.appendChild(dot);
+        }
+
+        const elapsed = document.createElement('span');
+        elapsed.className = 'ai-chat-activity-elapsed';
+        elapsed.textContent = this._formatThinkingElapsed();
+        elapsed.setAttribute('aria-label', 'Elapsed time');
+        indicator.append(label, dots, elapsed);
+        return indicator;
     }
 }
 

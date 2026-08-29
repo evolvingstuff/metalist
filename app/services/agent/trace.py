@@ -10,19 +10,19 @@ from uuid import uuid4
 
 class AgentTraceStore:
     def __init__(self) -> None:
-        self._exact_detail_sessions: set[str] = set()
+        self._exact_detail_hidden_sessions: set[str] = set()
         self._latest_runs: dict[str, dict[str, object]] = {}
         self._lock = Lock()
 
     def reset(self) -> None:
         with self._lock:
-            self._exact_detail_sessions.clear()
+            self._exact_detail_hidden_sessions.clear()
             self._latest_runs.clear()
 
     def clear_session(self, *, session_key: str) -> None:
         self._validate_session_key(session_key)
         with self._lock:
-            self._exact_detail_sessions.discard(session_key)
+            self._exact_detail_hidden_sessions.discard(session_key)
             self._latest_runs.pop(session_key, None)
 
     def clear_trace(self, *, session_key: str) -> None:
@@ -36,14 +36,14 @@ class AgentTraceStore:
             raise TypeError("enabled must be a boolean")
         with self._lock:
             if enabled:
-                self._exact_detail_sessions.add(session_key)
+                self._exact_detail_hidden_sessions.discard(session_key)
             else:
-                self._exact_detail_sessions.discard(session_key)
+                self._exact_detail_hidden_sessions.add(session_key)
 
     def is_exact_details_enabled(self, *, session_key: str) -> bool:
         self._validate_session_key(session_key)
         with self._lock:
-            return session_key in self._exact_detail_sessions
+            return session_key not in self._exact_detail_hidden_sessions
 
     def start_run(self, *, session_key: str, model: str, user_message: str) -> str:
         self._validate_session_key(session_key)
@@ -115,7 +115,7 @@ class AgentTraceStore:
         with self._lock:
             run = self._latest_runs.get(session_key)
             return {
-                "enabled": session_key in self._exact_detail_sessions,
+                "enabled": session_key not in self._exact_detail_hidden_sessions,
                 "has_trace": run is not None,
                 "run": deepcopy(run) if run is not None else {},
             }
