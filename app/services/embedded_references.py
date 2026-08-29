@@ -615,22 +615,11 @@ def _render_link_body(
     redact_passwords: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
-    record = context.get_note(reference_note_id)
-    record_content = record.content
-    record_tags = record.tags
-    if not isinstance(record_content, str):
-        raise TypeError("linked note content must be a string")
-    if not isinstance(record_tags, str):
-        raise TypeError("linked note tags must be a string")
-    preview = _extract_first_line_preview(record_content)
-    if preview == "":
-        preview = "(empty note)"
-    is_password_preview = (
-        redact_passwords
-        and find_global_credential_tag(record_tags) == "password"
+    preview, is_password_preview = _resolve_note_reference_preview(
+        reference_note_id=reference_note_id,
+        context=context,
+        redact_passwords=redact_passwords,
     )
-    if is_password_preview:
-        preview = "X" * len(preview)
     preview_html = None
     if not is_password_preview:
         preview_html = render_standalone_link_title_html(preview)
@@ -653,6 +642,81 @@ def _render_link_body(
         '<span class="note-reference-link-icon" aria-hidden="true" title="Link to reference source">&#8599;</span>'
         f'<span class="note-reference-link-title">{preview_html}</span>'
         "</a>"
+    )
+
+
+def _resolve_note_reference_preview(
+    *,
+    reference_note_id: str,
+    context: EmbedRenderContext,
+    redact_passwords: bool,
+) -> tuple[str, bool]:
+    record = context.get_note(reference_note_id)
+    record_content = record.content
+    record_tags = record.tags
+    if not isinstance(record_content, str):
+        raise TypeError("linked note content must be a string")
+    if not isinstance(record_tags, str):
+        raise TypeError("linked note tags must be a string")
+    preview = _extract_first_line_preview(record_content)
+    if preview == "":
+        preview = "(empty note)"
+    is_password_preview = (
+        redact_passwords
+        and find_global_credential_tag(record_tags) == "password"
+    )
+    if is_password_preview:
+        preview = "X" * len(preview)
+    return preview, is_password_preview
+
+
+def get_note_reference_preview(
+    *,
+    reference_note_id: str,
+    context: EmbedRenderContext,
+    redact_passwords: bool,
+) -> str:
+    if not isinstance(reference_note_id, str) or reference_note_id == "":
+        raise TypeError("reference_note_id must be a non-empty string")
+    if not isinstance(redact_passwords, bool):
+        raise TypeError("redact_passwords must be a bool")
+    if not context.has_note(reference_note_id):
+        raise KeyError(f"Cannot preview missing note reference {reference_note_id}")
+    preview, _is_password_preview = _resolve_note_reference_preview(
+        reference_note_id=reference_note_id,
+        context=context,
+        redact_passwords=redact_passwords,
+    )
+    return preview
+
+
+def render_compact_note_reference_link(
+    *,
+    reference_note_id: str,
+    context: EmbedRenderContext,
+    redact_passwords: bool,
+) -> str:
+    if not isinstance(reference_note_id, str) or reference_note_id == "":
+        raise TypeError("reference_note_id must be a non-empty string")
+    if not isinstance(redact_passwords, bool):
+        raise TypeError("redact_passwords must be a bool")
+    if not context.has_note(reference_note_id):
+        raise KeyError(f"Cannot render missing note reference {reference_note_id}")
+    escaped_note_id = html.escape(reference_note_id, quote=True)
+    link_body = _render_link_body(
+        reference_note_id=reference_note_id,
+        context=context,
+        static_export=False,
+        redact_passwords=redact_passwords,
+    )
+    return (
+        '<span class="ai-chat-note-reference note-reference-block '
+        'note-reference-link-mode note-reference-note" '
+        f'data-ref-note-id="{escaped_note_id}">'
+        '<span class="note-reference-content">'
+        f"{link_body}"
+        "</span>"
+        "</span>"
     )
 
 

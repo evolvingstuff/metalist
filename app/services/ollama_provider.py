@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from collections.abc import Callable
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
@@ -19,6 +20,22 @@ _ALLOWED_THINKING_LEVELS = frozenset({"off", "low", "medium", "high"})
 
 class OllamaProviderError(RuntimeError):
     """An expected Ollama connection or protocol failure."""
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaModelContext:
+    model: str
+    maximum_tokens: int
+    loaded_tokens: int
+
+    def __post_init__(self) -> None:
+        validate_ollama_model(self.model)
+        for label, value in (
+            ("maximum_tokens", self.maximum_tokens),
+            ("loaded_tokens", self.loaded_tokens),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError(f"Ollama model context {label} must be positive")
 
 
 def normalize_ollama_base_url(base_url: str) -> str:
@@ -128,6 +145,122 @@ class OllamaProvider:
                 raise OllamaProviderError("Ollama model record is missing model name")
             models.append(validate_ollama_model(model))
         return sorted(set(models), key=str.casefold)
+
+    async def inspect_model_context(
+        self,
+        *,
+        base_url: str,
+        model: str,
+    ) -> OllamaModelContext:
+        normalized_model = validate_ollama_model(model)
+        show_url = _api_url(base_url=base_url, endpoint="/show")
+        preload_url = _api_url(base_url=base_url, endpoint="/generate")
+        running_url = _api_url(base_url=base_url, endpoint="/ps")
+        try:
+            async with self._client() as client:
+                show_response = await client.post(
+                    show_url,
+                    json={"model": normalized_model},
+                )
+                show_response.raise_for_status()
+                preload_response = await client.post(
+                    preload_url,
+                    json={"model": normalized_model, "stream": False},
+                )
+                preload_response.raise_for_status()
+                running_response = await client.get(running_url)
+                running_response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise OllamaProviderError("Could not inspect Ollama model context") from exc
+
+        show_payload = self._parse_json_object(
+            response_text=show_response.text,
+            label="model details",
+        )
+        running_payload = self._parse_json_object(
+            response_text=running_response.text,
+            label="running-model list",
+        )
+        maximum_tokens = self._parse_maximum_context_tokens(show_payload)
+        loaded_tokens = self._parse_loaded_context_tokens(
+            payload=running_payload,
+            model=normalized_model,
+        )
+        return OllamaModelContext(
+            model=normalized_model,
+            maximum_tokens=maximum_tokens,
+            loaded_tokens=loaded_tokens,
+        )
+
+    @staticmethod
+    def _parse_json_object(
+        *,
+        response_text: str,
+        label: str,
+    ) -> dict[str, object]:
+        try:
+            payload = json.loads(response_text)
+        except json.JSONDecodeError as exc:
+            raise OllamaProviderError(f"Ollama {label} response is invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise OllamaProviderError(f"Ollama {label} response must be an object")
+        return payload
+
+    @staticmethod
+    def _parse_maximum_context_tokens(payload: dict[str, object]) -> int:
+        if "model_info" not in payload:
+            raise OllamaProviderError("Ollama model details omit model_info")
+        model_info = payload["model_info"]
+        if not isinstance(model_info, dict):
+            raise OllamaProviderError("Ollama model details omit model_info")
+        context_values = [
+            value
+            for key, value in model_info.items()
+            if isinstance(key, str)
+            and key.endswith(".context_length")
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and value > 0
+        ]
+        if len(context_values) == 0:
+            raise OllamaProviderError("Ollama model details omit context length")
+        return max(context_values)
+
+    @staticmethod
+    def _parse_loaded_context_tokens(
+        *,
+        payload: dict[str, object],
+        model: str,
+    ) -> int:
+        if "models" not in payload:
+            raise OllamaProviderError("Ollama running-model list is malformed")
+        records = payload["models"]
+        if not isinstance(records, list):
+            raise OllamaProviderError("Ollama running-model list is malformed")
+        normalized_model = model.casefold()
+        matching_records: list[dict[str, object]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                raise OllamaProviderError("Ollama running-model record is malformed")
+            identifiers = {
+                value.casefold()
+                for field_name in ("name", "model")
+                if isinstance((value := record.get(field_name)), str)
+            }
+            if normalized_model in identifiers:
+                matching_records.append(record)
+        if len(matching_records) != 1:
+            raise OllamaProviderError(
+                "Ollama did not report exactly one loaded selected model"
+            )
+        loaded_tokens = matching_records[0].get("context_length")
+        if (
+            not isinstance(loaded_tokens, int)
+            or isinstance(loaded_tokens, bool)
+            or loaded_tokens < 1
+        ):
+            raise OllamaProviderError("Ollama loaded context length is invalid")
+        return loaded_tokens
 
     async def stream_pull(
         self,

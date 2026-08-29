@@ -313,6 +313,22 @@ class MetaTagConfig:
     scoped_renderers: Mapping[Tuple[str, int], str]
 
 
+def extract_note_text_for_agent(*, content_html: str, tags: str) -> tuple[str, bool]:
+    """Return disclosure-safe plain text and whether content was withheld.
+
+    Agent retrieval must never expose the value of a note tagged ``@password``.
+    Search-redacted notes are excluded by the agent search tool before this helper
+    is called; this function enforces the independent credential boundary.
+    """
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    if _find_global_credential_tag(tags) == "password":
+        return "[REDACTED: @password]", True
+    return strip_html(content_html).strip(), False
+
+
 def format_note_content_for_view(*, content_html: str, tags: str, redact_passwords: bool) -> str:
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")

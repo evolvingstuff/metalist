@@ -6,6 +6,7 @@ import pytest
 
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ollama_provider import OllamaProvider
+from app.services.ollama_provider import OllamaModelContext
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import resolve_ollama_think_value
 
@@ -37,8 +38,13 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         action="model_request",
         status="started",
         label="Waiting for Ollama · attempt 1 of 2",
+        approx_input_tokens=1_234,
     )
-    store.complete_turn(session_key="session-a", turn_id=first_turn)
+    store.complete_turn(
+        session_key="session-a",
+        turn_id=first_turn,
+        final_content="4",
+    )
 
     session_a = store.snapshot(session_key="session-a")
     session_b = store.snapshot(session_key="session-b")
@@ -52,6 +58,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
             "action": "model_request",
             "status": "started",
             "label": "Waiting for Ollama · attempt 1 of 2",
+            "approx_input_tokens": 1_234,
         }
     ]
     assert session_a["messages"][0]["activities"] == []
@@ -84,14 +91,55 @@ def test_chat_store_builds_ollama_history_without_thinking_trace() -> None:
         action="retry",
         status="started",
         label="Structured output invalid (ValidationError) · Instructor will retry",
+        approx_input_tokens=1_567,
     )
-    store.complete_turn(session_key="session-a", turn_id=turn_id)
+    store.complete_turn(
+        session_key="session-a",
+        turn_id=turn_id,
+        final_content="Hi there",
+    )
 
     history = store.provider_messages(session_key="session-a")
 
     assert history == [
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hi there"},
+    ]
+
+
+def test_chat_store_removes_prior_note_citations_from_provider_history() -> None:
+    note_id = "75193dae-9e05-4a4e-94bf-417ffde18957"
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-a",
+        user_content="Summarize my testosterone notes",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+    store.append_delta(
+        session_key="session-a",
+        turn_id=turn_id,
+        delta_kind="content",
+        text=f"Sleep can affect testosterone. [[{note_id}]]",
+    )
+    store.complete_turn(
+        session_key="session-a",
+        turn_id=turn_id,
+        final_content=f"Sleep can affect testosterone. [[{note_id}]]",
+    )
+    store.start_turn(
+        session_key="session-a",
+        user_content="Please describe Bayes' theorem briefly",
+        provider="ollama",
+        model="qwen3:latest",
+    )
+
+    history = store.provider_messages(session_key="session-a")
+
+    assert history == [
+        {"role": "user", "content": "Summarize my testosterone notes"},
+        {"role": "assistant", "content": "Sleep can affect testosterone."},
+        {"role": "user", "content": "Please describe Bayes' theorem briefly"},
     ]
 
 
@@ -183,6 +231,66 @@ def test_ollama_provider_lists_models_from_configured_host() -> None:
     models = asyncio.run(provider.list_models(base_url="http://127.0.0.1:11434"))
 
     assert models == ["gemma3:latest", "qwen3:8b"]
+
+
+def test_ollama_provider_preloads_model_and_reports_active_context() -> None:
+    requested_urls: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if request.url.path == "/api/show":
+            assert request.method == "POST"
+            assert json.loads(request.content) == {"model": "qwen2.5:7b-instruct"}
+            return httpx.Response(
+                200,
+                json={
+                    "model_info": {
+                        "qwen2.context_length": 32768,
+                        "qwen2.embedding_length": 3584,
+                    }
+                },
+            )
+        if request.url.path == "/api/generate":
+            assert request.method == "POST"
+            assert json.loads(request.content) == {
+                "model": "qwen2.5:7b-instruct",
+                "stream": False,
+            }
+            return httpx.Response(200, json={"done": True, "response": ""})
+        assert request.url.path == "/api/ps"
+        assert request.method == "GET"
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "qwen2.5:7b-instruct",
+                        "model": "qwen2.5:7b-instruct",
+                        "context_length": 4096,
+                    }
+                ]
+            },
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+
+    model_context = asyncio.run(
+        provider.inspect_model_context(
+            base_url="http://127.0.0.1:11434",
+            model="qwen2.5:7b-instruct",
+        )
+    )
+
+    assert model_context == OllamaModelContext(
+        model="qwen2.5:7b-instruct",
+        maximum_tokens=32768,
+        loaded_tokens=4096,
+    )
+    assert requested_urls == [
+        "http://127.0.0.1:11434/api/show",
+        "http://127.0.0.1:11434/api/generate",
+        "http://127.0.0.1:11434/api/ps",
+    ]
 
 
 def test_ollama_provider_streams_model_pull_progress() -> None:

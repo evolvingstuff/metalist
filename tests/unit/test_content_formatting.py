@@ -5,6 +5,7 @@ from app.db.link_titles_sql import insert_link_title_row
 from app.db.schema import initialize_schema
 from app.services.link_titles import link_title_store
 from app.services.content_formatting import find_list_style
+from app.services.content_formatting import extract_note_text_for_agent
 from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
 from app.services.content_formatting import remove_added_style_tags
 from app.services.content_formatting import remove_formatting_scope_delimiters
@@ -492,6 +493,17 @@ def test_format_note_content_for_view_password_meta_redacts_underlying_value() -
     assert 'data-copy-value="XXXXXX"' in rendered
     assert ">XXXXXX<" in rendered
     assert "sekret" not in rendered
+
+
+def test_extract_note_text_for_agent_withholds_password_even_with_renderer_tag() -> None:
+    content_text, is_redacted = extract_note_text_for_agent(
+        content_html="<div>sekret</div>",
+        tags="@password @markdown",
+    )
+
+    assert content_text == "[REDACTED: @password]"
+    assert is_redacted is True
+    assert "sekret" not in content_text
 
 
 def test_format_note_content_for_view_email_meta_renders_mailto_link() -> None:

@@ -30,6 +30,7 @@ PY_ALLOWED_EXCEPTION_NAMES = (
     "httpx.HTTPError",
     "json.JSONDecodeError",
     "OllamaProviderError",
+    "ManagedOllamaRuntimeError",
     "asyncio.CancelledError",
     "StructuredInferenceError",
     "InstructorRetryException",

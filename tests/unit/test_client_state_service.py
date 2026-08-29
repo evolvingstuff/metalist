@@ -144,9 +144,13 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.ollama_model": "qwen3:8b",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
+        "pref.ai.retrieval.max_note_characters": "8000",
+        "pref.ai.retrieval.max_page_characters": "30000",
+        "pref.ai.retrieval.max_notes_per_page": "5",
         "pref.ai.prompt.system": "Custom MetaList agent",
         "pref.ai.prompt.final_response": "FINAL\n{basis}",
         "pref.ai.prompt.tool_result": "TOOL {action_name}\n{payload_json}",
+        "pref.ai.skill.search_notes": "Custom search skill",
         "pref.ai.chat_width": "640",
         "pref.ai.composer_height": "180",
     }
@@ -212,11 +216,38 @@ def test_save_client_preferences_rejects_invalid_ai_diagnostic_visibility(
 @pytest.mark.parametrize(
     ("key", "value"),
     [
+        ("pref.ai.retrieval.max_note_characters", "499"),
+        ("pref.ai.retrieval.max_note_characters", "10001"),
+        ("pref.ai.retrieval.max_note_characters", "08000"),
+        ("pref.ai.retrieval.max_page_characters", "4999"),
+        ("pref.ai.retrieval.max_page_characters", "100001"),
+        ("pref.ai.retrieval.max_page_characters", "020000"),
+        ("pref.ai.retrieval.max_notes_per_page", "0"),
+        ("pref.ai.retrieval.max_notes_per_page", "101"),
+        ("pref.ai.retrieval.max_notes_per_page", "5.0"),
+    ],
+)
+def test_save_client_preferences_rejects_invalid_agent_retrieval_limits(
+    memory_settings_db,
+    key,
+    value,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(ValueError):
+        save_client_preferences(preferences={key: value}, token="")
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
         ("pref.ai.prompt.system", "   "),
         ("pref.ai.prompt.final_response", "Missing basis"),
         ("pref.ai.prompt.final_response", "{basis} {unknown}"),
         ("pref.ai.prompt.tool_result", "{action_name}"),
         ("pref.ai.prompt.tool_result", "{action_name} {payload_json} {unknown}"),
+        ("pref.ai.skill.search_notes", "   "),
+        ("pref.ai.skill.search_notes", "x" * 32_001),
     ],
 )
 def test_save_client_preferences_rejects_invalid_agent_prompts(

@@ -30,7 +30,12 @@ import {
     renderShellError,
     renderShellSnapshot,
 } from '../services/shell-output-service.js';
-import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
+import {
+    navigateBackFromReferenceContext,
+    openReferenceInCurrentTab,
+    openReferenceInNewTab,
+    openReferenceQueryInNewTab,
+} from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -871,6 +876,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleAiChatOpenAllReferencesClick(event)) {
+        return;
+    }
+
     if (handleFileReferenceClick(event)) {
         return;
     }
@@ -1333,6 +1342,39 @@ function getReferenceContainerFromEvent(event, selector) {
         throw new Error('Reference interaction missing .note-reference-block container');
     }
     return container;
+}
+
+function handleAiChatOpenAllReferencesClick(event) {
+    if (!event.target) {
+        throw new Error('AI reference collection click missing target element');
+    }
+    const link = event.target.closest('.ai-chat-open-all-references');
+    if (!link) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('AI reference collection click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const referenceQuery = link.dataset.refQuery;
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('AI reference collection link missing reference query');
+    }
+
+    void CommandGate.run('mouse.open_reference_collection_in_new_tab', async () => {
+        await openReferenceQueryInNewTab(referenceQuery);
+    });
+    return true;
 }
 
 function handleReferenceLinkClick(event) {

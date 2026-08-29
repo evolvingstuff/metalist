@@ -10,27 +10,36 @@ from typing import Annotated, Any, Literal, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat import ai_chat_store
+from app.services.ai_chat_rendering import find_note_citation_ids
+from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
+from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompt_settings import resolve_agent_prompt_set
+from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.runtime import AgentRuntime
+from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
+from app.services.agent.skill_settings import resolve_agent_skill_set
+from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
 from app.services.client_state_service import load_client_preferences
 from app.services.markdown_rendering import render_markdown_to_html
+from app.services.managed_ollama_runtime import ManagedOllamaRuntimeError
+from app.services.managed_ollama_runtime import managed_ollama_runtime
+from app.services.note_store import store as note_store
 from app.services.ollama_provider import OllamaProviderError
-from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import ollama_provider
 from app.services.ollama_provider import resolve_ollama_think_value
 from app.services.ollama_provider import validate_ollama_model
@@ -40,8 +49,9 @@ from app.services.tokens import token_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
+agent_context_builder = AgentContextBuilder()
 agent_runtime = AgentRuntime(
-    context_builder=AgentContextBuilder(),
+    context_builder=agent_context_builder,
     inference=OllamaInferenceAdapter(provider=ollama_provider),
     model_policy=SingleModelPolicy(),
     permission_policy=AgentPermissionPolicy(),
@@ -50,35 +60,51 @@ agent_runtime = AgentRuntime(
 )
 
 
-class AiModelsRequest(BaseModel):
-    provider: Literal["ollama"]
-    base_url: str
+def _event_reference_note_ids(event: dict[str, object]) -> frozenset[str]:
+    raw_note_ids = event["reference_note_ids"]
+    if not isinstance(raw_note_ids, list):
+        raise RuntimeError("Agent reference_note_ids event field must be a list")
+    note_ids: set[str] = set()
+    for note_id in raw_note_ids:
+        if not isinstance(note_id, str) or note_id == "":
+            raise RuntimeError("Agent reference note id must be non-empty")
+        if note_id in note_ids:
+            raise RuntimeError("Agent reference_note_ids event field has duplicates")
+        note_ids.add(note_id)
+    return frozenset(note_ids)
 
-    @field_validator("base_url")
-    @classmethod
-    def validate_base_url(cls, value: str) -> str:
-        return normalize_ollama_base_url(value)
+
+class AiModelsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ollama"]
 
 
 class AiModelsResponse(BaseModel):
     models: list[str]
 
 
+class AiSkillDefaultResponse(BaseModel):
+    skill_id: str
+    title: str
+    description: str
+    trigger_action: str
+    preference_key: str
+    content: str
+
+
 class AiPromptDefaultsResponse(BaseModel):
     system_prompt: str
     final_response_prompt: str
     tool_result_prompt: str
+    skills: list[AiSkillDefaultResponse]
 
 
 class AiModelPullRequest(BaseModel):
-    provider: Literal["ollama"]
-    base_url: str
-    model: str
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("base_url")
-    @classmethod
-    def validate_base_url(cls, value: str) -> str:
-        return normalize_ollama_base_url(value)
+    provider: Literal["ollama"]
+    model: str
 
     @field_validator("model")
     @classmethod
@@ -87,16 +113,12 @@ class AiModelPullRequest(BaseModel):
 
 
 class AiChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     provider: Literal["ollama"]
-    base_url: str
     model: str
     thinking_level: Literal["off", "low", "medium", "high"]
     message: str = Field(..., max_length=32_000)
-
-    @field_validator("base_url")
-    @classmethod
-    def validate_base_url(cls, value: str) -> str:
-        return normalize_ollama_base_url(value)
 
     @field_validator("model")
     @classmethod
@@ -124,6 +146,7 @@ class AiChatActivity(BaseModel):
     action: str
     status: Literal["started", "completed"]
     label: str
+    approx_input_tokens: int = Field(..., ge=1)
 
 
 class AiChatMessage(BaseModel):
@@ -194,8 +217,9 @@ async def list_ai_models(
 ) -> AiModelsResponse:
     del token
     try:
-        models = await ollama_provider.list_models(base_url=payload.base_url)
-    except OllamaProviderError as exc:
+        runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
+        models = await ollama_provider.list_models(base_url=runtime_info.base_url)
+    except (ManagedOllamaRuntimeError, OllamaProviderError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return AiModelsResponse(models=models)
 
@@ -211,6 +235,17 @@ def get_ai_prompt_defaults(
         system_prompt=DEFAULT_AGENT_PROMPTS.system_prompt,
         final_response_prompt=DEFAULT_AGENT_PROMPTS.final_response_prompt,
         tool_result_prompt=DEFAULT_AGENT_PROMPTS.tool_result_prompt,
+        skills=[
+            AiSkillDefaultResponse(
+                skill_id=skill.skill_id,
+                title=skill.title,
+                description=skill.description,
+                trigger_action=skill.trigger_action,
+                preference_key=skill.preference_key,
+                content=skill.content,
+            )
+            for skill in DEFAULT_AGENT_SKILLS.skills
+        ],
     )
 
 
@@ -224,13 +259,14 @@ def pull_ai_model(
 
     async def stream_events() -> AsyncIterator[str]:
         try:
+            runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
             async for event in ollama_provider.stream_pull(
-                base_url=payload.base_url,
+                base_url=runtime_info.base_url,
                 model=payload.model,
             ):
                 yield f"{json.dumps(event, separators=(',', ':'))}\n"
         # lint: allow-PY001 rationale="pull errors must be delivered after response headers are sent"
-        except OllamaProviderError as exc:
+        except (ManagedOllamaRuntimeError, OllamaProviderError) as exc:
             error_event = {"type": "error", "message": str(exc)}
             yield f"{json.dumps(error_event, separators=(',', ':'))}\n"
 
@@ -261,7 +297,15 @@ def get_ai_session(
         rendered_content = ""
         rendered_thinking = ""
         if message["role"] == "assistant" and message["content"] != "":
-            rendered_content = render_markdown_to_html(message["content"])
+            allowed_note_ids = find_note_citation_ids(
+                message["content"],
+                notes=note_store,
+            )
+            rendered_content = render_ai_chat_markdown_to_html(
+                message["content"],
+                notes=note_store,
+                allowed_note_ids=allowed_note_ids,
+            )
         if message["role"] == "assistant" and message["thinking"] != "":
             rendered_thinking = render_markdown_to_html(message["thinking"])
         messages.append(
@@ -282,6 +326,7 @@ def get_ai_session(
                         action=activity["action"],
                         status=activity["status"],
                         label=activity["label"],
+                        approx_input_tokens=activity["approx_input_tokens"],
                     )
                     for index, activity in enumerate(activities, start=1)
                 ],
@@ -392,9 +437,10 @@ def stream_ai_chat(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
-    prompts = resolve_agent_prompt_set(
-        preferences=load_client_preferences(token=token),
-    )
+    preferences = load_client_preferences(token=token)
+    prompts = resolve_agent_prompt_set(preferences=preferences)
+    skills = resolve_agent_skill_set(preferences=preferences)
+    retrieval_settings = resolve_agent_retrieval_settings(preferences=preferences)
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,
         user_content=payload.message,
@@ -402,18 +448,64 @@ def stream_ai_chat(
         model=payload.model,
     )
     provider_messages = ai_chat_store.provider_messages(session_key=session_key)
+    initial_messages = agent_context_builder.build_initial_messages(
+        canonical_messages=provider_messages,
+        prompts=prompts,
+    )
+    initial_approx_input_tokens = estimate_input_tokens(initial_messages)
 
     async def stream_events() -> AsyncIterator[str]:
         accumulated_thinking = ""
         accumulated_content = ""
+        reference_note_ids = frozenset()
+        has_reference_scope = False
+        latest_approx_input_tokens = initial_approx_input_tokens
         try:
+            runtime_started_event = {
+                "type": "action_status",
+                "action": "ollama_runtime",
+                "status": "started",
+                "label": "Starting MetaList-managed Ollama · 32,768-token context",
+                "approx_input_tokens": latest_approx_input_tokens,
+            }
+            ai_chat_store.append_activity(
+                session_key=session_key,
+                turn_id=turn_id,
+                action=runtime_started_event["action"],
+                status=runtime_started_event["status"],
+                label=runtime_started_event["label"],
+                approx_input_tokens=runtime_started_event["approx_input_tokens"],
+            )
+            yield f"{json.dumps(runtime_started_event, separators=(',', ':'))}\n"
+            runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
+            runtime_ready_event = {
+                "type": "action_status",
+                "action": "ollama_runtime",
+                "status": "completed",
+                "label": (
+                    "MetaList-managed Ollama ready · "
+                    f"{runtime_info.context_tokens:,}-token context"
+                ),
+                "approx_input_tokens": latest_approx_input_tokens,
+            }
+            ai_chat_store.append_activity(
+                session_key=session_key,
+                turn_id=turn_id,
+                action=runtime_ready_event["action"],
+                status=runtime_ready_event["status"],
+                label=runtime_ready_event["label"],
+                approx_input_tokens=runtime_ready_event["approx_input_tokens"],
+            )
+            yield f"{json.dumps(runtime_ready_event, separators=(',', ':'))}\n"
             async for event in agent_runtime.stream(
                 session_key=session_key,
-                base_url=payload.base_url,
+                base_url=runtime_info.base_url,
                 selected_model=payload.model,
                 thinking_level=payload.thinking_level,
                 canonical_messages=provider_messages,
                 prompts=prompts,
+                skills=skills,
+                retrieval_settings=retrieval_settings,
             ):
                 event_type = event["type"]
                 outgoing_event = event
@@ -430,6 +522,16 @@ def stream_ai_chat(
                         "rendered_text": render_markdown_to_html(accumulated_thinking),
                     }
                 elif event_type == "content_delta":
+                    event_reference_note_ids = _event_reference_note_ids(event)
+                    if (
+                        has_reference_scope
+                        and event_reference_note_ids != reference_note_ids
+                    ):
+                        raise RuntimeError(
+                            "Agent reference scope changed during final response"
+                        )
+                    reference_note_ids = event_reference_note_ids
+                    has_reference_scope = True
                     ai_chat_store.append_delta(
                         session_key=session_key,
                         turn_id=turn_id,
@@ -439,26 +541,65 @@ def stream_ai_chat(
                     accumulated_content += event["text"]
                     outgoing_event = {
                         **event,
-                        "rendered_text": render_markdown_to_html(accumulated_content),
+                        "rendered_text": render_ai_chat_markdown_to_html(
+                            accumulated_content,
+                            notes=note_store,
+                            allowed_note_ids=reference_note_ids,
+                        ),
                     }
                 elif event_type == "action_status":
+                    event_approx_input_tokens = event["approx_input_tokens"]
+                    if (
+                        not isinstance(event_approx_input_tokens, int)
+                        or isinstance(event_approx_input_tokens, bool)
+                        or event_approx_input_tokens < 1
+                    ):
+                        raise RuntimeError(
+                            "Agent action status approximate input tokens are invalid"
+                        )
+                    latest_approx_input_tokens = event_approx_input_tokens
                     ai_chat_store.append_activity(
                         session_key=session_key,
                         turn_id=turn_id,
                         action=event["action"],
                         status=event["status"],
                         label=event["label"],
+                        approx_input_tokens=event_approx_input_tokens,
                     )
                 elif event_type == "done":
+                    event_reference_note_ids = _event_reference_note_ids(event)
+                    if not has_reference_scope:
+                        raise RuntimeError(
+                            "Agent final response completed without a reference scope"
+                        )
+                    if event_reference_note_ids != reference_note_ids:
+                        raise RuntimeError(
+                            "Agent completion reference scope does not match content"
+                        )
+                    final_content = sanitize_ai_chat_markdown_citations(
+                        accumulated_content,
+                        notes=note_store,
+                        allowed_note_ids=reference_note_ids,
+                    )
                     ai_chat_store.complete_turn(
                         session_key=session_key,
                         turn_id=turn_id,
+                        final_content=final_content,
                     )
+                    outgoing_event = {
+                        **event,
+                        "content": final_content,
+                        "rendered_content": render_ai_chat_markdown_to_html(
+                            final_content,
+                            notes=note_store,
+                            allowed_note_ids=reference_note_ids,
+                        ),
+                    }
                 else:
                     raise RuntimeError(f"Unknown agent stream event type: {event_type}")
                 yield f"{json.dumps(outgoing_event, separators=(',', ':'))}\n"
         # lint: allow-PY001 rationale="stream errors must be delivered after response headers are sent"
-        except (AgentExecutionError, OllamaProviderError) as exc:
+        except (AgentExecutionError, ManagedOllamaRuntimeError, OllamaProviderError) as exc:
             error_message = str(exc)
             ai_chat_store.fail_turn(
                 session_key=session_key,
@@ -468,10 +609,18 @@ def stream_ai_chat(
             event = {"type": "error", "message": error_message}
             yield f"{json.dumps(event, separators=(',', ':'))}\n"
         except asyncio.CancelledError:
+            ai_chat_store.append_activity(
+                session_key=session_key,
+                turn_id=turn_id,
+                action="cancel",
+                status="completed",
+                label="Cancelled by user",
+                approx_input_tokens=latest_approx_input_tokens,
+            )
             ai_chat_store.fail_turn(
                 session_key=session_key,
                 turn_id=turn_id,
-                error="Response interrupted",
+                error="Cancelled by user",
             )
             raise
         # lint: allow-PY001 rationale="mark the streamed turn failed before re-raising internal errors"

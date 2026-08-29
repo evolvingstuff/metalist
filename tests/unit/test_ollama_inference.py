@@ -5,7 +5,7 @@ import httpx
 import instructor
 from openai import AsyncOpenAI
 
-from app.services.agent.actions import AgentActionEnvelope
+from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
 
@@ -37,8 +37,8 @@ class FakeInstructorClient:
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "AgentActionEnvelope",
-                    "schema": AgentActionEnvelope.model_json_schema(),
+                    "name": "AgentRouteEnvelope",
+                    "schema": AgentRouteEnvelope.model_json_schema(),
                 },
             },
             extra_body=kwargs["extra_body"],
@@ -54,8 +54,8 @@ class FakeInstructorClient:
                 "response_format": {
                     "type": "json_schema",
                     "json_schema": {
-                        "name": "AgentActionEnvelope",
-                        "schema": AgentActionEnvelope.model_json_schema(),
+                        "name": "AgentRouteEnvelope",
+                        "schema": AgentRouteEnvelope.model_json_schema(),
                     },
                 },
                 "stream": False,
@@ -73,7 +73,7 @@ class FakeInstructorClient:
                         "message": {
                             "role": "assistant",
                             "content": (
-                                '{"kind":"respond","search_query":"","note_ids":[],'
+                                '{"kind":"respond","note_ids":[],'
                                 '"reason":"Reply to the greeting."}'
                             ),
                             "reasoning": "A greeting needs no note tools.",
@@ -93,7 +93,6 @@ class FakeInstructorClient:
         response_model = kwargs["response_model"]
         parsed = response_model(
             kind="respond",
-            search_query="",
             note_ids=[],
             reason="Reply to the greeting.",
         )
@@ -127,7 +126,7 @@ def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
                 {"role": "system", "content": "Choose one action."},
                 {"role": "user", "content": "Are you there?"},
             ],
-            response_model=AgentActionEnvelope,
+            response_model=AgentRouteEnvelope,
             on_progress=progress_events.append,
         )
     )
@@ -138,13 +137,13 @@ def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
     assert openai_client.max_retries == 0
     assert factory_call["model"] == "qwen2.5:7b-instruct"
     assert factory_call["mode"] is instructor.Mode.JSON_SCHEMA
-    assert fake_client.create_kwargs["response_model"] is AgentActionEnvelope
+    assert fake_client.create_kwargs["response_model"] is AgentRouteEnvelope
     assert fake_client.create_kwargs["max_retries"] == 1
     assert fake_client.create_kwargs["extra_body"] == {"think": False}
     assert fake_client.create_kwargs["temperature"] == 0
     assert fake_client.is_closed is True
     assert response.content == (
-        '{"kind":"respond","search_query":"","note_ids":[],'
+        '{"kind":"respond","note_ids":[],'
         '"reason":"Reply to the greeting."}'
     )
     assert response.thinking == "A greeting needs no note tools."
@@ -175,8 +174,8 @@ def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
     assert wire_request["body"]["response_format"] == {
         "type": "json_schema",
         "json_schema": {
-            "name": "AgentActionEnvelope",
-            "schema": AgentActionEnvelope.model_json_schema(),
+            "name": "AgentRouteEnvelope",
+            "schema": AgentRouteEnvelope.model_json_schema(),
         },
     }
     assert "extra_body" not in wire_request["body"]

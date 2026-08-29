@@ -7,6 +7,7 @@ import json
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.prompt_settings import AgentPromptSet
+from app.services.agent.skill_settings import AgentSkill
 from app.services.agent.tools import ToolExecutionResult
 
 
@@ -21,6 +22,27 @@ class AgentContextBuilder:
         return [
             {"role": "system", "content": prompts.system_prompt},
             *[dict(message) for message in canonical_messages],
+        ]
+
+    def activate_skill(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        skill: AgentSkill,
+    ) -> list[dict[str, str]]:
+        if not isinstance(messages, list) or len(messages) < 2:
+            raise ValueError("Skill activation requires an existing agent context")
+        if messages[0].get("role") != "system":
+            raise ValueError("Skill activation requires the base system prompt first")
+        skill_message = (
+            f"ACTIVE_SKILL {skill.skill_id}\n"
+            f"Trigger action: {skill.trigger_action}\n\n"
+            f"{skill.content}"
+        )
+        return [
+            dict(messages[0]),
+            {"role": "system", "content": skill_message},
+            *[dict(message) for message in messages[1:]],
         ]
 
     def append_action(

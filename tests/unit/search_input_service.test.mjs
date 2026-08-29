@@ -12,9 +12,17 @@ test('untagged view visually hides the preserved tab query', () => {
     assert.equal(resolveSearchInputDisplayQuery('journal', false, false), 'journal');
 });
 
-test('reference source view visually hides its internal UUID query', () => {
+test('reference source view visually hides its internal UUID or UUID collection query', () => {
     assert.equal(
         resolveSearchInputDisplayQuery('f81d4fae-7dec-11d0-a765-00a0c91e6bf6', false, true),
+        '',
+    );
+    assert.equal(
+        resolveSearchInputDisplayQuery(
+            'f81d4fae-7dec-11d0-a765-00a0c91e6bf6 OR 75ee44d0-7aee-49a4-935a-a059b02c4bb4',
+            false,
+            true,
+        ),
         '',
     );
     assert.equal(resolveSearchInputDisplayQuery('journal', false, false), 'journal');

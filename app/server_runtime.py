@@ -36,6 +36,7 @@ _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
 _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
 _DEFAULT_NAMESPACE_RENAME_JOBS_DIRECTORY_NAME = "namespace-rename-jobs"
 _DEFAULT_LOGS_DIRECTORY_NAME = "logs"
+_DEFAULT_MANAGED_RUNTIME_DIRECTORY_NAME = "runtime"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
@@ -134,6 +135,10 @@ def resolve_namespace_rename_jobs_directory() -> Path:
 
 def resolve_runtime_logs_directory() -> Path:
     return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_LOGS_DIRECTORY_NAME
+
+
+def resolve_managed_runtime_directory() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_MANAGED_RUNTIME_DIRECTORY_NAME
 
 
 def resolve_namespace_directory(*, namespace: str) -> Path:

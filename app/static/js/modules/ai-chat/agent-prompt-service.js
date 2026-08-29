@@ -29,6 +29,14 @@ function inspectPromptText(label, value) {
 }
 
 
+function requireNonBlankString(label, value) {
+    if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error(`${label} must be a non-blank string`);
+    }
+    return value;
+}
+
+
 function parseTemplateFields(label, value) {
     const fields = [];
     for (let index = 0; index < value.length; index += 1) {
@@ -134,13 +142,97 @@ export function validateAgentPromptSet(settings) {
 }
 
 
+export function inspectAgentSkillSet(skills) {
+    if (!Array.isArray(skills) || skills.length === 0) {
+        throw new Error('Agent skills must be a non-empty array');
+    }
+    const normalizedSkills = skills.map((skill, index) => {
+        if (!skill || typeof skill !== 'object' || Array.isArray(skill)) {
+            throw new Error(`Agent skill ${index + 1} must be an object`);
+        }
+        const title = requireNonBlankString(`Agent skill ${index + 1} title`, skill.title);
+        return {
+            skillId: requireNonBlankString(`Agent skill ${index + 1} id`, skill.skillId),
+            title,
+            description: requireNonBlankString(
+                `Agent skill ${index + 1} description`,
+                skill.description,
+            ),
+            triggerAction: requireNonBlankString(
+                `Agent skill ${index + 1} trigger action`,
+                skill.triggerAction,
+            ),
+            preferenceKey: requireNonBlankString(
+                `Agent skill ${index + 1} preference key`,
+                skill.preferenceKey,
+            ),
+            content: skill.content,
+        };
+    });
+    const uniqueFields = [
+        ['id', normalizedSkills.map((skill) => skill.skillId)],
+        ['trigger action', normalizedSkills.map((skill) => skill.triggerAction)],
+        ['preference key', normalizedSkills.map((skill) => skill.preferenceKey)],
+    ];
+    for (const [label, values] of uniqueFields) {
+        if (new Set(values).size !== values.length) {
+            throw new Error(`Agent skill ${label}s must be unique`);
+        }
+    }
+    let error = '';
+    for (const skill of normalizedSkills) {
+        error = inspectPromptText(`${skill.title} skill`, skill.content);
+        if (error !== '') {
+            break;
+        }
+    }
+    return { skills: normalizedSkills, error };
+}
+
+
+export function inspectAgentInstructionSet(settings) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+        throw new Error('inspectAgentInstructionSet requires settings object');
+    }
+    const inspectedPrompts = inspectAgentPromptSet(settings);
+    const inspectedSkills = inspectAgentSkillSet(settings.skills);
+    return {
+        settings: {
+            ...inspectedPrompts.prompts,
+            skills: inspectedSkills.skills,
+        },
+        error: inspectedPrompts.error || inspectedSkills.error,
+    };
+}
+
+
+export function validateAgentInstructionSet(settings) {
+    const inspected = inspectAgentInstructionSet(settings);
+    if (inspected.error !== '') {
+        throw new AgentPromptValidationError(inspected.error);
+    }
+    return inspected.settings;
+}
+
+
 export function validateAgentPromptDefaultsPayload(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('Agent prompt defaults response must be an object');
     }
-    return validateAgentPromptSet({
+    if (!Array.isArray(payload.skills)) {
+        throw new Error('Agent prompt defaults response skills must be an array');
+    }
+    return validateAgentInstructionSet({
         systemPrompt: payload.system_prompt,
         finalResponsePrompt: payload.final_response_prompt,
         toolResultPrompt: payload.tool_result_prompt,
+        skills: payload.skills.map((skill) => ({
+            skillId: skill.skill_id,
+            title: skill.title,
+            description: skill.description,
+            triggerAction: skill.trigger_action,
+            preferenceKey: skill.preference_key,
+            content: skill.content,
+        })),
     });
 }

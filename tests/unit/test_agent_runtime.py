@@ -1,22 +1,35 @@
 import asyncio
 import json
+from datetime import datetime
+from datetime import timezone
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
+from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import ReadNotesByIdAction
+from app.services.agent.actions import RespondAction
+from app.services.agent.actions import SearchQueryEnvelope
+from app.services.agent.actions import SearchNotesIntent
 from app.services.agent.actions import agent_action_adapter
-from app.services.agent.actions import agent_action_response_schema
-from app.services.agent.actions import parse_agent_action_json
+from app.services.agent.actions import agent_route_response_schema
+from app.services.agent.actions import parse_agent_route_json
+from app.services.agent.actions import parse_search_query_json
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
+from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
+from app.services.agent.retrieval_settings import AgentRetrievalSettings
+from app.services.agent.retrieval_settings import DEFAULT_AGENT_RETRIEVAL_SETTINGS
 from app.services.agent.runtime import AgentRuntime
+from app.services.agent.runtime import AgentExecutionError
+from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.tools import ToolPermission
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
@@ -24,11 +37,134 @@ from app.services.agent.tools import ToolSpec
 from app.services.agent.trace import AgentTraceStore
 
 
+TEST_TIMESTAMP = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+
+
+def _assert_positive_activity_token_counts(events: list[dict[str, object]]) -> None:
+    activities = [event for event in events if event["type"] == "action_status"]
+    assert activities
+    assert all(
+        isinstance(event["approx_input_tokens"], int)
+        and not isinstance(event["approx_input_tokens"], bool)
+        and event["approx_input_tokens"] > 0
+        for event in activities
+    )
+
+
+def _without_activity_token_counts(
+    events: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            key: value
+            for key, value in event.items()
+            if key != "approx_input_tokens"
+        }
+        for event in events
+    ]
+
+
+@pytest.mark.parametrize(
+    ("action", "completed_search_count", "expected_label"),
+    [
+        (
+            SearchNotesIntent(
+                kind="search_notes",
+                rationale="The answer depends on the user's notes.",
+            ),
+            0,
+            "Selected action · Search notes · The answer depends on the user's notes.",
+        ),
+        (
+            SearchNotesIntent(
+                kind="search_notes",
+                rationale=(
+                    "The first tag-only query may have missed notes that mention the "
+                    "topic only in their text."
+                ),
+            ),
+            1,
+            (
+                "Selected action · Search again · The first tag-only query may have "
+                "missed notes that mention the topic only in their text."
+            ),
+        ),
+        (
+            ReadNotesByIdAction(
+                kind="read_notes_by_id",
+                note_ids=["note-a", "note-b"],
+                rationale="The user explicitly named these notes.",
+            ),
+            0,
+            (
+                "Selected action · Read 2 notes by ID · "
+                "The user explicitly named these notes."
+            ),
+        ),
+        (
+            RespondAction(
+                kind="respond",
+                basis="The request can be answered without note retrieval.",
+            ),
+            0,
+            (
+                "Selected action · Respond to user · "
+                "The request can be answered without note retrieval."
+            ),
+        ),
+    ],
+)
+def test_selected_action_status_exposes_every_action_reason(
+    action: SearchNotesIntent | ReadNotesByIdAction | RespondAction,
+    completed_search_count: int,
+    expected_label: str,
+) -> None:
+    event = AgentRuntime._selected_action_status_event(
+        action,
+        completed_search_count=completed_search_count,
+        approx_input_tokens=1_234,
+    )
+
+    assert event == {
+        "type": "action_status",
+        "action": action.kind,
+        "status": "completed",
+        "label": expected_label,
+        "approx_input_tokens": 1_234,
+    }
+
+
+def _children_in_record_order(
+    records: dict[str, SimpleNamespace],
+    parent_id: str | None,
+) -> list[str]:
+    return [
+        note_id
+        for note_id, record in records.items()
+        if record.parent_id == parent_id
+    ]
+
+
 class FakeInferenceAdapter:
     def __init__(self, *, structured_contents: list[str]) -> None:
         self._structured_contents = list(structured_contents)
         self.structured_requests: list[dict[str, object]] = []
         self.final_requests: list[dict[str, object]] = []
+
+    async def inspect_context_window(
+        self,
+        *,
+        base_url: str,
+        model: str,
+    ) -> InferenceContextWindow:
+        assert base_url == "http://127.0.0.1:11434"
+        assert model == "qwen3:8b"
+        return InferenceContextWindow(
+            model=model,
+            maximum_tokens=32768,
+            loaded_tokens=32768,
+            required_tokens=32768,
+        )
 
     async def infer_structured(
         self,
@@ -136,7 +272,8 @@ class FakeToolRegistry:
             permission=ToolPermission.READ,
         )
 
-    def execute(self, action) -> ToolExecutionResult:
+    def execute(self, action, *, settings) -> ToolExecutionResult:
+        assert settings == DEFAULT_AGENT_RETRIEVAL_SETTINGS
         self.executed_actions.append(action)
         if action.kind == "search_notes":
             return ToolExecutionResult(
@@ -144,26 +281,49 @@ class FakeToolRegistry:
                 status_label="Searching notes",
                 payload={
                     "query": action.query,
+                    "page": action.page,
+                    "page_size": settings.max_notes_per_page,
+                    "total_pages": 1,
+                    "has_previous_page": False,
+                    "previous_page": 0,
+                    "has_next_page": False,
+                    "next_page": 0,
+                    "page_is_out_of_range": False,
                     "matched_count": 1,
+                    "matched_note_count": 1,
                     "returned_count": 1,
+                    "returned_note_count": 1,
+                    "returned_character_count": 34,
+                    "has_truncated_content": False,
+                    "max_note_characters": settings.max_note_characters,
+                    "max_page_characters": settings.max_page_characters,
                     "notes": [
                         {
                             "note_id": "note-sqlite",
-                            "content_preview": "Decision: keep SQLite.",
+                            "parent_id": "",
+                            "root_note_id": "note-sqlite",
+                            "content_text": "Decision: keep SQLite for storage.",
+                            "content_character_count": 34,
+                            "returned_character_count": 34,
+                            "content_is_truncated": False,
+                            "content_is_redacted": False,
                             "tags": "architecture",
+                            "created_at": TEST_TIMESTAMP.isoformat(),
+                            "updated_at": TEST_TIMESTAMP.isoformat(),
                         }
                     ],
                 },
             )
-        if action.kind == "read_notes":
+        if action.kind == "read_notes_by_id":
             return ToolExecutionResult(
-                action_name="read_notes",
-                status_label="Reading 1 note",
+                action_name="read_notes_by_id",
+                status_label="Reading 1 note by ID",
                 payload={
                     "notes": [
                         {
                             "note_id": "note-sqlite",
                             "content_text": "Decision: keep SQLite for local-first storage.",
+                            "content_is_redacted": False,
                             "tags": "architecture",
                         }
                     ],
@@ -186,10 +346,95 @@ def _collect_runtime_events(runtime: AgentRuntime) -> list[dict[str, object]]:
                     {"role": "user", "content": "What did I decide about storage?"}
                 ],
                 prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS,
             )
         ]
 
     return asyncio.run(collect())
+
+
+def test_runtime_rejects_an_undersized_loaded_context_before_inference() -> None:
+    class LowContextInference(FakeInferenceAdapter):
+        async def inspect_context_window(
+            self,
+            *,
+            base_url: str,
+            model: str,
+        ) -> InferenceContextWindow:
+            assert base_url == "http://127.0.0.1:11434"
+            assert model == "qwen3:8b"
+            return InferenceContextWindow(
+                model=model,
+                maximum_tokens=32768,
+                loaded_tokens=4096,
+                required_tokens=32768,
+            )
+
+    inference = LowContextInference(structured_contents=[])
+    traces = AgentTraceStore()
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=FakeToolRegistry(),
+        trace_store=traces,
+    )
+
+    async def collect_until_failure() -> list[dict[str, object]]:
+        events: list[dict[str, object]] = []
+        with pytest.raises(
+            AgentExecutionError,
+            match=(
+                "loaded with 4,096 context tokens; MetaList requires 32,768 for "
+                "this model"
+            ),
+        ):
+            async for event in runtime.stream(
+                session_key="session-a",
+                base_url="http://127.0.0.1:11434",
+                selected_model="qwen3:8b",
+                thinking_level="low",
+                canonical_messages=[{"role": "user", "content": "Search my notes"}],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+            ):
+                events.append(event)
+        return events
+
+    events = asyncio.run(collect_until_failure())
+
+    _assert_positive_activity_token_counts(events)
+    assert _without_activity_token_counts(events) == [
+        {
+            "type": "action_status",
+            "action": "model_context",
+            "status": "started",
+            "label": "Loading Ollama model and checking context",
+        },
+        {
+            "type": "action_status",
+            "action": "model_context",
+            "status": "completed",
+            "label": (
+                "Ollama context too small · 4,096 loaded · 32,768 required"
+            ),
+        },
+    ]
+    assert inference.structured_requests == []
+    trace = traces.snapshot(session_key="session-a")["run"]
+    context_events = [
+        event for event in trace["events"] if event["type"] == "MODEL_CONTEXT"
+    ]
+    assert context_events[0]["detail"] == {
+        "model": "qwen3:8b",
+        "maximum_tokens": 32768,
+        "loaded_tokens": 4096,
+        "required_tokens": 32768,
+        "is_sufficient": False,
+    }
 
 
 def test_agent_action_schema_exposes_only_read_only_actions_and_respond() -> None:
@@ -197,16 +442,17 @@ def test_agent_action_schema_exposes_only_read_only_actions_and_respond() -> Non
         {
             "kind": "search_notes",
             "query": '"SQLite"',
+            "page": 1,
             "rationale": "Find the relevant decision note.",
         }
     ).kind == "search_notes"
     assert agent_action_adapter.validate_python(
         {
-            "kind": "read_notes",
+            "kind": "read_notes_by_id",
             "note_ids": ["note-sqlite"],
             "rationale": "Read the matching note.",
         }
-    ).kind == "read_notes"
+    ).kind == "read_notes_by_id"
     assert agent_action_adapter.validate_python(
         {
             "kind": "respond",
@@ -228,36 +474,41 @@ def test_agent_action_schema_exposes_only_read_only_actions_and_respond() -> Non
             {
                 "kind": "search_notes",
                 "query": '"unterminated',
+                "page": 1,
                 "rationale": "This invalid model output must be retried.",
             }
         )
 
 
-def test_ollama_action_response_schema_is_a_flat_required_object() -> None:
-    schema = agent_action_response_schema()
+def test_ollama_route_response_schema_is_a_flat_required_object() -> None:
+    schema = agent_route_response_schema()
 
     assert schema["type"] == "object"
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == {
         "kind",
-        "search_query",
         "note_ids",
         "reason",
     }
-    assert set(schema["properties"]["kind"]["enum"]) == {
+    action_kinds = schema["properties"]["kind"]["enum"]
+    assert set(action_kinds) == {
         "search_notes",
-        "read_notes",
+        "read_notes_by_id",
         "respond",
     }
+    assert action_kinds[0] == "respond"
+    assert "content-bearing matching notes in notes[].content_text" in (
+        schema["properties"]["kind"]["description"]
+    )
+    assert "examples" not in schema
     assert "$defs" not in schema
     assert "oneOf" not in schema
     assert "discriminator" not in schema
 
-    action = parse_agent_action_json(
+    action = parse_agent_route_json(
         json.dumps(
             {
                 "kind": "respond",
-                "search_query": "",
                 "note_ids": [],
                 "reason": "Reply to the greeting.",
             }
@@ -270,12 +521,74 @@ def test_ollama_action_response_schema_is_a_flat_required_object() -> None:
     }
 
 
-def test_ollama_action_ignores_required_placeholder_fields_for_inactive_action() -> None:
-    action = parse_agent_action_json(
+@pytest.mark.parametrize(
+    "search_query",
+    [
+        '-"Pydantic AI"',
+        "-private",
+        'Pydantic OR -"Pydantic AI"',
+    ],
+)
+def test_agent_search_action_rejects_exclusion_only_clauses(
+    search_query: str,
+) -> None:
+    with pytest.raises(ValidationError, match="positive term"):
+        parse_search_query_json(
+            json.dumps(
+                {
+                    "search_query": search_query,
+                    "page": 1,
+                    "reason": "Find notes about the requested topic.",
+                }
+            )
+        )
+
+
+def test_agent_search_action_allows_positive_terms_with_exclusions() -> None:
+    action = parse_search_query_json(
         json.dumps(
             {
-                "kind": "read_notes",
-                "search_query": "Pydantic AI",
+                "search_query": '"Pydantic AI" -deprecated',
+                "page": 1,
+                "reason": "Find current notes about the requested topic.",
+            }
+        )
+    )
+
+    assert action.model_dump() == {
+        "kind": "search_notes",
+        "query": '"Pydantic AI" -deprecated',
+        "page": 1,
+        "rationale": "Find current notes about the requested topic.",
+    }
+
+
+def test_search_query_wire_schema_avoids_ollama_multi_string_length_grammar_bug() -> None:
+    schema = SearchQueryEnvelope.model_json_schema()
+
+    assert schema["type"] == "object"
+    assert set(schema["required"]) == {"search_query", "page", "reason"}
+    assert "minLength" not in schema["properties"]["search_query"]
+    assert "maxLength" not in schema["properties"]["search_query"]
+    assert "minLength" not in schema["properties"]["reason"]
+    assert "maxLength" not in schema["properties"]["reason"]
+    assert "earlier conversation topics" in (
+        schema["properties"]["search_query"]["description"].casefold()
+    )
+    assert 'foo or "foo"' in (
+        schema["properties"]["search_query"]["description"].casefold()
+    )
+    with pytest.raises(ValidationError, match="must not exceed 1000"):
+        SearchQueryEnvelope(search_query="x" * 1_001, page=1, reason="Too broad")
+    with pytest.raises(ValidationError, match="must not exceed 2000"):
+        SearchQueryEnvelope(search_query="foo", page=1, reason="x" * 2_001)
+
+
+def test_ollama_route_ignores_note_ids_for_actions_that_do_not_read_by_id() -> None:
+    action = parse_agent_route_json(
+        json.dumps(
+            {
+                "kind": "read_notes_by_id",
                 "note_ids": ["note-pydantic", "note-instructor"],
                 "reason": "Read the relevant search results.",
             }
@@ -283,16 +596,15 @@ def test_ollama_action_ignores_required_placeholder_fields_for_inactive_action()
     )
 
     assert action.model_dump() == {
-        "kind": "read_notes",
+        "kind": "read_notes_by_id",
         "note_ids": ["note-pydantic", "note-instructor"],
         "rationale": "Read the relevant search results.",
     }
 
-    search_action = parse_agent_action_json(
+    search_action = parse_agent_route_json(
         json.dumps(
             {
                 "kind": "search_notes",
-                "search_query": "Pydantic AI",
                 "note_ids": ["inactive-note-id"],
                 "reason": "Find relevant notes.",
             }
@@ -300,15 +612,13 @@ def test_ollama_action_ignores_required_placeholder_fields_for_inactive_action()
     )
     assert search_action.model_dump() == {
         "kind": "search_notes",
-        "query": "Pydantic AI",
         "rationale": "Find relevant notes.",
     }
 
-    respond_action = parse_agent_action_json(
+    respond_action = parse_agent_route_json(
         json.dumps(
             {
                 "kind": "respond",
-                "search_query": "inactive query",
                 "note_ids": ["inactive-note-id"],
                 "reason": "Answer using the retrieved note content.",
             }
@@ -339,7 +649,7 @@ def test_structured_inference_error_is_concise_and_keeps_attempts() -> None:
     error = StructuredInferenceError(attempts=attempts)
 
     assert str(error) == (
-        "Ollama could not produce a valid agent action after 2 attempts. "
+        "Ollama could not produce a valid structured response after 2 attempts. "
         "Open Agent Debug for exact request and response details."
     )
     assert error.attempts == attempts
@@ -351,25 +661,22 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
             json.dumps(
                 {
                     "kind": "search_notes",
-                    "search_query": '"storage"',
                     "note_ids": [],
                     "reason": "Locate the user's storage decision.",
                 }
             ),
             json.dumps(
                 {
-                    "kind": "read_notes",
-                    "search_query": "",
-                    "note_ids": ["note-sqlite"],
-                    "reason": "Read the matching note before answering.",
+                    "search_query": '"storage"',
+                    "page": 1,
+                    "reason": "Search for the requested storage decision.",
                 }
             ),
             json.dumps(
                 {
                     "kind": "respond",
-                    "search_query": "",
                     "note_ids": [],
-                    "reason": "The retrieved note says to keep SQLite.",
+                    "reason": "The complete matching note says to keep SQLite.",
                 }
             ),
         ]
@@ -386,40 +693,72 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     )
 
     events = _collect_runtime_events(runtime)
+    _assert_positive_activity_token_counts(events)
 
     started_labels = [
         event["label"]
         for event in events
         if event["type"] == "action_status" and event["status"] == "started"
     ]
-    assert started_labels == [
-        "Preparing action selection",
-        "Waiting for Ollama · attempt 1 of 2",
-        "Ollama responded · validating attempt 1 of 2",
-        "Searching notes",
-        "Preparing action selection",
-        "Waiting for Ollama · attempt 1 of 2",
-        "Ollama responded · validating attempt 1 of 2",
-        "Reading 1 note",
-        "Preparing action selection",
-        "Waiting for Ollama · attempt 1 of 2",
-        "Ollama responded · validating attempt 1 of 2",
-        "Writing response",
-    ]
-    assert events[-4:] == [
+    assert started_labels[0] == "Loading Ollama model and checking context"
+    assert started_labels[1] == "Preparing action selection"
+    assert started_labels[2] == "Ollama choosing next action · attempt 1 of 2"
+    assert started_labels[3] == (
+        "Ollama returned next-action choice · validating attempt 1 of 2"
+    )
+    assert started_labels[4] == (
+        "Ollama preparing MetaList search query · attempt 1 of 2"
+    )
+    assert started_labels[5] == (
+        "Ollama returned search-query proposal · validating attempt 1 of 2"
+    )
+    assert len(started_labels) == 11
+    assert started_labels[6] == 'Searching notes · page 1 · "storage"'
+    assert started_labels[7] == "Preparing action selection"
+    assert started_labels[8] == "Ollama choosing next action · attempt 1 of 2"
+    assert started_labels[9] == (
+        "Ollama returned next-action choice · validating attempt 1 of 2"
+    )
+    assert started_labels[10] == "Writing response"
+    assert _without_activity_token_counts(events[-4:]) == [
         {"type": "thinking_delta", "text": "Final reasoning"},
-        {"type": "content_delta", "text": "The answer uses your SQLite note."},
+        {
+            "type": "content_delta",
+            "text": "The answer uses your SQLite note.",
+            "reference_note_ids": ["note-sqlite"],
+        },
         {
             "type": "action_status",
             "action": "respond",
             "status": "completed",
             "label": "Response complete",
         },
-        {"type": "done"},
+        {"type": "done", "reference_note_ids": ["note-sqlite"]},
     ]
-    assert [action.kind for action in tools.executed_actions] == [
-        "search_notes",
-        "read_notes",
+    assert [action.kind for action in tools.executed_actions] == ["search_notes"]
+    search_tool_events = [
+        event
+        for event in events
+        if event["type"] == "action_status"
+        and event["action"] == "search_notes"
+        and not event["label"].startswith("Selected action")
+    ]
+    assert _without_activity_token_counts(search_tool_events) == [
+        {
+            "type": "action_status",
+            "action": "search_notes",
+            "status": "started",
+            "label": 'Searching notes · page 1 · "storage"',
+        },
+        {
+            "type": "action_status",
+            "action": "search_notes",
+            "status": "completed",
+            "label": (
+                "Search complete · 1 of 1 result tree · 1 of 1 matching note · "
+                'page 1 of 1 · "storage"'
+            ),
+        },
     ]
     selected_action_events = [
         event
@@ -428,34 +767,46 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         and event["status"] == "completed"
         and event["label"].startswith("Selected action")
     ]
-    assert selected_action_events == [
+    assert _without_activity_token_counts(selected_action_events) == [
         {
             "type": "action_status",
             "action": "search_notes",
             "status": "completed",
-            "label": 'Selected action · Search notes · "storage"',
-        },
-        {
-            "type": "action_status",
-            "action": "read_notes",
-            "status": "completed",
-            "label": "Selected action · Read 1 note",
+            "label": (
+                "Selected action · Search notes · "
+                "Locate the user's storage decision."
+            ),
         },
         {
             "type": "action_status",
             "action": "respond",
             "status": "completed",
-            "label": "Selected action · Respond to user",
+            "label": (
+                "Selected action · Respond to user · "
+                "The complete matching note says to keep SQLite."
+            ),
         },
     ]
 
-    second_model_context = inference.structured_requests[1]["messages"]
-    assert isinstance(second_model_context, list)
-    assert second_model_context[0]["role"] == "system"
-    assert "Skills may be appended" in second_model_context[0]["content"]
+    assert inference.structured_requests[0]["response_model"] is AgentRouteEnvelope
+    assert inference.structured_requests[1]["response_model"] is SearchQueryEnvelope
+    assert inference.structured_requests[2]["response_model"] is AgentRouteEnvelope
+    search_query_context = inference.structured_requests[1]["messages"]
+    assert isinstance(search_query_context, list)
+    assert search_query_context[0]["role"] == "system"
+    assert search_query_context[1]["role"] == "system"
+    assert search_query_context[1]["content"].startswith(
+        "ACTIVE_SKILL search_notes\n"
+    )
+    assert "foo OR bar baz" in search_query_context[1]["content"]
+    second_route_context = inference.structured_requests[2]["messages"]
+    assert isinstance(second_route_context, list)
+    assert all(
+        "ACTIVE_SKILL" not in message["content"] for message in second_route_context
+    )
     assert any(
         message["role"] == "user" and "TOOL_RESULT search_notes" in message["content"]
-        for message in second_model_context
+        for message in second_route_context
     )
     final_context = inference.final_requests[0]["messages"]
     assert isinstance(final_context, list)
@@ -472,6 +823,8 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     assert "POLICY_DECISION" in event_types
     assert "TOOL_CALL" in event_types
     assert "TOOL_RESULT" in event_types
+    assert "SKILL" in event_types
+    assert "ACTION_ARGUMENTS" in event_types
     assert event_types[-1] == "FINAL_RESPONSE"
     wire_requests = [
         event for event in run["events"] if event["type"] == "OLLAMA_REQUEST"
@@ -485,6 +838,9 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         "role": "user",
         "content": "What did I decide about storage?",
     }
+    assert wire_requests[1]["label"] == (
+        "Ollama wire request: search-query · attempt 1 of 2"
+    )
     assert wire_requests[-1]["label"] == (
         "Ollama wire request: final-response · attempt 1 of 1"
     )
@@ -492,11 +848,201 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     assert "SYSTEM_PROMPT" not in event_types
 
 
+def test_runtime_skips_a_semantically_duplicate_completed_search() -> None:
+    inference = FakeInferenceAdapter(
+        structured_contents=[
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": "Search the user's notes for the topic.",
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": 'foo OR "foo"',
+                    "page": 1,
+                    "reason": "Cover both the tag and note text.",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": 'foo OR "foo"',
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": '  "FOO"   OR   FOO  ',
+                    "page": 1,
+                    "reason": "Repeat the same search.",
+                }
+            ),
+        ]
+    )
+    tools = FakeToolRegistry()
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=tools,
+        trace_store=AgentTraceStore(),
+    )
+
+    events = _collect_runtime_events(runtime)
+    _assert_positive_activity_token_counts(events)
+
+    assert [action.kind for action in tools.executed_actions] == ["search_notes"]
+    assert len(inference.structured_requests) == 3
+    assert sum(
+        event["type"] == "action_status"
+        and event["label"] == "Activated skill · Search notes"
+        for event in events
+    ) == 1
+    assert any(
+        event["type"] == "action_status"
+        and event["action"] == "search_notes"
+        and event["label"].startswith("Skipped repeat-search selection")
+        for event in events
+    )
+    assert not any(
+        event["type"] == "action_status"
+        and event["label"].startswith("Selected action · Search again")
+        for event in events
+    )
+    assert events[-1] == {
+        "type": "done",
+        "reference_note_ids": ["note-sqlite"],
+    }
+
+
+def test_runtime_allows_a_revised_second_search() -> None:
+    inference = FakeInferenceAdapter(
+        structured_contents=[
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": "Start with the user's requested tag.",
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": "foo",
+                    "page": 1,
+                    "reason": "Search the tag first.",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": "The first search may miss text-only mentions.",
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": '"foo"',
+                    "page": 1,
+                    "reason": "Search exact note text for the missing evidence.",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "respond",
+                    "note_ids": [],
+                    "reason": "Both distinct searches are now complete.",
+                }
+            ),
+        ]
+    )
+    tools = FakeToolRegistry()
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=tools,
+        trace_store=AgentTraceStore(),
+    )
+
+    events = _collect_runtime_events(runtime)
+
+    assert [
+        action.query
+        for action in tools.executed_actions
+        if action.kind == "search_notes"
+    ] == ["foo", '"foo"']
+    assert any(
+        event["type"] == "action_status"
+        and event["label"] == (
+            "Selected action · Search again · "
+            "The first search may miss text-only mentions."
+        )
+        for event in events
+    )
+
+
+def test_runtime_skips_duplicate_query_after_a_distinct_repeat_search_reason() -> None:
+    inference = FakeInferenceAdapter(
+        structured_contents=[
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": "Search the user's notes for the topic.",
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": 'foo OR "foo"',
+                    "page": 1,
+                    "reason": "Cover both tag and text matches.",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "search_notes",
+                    "note_ids": [],
+                    "reason": "Look for a missing exact-text variation.",
+                }
+            ),
+            json.dumps(
+                {
+                    "search_query": '"FOO" OR FOO',
+                    "page": 1,
+                    "reason": "This accidentally repeats the completed query.",
+                }
+            ),
+        ]
+    )
+    tools = FakeToolRegistry()
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=tools,
+        trace_store=AgentTraceStore(),
+    )
+
+    events = _collect_runtime_events(runtime)
+
+    assert [action.kind for action in tools.executed_actions] == ["search_notes"]
+    assert len(inference.structured_requests) == 4
+    assert any(
+        event["type"] == "action_status"
+        and event["label"].startswith("Skipped duplicate search")
+        for event in events
+    )
+
+
 def test_runtime_records_instructor_validation_retry_attempts() -> None:
     content = json.dumps(
         {
             "kind": "respond",
-            "search_query": "",
             "note_ids": [],
             "reason": "No retrieval is necessary for this greeting.",
         }
@@ -574,15 +1120,19 @@ def test_runtime_records_instructor_validation_retry_attempts() -> None:
     )
 
     events = _collect_runtime_events(runtime)
+    _assert_positive_activity_token_counts(events)
 
     assert len(inference.structured_requests) == 1
-    assert events[-1] == {"type": "done"}
+    assert events[-1] == {
+        "type": "done",
+        "reference_note_ids": [],
+    }
     retry_events = [
         event
         for event in events
         if event["type"] == "action_status" and event["action"] == "retry"
     ]
-    assert retry_events == [
+    assert _without_activity_token_counts(retry_events) == [
         {
             "type": "action_status",
             "action": "retry",
@@ -646,8 +1196,12 @@ def test_context_builder_does_not_carry_transient_tool_or_future_skill_events() 
     assert len(transient_context) == len(next_run_context) + 2
     assert next_run_context[1:] == canonical_messages
     assert "ACTION_SCHEMA" not in next_run_context[0]["content"]
-    assert all("TOOL_RESULT" not in message["content"] for message in next_run_context)
-    assert all("SKILL_CONTENT" not in message["content"] for message in next_run_context)
+    assert all(
+        "TOOL_RESULT" not in message["content"] for message in next_run_context[1:]
+    )
+    assert all(
+        "SKILL_CONTENT" not in message["content"] for message in next_run_context[1:]
+    )
 
 
 def test_context_builder_uses_packaged_prompt_resources() -> None:
@@ -667,12 +1221,17 @@ def test_context_builder_uses_packaged_prompt_resources() -> None:
     ) == 'TOOL_RESULT search_notes\n{"notes":[]}'
     assert DEFAULT_AGENT_PROMPTS.render_final_response_request(
         basis="No retrieval was needed.",
-    ) == (
-        "FINAL_RESPONSE_REQUEST\n"
-        "Structured basis: No retrieval was needed.\n"
-        "Answer the user's original request directly. Cite note IDs in plain text when "
-        "that helps the user identify the evidence. Do not mention this control message."
-    )
+        ) == (
+            "FINAL_RESPONSE_REQUEST\n"
+            "Structured basis: No retrieval was needed.\n"
+            "Answer the user's original request directly. If a current-run search_notes\n"
+            "TOOL_RESULT exists, synthesize the substantive, non-redundant evidence in its\n"
+            "`notes[].content_text`; do not substitute general knowledge or treat `note_id` as\n"
+            "a handle requiring another read. To cite a supporting note, copy its exact\n"
+            "`note_id` from a TOOL_RESULT in this run and wrap that copied value in double square\n"
+            "brackets. Never invent or imitate a UUID, and never print a bare UUID. Do not\n"
+            "mention this control message."
+        )
 
 
 def test_trace_store_always_keeps_latest_run_and_exact_details_default_on() -> None:
@@ -718,7 +1277,7 @@ def test_trace_store_always_keeps_latest_run_and_exact_details_default_on() -> N
     assert traces.snapshot(session_key="session-a")["run"]["run_id"] == second_run_id
 
 
-def test_read_only_tools_search_memory_and_bound_returned_note_content() -> None:
+def test_read_only_tools_apply_limits_and_include_note_metadata() -> None:
     class FakeNotes:
         def __init__(self) -> None:
             self.records = {
@@ -727,17 +1286,24 @@ def test_read_only_tools_search_memory_and_bound_returned_note_content() -> None
                     parent_id=None,
                     content="<div>SQLite decision</div>",
                     tags="architecture",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
                 ),
                 "note-b": SimpleNamespace(
                     id="note-b",
                     parent_id="note-a",
                     content=f"<p>{'x' * 13_000}</p>",
                     tags="benchmark",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
                 ),
             }
 
         def list_note_ids(self) -> list[str]:
             return ["note-a", "note-b"]
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
 
         def get_note(self, note_id: str):
             return self.records[note_id]
@@ -755,31 +1321,485 @@ def test_read_only_tools_search_memory_and_bound_returned_note_content() -> None
         {
             "kind": "search_notes",
             "query": '"SQLite"',
+            "page": 1,
             "rationale": "Find the decision.",
         }
     )
     read_action = agent_action_adapter.validate_python(
         {
-            "kind": "read_notes",
+            "kind": "read_notes_by_id",
             "note_ids": ["note-b", "missing-note"],
             "rationale": "Read the benchmark and report a missing id explicitly.",
         }
     )
 
-    search_result = registry.execute(search_action)
-    read_result = registry.execute(read_action)
+    settings = AgentRetrievalSettings(
+        max_note_characters=1_000,
+        max_page_characters=20_000,
+        max_notes_per_page=2,
+    )
+    search_result = registry.execute(search_action, settings=settings)
+    read_result = registry.execute(read_action, settings=settings)
 
     assert registry.spec_for(search_action).mutates is False
-    assert search_result.payload["notes"] == [
+    assert search_result.payload["query"] == '"SQLite"'
+    assert search_result.payload["page"] == 1
+    assert search_result.payload["page_size"] == 2
+    assert search_result.payload["total_pages"] == 1
+    assert search_result.payload["matched_count"] == 1
+    assert search_result.payload["matched_note_count"] == 1
+    assert search_result.payload["returned_count"] == 1
+    assert search_result.payload["returned_note_count"] == 1
+    assert search_result.payload["content_contract"] == {
+        "notes_are_content_bearing": True,
+        "note_content_field": "notes[].content_text",
+        "follow_up_read_required": False,
+        "instruction": (
+            "Read and synthesize notes[].content_text now. note_id is only for "
+            "citation and navigation, not a handle that requires another read."
+        ),
+    }
+    search_notes = search_result.payload["notes"]
+    assert isinstance(search_notes, list)
+    assert search_notes == [
         {
             "note_id": "note-a",
             "parent_id": "",
-            "content_preview": "SQLite decision",
+            "root_note_id": "note-a",
+            "content_text": "SQLite decision",
+            "content_character_count": 15,
+            "returned_character_count": 15,
+            "content_is_truncated": False,
+            "content_is_redacted": False,
             "tags": "architecture",
+            "created_at": TEST_TIMESTAMP.isoformat(),
+            "updated_at": TEST_TIMESTAMP.isoformat(),
         }
     ]
     read_notes = read_result.payload["notes"]
     assert isinstance(read_notes, list)
-    assert len(read_notes[0]["content_text"]) == 12_000
+    assert len(read_notes[0]["content_text"]) == 1_000
+    assert read_notes[0]["content_character_count"] == 13_000
     assert read_notes[0]["content_is_truncated"] is True
+    assert read_notes[0]["created_at"] == TEST_TIMESTAMP.isoformat()
+    assert read_notes[0]["updated_at"] == TEST_TIMESTAMP.isoformat()
     assert read_result.payload["missing_note_ids"] == ["missing-note"]
+
+
+def test_read_only_search_groups_matching_parent_and_child_as_one_result() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                "root": SimpleNamespace(
+                    id="root",
+                    parent_id=None,
+                    content="<h1>Incorporate AI</h1>",
+                    tags="Pydantic AI",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "child": SimpleNamespace(
+                    id="child",
+                    parent_id="root",
+                    content="<p>Instructor + LiteLLM vs. Pydantic AI</p>",
+                    tags="Pydantic AI",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return ["root", "child"]
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "Pydantic AI"
+            return {"root", "child"}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "Pydantic AI",
+            "page": 1,
+            "rationale": "Find the relevant result tree.",
+        }
+    )
+
+    result = registry.execute(action, settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS)
+
+    assert result.payload["matched_count"] == 1
+    assert result.payload["matched_note_count"] == 2
+    assert result.payload["returned_count"] == 1
+    assert result.payload["returned_note_count"] == 2
+    notes = result.payload["notes"]
+    assert isinstance(notes, list)
+    assert [note["note_id"] for note in notes] == ["root", "child"]
+    assert {note["root_note_id"] for note in notes} == {"root"}
+    assert notes[1]["content_text"] == "Instructor + LiteLLM vs. Pydantic AI"
+
+
+def test_read_only_search_pages_in_user_ranked_root_and_tree_order() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                "lower-root": SimpleNamespace(
+                    id="lower-root",
+                    parent_id=None,
+                    content="<h1>Lower root</h1>",
+                    tags="",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "lower-match": SimpleNamespace(
+                    id="lower-match",
+                    parent_id="lower-root",
+                    content="<p>Lower matching note</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "top-root": SimpleNamespace(
+                    id="top-root",
+                    parent_id=None,
+                    content="<h1>User-ranked top root</h1>",
+                    tags="",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "top-match": SimpleNamespace(
+                    id="top-match",
+                    parent_id="top-root",
+                    content="<p>Top matching note</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "top-match-two": SimpleNamespace(
+                    id="top-match-two",
+                    parent_id="top-root",
+                    content="<p>Second top matching note</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+            }
+            self.children = {
+                None: ["top-root", "lower-root"],
+                "top-root": ["top-match", "top-match-two"],
+                "top-match": [],
+                "top-match-two": [],
+                "lower-root": ["lower-match"],
+                "lower-match": [],
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return list(self.records)
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return list(self.children[parent_id])
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "foo"
+            return {"lower-match", "top-match", "top-match-two"}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "foo",
+            "page": 1,
+            "rationale": "Read the user's highest-ranked matching result first.",
+        }
+    )
+
+    result = registry.execute(
+        action,
+        settings=AgentRetrievalSettings(
+            max_note_characters=1_000,
+            max_page_characters=20_000,
+            max_notes_per_page=1,
+        ),
+    )
+
+    notes = result.payload["notes"]
+    assert isinstance(notes, list)
+    assert [note["note_id"] for note in notes] == ["top-match", "top-match-two"]
+    assert result.payload["returned_count"] == 1
+    assert result.payload["returned_note_count"] == 2
+    assert result.payload["total_pages"] == 2
+
+
+def test_read_only_search_pages_large_result_sets() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                f"note-{index}": SimpleNamespace(
+                    id=f"note-{index}",
+                    parent_id=None,
+                    content=f"<p>Complete note {index}</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                )
+                for index in range(21)
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return list(self.records)
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "foo"
+            return {f"note-{index}" for index in range(21)}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "foo",
+            "page": 2,
+            "rationale": "Find all notes tagged foo.",
+        }
+    )
+
+    settings = AgentRetrievalSettings(
+        max_note_characters=1_000,
+        max_page_characters=20_000,
+        max_notes_per_page=4,
+    )
+    result = registry.execute(action, settings=settings)
+
+    assert result.payload["matched_count"] == 21
+    assert result.payload["matched_note_count"] == 21
+    assert result.payload["page"] == 2
+    assert result.payload["page_size"] == 4
+    assert result.payload["total_pages"] == 6
+    assert result.payload["has_previous_page"] is True
+    assert result.payload["previous_page"] == 1
+    assert result.payload["has_next_page"] is True
+    assert result.payload["next_page"] == 3
+    notes = result.payload["notes"]
+    assert isinstance(notes, list)
+    assert [note["note_id"] for note in notes] == [
+        "note-4",
+        "note-5",
+        "note-6",
+        "note-7",
+    ]
+
+
+def test_read_only_search_caps_total_page_content_without_dropping_results() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                f"note-{index}": SimpleNamespace(
+                    id=f"note-{index}",
+                    parent_id=None,
+                    content=f"<p>{'x' * 4_000}</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                )
+                for index in range(3)
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return list(self.records)
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "foo"
+            return {"note-0", "note-1", "note-2"}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "foo",
+            "page": 1,
+            "rationale": "Read the bounded result page.",
+        }
+    )
+
+    result = registry.execute(
+        action,
+        settings=AgentRetrievalSettings(
+            max_note_characters=4_000,
+            max_page_characters=5_000,
+            max_notes_per_page=50,
+        ),
+    )
+
+    notes = result.payload["notes"]
+    assert isinstance(notes, list)
+    assert len(notes) == 3
+    assert sum(len(note["content_text"]) for note in notes) == 5_000
+    assert all(note["content_text"] != "" for note in notes)
+    assert result.payload["returned_character_count"] == 5_000
+    assert result.payload["max_page_characters"] == 5_000
+    assert result.payload["has_truncated_content"] is True
+
+
+def test_search_excludes_content_from_nonmatching_search_redacted_notes() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                "root": SimpleNamespace(
+                    id="root",
+                    parent_id=None,
+                    content="<h1>Unmatched visible result root</h1>",
+                    tags="",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "match": SimpleNamespace(
+                    id="match",
+                    parent_id="root",
+                    content="<p>Relevant foo content</p>",
+                    tags="foo",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+                "redacted-child": SimpleNamespace(
+                    id="redacted-child",
+                    parent_id="root",
+                    content="<p>GRAY BAR CONTENT MUST NOT LEAVE METALIST</p>",
+                    tags="bar",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                ),
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return ["root", "match", "redacted-child"]
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "foo"
+            return {"match"}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "foo",
+            "page": 1,
+            "rationale": "Find matching foo notes.",
+        }
+    )
+
+    result = registry.execute(action, settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS)
+    serialized_payload = json.dumps(result.payload)
+
+    assert [note["note_id"] for note in result.payload["notes"]] == ["match"]
+    assert "Relevant foo content" in serialized_payload
+    assert "Unmatched visible result root" not in serialized_payload
+    assert "GRAY BAR CONTENT MUST NOT LEAVE METALIST" not in serialized_payload
+
+
+def test_agent_tools_redact_password_note_content() -> None:
+    class FakeNotes:
+        def __init__(self) -> None:
+            self.records = {
+                "password-note": SimpleNamespace(
+                    id="password-note",
+                    parent_id=None,
+                    content="<p>correct horse battery staple</p>",
+                    tags="@password credentials",
+                    created_at=TEST_TIMESTAMP,
+                    updated_at=TEST_TIMESTAMP,
+                )
+            }
+
+        def list_note_ids(self) -> list[str]:
+            return ["password-note"]
+
+        def get_children(self, parent_id: str | None) -> list[str]:
+            return _children_in_record_order(self.records, parent_id)
+
+        def get_note(self, note_id: str):
+            return self.records[note_id]
+
+        def has_note(self, note_id: str) -> bool:
+            return note_id in self.records
+
+    class FakeSearches:
+        def query_note_ids(self, query: str) -> set[str]:
+            assert query == "credentials"
+            return {"password-note"}
+
+    registry = ReadOnlyAgentToolRegistry(notes=FakeNotes(), searches=FakeSearches())
+    search_action = agent_action_adapter.validate_python(
+        {
+            "kind": "search_notes",
+            "query": "credentials",
+            "page": 1,
+            "rationale": "Find the credential note without exposing its value.",
+        }
+    )
+    read_action = agent_action_adapter.validate_python(
+        {
+            "kind": "read_notes_by_id",
+            "note_ids": ["password-note"],
+            "rationale": "Read the known credential note safely.",
+        }
+    )
+
+    search_result = registry.execute(
+        search_action,
+        settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+    )
+    read_result = registry.execute(
+        read_action,
+        settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+    )
+
+    for result in (search_result, read_result):
+        serialized_payload = json.dumps(result.payload)
+        assert "correct horse battery staple" not in serialized_payload
+        assert result.payload["notes"][0]["content_text"] == "[REDACTED: @password]"
+        assert result.payload["notes"][0]["content_is_redacted"] is True

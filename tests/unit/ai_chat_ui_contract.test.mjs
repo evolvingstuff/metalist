@@ -93,11 +93,56 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(controller, /String\(this\._showDiagnosticActivities\)/);
     assert.match(controller, /await this\._saveDiagnosticsVisible\(nextVisibility\)/);
     assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(message\)/);
-    assert.match(controller, /`Working · \$\{latestActivity\.label\}`/);
+    assert.match(controller, /formatCompactWorkingActivityLabel\(latestActivity\)/);
+    assert.match(controller, /`Working · \$\{latestActivityLabel\}`/);
+    assert.match(controller, /splitSearchActivityLabel\(activity\)/);
+    assert.match(controller, /query\.className = 'ai-chat-activity-query'/);
+    assert.match(controller, /tokenCount\.className = 'ai-chat-activity-token-count'/);
+    assert.match(controller, /`≈ \$\{activity\.approx_input_tokens\.toLocaleString\(\)\} input tokens`/);
     assert.match(css, /\.ai-chat-working-indicator/);
+    assert.match(css, /\.ai-chat-activity-query/);
+    assert.match(css, /\.ai-chat-activity-token-count/);
+    assert.match(css, /font-family:\s*ui-monospace/);
+    assert.match(css, /\.ai-chat-note-mention/);
+    assert.match(css, /\.ai-chat-references/);
+    assert.match(css, /\.ai-chat-note-reference/);
+    assert.match(css, /\.ai-chat-open-all-references/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="retry"\]/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="search_notes"\]/);
     assert.match(controller, /AgentDebugView\.refreshIfOpen\(\)/);
+});
+
+
+test('AI agent settings expose bounded note retrieval controls', () => {
+    const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(settingsModal, /id="ai-agent-max-note-characters"/);
+    assert.match(settingsModal, /min="500" max="10000"/);
+    assert.match(settingsModal, /id="ai-agent-max-notes-per-page"/);
+    assert.match(settingsModal, /min="1" max="100"/);
+    assert.match(settingsModal, /Maximum result trees per search page/);
+    assert.match(settingsModal, /id="ai-agent-max-page-characters"/);
+    assert.match(settingsModal, /min="5000" max="100000"/);
+    assert.match(settingsModal, /search-redacted branches are excluded/);
+    assert.match(commandController, /readAgentRetrievalSettings/);
+    assert.match(commandController, /maxNoteCharacters/);
+    assert.match(commandController, /maxPageCharacters/);
+    assert.match(commandController, /maxNotesPerPage/);
+});
+
+
+test('skill prompt headers expose an explicit expand collapse chevron', () => {
+    const promptModal = readFileSync(PROMPT_MODAL_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+
+    assert.match(promptModal, /class="agent-skill-editor-chevron"/);
+    assert.match(promptModal, /aria-hidden="true">▶<\/span>/);
+    assert.match(css, /\.agent-skill-editor-chevron/);
+    assert.match(
+        css,
+        /\.agent-skill-editor-field\[open\][\s\S]*?\.agent-skill-editor-chevron[\s\S]*?rotate\(90deg\)/,
+    );
 });
 
 
@@ -370,14 +415,33 @@ test('streaming thinking renders honest progress and only discloses real reasoni
 });
 
 
-test('streaming keeps the next message editable while current-turn actions stay locked', () => {
+test('streaming keeps drafting available and reset cancels the active Ollama request', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
 
     assert.doesNotMatch(controller, /this\._elements\.input\.disabled\s*=\s*isBusy/);
     assert.match(controller, /let isModelDisabled = this\._isBusy/);
     assert.match(controller, /let isThinkingLevelDisabled = this\._isBusy/);
-    assert.match(controller, /let isSendDisabled = this\._isBusy/);
-    assert.match(controller, /this\._elements\.clear\.disabled = isBusy/);
+    assert.match(controller, /this\._elements\.send\.textContent = this\._isBusy \? 'Stop' : 'Send'/);
+    assert.match(controller, /this\._activeChatAbortController\.abort\(\)/);
+    assert.match(controller, /new AbortController\(\)/);
+    assert.match(controller, /label: 'Cancelled by user'/);
+    assert.match(controller, /assistantMessage\.rendered_content = event\.rendered_content/);
+    assert.match(chatApi, /streamAiChat\(\{ settings, message, onEvent, signal \}\)/);
+    assert.match(chatApi, /signal,/);
+    assert.doesNotMatch(controller, /this\._elements\.clear\.disabled = isBusy/);
+    assert.match(
+        controller,
+        /const activeRequestCompletion = this\._activeChatCompletion;[\s\S]*?this\._cancelActiveRequest\(\);[\s\S]*?await activeRequestCompletion;[\s\S]*?await clearAiChatSession\(\)/,
+    );
+    assert.match(
+        controller,
+        /this\._elements\.clear\.disabled = \([\s\S]*?this\._messages\.length === 0 \|\| this\._isClearingSession[\s\S]*?\)/,
+    );
+    assert.doesNotMatch(template, /id="ai-chat-status"/);
+    assert.doesNotMatch(controller, /_setStatus|ai-chat-status/);
+    assert.match(controller, /_appendLocalErrorPanel\(error\.message\)/);
 });
 
 
@@ -394,21 +458,24 @@ test('command menu contains chat, AI configuration, and prompt editor actions', 
 });
 
 
-test('agent prompt editor inspects, overrides, and resets all runtime prompts', () => {
+test('agent prompt editor inspects, overrides, and resets prompts and skills', () => {
     const css = readFileSync(CSS_URL, 'utf8');
     const modal = readFileSync(PROMPT_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
 
-    assert.match(modal, /<h2>Agent Prompts<\/h2>/);
+    assert.match(modal, /<h2>Agent Prompts &amp; Skills<\/h2>/);
     assert.match(modal, /id="agent-prompt-system"/);
     assert.match(modal, /id="agent-prompt-final-response"/);
     assert.match(modal, /id="agent-prompt-tool-result"/);
+    assert.match(modal, /data-agent-skill-index/);
+    assert.match(modal, /Each skill is injected only after its trigger action/);
     assert.match(modal, /Restore packaged defaults/);
     assert.match(modal, /Save overrides/);
     assert.match(modal, /apply to the next run/);
-    assert.match(modal, /not conversation history/);
+    assert.match(modal, /not\s+conversation history/);
     assert.match(commandController, /AGENT_PROMPT_PREFERENCE_KEYS/);
+    assert.match(commandController, /skill\.preferenceKey/);
     assert.match(commandController, /_preferences\.removeMany/);
     assert.match(chatApi, /export async function loadAgentPromptDefaults/);
     assert.match(css, /\.agent-prompt-editor-modal-content[\s\S]*?width:\s*min\(1100px, 96vw\)/);
@@ -438,7 +505,10 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
     assert.match(modal, /id="ai-agent-installed-model"/);
     assert.match(modal, /id="ai-agent-save"[^>]*>Save<\/button>/);
-    assert.match(modal, /baseUrlInput\.onchange = \(\) => void this\._loadInstalledModels\(\)/);
+    assert.match(modal, /MetaList-managed Ollama/);
+    assert.match(modal, /32,768-token context/);
+    assert.doesNotMatch(modal, /id="ai-agent-base-url"/);
+    assert.doesNotMatch(chatApi, /base_url:/);
     assert.doesNotMatch(modal, /_saveConnection/);
 });
 

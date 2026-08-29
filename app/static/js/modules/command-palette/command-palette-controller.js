@@ -46,13 +46,18 @@ import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
 import { AgentPromptEditorModal } from '../modals/agent-prompt-editor-modal.js';
 import {
     AGENT_PROMPT_PREFERENCE_KEYS,
-    validateAgentPromptSet,
+    validateAgentInstructionSet,
 } from '../ai-chat/agent-prompt-service.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     DEFAULT_AI_THINKING_LEVEL,
     validateAiThinkingLevel,
 } from '../ai-chat/ai-thinking-level-service.js';
+import {
+    AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    readAgentRetrievalSettings,
+    validateAgentRetrievalSettings,
+} from '../ai-chat/agent-retrieval-settings.js';
 import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
@@ -663,15 +668,18 @@ class CommandPaletteController {
     }
 
     getAiSettings() {
+        const retrievalSettings = readAgentRetrievalSettings(
+            (key) => this._preferences.getRaw(key),
+        );
         return {
             provider: this._getSelect('pref.ai.provider', ['ollama'], 'ollama'),
-            baseUrl: this._preferences.getRaw('pref.ai.ollama_base_url') ?? 'http://127.0.0.1:11434',
             model: this._preferences.getRaw('pref.ai.ollama_model') ?? '',
             thinkingLevel: this._getSelect(
                 'pref.ai.thinking_level',
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
                 DEFAULT_AI_THINKING_LEVEL,
             ),
+            ...retrievalSettings,
         };
     }
 
@@ -744,16 +752,12 @@ class CommandPaletteController {
         if (settings.provider !== 'ollama') {
             throw new Error('Unsupported AI provider');
         }
-        if (typeof settings.baseUrl !== 'string' || settings.baseUrl.trim() === '') {
-            throw new Error('AI settings require baseUrl');
-        }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
         const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            'pref.ai.ollama_base_url': settings.baseUrl.trim(),
             'pref.ai.ollama_model': settings.model.trim(),
             'pref.ai.thinking_level': thinkingLevel,
         });
@@ -767,23 +771,29 @@ class CommandPaletteController {
         await this._saveAiSettings(settings);
     }
 
-    async _saveAiConnectionSettings(settings) {
+    async _saveAiAgentSettings(settings) {
         if (!settings || typeof settings !== 'object') {
-            throw new Error('_saveAiConnectionSettings requires settings object');
+            throw new Error('_saveAiAgentSettings requires settings object');
         }
         if (settings.provider !== 'ollama') {
             throw new Error('Unsupported AI provider');
         }
-        if (typeof settings.baseUrl !== 'string' || settings.baseUrl.trim() === '') {
-            throw new Error('AI connection settings require baseUrl');
-        }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI connection settings require model');
         }
+        const retrievalSettings = validateAgentRetrievalSettings(settings);
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            'pref.ai.ollama_base_url': settings.baseUrl.trim(),
             'pref.ai.ollama_model': settings.model.trim(),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
+                retrievalSettings.maxNoteCharacters,
+            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters]: String(
+                retrievalSettings.maxPageCharacters,
+            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
+                retrievalSettings.maxNotesPerPage,
+            ),
         });
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',
@@ -791,7 +801,10 @@ class CommandPaletteController {
         ));
     }
 
-    _readAgentPromptOverrides() {
+    _readAgentPromptOverrides(skills) {
+        if (!Array.isArray(skills) || skills.length === 0) {
+            throw new Error('Agent prompt editor requires packaged skills');
+        }
         return {
             systemPrompt: this._preferences.getRaw(
                 AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt,
@@ -802,21 +815,35 @@ class CommandPaletteController {
             toolResultPrompt: this._preferences.getRaw(
                 AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt,
             ),
+            skills: skills.map((skill) => ({
+                skillId: skill.skillId,
+                content: this._preferences.getRaw(skill.preferenceKey),
+            })),
         };
     }
 
     async _saveAgentPromptOverrides(settings) {
-        const prompts = validateAgentPromptSet(settings);
-        await this._preferences.setMany({
-            [AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt]: prompts.systemPrompt,
-            [AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt]: prompts.finalResponsePrompt,
-            [AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt]: prompts.toolResultPrompt,
-        });
+        const instructions = validateAgentInstructionSet(settings);
+        const preferences = {
+            [AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt]: instructions.systemPrompt,
+            [AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt]: instructions.finalResponsePrompt,
+            [AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt]: instructions.toolResultPrompt,
+        };
+        for (const skill of instructions.skills) {
+            preferences[skill.preferenceKey] = skill.content;
+        }
+        await this._preferences.setMany(preferences);
     }
 
-    async _resetAgentPromptOverrides() {
+    async _resetAgentPromptOverrides(skills) {
+        if (!Array.isArray(skills) || skills.length === 0) {
+            throw new Error('Agent prompt reset requires packaged skills');
+        }
         await this._preferences.removeMany(
-            Object.values(AGENT_PROMPT_PREFERENCE_KEYS),
+            [
+                ...Object.values(AGENT_PROMPT_PREFERENCE_KEYS),
+                ...skills.map((skill) => skill.preferenceKey),
+            ],
         );
     }
 
@@ -2473,7 +2500,7 @@ class CommandPaletteController {
         if (this._aiAgentSettingsModal === null) {
             this._aiAgentSettingsModal = new AiAgentSettingsModal(
                 this.getAiSettings.bind(this),
-                this._saveAiConnectionSettings.bind(this),
+                this._saveAiAgentSettings.bind(this),
             );
         }
         this._aiAgentSettingsModal.open();

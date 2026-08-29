@@ -4,6 +4,10 @@ import {
     listOllamaModels,
     pullOllamaModel,
 } from '../ai-chat/ai-chat-api.js';
+import {
+    getAgentRetrievalSettingsValidationMessage,
+    validateAgentRetrievalSettings,
+} from '../ai-chat/agent-retrieval-settings.js';
 
 
 function escapeHtml(value) {
@@ -60,8 +64,10 @@ export class AiAgentSettingsModal extends BaseModal {
         const settings = this._readSettings();
         return {
             provider: settings.provider,
-            baseUrl: settings.baseUrl,
             model: settings.model,
+            maxNoteCharacters: settings.maxNoteCharacters,
+            maxPageCharacters: settings.maxPageCharacters,
+            maxNotesPerPage: settings.maxNotesPerPage,
             installedModels: [],
             isLoadingModels: false,
             downloadModel: '',
@@ -116,16 +122,37 @@ export class AiAgentSettingsModal extends BaseModal {
                             <option value="ollama" selected>Ollama</option>
                         </select>
                     </label>
-                    <label for="ai-agent-base-url">
-                        <span>Ollama URL (loopback only)</span>
-                        <input id="ai-agent-base-url" type="url" value="${escapeHtml(state.baseUrl)}" placeholder="http://127.0.0.1:11434" ${disabledAttribute}>
-                    </label>
+                    <div class="ai-agent-managed-runtime" role="status">
+                        <span>Runtime</span>
+                        <strong>MetaList-managed Ollama</strong>
+                        <small>Loopback only · 32,768-token context</small>
+                    </div>
                     <label for="ai-agent-installed-model">
                         <span>Downloaded model</span>
                         <select id="ai-agent-installed-model" ${modelSelectDisabled}>
                             ${installedModelOptions}
                         </select>
                     </label>
+                    <fieldset class="ai-agent-retrieval-settings">
+                        <legend>Note retrieval limits</legend>
+                        <p>
+                            Limits apply to content sent to Ollama. Search pages contain
+                            matching nodes from a bounded number of result trees;
+                            search-redacted branches are excluded.
+                        </p>
+                        <label for="ai-agent-max-note-characters">
+                            <span>Maximum characters per note</span>
+                            <input id="ai-agent-max-note-characters" type="number" min="500" max="10000" step="1" value="${state.maxNoteCharacters}" ${disabledAttribute}>
+                        </label>
+                        <label for="ai-agent-max-notes-per-page">
+                            <span>Maximum result trees per search page</span>
+                            <input id="ai-agent-max-notes-per-page" type="number" min="1" max="100" step="1" value="${state.maxNotesPerPage}" ${disabledAttribute}>
+                        </label>
+                        <label for="ai-agent-max-page-characters">
+                            <span>Maximum total note characters per result page</span>
+                            <input id="ai-agent-max-page-characters" type="number" min="5000" max="100000" step="1" value="${state.maxPageCharacters}" ${disabledAttribute}>
+                        </label>
+                    </fieldset>
                 </div>
                 <section class="ai-agent-model-download" aria-labelledby="ai-agent-model-download-title">
                     <h3 id="ai-agent-model-download-title">Download an Ollama model</h3>
@@ -160,17 +187,31 @@ export class AiAgentSettingsModal extends BaseModal {
     }
 
     _setupControls() {
-        const baseUrlInput = document.getElementById('ai-agent-base-url');
         const installedModelSelect = document.getElementById('ai-agent-installed-model');
         const modelInput = document.getElementById('ai-agent-download-model');
+        const maxNoteCharactersInput = document.getElementById(
+            'ai-agent-max-note-characters',
+        );
+        const maxPageCharactersInput = document.getElementById(
+            'ai-agent-max-page-characters',
+        );
+        const maxNotesPerPageInput = document.getElementById(
+            'ai-agent-max-notes-per-page',
+        );
         const downloadButton = document.getElementById('ai-agent-download');
         const saveButton = document.getElementById('ai-agent-save');
         const cancelButton = document.getElementById('ai-agent-cancel');
-        if (!(baseUrlInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings URL input missing');
-        }
         if (!(modelInput instanceof HTMLInputElement)) {
             throw new Error('AI settings download model input missing');
+        }
+        if (!(maxNoteCharactersInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings maximum note characters input missing');
+        }
+        if (!(maxPageCharactersInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings maximum page characters input missing');
+        }
+        if (!(maxNotesPerPageInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings maximum notes per page input missing');
         }
         if (!(installedModelSelect instanceof HTMLSelectElement)) {
             throw new Error('AI settings installed model selector missing');
@@ -185,16 +226,30 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error('AI settings cancel button missing');
         }
 
-        baseUrlInput.oninput = () => {
-            this.updateModalState({ baseUrl: baseUrlInput.value, error: '' });
-        };
-        baseUrlInput.onchange = () => void this._loadInstalledModels();
         installedModelSelect.onchange = () => {
             this.updateModalState({ model: installedModelSelect.value, error: '' });
             this.renderModalContent();
         };
         modelInput.oninput = () => {
             this.updateModalState({ downloadModel: modelInput.value, error: '' });
+        };
+        maxNoteCharactersInput.oninput = () => {
+            this.updateModalState({
+                maxNoteCharacters: Number(maxNoteCharactersInput.value),
+                error: '',
+            });
+        };
+        maxPageCharactersInput.oninput = () => {
+            this.updateModalState({
+                maxPageCharacters: Number(maxPageCharactersInput.value),
+                error: '',
+            });
+        };
+        maxNotesPerPageInput.oninput = () => {
+            this.updateModalState({
+                maxNotesPerPage: Number(maxNotesPerPageInput.value),
+                error: '',
+            });
         };
         downloadButton.onclick = () => void this._handleDownload();
         saveButton.onclick = () => void this._handleSave();
@@ -220,7 +275,6 @@ export class AiAgentSettingsModal extends BaseModal {
         try {
             const payload = await listOllamaModels({
                 provider: 'ollama',
-                baseUrl: state.baseUrl,
             });
             if (!payload || !Array.isArray(payload.models)) {
                 throw new Error('Ollama model response missing models');
@@ -305,7 +359,6 @@ export class AiAgentSettingsModal extends BaseModal {
             await pullOllamaModel({
                 settings: {
                     provider: 'ollama',
-                    baseUrl: state.baseUrl,
                 },
                 model,
                 onEvent: (event) => {
@@ -345,10 +398,24 @@ export class AiAgentSettingsModal extends BaseModal {
         if (!state.installedModels.includes(state.model)) {
             throw new Error('AI settings require a downloaded model selection');
         }
+        const retrievalCandidate = {
+            maxNoteCharacters: state.maxNoteCharacters,
+            maxPageCharacters: state.maxPageCharacters,
+            maxNotesPerPage: state.maxNotesPerPage,
+        };
+        const validationMessage = getAgentRetrievalSettingsValidationMessage(
+            retrievalCandidate,
+        );
+        if (validationMessage !== '') {
+            this.updateModalState({ error: validationMessage });
+            this.renderModalContent();
+            return;
+        }
+        const retrievalSettings = validateAgentRetrievalSettings(retrievalCandidate);
         await this._saveSettings({
             provider: 'ollama',
-            baseUrl: state.baseUrl,
             model: state.model,
+            ...retrievalSettings,
         });
         this.close();
     }

@@ -37,7 +37,8 @@ transient context, packaged/default and namespace-overridden prompts, prompt-tem
 placeholder validation, read-only note tools, latest-run trace replacement, live
 Instructor attempt/retry status, default-on exact debug detail, persisted default-hidden
 developer activity panels, compact hidden-mode progress, duplicate lifecycle-panel
-collapse, API/session isolation, packaged prompt resources, per-call Ollama wire bodies,
+collapse, required per-panel approximate input-token metadata, API/session isolation,
+packaged prompt resources, per-call Ollama wire bodies,
 action-status parsing, and the debugger UI contract:
 
 - `tests/unit/test_agent_runtime.py`

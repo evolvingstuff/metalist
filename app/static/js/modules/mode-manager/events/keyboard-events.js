@@ -40,6 +40,7 @@ import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
 } from '../services/search-input-service.js';
+import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import {
     isViewingReferenceSource,
     popReferenceNavigationEntryForActiveTab,
@@ -3329,11 +3330,27 @@ export async function openReferenceInNewTab(referenceNoteId) {
     if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
         throw new Error('openReferenceInNewTab requires referenceNoteId');
     }
+    return openReferenceQueryInNewTabWithContext(
+        referenceNoteId,
+        'reference.link_open_tab',
+    );
+}
 
+export async function openReferenceQueryInNewTab(referenceQuery) {
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('openReferenceQueryInNewTab requires referenceQuery');
+    }
+    return openReferenceQueryInNewTabWithContext(
+        referenceQuery,
+        'reference.collection_open_tab',
+    );
+}
+
+async function openReferenceQueryInNewTabWithContext(referenceQuery, context) {
     const sourceTabId = ModeContext.activeTabId;
     const newTabId = await duplicateTabContext(sourceTabId);
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
-        throw new Error('openReferenceInNewTab expected duplicateTabContext to return a tab id');
+        throw new Error('Reference navigation expected duplicateTabContext to return a tab id');
     }
 
     if (ModeContext.activeTabId !== newTabId) {
@@ -3341,13 +3358,13 @@ export async function openReferenceInNewTab(referenceNoteId) {
     }
 
     pushReferenceNavigationEntry(sourceTabId, newTabId);
-    await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_tab');
+    await runReferenceSearchInActiveTab(referenceQuery, context);
     return newTabId;
 }
 
-async function runReferenceSearchInActiveTab(referenceNoteId, context) {
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        throw new Error('runReferenceSearchInActiveTab requires referenceNoteId');
+async function runReferenceSearchInActiveTab(referenceQuery, context) {
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('runReferenceSearchInActiveTab requires referenceQuery');
     }
     if (typeof context !== 'string' || context.length === 0) {
         throw new Error('runReferenceSearchInActiveTab requires context');
@@ -3358,16 +3375,20 @@ async function runReferenceSearchInActiveTab(referenceNoteId, context) {
         throw new Error('Search input element not found for reference tab navigation');
     }
 
-    const normalizedReferenceId = syncSearchInputValue(searchInput, referenceNoteId).normalizedText;
+    const queryAnalysis = analyzeSearchQueryInput(referenceQuery);
+    if (!queryAnalysis.isComplete) {
+        throw new Error('Reference navigation query must be a complete search query');
+    }
+    const normalizedReferenceQuery = queryAnalysis.normalizedText;
     // Opening the same reference from the same tab can leave the search query unchanged.
-    if (ModeContext.searchQuery !== normalizedReferenceId) {
-        ModeContext.setSearchQuery(normalizedReferenceId);
+    if (ModeContext.searchQuery !== normalizedReferenceQuery) {
+        ModeContext.setSearchQuery(normalizedReferenceQuery);
     }
     syncSearchInputField();
     updateSearchContextsList();
 
     await actionEnterSearchMode();
-    ModeContext.clearActiveTabDiffCacheForSearchExecution(normalizedReferenceId);
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(normalizedReferenceQuery);
     ModeContext.resetRootTracking({ clear: true });
     window.scrollTo(0, 0);
     // Reference navigation can run while the active tab is already scrolled to top.
@@ -3394,7 +3415,10 @@ async function runReferenceSearchInActiveTab(referenceNoteId, context) {
     syncSearchInputField();
     if (!isViewingReferenceSource()) {
         searchInput.focus();
-        searchInput.setSelectionRange(normalizedReferenceId.length, normalizedReferenceId.length);
+        searchInput.setSelectionRange(
+            normalizedReferenceQuery.length,
+            normalizedReferenceQuery.length,
+        );
     }
 }
 

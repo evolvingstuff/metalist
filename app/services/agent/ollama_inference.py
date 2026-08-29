@@ -18,9 +18,12 @@ from instructor.v2.core.client import AsyncInstructor
 from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.inference import InferenceAttempt
+from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
+from app.services.agent.inference import MINIMUM_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
+from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.ollama_provider import OllamaProvider
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import resolve_ollama_think_value
@@ -318,6 +321,29 @@ async def _create_structured_completion(
 class OllamaInferenceAdapter:
     def __init__(self, *, provider: OllamaProvider) -> None:
         self._provider = provider
+
+    async def inspect_context_window(
+        self,
+        *,
+        base_url: str,
+        model: str,
+    ) -> InferenceContextWindow:
+        model_context = await self._provider.inspect_model_context(
+            base_url=base_url,
+            model=model,
+        )
+        required_tokens = min(
+            model_context.maximum_tokens,
+            TARGET_AGENT_CONTEXT_TOKENS,
+        )
+        if model_context.maximum_tokens < MINIMUM_AGENT_CONTEXT_TOKENS:
+            required_tokens = MINIMUM_AGENT_CONTEXT_TOKENS
+        return InferenceContextWindow(
+            model=model_context.model,
+            maximum_tokens=model_context.maximum_tokens,
+            loaded_tokens=model_context.loaded_tokens,
+            required_tokens=required_tokens,
+        )
 
     async def infer_structured(
         self,

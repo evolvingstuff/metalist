@@ -5,6 +5,8 @@ from __future__ import annotations
 from threading import Lock
 from uuid import uuid4
 
+from app.services.ai_chat_rendering import strip_note_citations_for_history
+
 
 _MAX_MESSAGES_PER_SESSION = 100
 _MAX_MESSAGE_CHARACTERS = 32_000
@@ -15,7 +17,7 @@ class AiChatSessionStore:
 
     def __init__(self) -> None:
         self._sessions: dict[str, list[dict[str, str]]] = {}
-        self._activities: dict[str, dict[str, list[dict[str, str]]]] = {}
+        self._activities: dict[str, dict[str, list[dict[str, object]]]] = {}
         self._lock = Lock()
 
     def reset(self) -> None:
@@ -33,7 +35,7 @@ class AiChatSessionStore:
         self._validate_session_key(session_key)
         with self._lock:
             messages = self._sessions.get(session_key, [])
-            session_activities: dict[str, list[dict[str, str]]] = {}
+            session_activities: dict[str, list[dict[str, object]]] = {}
             if session_key in self._activities:
                 session_activities = self._activities[session_key]
             elif messages:
@@ -113,6 +115,7 @@ class AiChatSessionStore:
         action: str,
         status: str,
         label: str,
+        approx_input_tokens: int,
     ) -> None:
         self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
@@ -120,13 +123,24 @@ class AiChatSessionStore:
         if status not in {"started", "completed"}:
             raise ValueError(f"Unsupported AI activity status: {status}")
         self._validate_message_text(label, label="label")
+        if (
+            not isinstance(approx_input_tokens, int)
+            or isinstance(approx_input_tokens, bool)
+            or approx_input_tokens < 1
+        ):
+            raise ValueError("AI activity approximate input tokens must be positive")
         with self._lock:
             self._require_streaming_turn(session_key=session_key, turn_id=turn_id)
             session_activities = self._activities.get(session_key)
             if session_activities is None or turn_id not in session_activities:
                 raise RuntimeError("AI activity list missing for streaming turn")
             session_activities[turn_id].append(
-                {"action": action, "status": status, "label": label}
+                {
+                    "action": action,
+                    "status": status,
+                    "label": label,
+                    "approx_input_tokens": approx_input_tokens,
+                }
             )
 
     def append_delta(
@@ -153,14 +167,22 @@ class AiChatSessionStore:
                 raise RuntimeError(f"AI {delta_kind} exceeded {_MAX_MESSAGE_CHARACTERS} characters")
             message[delta_kind] = updated_text
 
-    def complete_turn(self, *, session_key: str, turn_id: str) -> None:
+    def complete_turn(
+        self,
+        *,
+        session_key: str,
+        turn_id: str,
+        final_content: str,
+    ) -> None:
         self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
+        self._validate_message_text(final_content, label="final_content")
         with self._lock:
             message = self._require_streaming_turn(
                 session_key=session_key,
                 turn_id=turn_id,
             )
+            message["content"] = final_content
             message["status"] = "complete"
 
     def fail_turn(self, *, session_key: str, turn_id: str, error: str) -> None:
@@ -196,8 +218,15 @@ class AiChatSessionStore:
                     assert index == len(messages) - 2, "only the current turn may be streaming"
                     continue
                 assert assistant_message["status"] == "complete"
+                assistant_content = assistant_message["content"]
+                assert isinstance(assistant_content, str)
                 provider_messages.append(
-                    {"role": "assistant", "content": assistant_message["content"]}
+                    {
+                        "role": "assistant",
+                        "content": strip_note_citations_for_history(
+                            assistant_content,
+                        ),
+                    }
                 )
             return provider_messages
 

@@ -43,18 +43,119 @@ export function collapseCompletedActivityPairs(activities) {
             throw new Error('AI chat activity must be an object');
         }
         const previous = displayedActivities[displayedActivities.length - 1];
-        const completesPrevious = activity.status === 'completed'
-            && previous
+        const completesPrevious = previous
+            && activity.status === 'completed'
             && previous.status === 'started'
-            && previous.action === activity.action
-            && previous.label === activity.label;
-        if (completesPrevious) {
+            && previous.action === activity.action;
+        const previousAttempt = previous
+            ? /attempt \d+ of \d+/.exec(previous.label)?.[0]
+            : undefined;
+        const currentAttempt = /attempt \d+ of \d+/.exec(activity.label)?.[0];
+        const advancesSameModelAttempt = previous
+            && previousAttempt !== undefined
+            && previousAttempt === currentAttempt
+            && ['model_request', 'validation'].includes(previous.action)
+            && ['model_request', 'validation'].includes(activity.action);
+        const beginsPlannedModelRequest = previous
+            && previous.action === 'planning'
+            && previous.status === 'started'
+            && ['model_request', 'validation'].includes(activity.action);
+        if (completesPrevious || advancesSameModelAttempt || beginsPlannedModelRequest) {
             displayedActivities[displayedActivities.length - 1] = activity;
         } else {
             displayedActivities.push(activity);
         }
     }
     return displayedActivities;
+}
+
+
+export function formatCompactWorkingActivityLabel(activity) {
+    if (!activity || typeof activity !== 'object' || Array.isArray(activity)) {
+        throw new Error('formatCompactWorkingActivityLabel requires activity object');
+    }
+    if (typeof activity.action !== 'string' || activity.action === '') {
+        throw new Error('Compact working activity requires action');
+    }
+    if (typeof activity.label !== 'string' || activity.label === '') {
+        throw new Error('Compact working activity requires label');
+    }
+    if (activity.action === 'search_notes') {
+        return 'Searching notes';
+    }
+    return activity.label;
+}
+
+
+export function splitSearchActivityLabel(activity) {
+    if (!activity || typeof activity !== 'object' || Array.isArray(activity)) {
+        throw new Error('splitSearchActivityLabel requires activity object');
+    }
+    if (typeof activity.action !== 'string' || activity.action === '') {
+        throw new Error('Search activity display requires action');
+    }
+    if (typeof activity.label !== 'string' || activity.label === '') {
+        throw new Error('Search activity display requires label');
+    }
+    if (activity.action !== 'search_notes') {
+        return { statusLabel: activity.label, searchQuery: '' };
+    }
+
+    const startedPrefixMatch = /^Searching notes · page \d+ · /.exec(activity.label);
+    if (startedPrefixMatch) {
+        const searchQuery = activity.label.slice(startedPrefixMatch[0].length);
+        if (searchQuery === '') {
+            throw new Error('Search activity query must be non-empty');
+        }
+        const statusLabel = startedPrefixMatch[0].slice(0, -3);
+        return { statusLabel, searchQuery };
+    }
+
+    const completedPrefixMatch = (
+        /^Search complete · \d+ of \d+ result trees? · \d+ of \d+ matching notes? · page \d+ of \d+ · /
+    ).exec(activity.label);
+    if (completedPrefixMatch) {
+        const searchQuery = activity.label.slice(completedPrefixMatch[0].length);
+        if (searchQuery === '') {
+            throw new Error('Completed search activity query must be non-empty');
+        }
+        const statusLabel = completedPrefixMatch[0].slice(0, -3);
+        return { statusLabel, searchQuery };
+    }
+    const unavailablePrefixMatch = /^Search page unavailable · page \d+ of \d+ · /.exec(
+        activity.label,
+    );
+    if (unavailablePrefixMatch) {
+        const searchQuery = activity.label.slice(unavailablePrefixMatch[0].length);
+        if (searchQuery === '') {
+            throw new Error('Unavailable search page query must be non-empty');
+        }
+        const statusLabel = unavailablePrefixMatch[0].slice(0, -3);
+        return { statusLabel, searchQuery };
+    }
+    const duplicatePrefixMatch = /^Skipped duplicate search · page \d+ · /.exec(
+        activity.label,
+    );
+    if (duplicatePrefixMatch) {
+        const searchQuery = activity.label.slice(duplicatePrefixMatch[0].length);
+        if (searchQuery === '') {
+            throw new Error('Skipped duplicate search query must be non-empty');
+        }
+        const statusLabel = duplicatePrefixMatch[0].slice(0, -3);
+        return { statusLabel, searchQuery };
+    }
+    const repeatSelectionPrefix = 'Skipped repeat-search selection · ';
+    if (activity.label.startsWith(repeatSelectionPrefix)) {
+        const searchQuery = activity.label.slice(repeatSelectionPrefix.length);
+        if (searchQuery === '') {
+            throw new Error('Skipped repeat-search selection query must be non-empty');
+        }
+        return {
+            statusLabel: 'Skipped repeat-search selection',
+            searchQuery,
+        };
+    }
+    return { statusLabel: activity.label, searchQuery: '' };
 }
 
 
@@ -84,6 +185,12 @@ function validateAiStreamEvent(event) {
         throw new Error('action_status requires label');
     }
     if (
+        event.type === 'action_status'
+        && (!Number.isInteger(event.approx_input_tokens) || event.approx_input_tokens < 1)
+    ) {
+        throw new Error('action_status requires positive approx_input_tokens');
+    }
+    if (
         (event.type === 'thinking_delta' || event.type === 'content_delta')
         && (typeof event.text !== 'string' || event.text.length === 0)
     ) {
@@ -94,6 +201,26 @@ function validateAiStreamEvent(event) {
         && typeof event.rendered_text !== 'string'
     ) {
         throw new Error(`${event.type} requires rendered_text`);
+    }
+    if (event.type === 'content_delta' || event.type === 'done') {
+        if (
+            !Array.isArray(event.reference_note_ids)
+            || event.reference_note_ids.some((noteId) => (
+                typeof noteId !== 'string' || noteId.length === 0
+            ))
+            || new Set(event.reference_note_ids).size !== event.reference_note_ids.length
+        ) {
+            throw new Error(`${event.type} requires unique reference_note_ids`);
+        }
+    }
+    if (
+        event.type === 'done'
+        && (typeof event.content !== 'string' || event.content.length === 0)
+    ) {
+        throw new Error('done requires final content');
+    }
+    if (event.type === 'done' && typeof event.rendered_content !== 'string') {
+        throw new Error('done requires rendered_content');
     }
     if (event.type === 'error' && (typeof event.message !== 'string' || event.message.length === 0)) {
         throw new Error('AI error event requires message');

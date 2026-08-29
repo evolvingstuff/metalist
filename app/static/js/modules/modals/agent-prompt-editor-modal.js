@@ -5,9 +5,9 @@ import {
 } from '../ai-chat/ai-chat-api.js';
 import {
     MAX_AGENT_PROMPT_CHARACTERS,
-    inspectAgentPromptSet,
+    inspectAgentInstructionSet,
     validateAgentPromptDefaultsPayload,
-    validateAgentPromptSet,
+    validateAgentInstructionSet,
 } from '../ai-chat/agent-prompt-service.js';
 
 
@@ -24,7 +24,7 @@ function escapeHtml(value) {
 }
 
 
-function resolveEffectivePrompts(defaults, overrides) {
+function resolveEffectiveInstructions(defaults, overrides) {
     const resolved = {};
     for (const key of ['systemPrompt', 'finalResponsePrompt', 'toolResultPrompt']) {
         const override = overrides[key];
@@ -33,7 +33,31 @@ function resolveEffectivePrompts(defaults, overrides) {
         }
         resolved[key] = override === null ? defaults[key] : override;
     }
-    return validateAgentPromptSet(resolved);
+    if (!Array.isArray(overrides.skills)) {
+        throw new Error('Agent skill overrides must be an array');
+    }
+    if (overrides.skills.length !== defaults.skills.length) {
+        throw new Error('Agent skill overrides must match packaged skills');
+    }
+    resolved.skills = defaults.skills.map((defaultSkill) => {
+        const matches = overrides.skills.filter(
+            (override) => override.skillId === defaultSkill.skillId,
+        );
+        if (matches.length !== 1) {
+            throw new Error(`Expected one override for skill ${defaultSkill.skillId}`);
+        }
+        const override = matches[0].content;
+        if (override !== null && typeof override !== 'string') {
+            throw new Error(
+                `Agent skill override ${defaultSkill.skillId} must be a string or null`,
+            );
+        }
+        return {
+            ...defaultSkill,
+            content: override === null ? defaultSkill.content : override,
+        };
+    });
+    return validateAgentInstructionSet(resolved);
 }
 
 
@@ -59,6 +83,7 @@ export class AgentPromptEditorModal extends BaseModal {
             systemPrompt: '',
             finalResponsePrompt: '',
             toolResultPrompt: '',
+            skills: [],
             isLoading: true,
             isSaving: false,
             hasOverrides: false,
@@ -89,6 +114,24 @@ export class AgentPromptEditorModal extends BaseModal {
         const sourceLabel = state.hasOverrides
             ? 'Using namespace-specific overrides.'
             : 'Using packaged defaults.';
+        const controlsDisabled = [
+            state.isLoading,
+            state.isSaving,
+            state.skills.length === 0,
+        ].some((value) => value === true);
+        const skillEditors = state.skills.map((skill, index) => `
+            <details class="agent-prompt-editor-field agent-skill-editor-field" data-skill-id="${escapeHtml(skill.skillId)}">
+                <summary>
+                    <span class="agent-skill-editor-summary-label">
+                        <span class="agent-skill-editor-chevron" aria-hidden="true">▶</span>
+                        <span>${escapeHtml(skill.title)}</span>
+                    </span>
+                    <code>${escapeHtml(skill.triggerAction)}</code>
+                </summary>
+                <p>${escapeHtml(skill.description)}</p>
+                <textarea data-agent-skill-index="${index}" maxlength="${MAX_AGENT_PROMPT_CHARACTERS}" spellcheck="false" ${disabled}>${escapeHtml(skill.content)}</textarea>
+            </details>
+        `).join('');
         const editor = state.isLoading ? `
             <p class="agent-prompt-editor-loading" role="status">Loading packaged prompts…</p>
         ` : `
@@ -108,21 +151,27 @@ export class AgentPromptEditorModal extends BaseModal {
                     <p>Must contain exactly one <code>{action_name}</code> and one <code>{payload_json}</code> placeholder. Use doubled braces for literal braces.</p>
                     <textarea id="agent-prompt-tool-result" maxlength="${MAX_AGENT_PROMPT_CHARACTERS}" spellcheck="false" ${disabled}>${escapeHtml(state.toolResultPrompt)}</textarea>
                 </details>
+                <section class="agent-skill-editor-section">
+                    <h3>Skills</h3>
+                    <p>Each skill is injected only after its trigger action is selected. Skill instructions are transient and are not added to later conversation history.</p>
+                    ${skillEditors}
+                </section>
             </div>
         `;
         modalElement.innerHTML = `
             <div class="modal-content agent-prompt-editor-modal-content">
-                <h2>Agent Prompts</h2>
+                <h2>Agent Prompts &amp; Skills</h2>
                 <p class="agent-prompt-editor-description">
-                    Inspect or override the prompts MetaList sends during agent runs. Overrides are
-                    scoped to this namespace, apply to the next run, and are not conversation history.
+                    Inspect or override the prompts and skills MetaList sends during agent runs.
+                    Overrides are scoped to this namespace, apply to the next run, and are not
+                    conversation history.
                 </p>
                 <p class="agent-prompt-editor-source">${sourceLabel}</p>
                 ${editor}
                 <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
                 <div class="form-actions agent-prompt-editor-actions">
-                    <button type="button" class="secondary-btn" id="agent-prompt-reset" ${state.isLoading || state.isSaving ? 'disabled' : ''}>Restore packaged defaults</button>
-                    <button type="button" class="primary-btn" id="agent-prompt-save" data-modal-enter-action ${state.isLoading || state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Saving…' : 'Save overrides'}</button>
+                    <button type="button" class="secondary-btn" id="agent-prompt-reset" ${controlsDisabled ? 'disabled' : ''}>Restore packaged defaults</button>
+                    <button type="button" class="primary-btn" id="agent-prompt-save" data-modal-enter-action ${controlsDisabled ? 'disabled' : ''}>${state.isSaving ? 'Saving…' : 'Save overrides'}</button>
                 </div>
             </div>
         `;
@@ -156,6 +205,16 @@ export class AgentPromptEditorModal extends BaseModal {
         if (!(toolResultPrompt instanceof HTMLTextAreaElement)) {
             throw new Error('Agent tool-result prompt input missing');
         }
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!(modalElement instanceof HTMLElement)) {
+            throw new Error(`Modal element missing: ${this.modalElementId}`);
+        }
+        const skillInputs = Array.from(
+            modalElement.querySelectorAll('textarea[data-agent-skill-index]'),
+        );
+        if (skillInputs.length !== state.skills.length) {
+            throw new Error('Agent skill inputs do not match loaded skills');
+        }
         systemPrompt.oninput = () => this.updateModalState({
             systemPrompt: systemPrompt.value,
             error: '',
@@ -168,6 +227,28 @@ export class AgentPromptEditorModal extends BaseModal {
             toolResultPrompt: toolResultPrompt.value,
             error: '',
         });
+        for (const skillInput of skillInputs) {
+            if (!(skillInput instanceof HTMLTextAreaElement)) {
+                throw new Error('Agent skill input must be a textarea');
+            }
+            const rawIndex = skillInput.dataset.agentSkillIndex;
+            const skillIndex = Number.parseInt(rawIndex, 10);
+            if (!Number.isInteger(skillIndex) || skillIndex < 0) {
+                throw new Error('Agent skill input index is invalid');
+            }
+            if (skillIndex >= state.skills.length) {
+                throw new Error('Agent skill input index is out of bounds');
+            }
+            skillInput.oninput = () => {
+                const currentSkills = this.getModalState().skills;
+                const skills = currentSkills.map((skill, index) => (
+                    index === skillIndex
+                        ? { ...skill, content: skillInput.value }
+                        : skill
+                ));
+                this.updateModalState({ skills, error: '' });
+            };
+        }
     }
 
     onOpen() {
@@ -200,12 +281,17 @@ export class AgentPromptEditorModal extends BaseModal {
         }
         if (payload !== null) {
             const defaults = validateAgentPromptDefaultsPayload(payload);
-            const overrides = this._readOverrides();
-            const prompts = resolveEffectivePrompts(defaults, overrides);
+            const overrides = this._readOverrides(defaults.skills);
+            const instructions = resolveEffectiveInstructions(defaults, overrides);
             this.updateModalState({
-                ...prompts,
+                ...instructions,
                 isLoading: false,
-                hasOverrides: Object.values(overrides).some((value) => value !== null),
+                hasOverrides: [
+                    overrides.systemPrompt,
+                    overrides.finalResponsePrompt,
+                    overrides.toolResultPrompt,
+                    ...overrides.skills.map((skill) => skill.content),
+                ].some((value) => value !== null),
                 error: '',
             });
         }
@@ -214,10 +300,11 @@ export class AgentPromptEditorModal extends BaseModal {
 
     async _handleSave() {
         const state = this.getModalState();
-        const inspected = inspectAgentPromptSet({
+        const inspected = inspectAgentInstructionSet({
             systemPrompt: state.systemPrompt,
             finalResponsePrompt: state.finalResponsePrompt,
             toolResultPrompt: state.toolResultPrompt,
+            skills: state.skills,
         });
         if (inspected.error !== '') {
             this.updateModalState({ error: inspected.error });
@@ -226,14 +313,14 @@ export class AgentPromptEditorModal extends BaseModal {
         }
         this.updateModalState({ isSaving: true, error: '' });
         this.renderModalContent();
-        await this._saveOverrides(inspected.prompts);
+        await this._saveOverrides(inspected.settings);
         this.close();
     }
 
     async _handleReset() {
         this.updateModalState({ isSaving: true, error: '' });
         this.renderModalContent();
-        await this._resetOverrides();
+        await this._resetOverrides(this.getModalState().skills);
         this.close();
     }
 }

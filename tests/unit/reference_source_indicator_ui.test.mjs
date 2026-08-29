@@ -8,6 +8,10 @@ const MOUSE_EVENTS_URL = new URL(
     '../../app/static/js/modules/mode-manager/events/mouse-events.js',
     import.meta.url,
 );
+const KEYBOARD_EVENTS_URL = new URL(
+    '../../app/static/js/modules/mode-manager/events/keyboard-events.js',
+    import.meta.url,
+);
 
 test('reference source navigation uses a dismissible mode indicator instead of a back arrow', async () => {
     const [template, css, mouseEvents] = await Promise.all([
@@ -27,4 +31,16 @@ test('reference source navigation uses a dismissible mode indicator instead of a
         /event\.target\.closest\('#reference-source-indicator-clear'\)/,
     );
     assert.match(mouseEvents, /await navigateBackFromReferenceContext\(\)/);
+});
+
+test('AI reference collections open a combined OR search in a new tab', async () => {
+    const [mouseEvents, keyboardEvents] = await Promise.all([
+        readFile(MOUSE_EVENTS_URL, 'utf8'),
+        readFile(KEYBOARD_EVENTS_URL, 'utf8'),
+    ]);
+
+    assert.match(mouseEvents, /\.ai-chat-open-all-references/);
+    assert.match(mouseEvents, /openReferenceQueryInNewTab\(referenceQuery\)/);
+    assert.match(keyboardEvents, /export async function openReferenceQueryInNewTab/);
+    assert.match(keyboardEvents, /runReferenceSearchInActiveTab\(referenceQuery/);
 });

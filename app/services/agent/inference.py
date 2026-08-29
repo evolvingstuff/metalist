@@ -10,6 +10,10 @@ from typing import Protocol
 from pydantic import BaseModel
 
 
+MINIMUM_AGENT_CONTEXT_TOKENS = 16_384
+TARGET_AGENT_CONTEXT_TOKENS = 32_768
+
+
 @dataclass(frozen=True, slots=True)
 class InferenceAttempt:
     request: dict[str, object]
@@ -24,6 +28,29 @@ class InferenceResponse:
     thinking: str
     usage: dict[str, int]
     attempts: list[InferenceAttempt]
+
+
+@dataclass(frozen=True, slots=True)
+class InferenceContextWindow:
+    model: str
+    maximum_tokens: int
+    loaded_tokens: int
+    required_tokens: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model, str) or self.model.strip() == "":
+            raise ValueError("Inference context model must be non-empty")
+        for label, value in (
+            ("maximum_tokens", self.maximum_tokens),
+            ("loaded_tokens", self.loaded_tokens),
+            ("required_tokens", self.required_tokens),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError(f"Inference context {label} must be positive")
+
+    @property
+    def is_sufficient(self) -> bool:
+        return self.loaded_tokens >= self.required_tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,13 +74,21 @@ class StructuredInferenceError(RuntimeError):
         else:
             attempt_summary = f"{attempt_count} attempts"
         super().__init__(
-            f"Ollama could not produce a valid agent action after {attempt_summary}. "
+            f"Ollama could not produce a valid structured response after {attempt_summary}. "
             "Open Agent Debug for exact request and response details."
         )
         self.attempts = list(attempts)
 
 
 class InferenceAdapter(Protocol):
+    async def inspect_context_window(
+        self,
+        *,
+        base_url: str,
+        model: str,
+    ) -> InferenceContextWindow:
+        ...
+
     async def infer_structured(
         self,
         *,

@@ -5,6 +5,8 @@ import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
     collapseCompletedActivityPairs,
+    formatCompactWorkingActivityLabel,
+    splitSearchActivityLabel,
     parseAiChatNdjsonBuffer,
 } from '../../app/static/js/modules/ai-chat/ai-chat-panel-service.js';
 
@@ -27,13 +29,13 @@ test('completed activity collapses only its identical preceding started panel', 
     const activities = [
         {
             sequence: 1,
-            action: 'read_notes',
+            action: 'read_notes_by_id',
             status: 'started',
             label: 'Reading 2 notes',
         },
         {
             sequence: 2,
-            action: 'read_notes',
+            action: 'read_notes_by_id',
             status: 'completed',
             label: 'Reading 2 notes',
         },
@@ -52,19 +54,185 @@ test('completed activity collapses only its identical preceding started panel', 
 });
 
 
-test('activity collapse preserves distinct lifecycle labels and phases', () => {
+test('completed search replaces its live row with the result count and exact query', () => {
+    const activities = [
+        {
+            sequence: 1,
+            action: 'search_notes',
+            status: 'started',
+            label: 'Searching notes · page 1 · "Pydantic AI"',
+        },
+        {
+            sequence: 2,
+            action: 'search_notes',
+            status: 'completed',
+            label: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3 · "Pydantic AI"',
+        },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[1]]);
+});
+
+
+test('model wait response and validation phases update one attempt panel', () => {
+    const activities = [
+        {
+            sequence: 0,
+            action: 'planning',
+            status: 'started',
+            label: 'Preparing action selection',
+            approx_input_tokens: 1200,
+        },
+        {
+            sequence: 1,
+            action: 'model_request',
+            status: 'started',
+            label: 'Waiting for Ollama · attempt 1 of 2',
+            approx_input_tokens: 1300,
+        },
+        {
+            sequence: 2,
+            action: 'validation',
+            status: 'started',
+            label: 'Ollama responded · validating attempt 1 of 2',
+            approx_input_tokens: 1300,
+        },
+        {
+            sequence: 3,
+            action: 'validation',
+            status: 'completed',
+            label: 'Structured search query validated · attempt 1 of 2',
+            approx_input_tokens: 1300,
+        },
+        {
+            sequence: 4,
+            action: 'search_notes',
+            status: 'started',
+            label: 'Searching notes · page 1 · foo',
+            approx_input_tokens: 1300,
+        },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [
+        activities[3],
+        activities[4],
+    ]);
+});
+
+
+test('model retries remain visible between independently collapsed attempt panels', () => {
+    const activities = [
+        {
+            action: 'model_request',
+            status: 'started',
+            label: 'Waiting for Ollama · attempt 1 of 2',
+        },
+        {
+            action: 'validation',
+            status: 'started',
+            label: 'Ollama responded · validating attempt 1 of 2',
+        },
+        {
+            action: 'retry',
+            status: 'started',
+            label: 'Structured output invalid (ValidationError) · Instructor will retry',
+        },
+        {
+            action: 'model_request',
+            status: 'started',
+            label: 'Instructor retrying · Waiting for Ollama · attempt 2 of 2',
+        },
+        {
+            action: 'validation',
+            status: 'started',
+            label: 'Ollama responded · validating attempt 2 of 2',
+        },
+        {
+            action: 'validation',
+            status: 'completed',
+            label: 'Structured action validated · attempt 2 of 2',
+        },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [
+        activities[1],
+        activities[2],
+        activities[5],
+    ]);
+});
+
+
+test('response lifecycle updates one panel even when its completed label changes', () => {
     const activities = [
         { action: 'respond', status: 'started', label: 'Writing response' },
         { action: 'respond', status: 'completed', label: 'Response complete' },
     ];
 
-    assert.deepEqual(collapseCompletedActivityPairs(activities), activities);
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[1]]);
+});
+
+
+test('compact hidden-eye progress does not expose the generated search syntax', () => {
+    assert.equal(formatCompactWorkingActivityLabel({
+        action: 'search_notes',
+        label: 'Searching notes · page 2 · architecture "agent harness" -obsolete',
+    }), 'Searching notes');
+    assert.equal(formatCompactWorkingActivityLabel({
+        action: 'read_notes_by_id',
+        label: 'Reading 2 notes',
+    }), 'Reading 2 notes');
+});
+
+
+test('search activity labels expose the query as a separate display part', () => {
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Searching notes · page 1 · foo -"lorem ipsum"',
+    }), {
+        statusLabel: 'Searching notes · page 1',
+        searchQuery: 'foo -"lorem ipsum"',
+    });
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3 · foo -"lorem ipsum"',
+    }), {
+        statusLabel: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3',
+        searchQuery: 'foo -"lorem ipsum"',
+    });
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Search page unavailable · page 7 of 6 · foo',
+    }), {
+        statusLabel: 'Search page unavailable · page 7 of 6',
+        searchQuery: 'foo',
+    });
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Skipped duplicate search · page 1 · foo OR "foo"',
+    }), {
+        statusLabel: 'Skipped duplicate search · page 1',
+        searchQuery: 'foo OR "foo"',
+    });
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Skipped repeat-search selection · foo OR "foo"',
+    }), {
+        statusLabel: 'Skipped repeat-search selection',
+        searchQuery: 'foo OR "foo"',
+    });
+    assert.deepEqual(splitSearchActivityLabel({
+        action: 'search_notes',
+        label: 'Selected action · Search notes · The answer depends on the notes.',
+    }), {
+        statusLabel: 'Selected action · Search notes · The answer depends on the notes.',
+        searchQuery: '',
+    });
 });
 
 
 test('NDJSON parser retains incomplete tail while returning complete stream events', () => {
     const parsed = parseAiChatNdjsonBuffer(
-        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes"}\n'
+        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234}\n'
         + '{"type":"thinking_delta","text":"hmm","rendered_text":"<p>hmm</p>"}\n'
         + '{"type":"content_delta","text":"Hi","rendered_text":"<p>Hi',
     );
@@ -75,6 +243,7 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
             action: 'search_notes',
             status: 'started',
             label: 'Searching notes',
+            approx_input_tokens: 1234,
         },
         {
             type: 'thinking_delta',
@@ -88,11 +257,22 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
     );
 
     const completed = parseAiChatNdjsonBuffer(
-        `${parsed.remainder}</p>"}\n{"type":"done"}\n`,
+        `${parsed.remainder}</p>","reference_note_ids":[]}\n`
+        + '{"type":"done","content":"Hi","rendered_content":"<p>Hi</p>","reference_note_ids":[]}\n',
     );
     assert.deepEqual(completed.events, [
-        { type: 'content_delta', text: 'Hi', rendered_text: '<p>Hi</p>' },
-        { type: 'done' },
+        {
+            type: 'content_delta',
+            text: 'Hi',
+            rendered_text: '<p>Hi</p>',
+            reference_note_ids: [],
+        },
+        {
+            type: 'done',
+            content: 'Hi',
+            rendered_content: '<p>Hi</p>',
+            reference_note_ids: [],
+        },
     ]);
     assert.equal(completed.remainder, '');
 });
@@ -110,6 +290,12 @@ test('NDJSON parser rejects malformed action status events', () => {
             '{"type":"action_status","action":"search_notes","status":"waiting","label":"Searching notes"}\n',
         ),
         /action_status status is invalid/,
+    );
+    assert.throws(
+        () => parseAiChatNdjsonBuffer(
+            '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes"}\n',
+        ),
+        /action_status requires positive approx_input_tokens/,
     );
 });
 
@@ -130,5 +316,11 @@ test('NDJSON parser requires rendered snapshots for streamed text', () => {
     assert.throws(
         () => parseAiChatNdjsonBuffer('{"type":"content_delta","text":"hello"}\n'),
         /content_delta requires rendered_text/,
+    );
+    assert.throws(
+        () => parseAiChatNdjsonBuffer(
+            '{"type":"done","content":"hello","reference_note_ids":[]}\n',
+        ),
+        /done requires rendered_content/,
     );
 });

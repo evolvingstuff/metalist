@@ -11,6 +11,8 @@ import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
     collapseCompletedActivityPairs,
+    formatCompactWorkingActivityLabel,
+    splitSearchActivityLabel,
 } from './ai-chat-panel-service.js';
 import {
     queueMermaidDiagramRendering,
@@ -78,9 +80,13 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'model_request',
     'validation',
     'retry',
+    'skill',
     'search_notes',
-    'read_notes',
+    'read_notes_by_id',
     'respond',
+    'cancel',
+    'ollama_runtime',
+    'model_context',
 ]);
 
 
@@ -100,6 +106,9 @@ function validateActivity(activity) {
     if (typeof activity.label !== 'string' || activity.label === '') {
         throw new Error('AI chat activity label must be non-empty');
     }
+    if (!Number.isInteger(activity.approx_input_tokens) || activity.approx_input_tokens < 1) {
+        throw new Error('AI chat activity approximate input tokens must be positive');
+    }
     return activity;
 }
 
@@ -115,6 +124,10 @@ class AiChatPanelController {
         this._thinkingTimerId = 0;
         this._models = [];
         this._isLoadingModels = false;
+        this._activeChatAbortController = null;
+        this._activeChatCompletion = null;
+        this._isClearingSession = false;
+        this._localMessageSequence = 0;
         this._getSettings = null;
         this._saveSettings = null;
         this._getPanelWidth = null;
@@ -203,7 +216,6 @@ class AiChatPanelController {
             send: requireElement('ai-chat-send', HTMLButtonElement),
             model: requireElement('ai-chat-model', HTMLSelectElement),
             thinkingLevel: requireElement('ai-chat-thinking-level', HTMLSelectElement),
-            status: requireElement('ai-chat-status', HTMLElement),
             diagnosticsToggle: requireElement(
                 'ai-chat-diagnostics-toggle',
                 HTMLButtonElement,
@@ -243,6 +255,13 @@ class AiChatPanelController {
         elements.form.addEventListener('submit', (event) => {
             event.preventDefault();
             void this._submitMessage();
+        });
+        elements.send.addEventListener('click', () => {
+            if (this._isBusy) {
+                this._cancelActiveRequest();
+                return;
+            }
+            elements.form.requestSubmit();
         });
         elements.input.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
@@ -418,12 +437,11 @@ class AiChatPanelController {
             if (ModeContext.clipboardNoteId !== null) {
                 ModeContext.setClipboardNoteId(null);
             }
-            this._setStatus('Copied response with @markdown @llm.', false);
         } catch (error) {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setStatus(error.message, true);
+            this._appendLocalErrorPanel(error.message);
             throw error;
         }
     }
@@ -606,15 +624,19 @@ class AiChatPanelController {
         }
         this._elements.thinkingLevel.disabled = isThinkingLevelDisabled;
 
-        let isSendDisabled = this._isBusy;
-        if (this._isLoadingModels) {
-            isSendDisabled = true;
-        }
-        if (this._models.length === 0) {
-            isSendDisabled = true;
-        }
-        if (!hasModel) {
-            isSendDisabled = true;
+        this._elements.send.textContent = this._isBusy ? 'Stop' : 'Send';
+        this._elements.send.classList.toggle('is-stop', this._isBusy);
+        let isSendDisabled = false;
+        if (!this._isBusy) {
+            if (this._isLoadingModels) {
+                isSendDisabled = true;
+            }
+            if (this._models.length === 0) {
+                isSendDisabled = true;
+            }
+            if (!hasModel) {
+                isSendDisabled = true;
+            }
         }
         this._elements.send.disabled = isSendDisabled;
     }
@@ -633,7 +655,9 @@ class AiChatPanelController {
             }
             this._models = payload.models;
             if (this._models.length === 0) {
-                this._setStatus('Ollama is connected, but no models are installed.', true);
+                this._appendLocalErrorPanel(
+                    'Ollama is connected, but no models are installed.',
+                );
                 return;
             }
             if (this._models.includes(settings.model)) {
@@ -644,19 +668,17 @@ class AiChatPanelController {
                 if (thinkingLevel !== settings.thinkingLevel) {
                     await this._saveSettings({
                         provider: settings.provider,
-                        baseUrl: settings.baseUrl,
                         model: settings.model,
                         thinkingLevel,
                     });
                 }
             }
-            this._setStatus('', false);
         } catch (error) {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
             this._models = [];
-            this._setStatus(error.message, true);
+            this._appendLocalErrorPanel(error.message);
         } finally {
             this._isLoadingModels = false;
             this._syncSettingsControls();
@@ -675,7 +697,6 @@ class AiChatPanelController {
         });
         await this._saveSettings({
             provider: settings.provider,
-            baseUrl: settings.baseUrl,
             model,
             thinkingLevel,
         });
@@ -690,7 +711,6 @@ class AiChatPanelController {
         });
         await this._saveSettings({
             provider: settings.provider,
-            baseUrl: settings.baseUrl,
             model: settings.model,
             thinkingLevel,
         });
@@ -711,27 +731,38 @@ class AiChatPanelController {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setStatus(error.message, true);
+            this._appendLocalErrorPanel(error.message);
             throw error;
         }
     }
 
     async _clearSession() {
-        if (this._isBusy) {
+        if (this._isClearingSession) {
             return;
         }
+        this._isClearingSession = true;
+        this._render();
         try {
+            if (this._isBusy) {
+                const activeRequestCompletion = this._activeChatCompletion;
+                if (!(activeRequestCompletion instanceof Promise)) {
+                    throw new Error('Busy AI chat is missing its completion promise');
+                }
+                this._cancelActiveRequest();
+                await activeRequestCompletion;
+            }
             await clearAiChatSession();
         } catch (error) {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setStatus(error.message, true);
+            this._appendLocalErrorPanel(error.message);
             throw error;
+        } finally {
+            this._isClearingSession = false;
         }
         this._expandedThinkingMessageIds.clear();
         this._messages = [];
-        this._setStatus('', false);
         this._render();
         await AgentDebugView.refreshIfOpen();
         this._elements.input.focus();
@@ -745,7 +776,7 @@ class AiChatPanelController {
             return;
         }
         if (this._models.length === 0) {
-            this._setStatus('No installed Ollama models are available.', true);
+            this._appendLocalErrorPanel('No installed Ollama models are available.');
             return;
         }
         const message = this._elements.input.value;
@@ -754,7 +785,7 @@ class AiChatPanelController {
         }
         const settings = this._getSettings();
         if (!this._models.includes(settings.model)) {
-            this._setStatus('Select an installed Ollama model first.', true);
+            this._appendLocalErrorPanel('Select an installed Ollama model first.');
             return;
         }
 
@@ -788,16 +819,33 @@ class AiChatPanelController {
             },
         );
         const assistantMessage = this._messages[this._messages.length - 1];
+        if (this._activeChatAbortController !== null) {
+            throw new Error('AI chat abort controller already exists');
+        }
+        if (this._activeChatCompletion !== null) {
+            throw new Error('AI chat completion promise already exists');
+        }
+        const abortController = new AbortController();
+        this._activeChatAbortController = abortController;
+        let resolveActiveChatCompletion;
+        const activeChatCompletion = new Promise((resolve) => {
+            resolveActiveChatCompletion = resolve;
+        });
+        if (typeof resolveActiveChatCompletion !== 'function') {
+            throw new Error('AI chat completion resolver was not initialized');
+        }
+        this._activeChatCompletion = activeChatCompletion;
         this._elements.input.value = '';
         this._setBusy(true);
         this._startThinkingFeedback();
-        this._setStatus('Planning next action…', false);
         this._render();
 
+        let wasCancelled = false;
         try {
             await streamAiChat({
                 settings,
                 message,
+                signal: abortController.signal,
                 onEvent: (event) => {
                     if (event.type === 'action_status') {
                         assistantMessage.activities.push({
@@ -805,9 +853,8 @@ class AiChatPanelController {
                             action: event.action,
                             status: event.status,
                             label: event.label,
+                            approx_input_tokens: event.approx_input_tokens,
                         });
-                        const suffix = event.status === 'started' ? '…' : ' complete';
-                        this._setStatus(`${event.label}${suffix}`, false);
                         void AgentDebugView.refreshIfOpen();
                     } else if (event.type === 'thinking_delta') {
                         assistantMessage.thinking += event.text;
@@ -820,6 +867,8 @@ class AiChatPanelController {
                         assistantMessage.content += event.text;
                         assistantMessage.rendered_content = event.rendered_text;
                     } else if (event.type === 'done') {
+                        assistantMessage.content = event.content;
+                        assistantMessage.rendered_content = event.rendered_content;
                         assistantMessage.status = 'complete';
                         void AgentDebugView.refreshIfOpen();
                     } else if (event.type === 'error') {
@@ -833,21 +882,62 @@ class AiChatPanelController {
                 },
             });
         } catch (error) {
-            if (!(error instanceof AiApiError)) {
+            if (abortController.signal.aborted) {
+                wasCancelled = true;
+                assistantMessage.activities.push({
+                    sequence: assistantMessage.activities.length + 1,
+                    action: 'cancel',
+                    status: 'completed',
+                    label: 'Cancelled by user',
+                });
+                assistantMessage.status = 'error';
+                assistantMessage.error = 'Cancelled by user';
+                this._render();
+            } else if (error instanceof AiApiError) {
+                assistantMessage.status = 'error';
+                assistantMessage.error = error.message;
+                this._render();
+            } else {
                 throw error;
             }
-            assistantMessage.status = 'error';
-            assistantMessage.error = error.message;
-            this._render();
-            this._setStatus(error.message, true);
-            throw error;
         } finally {
             this._stopThinkingFeedback();
+            if (this._activeChatAbortController !== abortController) {
+                throw new Error('AI chat abort controller changed during request');
+            }
+            this._activeChatAbortController = null;
+            if (this._activeChatCompletion !== activeChatCompletion) {
+                throw new Error('AI chat completion promise changed during request');
+            }
+            this._activeChatCompletion = null;
             this._setBusy(false);
+            resolveActiveChatCompletion();
         }
-        this._setStatus(assistantMessage.status === 'error' ? assistantMessage.error : '', assistantMessage.status === 'error');
-        await this._loadSession();
+        if (!wasCancelled) {
+            await this._loadSession();
+        }
         this._elements.input.focus();
+    }
+
+    _cancelActiveRequest() {
+        if (!this._isBusy || this._activeChatAbortController === null) {
+            throw new Error('Cannot cancel when no AI chat request is active');
+        }
+        if (this._activeChatAbortController.signal.aborted) {
+            return;
+        }
+        const assistantMessage = this._messages[this._messages.length - 1];
+        validateMessage(assistantMessage);
+        assistantMessage.activities.push({
+            sequence: assistantMessage.activities.length + 1,
+            action: 'cancel',
+            status: 'started',
+            label: 'Cancelling request',
+        });
+        this._activeChatAbortController.abort();
+        this._elements.send.textContent = 'Stopping…';
+        this._elements.send.disabled = true;
+        this._render();
     }
 
     _setBusy(isBusy) {
@@ -855,7 +945,6 @@ class AiChatPanelController {
             throw new Error('_setBusy requires boolean');
         }
         this._isBusy = isBusy;
-        this._elements.clear.disabled = isBusy;
         this._syncComposerControlsDisabled();
     }
 
@@ -894,12 +983,26 @@ class AiChatPanelController {
         }
     }
 
-    _setStatus(message, isError) {
-        if (typeof message !== 'string' || typeof isError !== 'boolean') {
-            throw new Error('_setStatus requires message and isError');
+    _appendLocalErrorPanel(message) {
+        if (typeof message !== 'string' || message === '') {
+            throw new Error('_appendLocalErrorPanel requires a non-empty message');
         }
-        this._elements.status.textContent = message;
-        this._elements.status.classList.toggle('is-error', isError);
+        this._localMessageSequence += 1;
+        const settings = this._getSettings();
+        this._messages.push({
+            id: `local-error-${Date.now()}-${this._localMessageSequence}`,
+            role: 'assistant',
+            content: '',
+            rendered_content: '',
+            thinking: '',
+            rendered_thinking: '',
+            status: 'error',
+            error: message,
+            provider: settings.provider,
+            model: settings.model,
+            activities: [],
+        });
+        this._render();
     }
 
     _render() {
@@ -1004,11 +1107,9 @@ class AiChatPanelController {
             }
             this._elements.messages.appendChild(article);
         }
-        let isClearDisabled = this._isBusy;
-        if (this._messages.length === 0) {
-            isClearDisabled = true;
-        }
-        this._elements.clear.disabled = isClearDisabled;
+        this._elements.clear.disabled = (
+            this._messages.length === 0 || this._isClearingSession
+        );
         this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
     }
 
@@ -1031,8 +1132,24 @@ class AiChatPanelController {
             marker.textContent = activity.status === 'completed' ? '✓' : '•';
             const label = document.createElement('span');
             label.className = 'ai-chat-activity-label';
-            label.textContent = activity.label;
-            panel.append(marker, label);
+            const labelParts = splitSearchActivityLabel(activity);
+            label.textContent = labelParts.statusLabel;
+            if (labelParts.searchQuery !== '') {
+                const query = document.createElement('code');
+                query.className = 'ai-chat-activity-query';
+                query.textContent = labelParts.searchQuery;
+                label.append(document.createTextNode(' · '), query);
+            }
+            const tokenCount = document.createElement('span');
+            tokenCount.className = 'ai-chat-activity-token-count';
+            tokenCount.textContent = (
+                `≈ ${activity.approx_input_tokens.toLocaleString()} input tokens`
+            );
+            tokenCount.title = (
+                'Approximate input size, estimated from the serialized request or current '
+                + 'agent context at four characters per token.'
+            );
+            panel.append(marker, label, tokenCount);
             if (isCurrent) {
                 const elapsed = document.createElement('span');
                 elapsed.className = 'ai-chat-activity-elapsed';
@@ -1053,8 +1170,11 @@ class AiChatPanelController {
         const label = document.createElement('span');
         label.className = 'ai-chat-working-label';
         const latestActivity = message.activities[message.activities.length - 1];
+        const latestActivityLabel = latestActivity
+            ? formatCompactWorkingActivityLabel(latestActivity)
+            : '';
         label.textContent = latestActivity
-            ? `Working · ${latestActivity.label}`
+            ? `Working · ${latestActivityLabel}`
             : 'Working';
 
         const dots = document.createElement('span');

@@ -16,6 +16,9 @@ async function fetchAi(url, options) {
     try {
         return await fetch(url, options);
     } catch (error) {
+        if (options.signal instanceof AbortSignal && options.signal.aborted) {
+            throw error;
+        }
         if (error instanceof TypeError) {
             throw new AiApiError('Could not reach the MetaList AI service');
         }
@@ -121,7 +124,6 @@ export async function listOllamaModels(settings) {
         headers: buildSessionHeaders(true),
         body: JSON.stringify({
             provider: settings.provider,
-            base_url: settings.baseUrl,
         }),
     });
     return await readJsonResponse(response, 'Failed to list Ollama models');
@@ -189,7 +191,6 @@ export async function pullOllamaModel({ settings, model, onEvent }) {
         headers: buildSessionHeaders(true),
         body: JSON.stringify({
             provider: settings.provider,
-            base_url: settings.baseUrl,
             model: model.trim(),
         }),
     });
@@ -228,7 +229,7 @@ export async function pullOllamaModel({ settings, model, onEvent }) {
 }
 
 
-export async function streamAiChat({ settings, message, onEvent }) {
+export async function streamAiChat({ settings, message, onEvent, signal }) {
     if (!settings || typeof settings !== 'object') {
         throw new Error('streamAiChat requires settings object');
     }
@@ -238,17 +239,20 @@ export async function streamAiChat({ settings, message, onEvent }) {
     if (typeof onEvent !== 'function') {
         throw new Error('streamAiChat requires onEvent');
     }
+    if (!(signal instanceof AbortSignal)) {
+        throw new Error('streamAiChat requires AbortSignal');
+    }
     const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
     const response = await fetchAi(CONFIG.API.AI.CHAT, {
         method: 'POST',
         headers: buildSessionHeaders(true),
         body: JSON.stringify({
             provider: settings.provider,
-            base_url: settings.baseUrl,
             model: settings.model,
             thinking_level: thinkingLevel,
             message,
         }),
+        signal,
     });
     if (!response.ok) {
         await readJsonResponse(response, 'Failed to start Ollama chat');
