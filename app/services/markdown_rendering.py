@@ -184,22 +184,44 @@ class _MarkdownRenderer:
 
     def _render_list_block(self) -> str:
         first_line = self._lines[self._index]
-        is_ordered = _ORDERED_LIST_RE.match(first_line.strip()) is not None
+        ordered_match = _ORDERED_LIST_RE.match(first_line.strip())
+        is_ordered = ordered_match is not None
         tag_name = "ul"
+        opening_tag = "<ul>"
         if is_ordered:
             tag_name = "ol"
+            assert ordered_match is not None
+            start_number = int(ordered_match.group(1))
+            opening_tag = "<ol>"
+            if start_number != 1:
+                opening_tag = f'<ol start="{start_number}">'
         items: List[str] = []
 
         while self._index < len(self._lines):
             line = self._lines[self._index]
             if line.strip() == "":
-                self._index += 1
+                next_content_index = self._index
+                while (
+                    next_content_index < len(self._lines)
+                    and self._lines[next_content_index].strip() == ""
+                ):
+                    next_content_index += 1
+                if (
+                    next_content_index < len(self._lines)
+                    and self._is_matching_list_item(
+                        line=self._lines[next_content_index],
+                        is_ordered=is_ordered,
+                    )
+                ):
+                    self._index = next_content_index
+                    continue
+                self._index = next_content_index
                 break
             if not self._is_matching_list_item(line=line, is_ordered=is_ordered):
                 break
             items.append(self._render_list_item(is_ordered=is_ordered))
 
-        return f"<{tag_name}>{''.join(items)}</{tag_name}>"
+        return f"{opening_tag}{''.join(items)}</{tag_name}>"
 
     def _render_list_item(self, *, is_ordered: bool) -> str:
         line = self._lines[self._index]

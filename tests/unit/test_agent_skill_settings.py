@@ -1,50 +1,94 @@
 import pytest
 
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
-from app.services.agent.skill_settings import SEARCH_NOTES_SKILL_PREFERENCE_KEY
+from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY
+from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY
+from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY
+from app.services.agent.skill_settings import LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY
+from app.services.agent.skill_settings import SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY
 from app.services.agent.skill_settings import resolve_agent_skill_set
 from app.services.agent.skill_settings import validate_agent_skill_content
 
 
-def test_packaged_search_skill_explains_query_syntax_and_bounded_pages() -> None:
-    skill = DEFAULT_AGENT_SKILLS.for_action("search_notes")
+def test_packaged_investigation_skill_explains_scope_and_bounded_navigation() -> None:
+    skill = DEFAULT_AGENT_SKILLS.for_action("investigate_current_scope")
 
-    assert skill.title == "Search notes"
-    assert skill.preference_key == SEARCH_NOTES_SKILL_PREFERENCE_KEY
+    assert skill.title == "Investigate current scope"
+    assert skill.preference_key == SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY
     normalized_skill = " ".join(skill.content.split())
-    assert "at least one positive tag" in skill.content
-    assert "The final user message is the current request" in normalized_skill
-    assert "A topic change does not require an exclusion" in normalized_skill
-    assert "Never carry an earlier topic into a new query merely to negate it" in (
-        normalized_skill
-    )
+    assert "immutable MetaList result scope" in normalized_skill
+    assert "recursively nested `children`" in normalized_skill
+    assert "contentless structural objects" in normalized_skill
+    assert "directly assigned raw `tags`" in normalized_skill
+    assert "untagged note omits the `tags` field" in normalized_skill
+    assert "Do not infer additional, inherited, or ontology-implied tags" in normalized_skill
+    assert "complete replacement working summary" in normalized_skill
     assert "Pydantic AI" not in skill.content
     assert "`foo OR bar baz`" in skill.content
-    assert '`foo OR "foo"`' in skill.content
-    assert '`foo bar OR "foo bar"`' in skill.content
-    assert '`-"lorem ipsum"`' in skill.content
-    assert "both tags and note text" in normalized_skill
-    assert "explicitly asks for tag-only or text-only scope" in normalized_skill
-    assert "Use page `1`" in skill.content
-    assert "`next_page` value" in skill.content
-    assert "Broad synthesis requests normally require additional relevant pages" in (
-        normalized_skill
-    )
-    assert "say which pages informed the answer" in normalized_skill
-    assert "configured number of top-level result" in skill.content
-    assert "do not issue another search merely to narrow" in normalized_skill
+    assert "lorem ipsum" in skill.content
+    assert "project-foo" in skill.content
+    assert "Do not prefix tags with `#`" in skill.content
+    assert "page_next" in skill.content
+    assert "inspect_tag_facets" in skill.content
+    assert "backtrack" in skill.content
+    assert "reopen_sources" in skill.content
     assert "generally more recent or more highly ranked by the user" in normalized_skill
-    assert "ranking hint, not proof of relevance" in normalized_skill
-    assert "gray" in skill.content
-    assert "created/updated timestamps" in skill.content
+    assert "ranking hint rather than proof of relevance" in normalized_skill
 
 
 def test_resolve_agent_skill_set_uses_namespace_override() -> None:
     skills = resolve_agent_skill_set(
-        preferences={SEARCH_NOTES_SKILL_PREFERENCE_KEY: "Custom search instructions"}
+        preferences={
+            SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY: "Custom investigation instructions"
+        }
     )
 
-    assert skills.for_action("search_notes").content == "Custom search instructions"
+    assert (
+        skills.for_action("investigate_current_scope").content
+        == "Custom investigation instructions"
+    )
+
+
+def test_legacy_search_skill_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v5"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY: "Old instructions"
+            }
+        )
+
+
+def test_flat_v2_investigation_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY: (
+                    "Old flat-page instructions"
+                )
+            }
+        )
+
+
+def test_inherited_tag_v3_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY: (
+                    "Old inherited-tag instructions"
+                )
+            }
+        )
+
+
+def test_verbose_v4_investigation_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY: (
+                    "Old verbose note-payload instructions"
+                )
+            }
+        )
 
 
 def test_agent_skill_content_rejects_blank_and_oversized_values() -> None:

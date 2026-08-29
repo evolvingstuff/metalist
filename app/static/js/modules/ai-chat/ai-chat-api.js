@@ -229,12 +229,15 @@ export async function pullOllamaModel({ settings, model, onEvent }) {
 }
 
 
-export async function streamAiChat({ settings, message, onEvent, signal }) {
+export async function streamAiChat({ settings, message, scope, onEvent, signal }) {
     if (!settings || typeof settings !== 'object') {
         throw new Error('streamAiChat requires settings object');
     }
     if (typeof message !== 'string' || message.trim() === '') {
         throw new Error('streamAiChat requires non-empty message');
+    }
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
+        throw new Error('streamAiChat requires scope object');
     }
     if (typeof onEvent !== 'function') {
         throw new Error('streamAiChat requires onEvent');
@@ -251,6 +254,7 @@ export async function streamAiChat({ settings, message, onEvent, signal }) {
             model: settings.model,
             thinking_level: thinkingLevel,
             message,
+            scope,
         }),
         signal,
     });

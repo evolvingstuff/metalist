@@ -8,6 +8,7 @@ import pytest
 
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.snapshot import build_activity_summary, build_view_state
+from app.services.snapshot import resolve_view_scope_membership
 
 
 @dataclass(frozen=True)
@@ -407,6 +408,55 @@ def test_build_view_state_filters_by_updated_date_range(
     assert state.payloads["child-a"]["flags"]["searchRedacted"] is False
     assert state.metadata["dateFilter"]["metric"] == "updated"
     assert state.metadata["searchRootCountTotal"] == 1
+
+
+def test_date_filtered_scope_keeps_ancestor_for_rendering_but_not_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root-a": _Note(
+            id="root-a",
+            parent_id=None,
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<div>A</div>",
+            tags="",
+            created_at=datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 10, 20, 0, tzinfo=timezone.utc),
+        ),
+        "child-a": _Note(
+            id="child-a",
+            parent_id="root-a",
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<div>A child</div>",
+            tags="",
+            created_at=datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 18, 20, 0, tzinfo=timezone.utc),
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root-a"], "root-a": ["child-a"]},
+    )
+    _patch_fake_store(monkeypatch, store)
+
+    resolved = resolve_view_scope_membership(
+        search="",
+        sort_mode="normal",
+        date_filter={
+            "metric": "updated",
+            "startDate": "2026-05-18",
+            "endDate": "2026-05-18",
+        },
+        is_untagged_view=False,
+    )
+
+    assert resolved.allowed_note_ids == frozenset({"root-a", "child-a"})
+    assert resolved.matched_note_ids == frozenset({"child-a"})
+    assert resolved.ordered_root_ids == ("root-a",)
 
 
 def test_activity_summary_includes_created_and_updated_dates_for_all_notes(

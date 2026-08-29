@@ -13,10 +13,16 @@ import httpx
 import instructor
 from openai import AsyncOpenAI
 from pydantic import BaseModel
+from pydantic import ValidationError
 
 from instructor.v2.core.client import AsyncInstructor
 from instructor.v2.core.errors import InstructorRetryException
 
+from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import EvidenceSelection
+from app.services.agent.actions import InvestigationStep
+from app.services.agent.actions import ScopedRouteEnvelope
+from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
@@ -24,6 +30,7 @@ from app.services.agent.inference import MINIMUM_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
+from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.ollama_provider import OllamaProvider
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import resolve_ollama_think_value
@@ -31,6 +38,25 @@ from app.services.ollama_provider import resolve_ollama_think_value
 
 _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
+_ROUTE_MAX_OUTPUT_TOKENS = 512
+_EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS = 512
+_SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
+_INVESTIGATION_MAX_OUTPUT_TOKENS = 2_048
+
+
+def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
+    limits = {
+        AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
+        ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
+        SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
+        EvidenceSelection: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
+        InvestigationStep: _INVESTIGATION_MAX_OUTPUT_TOKENS,
+    }
+    if response_model not in limits:
+        raise RuntimeError(
+            f"Structured output limit missing for {response_model.__name__}"
+        )
+    return limits[response_model]
 
 
 @dataclass(slots=True)
@@ -41,6 +67,11 @@ class _PendingAttempt:
     error: str
     started_at: float
     duration_ms: float
+    output_tokens_received: int
+    output_text: str
+    reasoning_text: str
+    response_metadata: dict[str, object]
+    last_reported_output_tokens: int
 
 
 class _InstructorTraceCapture:
@@ -61,6 +92,11 @@ class _InstructorTraceCapture:
                 error="",
                 started_at=time.perf_counter(),
                 duration_ms=0.0,
+                output_tokens_received=0,
+                output_text="",
+                reasoning_text="",
+                response_metadata={},
+                last_reported_output_tokens=0,
             )
         )
 
@@ -88,14 +124,149 @@ class _InstructorTraceCapture:
         attempt = self._current_attempt()
         if not attempt.wire_request:
             raise RuntimeError("Instructor response arrived before its HTTP request")
+        stream_iterator = getattr(response, "_iterator", None)
+        if stream_iterator is not None:
+            if not hasattr(stream_iterator, "__aiter__"):
+                raise TypeError("Instructor streaming response iterator must be asynchronous")
+            setattr(response, "_iterator", self._capture_stream(stream_iterator))
+            return
         attempt.response = _json_object(response)
         attempt.duration_ms = (time.perf_counter() - attempt.started_at) * 1_000
+        attempt.output_tokens_received = self._response_output_tokens(attempt.response)
         self._emit_progress(
             phase="response_received",
             failure_kind="",
             error_type="",
             error_message="",
         )
+
+    async def _capture_stream(
+        self,
+        stream_iterator: AsyncIterator[object],
+    ) -> AsyncIterator[object]:
+        attempt = self._current_attempt()
+        async for chunk in stream_iterator:
+            self._capture_chunk(attempt=attempt, chunk=_json_object(chunk))
+            yield chunk
+        attempt.response = self._assembled_stream_response(attempt)
+        attempt.duration_ms = (time.perf_counter() - attempt.started_at) * 1_000
+        if attempt.output_tokens_received > attempt.last_reported_output_tokens:
+            attempt.last_reported_output_tokens = attempt.output_tokens_received
+            self._emit_progress(
+                phase="output_progress",
+                failure_kind="",
+                error_type="",
+                error_message="",
+            )
+        self._emit_progress(
+            phase="response_received",
+            failure_kind="",
+            error_type="",
+            error_message="",
+        )
+
+    def _capture_chunk(
+        self,
+        *,
+        attempt: _PendingAttempt,
+        chunk: dict[str, object],
+    ) -> None:
+        for metadata_field in ("id", "model", "created", "usage"):
+            if metadata_field in chunk and chunk[metadata_field] is not None:
+                attempt.response_metadata[metadata_field] = chunk[metadata_field]
+        choices: object = []
+        if "choices" in chunk:
+            choices = chunk["choices"]
+        if not isinstance(choices, list):
+            raise TypeError("Instructor stream choices must be a list")
+        if len(choices) > 0:
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                raise TypeError("Instructor stream choice must be an object")
+            if "finish_reason" in first_choice and first_choice["finish_reason"] is not None:
+                attempt.response_metadata["finish_reason"] = first_choice["finish_reason"]
+            delta: object = {}
+            if "delta" in first_choice:
+                delta = first_choice["delta"]
+            if not isinstance(delta, dict):
+                raise TypeError("Instructor stream delta must be an object")
+            content: object = ""
+            if "content" in delta:
+                content = delta["content"]
+            if content is not None and not isinstance(content, str):
+                raise TypeError("Instructor stream content delta must be text")
+            if isinstance(content, str):
+                attempt.output_text += content
+            for field_name in ("reasoning", "reasoning_content", "thinking"):
+                reasoning: object = ""
+                if field_name in delta:
+                    reasoning = delta[field_name]
+                if reasoning is not None and not isinstance(reasoning, str):
+                    raise TypeError("Instructor stream reasoning delta must be text")
+                if isinstance(reasoning, str):
+                    attempt.reasoning_text += reasoning
+        generated_text = f"{attempt.reasoning_text}{attempt.output_text}"
+        attempt.output_tokens_received = 0
+        if generated_text != "":
+            attempt.output_tokens_received = estimate_text_tokens(generated_text)
+        if attempt.output_tokens_received >= attempt.last_reported_output_tokens + 8:
+            attempt.last_reported_output_tokens = attempt.output_tokens_received
+            self._emit_progress(
+                phase="output_progress",
+                failure_kind="",
+                error_type="",
+                error_message="",
+            )
+
+    @staticmethod
+    def _assembled_stream_response(attempt: _PendingAttempt) -> dict[str, object]:
+        message: dict[str, object] = {
+            "role": "assistant",
+            "content": attempt.output_text,
+        }
+        if attempt.reasoning_text != "":
+            message["reasoning"] = attempt.reasoning_text
+        choice: dict[str, object] = {"message": message}
+        if "finish_reason" in attempt.response_metadata:
+            choice["finish_reason"] = attempt.response_metadata["finish_reason"]
+        response = {
+            key: value
+            for key, value in attempt.response_metadata.items()
+            if key != "finish_reason"
+        }
+        response["choices"] = [choice]
+        return response
+
+    @staticmethod
+    def _response_output_tokens(response: dict[str, object]) -> int:
+        usage = _extract_usage(response)
+        if "completion_tokens" in usage:
+            return usage["completion_tokens"]
+        choices: object = []
+        if "choices" in response:
+            choices = response["choices"]
+        if not isinstance(choices, list) or len(choices) == 0:
+            return 0
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise TypeError("Instructor completion choice must be an object")
+        message: object = {}
+        if "message" in first_choice:
+            message = first_choice["message"]
+        if not isinstance(message, dict):
+            raise TypeError("Instructor completion message must be an object")
+        generated_text = ""
+        for field_name in ("reasoning", "reasoning_content", "thinking", "content"):
+            value: object = ""
+            if field_name in message:
+                value = message[field_name]
+            if value is not None and not isinstance(value, str):
+                raise TypeError("Instructor completion generated text must be a string")
+            if isinstance(value, str):
+                generated_text += value
+        if generated_text == "":
+            return 0
+        return estimate_text_tokens(generated_text)
 
     def record_completion_error(self, error: Exception, **metadata: object) -> None:
         del metadata
@@ -149,6 +320,15 @@ class _InstructorTraceCapture:
             for attempt in self._attempts
         ]
 
+    def current_response(self) -> dict[str, object]:
+        response = self._current_attempt().response
+        if not response:
+            raise RuntimeError("Instructor attempt has no captured response")
+        return dict(response)
+
+    def has_current_response(self) -> bool:
+        return bool(self._current_attempt().response)
+
     def _current_attempt(self) -> _PendingAttempt:
         if not self._attempts:
             raise RuntimeError("Instructor emitted an event before a request")
@@ -179,6 +359,7 @@ class _InstructorTraceCapture:
                 error_message=error_message,
                 duration_ms=attempt.duration_ms,
                 wire_request=dict(attempt.wire_request),
+                output_tokens_received=attempt.output_tokens_received,
             )
         )
 
@@ -252,6 +433,43 @@ def _extract_reasoning(raw_response: dict[str, object]) -> str:
     return ""
 
 
+def _extract_content(raw_response: dict[str, object]) -> str:
+    choices: object = []
+    if "choices" in raw_response:
+        choices = raw_response["choices"]
+    if not isinstance(choices, list) or len(choices) == 0:
+        raise ValueError("Instructor completion omitted choices")
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise TypeError("Instructor completion choice must be an object")
+    message: object = {}
+    if "message" in first_choice:
+        message = first_choice["message"]
+    if not isinstance(message, dict):
+        raise TypeError("Instructor completion message must be an object")
+    content: object = ""
+    if "content" in message:
+        content = message["content"]
+    if not isinstance(content, str) or content == "":
+        raise ValueError("Instructor completion content must be non-empty")
+    return content
+
+
+def _response_finish_reason(raw_response: dict[str, object]) -> str:
+    if not isinstance(raw_response, dict):
+        raise TypeError("Raw response must be an object")
+    choices = raw_response["choices"]
+    if not isinstance(choices, list) or len(choices) == 0:
+        raise ValueError("Raw response choices must be a non-empty list")
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise TypeError("Raw response choice must be an object")
+    finish_reason = first_choice["finish_reason"]
+    if not isinstance(finish_reason, str) or finish_reason == "":
+        raise ValueError("Raw response finish reason must be non-empty")
+    return finish_reason
+
+
 def _create_instructor_client(
     *,
     base_url: str,
@@ -299,23 +517,123 @@ async def _create_structured_completion(
     messages: list[dict[str, str]],
     think_value: bool | str,
 ) -> tuple[BaseModel, object]:
-    # lint: allow-PY001 rationale="translate exhausted external Instructor retries while preserving exact attempt traces"
     try:
-        return await client.create_with_completion(
+        return await _run_structured_attempt(
+            client=client,
+            capture=capture,
             response_model=response_model,
-            messages=messages,
-            max_retries=_STRUCTURED_MAX_RETRIES,
-            timeout=_STRUCTURED_TIMEOUT_SECONDS,
-            stream=False,
-            temperature=0,
-            extra_body={"think": think_value},
+            original_messages=messages,
+            attempt_messages=messages,
+            think_value=think_value,
+            attempt_number=1,
         )
-    except InstructorRetryException as exc:
-        raise StructuredInferenceError(
-            attempts=capture.freeze(),
-        ) from exc
     finally:
         await client.client.close()
+
+
+async def _run_structured_attempt(
+    *,
+    client: AsyncInstructor,
+    capture: _InstructorTraceCapture,
+    response_model: type[BaseModel],
+    original_messages: list[dict[str, str]],
+    attempt_messages: list[dict[str, str]],
+    think_value: bool | str,
+    attempt_number: int,
+) -> tuple[BaseModel, object]:
+    last_partial: BaseModel | None = None
+    # lint: allow-PY001 rationale="Ollama and model-produced structured JSON are external and receive one bounded retry"
+    try:
+        async for partial in client.create_partial(
+            response_model=response_model,
+            messages=attempt_messages,
+            max_retries=0,
+            max_tokens=_structured_max_output_tokens(response_model),
+            timeout=_STRUCTURED_TIMEOUT_SECONDS,
+            temperature=0,
+            extra_body={"think": think_value},
+        ):
+            last_partial = partial
+        if last_partial is None:
+            raise ValueError("Instructor stream returned no structured output")
+        parsed = response_model.model_validate(
+            last_partial.model_dump(exclude_none=True)
+        )
+        return parsed, capture.current_response()
+    # lint: allow-PY001 rationale="retry one external Instructor stream after preserving its exact failed attempt"
+    except InstructorRetryException as exc:
+        if attempt_number == capture.max_attempts:
+            raise StructuredInferenceError(attempts=capture.freeze()) from exc
+        retry_messages = _structured_retry_messages(
+            capture=capture,
+            original_messages=original_messages,
+            failure=exc,
+        )
+        return await _run_structured_attempt(
+            client=client,
+            capture=capture,
+            response_model=response_model,
+            original_messages=original_messages,
+            attempt_messages=retry_messages,
+            think_value=think_value,
+            attempt_number=attempt_number + 1,
+        )
+    # lint: allow-PY001 rationale="retry one model-produced JSON validation failure through Instructor partial parsing"
+    except (ValidationError, ValueError) as exc:
+        capture.record_parse_error(exc)
+        if attempt_number == capture.max_attempts:
+            raise StructuredInferenceError(attempts=capture.freeze()) from exc
+        retry_messages = _structured_retry_messages(
+            capture=capture,
+            original_messages=original_messages,
+            failure=exc,
+        )
+        return await _run_structured_attempt(
+            client=client,
+            capture=capture,
+            response_model=response_model,
+            original_messages=original_messages,
+            attempt_messages=retry_messages,
+            think_value=think_value,
+            attempt_number=attempt_number + 1,
+        )
+
+
+def _structured_retry_messages(
+    *,
+    capture: _InstructorTraceCapture,
+    original_messages: list[dict[str, str]],
+    failure: Exception,
+) -> list[dict[str, str]]:
+    if not capture.has_current_response():
+        return list(original_messages)
+    failed_response = capture.current_response()
+    retry_instruction = (
+        "The previous JSON failed schema validation. Correct it and return one "
+        "complete, compact JSON object. Emit every required field and close the "
+        "object well before the output limit. Do not repeat long source lists or "
+        f"restate the evidence page. Validation error: {failure}"
+    )
+    if _response_finish_reason(failed_response) == "length":
+        return [
+            *original_messages,
+            {
+                "role": "user",
+                "content": (
+                    "The previous response reached the output-token limit and was "
+                    "discarded. Start over from the original evidence. Return one "
+                    "complete compact JSON object, use the schema's bounded summary "
+                    "sizes, emit every required action field, and close the object "
+                    "well before the limit."
+                ),
+            },
+        ]
+    failed_content = _extract_content(failed_response)
+    return [
+        *original_messages,
+        {"role": "assistant", "content": failed_content},
+        {"role": "user", "content": retry_instruction},
+    ]
 
 
 class OllamaInferenceAdapter:
@@ -396,6 +714,7 @@ class OllamaInferenceAdapter:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
+        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         async for event in self._provider.stream_chat(
@@ -403,6 +722,7 @@ class OllamaInferenceAdapter:
             model=model,
             thinking_level=thinking_level,
             messages=messages,
+            max_output_tokens=max_output_tokens,
             on_request=on_request,
         ):
             yield event

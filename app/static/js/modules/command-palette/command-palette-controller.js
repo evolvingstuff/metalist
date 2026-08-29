@@ -794,6 +794,15 @@ class CommandPaletteController {
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
                 retrievalSettings.maxNotesPerPage,
             ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
+                retrievalSettings.maxPageApproximateTokens,
+            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage]: String(
+                retrievalSettings.maxRankedTagsPerPage,
+            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
+                retrievalSettings.maxWorkingSummaryCharacters,
+            ),
         });
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',
@@ -818,6 +827,9 @@ class CommandPaletteController {
             skills: skills.map((skill) => ({
                 skillId: skill.skillId,
                 content: this._preferences.getRaw(skill.preferenceKey),
+                incompatiblePreferenceKeys: skill.supersededPreferenceKeys.filter(
+                    (key) => this._preferences.getRaw(key) !== null,
+                ),
             })),
         };
     }
@@ -832,7 +844,10 @@ class CommandPaletteController {
         for (const skill of instructions.skills) {
             preferences[skill.preferenceKey] = skill.content;
         }
-        await this._preferences.setMany(preferences);
+        const supersededKeys = instructions.skills.flatMap(
+            (skill) => skill.supersededPreferenceKeys,
+        );
+        await this._preferences.setManyAndRemove(preferences, supersededKeys);
     }
 
     async _resetAgentPromptOverrides(skills) {
@@ -843,6 +858,7 @@ class CommandPaletteController {
             [
                 ...Object.values(AGENT_PROMPT_PREFERENCE_KEYS),
                 ...skills.map((skill) => skill.preferenceKey),
+                ...skills.flatMap((skill) => skill.supersededPreferenceKeys),
             ],
         );
     }

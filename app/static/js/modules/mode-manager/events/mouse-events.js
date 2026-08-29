@@ -166,6 +166,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-collapse-toggle',
             COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
             '.note-reference-link',
+            '.ai-chat-open-all-references',
             '.note-file-reference-link',
             '.note-file-image-download-link',
             '.backlink-item',
@@ -1329,21 +1330,6 @@ function handleClick(event) {
     }
 }
 
-function getReferenceContainerFromEvent(event, selector) {
-    if (!event.target) {
-        throw new Error('Reference interaction missing target element');
-    }
-    const interactiveElement = event.target.closest(selector);
-    if (!interactiveElement) {
-        return null;
-    }
-    const container = interactiveElement.closest('.note-reference-block');
-    if (!container) {
-        throw new Error('Reference interaction missing .note-reference-block container');
-    }
-    return container;
-}
-
 function handleAiChatOpenAllReferencesClick(event) {
     if (!event.target) {
         throw new Error('AI reference collection click missing target element');
@@ -1378,8 +1364,11 @@ function handleAiChatOpenAllReferencesClick(event) {
 }
 
 function handleReferenceLinkClick(event) {
-    const container = getReferenceContainerFromEvent(event, '.note-reference-link');
-    if (!container) {
+    if (!event.target) {
+        throw new Error('Reference interaction missing target element');
+    }
+    const link = event.target.closest('.note-reference-link');
+    if (!link) {
         return false;
     }
 
@@ -1396,6 +1385,22 @@ function handleReferenceLinkClick(event) {
         return true;
     }
 
+    const referenceQueryElement = link.closest('[data-ref-query]');
+    if (referenceQueryElement) {
+        const referenceQuery = referenceQueryElement.dataset.refQuery;
+        if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+            throw new Error('AI reference link missing exact evidence query');
+        }
+        void CommandGate.run('mouse.open_ai_reference_in_new_tab', async () => {
+            await openReferenceQueryInNewTab(referenceQuery);
+        });
+        return true;
+    }
+
+    const container = link.closest('.note-reference-block');
+    if (!container) {
+        throw new Error('Reference interaction missing .note-reference-block container');
+    }
     const referenceNoteId = container.dataset.refNoteId;
     if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
         throw new Error('Reference link missing target note id');

@@ -105,21 +105,28 @@ class SearchRecord:
     tag_terms: FrozenSet[str]
 
 
-def extract_tags_for_search(tags: str) -> FrozenSet[str]:
+def extract_ordered_tags_for_search(tags: str) -> tuple[str, ...]:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
 
-    terms: Set[str] = set()
+    ordered_terms: list[str] = []
+    seen_terms: set[str] = set()
     for token in _tokenize_tag_bar(tags):
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is None:
-            if base != "OR":
-                terms.add(base)
+            if base != "OR" and base not in seen_terms:
+                seen_terms.add(base)
+                ordered_terms.append(base)
             continue
         for inner in base.split():
-            if inner and inner != "OR":
-                terms.add(inner)
-    return frozenset(terms)
+            if inner and inner != "OR" and inner not in seen_terms:
+                seen_terms.add(inner)
+                ordered_terms.append(inner)
+    return tuple(ordered_terms)
+
+
+def extract_tags_for_search(tags: str) -> FrozenSet[str]:
+    return frozenset(extract_ordered_tags_for_search(tags))
 
 
 class SearchIndex:
@@ -405,6 +412,18 @@ class SearchIndex:
             if note_int_id not in self._alive:
                 raise KeyError(f"Note {note_id} is not active in SearchIndex")
             return self._note_raw_tag_terms[note_int_id]
+
+    def list_effective_tag_terms_for_note(self, note_id: str) -> FrozenSet[str]:
+        """Return the exact effective tags used by canonical search matching."""
+        if not isinstance(note_id, str) or note_id == "":
+            raise TypeError("note_id must be a non-empty string")
+        with self._lock:
+            if note_id not in self._uuid_to_id:
+                raise KeyError(f"Note {note_id} not present in SearchIndex")
+            note_int_id = self._uuid_to_id[note_id]
+            if note_int_id not in self._alive:
+                raise KeyError(f"Note {note_id} is not active in SearchIndex")
+            return self._note_tag_terms[note_int_id]
 
     def list_explicit_tag_frequencies(self) -> Dict[str, int]:
         """Return explicitly written tag term -> note count (excluding @meta tags)."""

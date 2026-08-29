@@ -63,6 +63,15 @@ class StructuredInferenceProgress:
     error_message: str
     duration_ms: float
     wire_request: dict[str, object]
+    output_tokens_received: int
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.output_tokens_received, int)
+            or isinstance(self.output_tokens_received, bool)
+            or self.output_tokens_received < 0
+        ):
+            raise ValueError("Structured inference output tokens must be non-negative")
 
 
 class StructuredInferenceError(RuntimeError):
@@ -108,6 +117,7 @@ class InferenceAdapter(Protocol):
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
+        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         ...

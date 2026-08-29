@@ -43,3 +43,38 @@ test('PreferencesStore.removeMany rejects empty, duplicate, and invalid keys', a
     await assert.rejects(store.removeMany(['same', 'same']), /unique keys/);
     await assert.rejects(store.removeMany(['valid', '']), /non-empty string keys/);
 });
+
+
+test('PreferencesStore updates new prompt keys and removes superseded keys atomically', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalSessionStorage = globalThis.sessionStorage;
+    const persistedBodies = [];
+    globalThis.sessionStorage = {
+        getItem: (key) => key === 'metalist_tab_id' ? 'test-tab' : null,
+    };
+    globalThis.fetch = async (_url, options) => {
+        const body = JSON.parse(options.body);
+        persistedBodies.push(body);
+        return new Response(JSON.stringify({ preferences: body.preferences }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+        });
+    };
+
+    try {
+        const store = new PreferencesStore();
+        store.replaceAll({ oldSkill: 'old', keep: 'yes' });
+
+        await store.setManyAndRemove({ newSkill: 'new' }, ['oldSkill']);
+
+        assert.equal(store.getRaw('oldSkill'), null);
+        assert.equal(store.getRaw('newSkill'), 'new');
+        assert.equal(store.getRaw('keep'), 'yes');
+        assert.deepEqual(persistedBodies, [{
+            preferences: { keep: 'yes', newSkill: 'new' },
+        }]);
+    } finally {
+        globalThis.fetch = originalFetch;
+        globalThis.sessionStorage = originalSessionStorage;
+    }
+});

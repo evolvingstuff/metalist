@@ -92,6 +92,7 @@ class AgentDebugViewController {
             button: requireElement('ai-chat-debug', HTMLButtonElement),
             dialog: requireElement('ai-agent-debug-dialog', HTMLDialogElement),
             enabled: requireElement('ai-agent-debug-enabled', HTMLInputElement),
+            copyAll: requireElement('ai-agent-debug-copy-all', HTMLButtonElement),
             refresh: requireElement('ai-agent-debug-refresh', HTMLButtonElement),
             close: requireElement('ai-agent-debug-close', HTMLButtonElement),
             status: requireElement('ai-agent-debug-status', HTMLElement),
@@ -112,6 +113,7 @@ class AgentDebugViewController {
     _bindEvents() {
         this._elements.button.addEventListener('click', () => void this._open());
         this._elements.close.addEventListener('click', () => this._elements.dialog.close());
+        this._elements.copyAll.addEventListener('click', () => void this._copyAll());
         this._elements.refresh.addEventListener('click', () => void this._loadSnapshot());
         this._elements.enabled.addEventListener('change', () => void this._toggleExactDetails());
         this._elements.dialog.addEventListener('click', (event) => {
@@ -175,9 +177,21 @@ class AgentDebugViewController {
         }
     }
 
+    async _copyAll() {
+        if (!this._snapshot.has_trace) {
+            throw new Error('Cannot copy an empty agent trace');
+        }
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+            throw new Error('Clipboard text writing is unavailable');
+        }
+        await navigator.clipboard.writeText(JSON.stringify(this._snapshot.run, null, 2));
+        this._setStatus('Copied complete trace to clipboard.');
+    }
+
     _render() {
         const payload = this._snapshot;
         this._elements.enabled.checked = payload.enabled;
+        this._elements.copyAll.disabled = !payload.has_trace;
         this._elements.events.replaceChildren();
         if (!payload.has_trace) {
             this._renderEmpty('No agent run has been recorded in this session yet.');

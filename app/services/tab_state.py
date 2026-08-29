@@ -198,6 +198,27 @@ class TabStateStore:
             value = self._tabs[target_tab_id]["sortMode"]
             return normalize_sort_mode(value)
 
+    def get_active_tab_id(self) -> str:
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            if self._active_tab_id not in self._tabs:
+                raise RuntimeError("Active tab id is missing from tab state")
+            return self._active_tab_id
+
+    def get_search_query(self, *, tab_id: Optional[str]) -> str:
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            if tab_id is None:
+                target_tab_id = self._active_tab_id
+            else:
+                target_tab_id = tab_id
+            if target_tab_id not in self._tabs:
+                raise ValueError("tab_id must reference an existing tab")
+            value = self._tabs[target_tab_id]["searchQuery"]
+            if not isinstance(value, str):
+                raise RuntimeError("Tab searchQuery must be a string")
+            return value
+
     def get_date_filter(self, *, tab_id: Optional[str]) -> dict[str, str] | None:
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)

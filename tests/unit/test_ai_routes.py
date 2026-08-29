@@ -15,6 +15,21 @@ from app.services.agent.trace import AgentTraceStore
 from app.services.ollama_provider import OllamaProviderError
 
 
+def _all_notes_scope() -> ai_routes.AgentScopeDescriptor:
+    return ai_routes.AgentScopeDescriptor(
+        scope_kind="all_notes",
+        active_tab_id="tab-1",
+        search_query="",
+        sort_mode="normal",
+        date_filter_active=False,
+        date_filter_metric="",
+        date_filter_start="",
+        date_filter_end="",
+        reference_root_ids=[],
+        label="All notes",
+    )
+
+
 def _assert_positive_activity_token_counts(events: list[dict[str, object]]) -> None:
     activities = [event for event in events if event["type"] == "action_status"]
     assert activities
@@ -22,6 +37,12 @@ def _assert_positive_activity_token_counts(events: list[dict[str, object]]) -> N
         isinstance(event["approx_input_tokens"], int)
         and not isinstance(event["approx_input_tokens"], bool)
         and event["approx_input_tokens"] > 0
+        for event in activities
+    )
+    assert all(
+        isinstance(event["duration_ms"], (int, float))
+        and not isinstance(event["duration_ms"], bool)
+        and event["duration_ms"] >= 0
         for event in activities
     )
 
@@ -33,7 +54,11 @@ def _without_activity_token_counts(
         {
             key: value
             for key, value in event.items()
-            if key != "approx_input_tokens"
+            if key not in {
+                "approx_input_tokens",
+                "output_tokens_received",
+                "duration_ms",
+            }
         }
         for event in events
     ]
@@ -49,6 +74,36 @@ def use_fake_managed_ollama_runtime(monkeypatch):
             )
 
     monkeypatch.setattr(ai_routes, "managed_ollama_runtime", FakeManagedRuntime())
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_active_tab_id",
+        lambda: "tab-1",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_search_query",
+        lambda *, tab_id: "",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_sort_mode",
+        lambda *, tab_id: "normal",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_date_filter",
+        lambda *, tab_id: None,
+    )
+    monkeypatch.setattr(
+        ai_routes.scoped_search_snapshot_factory,
+        "freeze",
+        lambda **arguments: SimpleNamespace(
+            descriptor=arguments["descriptor"],
+            session_key=arguments["session_key"],
+            note_count=0,
+            result_tree_count=0,
+        ),
+    )
 
 
 def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None:
@@ -66,6 +121,8 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
         status="started",
         label="Waiting for Ollama · attempt 1 of 2",
         approx_input_tokens=1_234,
+        output_tokens_received=0,
+        duration_ms=12.5,
     )
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
@@ -90,8 +147,10 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
             "action": "model_request",
             "status": "started",
             "label": "Waiting for Ollama · attempt 1 of 2",
-            "approx_input_tokens": 1_234,
-        }
+                    "approx_input_tokens": 1_234,
+                    "output_tokens_received": 0,
+                    "duration_ms": 12.5,
+            }
     ]
     assert http_response.headers["Cache-Control"] == "no-store"
 
@@ -113,8 +172,11 @@ def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
             "title": skill.title,
             "description": skill.description,
             "trigger_action": skill.trigger_action,
-            "preference_key": skill.preference_key,
-            "content": skill.content,
+                "preference_key": skill.preference_key,
+                "content": skill.content,
+                "superseded_preference_keys": list(
+                    skill.superseded_preference_keys
+                ),
         }
         for skill in DEFAULT_AGENT_SKILLS.skills
     ]
@@ -219,7 +281,7 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
     rendered = response.messages[1].rendered_content
 
     assert "Instructor + LiteLLM vs. Pydantic AI" in rendered
-    assert 'class="ai-chat-note-mention"' in rendered
+    assert 'class="ai-chat-citation-marker"' in rendered
     assert 'class="ai-chat-references"' in rendered
     assert f'data-ref-note-id="{note_id}"' in rendered
     assert 'class="note-reference-link"' in rendered
@@ -442,7 +504,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     store = AiChatSessionStore()
 
     class FakeRuntime:
-        async def stream(
+        async def stream_scoped(
             self,
             *,
             session_key,
@@ -453,6 +515,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             prompts,
             skills,
             retrieval_settings,
+            frozen_scope,
         ):
             assert session_key == "session-key"
             assert base_url == "http://127.0.0.1:11435"
@@ -466,12 +529,17 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert retrieval_settings.max_note_characters == 4_000
             assert retrieval_settings.max_page_characters == 30_000
             assert retrieval_settings.max_notes_per_page == 3
+            assert retrieval_settings.max_page_approximate_tokens == 7_000
+            assert frozen_scope.descriptor == _all_notes_scope()
+            assert frozen_scope.session_key == "session-key"
             yield {
                 "type": "action_status",
                 "action": "planning",
                 "status": "started",
                 "label": "Planning next action",
-                "approx_input_tokens": 1_300,
+                    "approx_input_tokens": 1_300,
+                    "output_tokens_received": 0,
+                    "duration_ms": 0.0,
             }
             yield {"type": "thinking_delta", "text": "Think"}
             yield {
@@ -492,6 +560,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             "pref.ai.retrieval.max_note_characters": "4000",
             "pref.ai.retrieval.max_page_characters": "30000",
             "pref.ai.retrieval.max_notes_per_page": "3",
+            "pref.ai.retrieval.max_page_approximate_tokens": "7000",
         },
     )
 
@@ -501,6 +570,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             model="qwen3:8b",
             thinking_level="low",
             message="Hello",
+            scope=_all_notes_scope(),
         ),
         token="auth-token",
     )
@@ -577,18 +647,53 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     ]
 
 
+def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
+    monkeypatch,
+) -> None:
+    store = AiChatSessionStore()
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_active_tab_id",
+        lambda: "different-tab",
+    )
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+
+    with pytest.raises(HTTPException, match="Active MetaList tab changed") as error:
+        ai_routes.stream_ai_chat(
+            payload=ai_routes.AiChatRequest(
+                provider="ollama",
+                model="qwen3:8b",
+                thinking_level="low",
+                message="Hello",
+                scope=_all_notes_scope(),
+            ),
+            token="auth-token",
+        )
+
+    assert error.value.status_code == 409
+    assert store.snapshot(session_key="session-key")["messages"] == []
+
+
 def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> None:
     store = AiChatSessionStore()
 
     class FakeRuntime:
-        async def stream(self, **kwargs):
+        async def stream_scoped(self, **kwargs):
             del kwargs
             yield {
                 "type": "action_status",
                 "action": "model_request",
                 "status": "started",
                 "label": "Ollama choosing next action · attempt 1 of 2",
-                "approx_input_tokens": 1_400,
+                    "approx_input_tokens": 1_400,
+                    "output_tokens_received": 0,
+                    "duration_ms": 0.0,
             }
             await asyncio.Event().wait()
 
@@ -611,6 +716,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
             model="qwen3:8b",
             thinking_level="low",
             message="Cancel this request",
+            scope=_all_notes_scope(),
         ),
         token="auth-token",
     )
@@ -653,7 +759,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             )
 
     class FakeRuntime:
-        async def stream(
+        async def stream_scoped(
             self,
             *,
             session_key,
@@ -664,9 +770,10 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             prompts,
             skills,
             retrieval_settings,
+            frozen_scope,
         ):
             del session_key, base_url, selected_model, thinking_level
-            del prompts, skills, retrieval_settings
+            del prompts, skills, retrieval_settings, frozen_scope
             assert canonical_messages == [
                 {"role": "user", "content": "Summarize testosterone notes"},
                 {"role": "assistant", "content": "Sleep affects testosterone."},
@@ -714,6 +821,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             model="qwen3:8b",
             thinking_level="low",
             message="Describe Bayes' theorem briefly",
+            scope=_all_notes_scope(),
         ),
         token="auth-token",
     )
@@ -741,7 +849,7 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
     store = AiChatSessionStore()
 
     class FailingRuntime:
-        async def stream(
+        async def stream_scoped(
             self,
             *,
             session_key,
@@ -752,9 +860,11 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             prompts,
             skills,
             retrieval_settings,
+            frozen_scope,
         ):
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings
+            del frozen_scope
             raise OllamaProviderError("Ollama generation failed")
             yield
 
@@ -769,6 +879,7 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             model="qwen3:8b",
             thinking_level="high",
             message="Hello",
+            scope=_all_notes_scope(),
         ),
         token="auth-token",
     )
@@ -807,6 +918,7 @@ def test_chat_request_rejects_disabled_gpt_oss_thinking() -> None:
             model="gpt-oss:20b",
             thinking_level="off",
             message="Hello",
+            scope=_all_notes_scope(),
         )
 
 

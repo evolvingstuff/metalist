@@ -25,10 +25,23 @@ _UUID_PATTERN = (
 )
 _NOTE_CITATION_RE = re.compile(
     rf"\[\[(?P<reference>{_UUID_PATTERN})\]\]"
-    rf"|(?<![{_UUID_BOUNDARY_PATTERN}])(?P<bare>{_UUID_PATTERN})"
+    rf"|(?<!\[\[)(?<![{_UUID_BOUNDARY_PATTERN}])(?P<bare>{_UUID_PATTERN})"
     rf"(?![{_UUID_BOUNDARY_PATTERN}])"
 )
 _BRACKETED_NOTE_CITATION_RE = re.compile(rf"\[\[{_UUID_PATTERN}\]\]")
+_INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE = re.compile(
+    rf"\[\[[0-9a-fA-F{re.escape(_UUID_DASH_CHARACTERS)}]{{0,36}}\]?$"
+)
+_NUMBERED_NOTE_CITATION_RE = re.compile(
+    r"\[citation:(?P<number>[1-9][0-9]*)\]",
+    re.IGNORECASE,
+)
+_STANDALONE_SOURCE_LINE_RE = re.compile(
+    r"^[ \t]*[-+*]\s+(?:\*\*)?(?:sources?|note\s+ids?)(?:\*\*)?\s*:",
+    re.IGNORECASE,
+)
+_TOP_LEVEL_ORDERED_ITEM_RE = re.compile(r"^(?P<number>[1-9][0-9]*)\.\s+")
+_TOP_LEVEL_UNORDERED_ITEM_RE = re.compile(r"^[-+*]\s+")
 _FENCE_MARKER_RE = re.compile(r"^[ \t]{0,3}(?P<marker>`{3,}|~{3,})")
 _HTML_SEGMENT_RE = re.compile(r"(<[^>]+>)")
 _OPEN_TAG_RE = re.compile(r"^<\s*([a-zA-Z][a-zA-Z0-9:-]*)\b")
@@ -48,10 +61,16 @@ def render_ai_chat_markdown_to_html(
     markdown_text: str,
     *,
     notes: NoteStore,
-    allowed_note_ids: frozenset[str],
+    allowed_note_ids: tuple[str, ...],
 ) -> str:
     _validate_allowed_note_ids(allowed_note_ids)
-    rendered_html = render_markdown_to_html(markdown_text)
+    visible_markdown = _hide_incomplete_bracketed_citation_suffix(markdown_text)
+    canonical_markdown = _canonicalize_numbered_note_citations(
+        markdown_text=visible_markdown,
+        allowed_note_ids=allowed_note_ids,
+    )
+    canonical_markdown = _normalize_generated_response_structure(canonical_markdown)
+    rendered_html = render_markdown_to_html(canonical_markdown)
     if rendered_html == "":
         return ""
     context = EmbedRenderContext(
@@ -68,11 +87,11 @@ def render_ai_chat_markdown_to_html(
     )
     if len(cited_note_ids) == 0:
         return body_html
-    reference_root_ids = _resolve_reference_root_ids(
+    reference_groups = _group_citations_by_reference_root(
         cited_note_ids=cited_note_ids,
         context=context,
     )
-    return f"{body_html}{_render_references_section(reference_root_ids, context=context)}"
+    return f"{body_html}{_render_references_section(reference_groups, context=context)}"
 
 
 def _reject_file_reference(file_id: str) -> object:
@@ -96,18 +115,23 @@ def sanitize_ai_chat_markdown_citations(
     markdown_text: str,
     *,
     notes: NoteStore,
-    allowed_note_ids: frozenset[str],
+    allowed_note_ids: tuple[str, ...],
 ) -> str:
     """Keep only citations backed by notes retrieved during the current run."""
     if not isinstance(markdown_text, str) or markdown_text == "":
         raise ValueError("AI response content must be a non-empty string")
     _validate_allowed_note_ids(allowed_note_ids)
+    allowed_note_id_set = frozenset(allowed_note_ids)
+    canonical_markdown = _canonicalize_numbered_note_citations(
+        markdown_text=markdown_text,
+        allowed_note_ids=allowed_note_ids,
+    )
 
     def sanitize_text(text: str) -> str:
         def replace(match: re.Match[str]) -> str:
             raw_note_id = _raw_note_id_from_match(match)
             note_id = raw_note_id.translate(_UUID_DASH_TRANSLATION).lower()
-            if note_id not in allowed_note_ids:
+            if note_id not in allowed_note_id_set:
                 return ""
             if not notes.has_note(note_id):
                 raise RuntimeError("Allowed AI citation note is missing from NoteStore")
@@ -116,9 +140,10 @@ def sanitize_ai_chat_markdown_citations(
         return _NOTE_CITATION_RE.sub(replace, text)
 
     sanitized = _transform_markdown_outside_fences(
-        markdown_text=markdown_text,
+        markdown_text=canonical_markdown,
         transform=sanitize_text,
-    ).strip()
+    )
+    sanitized = _normalize_generated_response_structure(sanitized).strip()
     if sanitized == "":
         raise RuntimeError("AI response contains only unauthorized note citations")
     return sanitized
@@ -128,24 +153,125 @@ def find_note_citation_ids(
     markdown_text: str,
     *,
     notes: NoteStore,
-) -> frozenset[str]:
+) -> tuple[str, ...]:
     if not isinstance(markdown_text, str) or markdown_text == "":
         raise ValueError("AI response content must be a non-empty string")
-    cited_note_ids: set[str] = set()
+    cited_note_ids: list[str] = []
+    seen_note_ids: set[str] = set()
 
     def collect(text: str) -> str:
         for match in _NOTE_CITATION_RE.finditer(text):
             raw_note_id = _raw_note_id_from_match(match)
             note_id = raw_note_id.translate(_UUID_DASH_TRANSLATION).lower()
-            if notes.has_note(note_id):
-                cited_note_ids.add(note_id)
+            if notes.has_note(note_id) and note_id not in seen_note_ids:
+                seen_note_ids.add(note_id)
+                cited_note_ids.append(note_id)
         return text
 
     _transform_markdown_outside_fences(
         markdown_text=markdown_text,
         transform=collect,
     )
-    return frozenset(cited_note_ids)
+    return tuple(cited_note_ids)
+
+
+def _canonicalize_numbered_note_citations(
+    *,
+    markdown_text: str,
+    allowed_note_ids: tuple[str, ...],
+) -> str:
+    if len(allowed_note_ids) == 0:
+        return markdown_text
+
+    def replace_numbered_citation(match: re.Match[str]) -> str:
+        reference_number = int(match.group("number"))
+        if reference_number > len(allowed_note_ids):
+            return ""
+        return f"[[{allowed_note_ids[reference_number - 1]}]]"
+
+    return _transform_markdown_outside_fences(
+        markdown_text=markdown_text,
+        transform=lambda text: _NUMBERED_NOTE_CITATION_RE.sub(
+            replace_numbered_citation,
+            text,
+        ),
+    )
+
+
+def _hide_incomplete_bracketed_citation_suffix(markdown_text: str) -> str:
+    """Keep a streaming `[[UUID]]` invisible until both closing brackets arrive."""
+    return _transform_markdown_outside_fences(
+        markdown_text=markdown_text,
+        transform=lambda text: _INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE.sub(
+            "",
+            text,
+        ),
+    )
+
+
+def _normalize_generated_response_structure(markdown_text: str) -> str:
+    """Repair common model-only Markdown without changing fenced examples."""
+    output: list[str] = []
+    fence_character = ""
+    fence_length = 0
+    next_ordered_number: int | None = None
+    for line in markdown_text.splitlines(keepends=True):
+        marker_match = _FENCE_MARKER_RE.match(line)
+        if fence_character != "":
+            output.append(line)
+            if marker_match is not None:
+                marker = marker_match.group("marker")
+                if marker[0] == fence_character and len(marker) >= fence_length:
+                    fence_character = ""
+                    fence_length = 0
+            continue
+        if marker_match is not None:
+            marker = marker_match.group("marker")
+            fence_character = marker[0]
+            fence_length = len(marker)
+            next_ordered_number = None
+            output.append(line)
+            continue
+        if _STANDALONE_SOURCE_LINE_RE.match(line) is not None:
+            citations = _BRACKETED_NOTE_CITATION_RE.findall(line)
+            if citations:
+                previous_index = len(output) - 1
+                while previous_index >= 0 and output[previous_index].strip() == "":
+                    previous_index -= 1
+                if previous_index >= 0:
+                    previous_line = output[previous_index]
+                    line_ending = ""
+                    if previous_line.endswith("\n"):
+                        previous_line = previous_line[:-1]
+                        line_ending = "\n"
+                    output[previous_index] = (
+                        previous_line.rstrip()
+                        + " "
+                        + " ".join(citations)
+                        + line_ending
+                    )
+            continue
+        ordered_match = _TOP_LEVEL_ORDERED_ITEM_RE.match(line)
+        if ordered_match is not None:
+            if next_ordered_number is None:
+                next_ordered_number = int(ordered_match.group("number"))
+            line = _TOP_LEVEL_ORDERED_ITEM_RE.sub(
+                f"{next_ordered_number}. ",
+                line,
+                count=1,
+            )
+            next_ordered_number += 1
+            output.append(line)
+            continue
+        stripped = line.strip()
+        if (
+            stripped != ""
+            and not line.startswith((" ", "\t"))
+            and _TOP_LEVEL_UNORDERED_ITEM_RE.match(line) is None
+        ):
+            next_ordered_number = None
+        output.append(line)
+    return "".join(output)
 
 
 def _transform_markdown_outside_fences(
@@ -178,9 +304,11 @@ def _transform_markdown_outside_fences(
     return "".join(output)
 
 
-def _validate_allowed_note_ids(allowed_note_ids: frozenset[str]) -> None:
-    if not isinstance(allowed_note_ids, frozenset):
-        raise TypeError("allowed_note_ids must be a frozenset")
+def _validate_allowed_note_ids(allowed_note_ids: tuple[str, ...]) -> None:
+    if not isinstance(allowed_note_ids, tuple):
+        raise TypeError("allowed_note_ids must be a tuple")
+    if len(set(allowed_note_ids)) != len(allowed_note_ids):
+        raise ValueError("allowed_note_ids must be unique")
     for note_id in allowed_note_ids:
         if not isinstance(note_id, str) or note_id == "":
             raise ValueError("allowed_note_ids must contain non-empty strings")
@@ -199,12 +327,13 @@ def _replace_note_citations(
     *,
     rendered_html: str,
     context: EmbedRenderContext,
-    allowed_note_ids: frozenset[str],
+    allowed_note_ids: tuple[str, ...],
 ) -> tuple[str, list[str]]:
     output: list[str] = []
     cited_note_ids: list[str] = []
     seen_note_ids: set[str] = set()
     open_tags: list[str] = []
+    citation_number_by_root_id: dict[str, int] = {}
     segments = _HTML_SEGMENT_RE.split(rendered_html)
     segment_index = 0
     while segment_index < len(segments):
@@ -220,6 +349,7 @@ def _replace_note_citations(
                     text=segment,
                     context=context,
                     allowed_note_ids=allowed_note_ids,
+                    citation_number_by_root_id=citation_number_by_root_id,
                 )
                 output.append(replaced_text)
                 for note_id in segment_note_ids:
@@ -265,6 +395,7 @@ def _replace_note_citations(
                         text=code_text,
                         context=context,
                         allowed_note_ids=allowed_note_ids,
+                        citation_number_by_root_id=citation_number_by_root_id,
                     )
                 )
                 if handled_note_citation:
@@ -290,7 +421,8 @@ def _replace_citations_in_text(
     *,
     text: str,
     context: EmbedRenderContext,
-    allowed_note_ids: frozenset[str],
+    allowed_note_ids: tuple[str, ...],
+    citation_number_by_root_id: dict[str, int],
 ) -> tuple[str, list[str], bool]:
     output: list[str] = []
     cited_note_ids: list[str] = []
@@ -311,41 +443,72 @@ def _replace_citations_in_text(
             continue
         if not context.has_note(note_id):
             raise RuntimeError("Allowed AI citation note is missing from NoteStore")
-        preview = get_note_reference_preview(
-            reference_note_id=note_id,
+        root_note_id = _resolve_reference_root_id(
+            cited_note_id=note_id,
             context=context,
-            redact_passwords=True,
         )
-        output.append(
-            '<span class="ai-chat-note-mention">'
-            f"“{html.escape(preview)}”"
-            "</span>"
-        )
-        cited_note_ids.append(note_id)
+        if root_note_id not in citation_number_by_root_id:
+            citation_number_by_root_id[root_note_id] = (
+                len(citation_number_by_root_id) + 1
+            )
+        if reference_note_id is not None:
+            reference_number = citation_number_by_root_id[root_note_id]
+            escaped_root_note_id = html.escape(root_note_id, quote=True)
+            output.append(
+                '<sup class="ai-chat-citation-marker" '
+                f'aria-label="Reference {reference_number}">'
+                '<a href="#" class="ai-chat-citation-link note-reference-link" '
+                f'data-ref-note-id="{escaped_root_note_id}" '
+                f'data-ref-query="{html.escape(note_id, quote=True)}">'
+                f"[{reference_number}]</a></sup>"
+            )
+            cited_note_ids.append(note_id)
+        else:
+            preview = get_note_reference_preview(
+                reference_note_id=note_id,
+                context=context,
+                redact_passwords=True,
+            )
+            output.append(
+                '<span class="ai-chat-note-mention">'
+                f"“{html.escape(preview)}”"
+                "</span>"
+            )
+            cited_note_ids.append(note_id)
         cursor = match.end()
     output.append(text[cursor:])
     return "".join(output), cited_note_ids, handled_note_citation
 
 
 def _render_references_section(
-    cited_note_ids: list[str],
+    reference_groups: list[tuple[str, tuple[str, ...]]],
     *,
     context: EmbedRenderContext,
 ) -> str:
-    if len(cited_note_ids) == 0:
+    if len(reference_groups) == 0:
         raise ValueError("References section requires at least one cited note")
     reference_items: list[str] = []
-    for note_id in cited_note_ids:
+    all_cited_note_ids: list[str] = []
+    for reference_number, (root_note_id, cited_note_ids) in enumerate(
+        reference_groups,
+        start=1,
+    ):
+        reference_query = " OR ".join(cited_note_ids)
+        all_cited_note_ids.extend(cited_note_ids)
         reference_link = render_compact_note_reference_link(
-            reference_note_id=note_id,
+            reference_note_id=root_note_id,
             context=context,
             redact_passwords=True,
         )
-        reference_items.append(f"<li>{reference_link}</li>")
+        reference_items.append(
+            f'<li data-ref-query="{html.escape(reference_query, quote=True)}">'
+            f'<span class="ai-chat-reference-number">[{reference_number}]</span>'
+            f"{reference_link}</li>"
+        )
 
     open_all_html = ""
-    if len(cited_note_ids) > 1:
-        reference_query = " OR ".join(cited_note_ids)
+    if len(reference_groups) > 1:
+        reference_query = " OR ".join(all_cited_note_ids)
         escaped_query = html.escape(reference_query, quote=True)
         open_all_html = (
             '<a href="#" class="ai-chat-open-all-references" '
@@ -361,43 +524,57 @@ def _render_references_section(
     )
 
 
-def _resolve_reference_root_ids(
+def _group_citations_by_reference_root(
     *,
     cited_note_ids: list[str],
     context: EmbedRenderContext,
-) -> list[str]:
+) -> list[tuple[str, tuple[str, ...]]]:
     if len(cited_note_ids) == 0:
         raise ValueError("Reference root resolution requires cited notes")
     root_ids: list[str] = []
-    seen_root_ids: set[str] = set()
+    cited_ids_by_root: dict[str, list[str]] = {}
     for cited_note_id in cited_note_ids:
-        current_note_id = cited_note_id
-        visited_note_ids: set[str] = set()
-        while True:
-            if current_note_id in visited_note_ids:
-                raise RuntimeError(
-                    "Cycle detected while resolving AI citation root: "
-                    f"{cited_note_id}"
-                )
-            visited_note_ids.add(current_note_id)
-            record = context.get_note(current_note_id)
-            parent_id = record.parent_id
-            if parent_id is None:
-                root_note_id = current_note_id
-                break
-            if not isinstance(parent_id, str) or parent_id == "":
-                raise RuntimeError(
-                    "AI citation note has invalid parent id: "
-                    f"note_id={current_note_id} parent_id={parent_id}"
-                )
-            if not context.has_note(parent_id):
-                raise RuntimeError(
-                    "AI citation hierarchy contains a missing parent: "
-                    f"note_id={current_note_id} parent_id={parent_id}"
-                )
-            current_note_id = parent_id
-        if root_note_id in seen_root_ids:
-            continue
-        seen_root_ids.add(root_note_id)
-        root_ids.append(root_note_id)
-    return root_ids
+        root_note_id = _resolve_reference_root_id(
+            cited_note_id=cited_note_id,
+            context=context,
+        )
+        if root_note_id not in cited_ids_by_root:
+            root_ids.append(root_note_id)
+            cited_ids_by_root[root_note_id] = []
+        if cited_note_id not in cited_ids_by_root[root_note_id]:
+            cited_ids_by_root[root_note_id].append(cited_note_id)
+    return [
+        (root_note_id, tuple(cited_ids_by_root[root_note_id]))
+        for root_note_id in root_ids
+    ]
+
+
+def _resolve_reference_root_id(
+    *,
+    cited_note_id: str,
+    context: EmbedRenderContext,
+) -> str:
+    current_note_id = cited_note_id
+    visited_note_ids: set[str] = set()
+    while True:
+        if current_note_id in visited_note_ids:
+            raise RuntimeError(
+                "Cycle detected while resolving AI citation root: "
+                f"{cited_note_id}"
+            )
+        visited_note_ids.add(current_note_id)
+        record = context.get_note(current_note_id)
+        parent_id = record.parent_id
+        if parent_id is None:
+            return current_note_id
+        if not isinstance(parent_id, str) or parent_id == "":
+            raise RuntimeError(
+                "AI citation note has invalid parent id: "
+                f"note_id={current_note_id} parent_id={parent_id}"
+            )
+        if not context.has_note(parent_id):
+            raise RuntimeError(
+                "AI citation hierarchy contains a missing parent: "
+                f"note_id={current_note_id} parent_id={parent_id}"
+            )
+        current_note_id = parent_id

@@ -3357,7 +3357,7 @@ async function openReferenceQueryInNewTabWithContext(referenceQuery, context) {
         await switchToTabContext(newTabId, {});
     }
 
-    pushReferenceNavigationEntry(sourceTabId, newTabId);
+    pushReferenceNavigationEntry(sourceTabId, newTabId, referenceQuery);
     await runReferenceSearchInActiveTab(referenceQuery, context);
     return newTabId;
 }

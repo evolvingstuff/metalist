@@ -5,12 +5,38 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
-from app.services.agent.skills import SEARCH_NOTES_SKILL
+from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL
+from app.services.agent.skills import SELECT_RELEVANT_EVIDENCE_SKILL
 
 
-SEARCH_NOTES_SKILL_ID = "search_notes"
-SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
-AGENT_SKILL_PREFERENCE_KEYS = (SEARCH_NOTES_SKILL_PREFERENCE_KEY,)
+SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v5"
+SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v5"
+)
+SELECT_RELEVANT_EVIDENCE_SKILL_ID = "select_relevant_evidence_v1"
+SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
+    "pref.ai.skill.select_relevant_evidence_v1"
+)
+LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v4"
+)
+LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v3"
+)
+LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v2"
+)
+LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
+AGENT_SKILL_PREFERENCE_KEYS = (
+    SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
+    SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
+)
+SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
+    LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY,
+    LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY,
+    LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY,
+    LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +47,7 @@ class AgentSkill:
     trigger_action: str
     preference_key: str
     content: str
+    superseded_preference_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.skill_id, str) or self.skill_id == "":
@@ -34,6 +61,15 @@ class AgentSkill:
         if not isinstance(self.preference_key, str) or self.preference_key == "":
             raise ValueError("Agent skill preference key must be non-empty")
         validate_agent_skill_content(self.content)
+        if any(
+            not isinstance(key, str) or key == ""
+            for key in self.superseded_preference_keys
+        ):
+            raise ValueError("Superseded skill preference keys must be non-empty")
+        if len(set(self.superseded_preference_keys)) != len(
+            self.superseded_preference_keys
+        ):
+            raise ValueError("Superseded skill preference keys must be unique")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,15 +112,29 @@ def validate_agent_skill_content(value: str) -> str:
 DEFAULT_AGENT_SKILLS = AgentSkillSet(
     skills=(
         AgentSkill(
-            skill_id=SEARCH_NOTES_SKILL_ID,
-            title="Search notes",
+            skill_id=SCOPED_INVESTIGATION_SKILL_ID,
+            title="Investigate current scope",
             description=(
-                "Generates a focused query for search_notes, which returns complete "
-                "matching note content."
+                "Pages, refines, summarizes, and verifies evidence only inside the "
+                "frozen active MetaList result scope."
             ),
-            trigger_action="search_notes",
-            preference_key=SEARCH_NOTES_SKILL_PREFERENCE_KEY,
-            content=SEARCH_NOTES_SKILL,
+            trigger_action="investigate_current_scope",
+            preference_key=SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
+            content=SCOPED_INVESTIGATION_SKILL,
+            superseded_preference_keys=(
+                *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
+            ),
+        ),
+        AgentSkill(
+            skill_id=SELECT_RELEVANT_EVIDENCE_SKILL_ID,
+            title="Select relevant evidence",
+            description=(
+                "Chooses the exact notes a one-page final response may use, based "
+                "on the user's narrower current question."
+            ),
+            trigger_action="evidence_selection",
+            preference_key=SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
+            content=SELECT_RELEVANT_EVIDENCE_SKILL,
         ),
     )
 )
@@ -93,6 +143,14 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
 def resolve_agent_skill_set(*, preferences: dict[str, str]) -> AgentSkillSet:
     if not isinstance(preferences, dict):
         raise TypeError("Agent skill preferences must be a dictionary")
+    if any(
+        key in preferences for key in SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
+    ):
+        raise ValueError(
+            "Saved skill override is incompatible with the nested scoped "
+            "investigation v5 action contract. Open AI Agent Settings to review "
+            "and restore the new default."
+        )
     resolved_skills: list[AgentSkill] = []
     for default_skill in DEFAULT_AGENT_SKILLS.skills:
         content = default_skill.content
@@ -106,6 +164,7 @@ def resolve_agent_skill_set(*, preferences: dict[str, str]) -> AgentSkillSet:
                 trigger_action=default_skill.trigger_action,
                 preference_key=default_skill.preference_key,
                 content=content,
+                superseded_preference_keys=default_skill.superseded_preference_keys,
             )
         )
     return AgentSkillSet(skills=tuple(resolved_skills))

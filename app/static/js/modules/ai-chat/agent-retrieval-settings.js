@@ -2,12 +2,18 @@ export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxNoteCharacters: 'pref.ai.retrieval.max_note_characters',
     maxPageCharacters: 'pref.ai.retrieval.max_page_characters',
     maxNotesPerPage: 'pref.ai.retrieval.max_notes_per_page',
+    maxPageApproximateTokens: 'pref.ai.retrieval.max_page_approximate_tokens',
+    maxRankedTagsPerPage: 'pref.ai.retrieval.max_ranked_tags_per_page',
+    maxWorkingSummaryCharacters: 'pref.ai.retrieval.max_working_summary_characters',
 });
 
 export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     maxNoteCharacters: 2000,
     maxPageCharacters: 20000,
     maxNotesPerPage: 50,
+    maxPageApproximateTokens: 5000,
+    maxRankedTagsPerPage: 50,
+    maxWorkingSummaryCharacters: 8000,
 });
 
 const AGENT_RETRIEVAL_LIMITS = Object.freeze({
@@ -17,6 +23,12 @@ const AGENT_RETRIEVAL_LIMITS = Object.freeze({
     maximumPageCharacters: 100000,
     minimumNotesPerPage: 1,
     maximumNotesPerPage: 100,
+    minimumPageApproximateTokens: 500,
+    maximumPageApproximateTokens: 24000,
+    minimumRankedTagsPerPage: 1,
+    maximumRankedTagsPerPage: 200,
+    minimumWorkingSummaryCharacters: 2000,
+    maximumWorkingSummaryCharacters: 32000,
 });
 
 
@@ -34,7 +46,17 @@ export function validateAgentRetrievalSettings(settings) {
     const maxNoteCharacters = settings.maxNoteCharacters;
     const maxPageCharacters = settings.maxPageCharacters;
     const maxNotesPerPage = settings.maxNotesPerPage;
-    return { maxNoteCharacters, maxPageCharacters, maxNotesPerPage };
+    const maxPageApproximateTokens = settings.maxPageApproximateTokens;
+    const maxRankedTagsPerPage = settings.maxRankedTagsPerPage;
+    const maxWorkingSummaryCharacters = settings.maxWorkingSummaryCharacters;
+    return {
+        maxNoteCharacters,
+        maxPageCharacters,
+        maxNotesPerPage,
+        maxPageApproximateTokens,
+        maxRankedTagsPerPage,
+        maxWorkingSummaryCharacters,
+    };
 }
 
 
@@ -60,11 +82,38 @@ export function getAgentRetrievalSettingsValidationMessage(settings) {
     if (pageCharacterError !== '') {
         return pageCharacterError;
     }
-    return integerRangeError(
+    const notesPerPageError = integerRangeError(
         settings.maxNotesPerPage,
         'Maximum result trees per page',
         AGENT_RETRIEVAL_LIMITS.minimumNotesPerPage,
         AGENT_RETRIEVAL_LIMITS.maximumNotesPerPage,
+    );
+    if (notesPerPageError !== '') {
+        return notesPerPageError;
+    }
+    const pageTokenError = integerRangeError(
+        settings.maxPageApproximateTokens,
+        'Approximate input tokens per evidence page',
+        AGENT_RETRIEVAL_LIMITS.minimumPageApproximateTokens,
+        AGENT_RETRIEVAL_LIMITS.maximumPageApproximateTokens,
+    );
+    if (pageTokenError !== '') {
+        return pageTokenError;
+    }
+    const facetPageError = integerRangeError(
+        settings.maxRankedTagsPerPage,
+        'Maximum ranked tags per facet page',
+        AGENT_RETRIEVAL_LIMITS.minimumRankedTagsPerPage,
+        AGENT_RETRIEVAL_LIMITS.maximumRankedTagsPerPage,
+    );
+    if (facetPageError !== '') {
+        return facetPageError;
+    }
+    return integerRangeError(
+        settings.maxWorkingSummaryCharacters,
+        'Maximum working-summary characters',
+        AGENT_RETRIEVAL_LIMITS.minimumWorkingSummaryCharacters,
+        AGENT_RETRIEVAL_LIMITS.maximumWorkingSummaryCharacters,
     );
 }
 
@@ -88,6 +137,21 @@ export function readAgentRetrievalSettings(getPreference) {
             getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage),
             DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNotesPerPage,
             'Stored maximum result trees per page',
+        ),
+        maxPageApproximateTokens: parseStoredInteger(
+            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens),
+            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens,
+            'Stored approximate input tokens per evidence page',
+        ),
+        maxRankedTagsPerPage: parseStoredInteger(
+            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage),
+            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxRankedTagsPerPage,
+            'Stored maximum ranked tags per facet page',
+        ),
+        maxWorkingSummaryCharacters: parseStoredInteger(
+            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters),
+            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxWorkingSummaryCharacters,
+            'Stored maximum working-summary characters',
         ),
     });
 }

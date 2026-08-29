@@ -2,9 +2,9 @@
 
 ## Status
 
-Proposed for approval. This plan replaces the current agent-wide MetaList search
-loop with a user-bounded, iterative investigation loop. No implementation should
-begin until the plan is approved and checkpointed.
+Implemented; automated regression checks pass and the feature is awaiting human
+UI/Ollama validation. This plan replaced the production agent-wide MetaList search
+loop with the user-bounded, iterative investigation loop described below.
 
 ## Outcome
 
@@ -45,15 +45,19 @@ stream final answer with allowlisted references
 
 1. The active result scope is frozen when the user sends the message. Later UI
    searches, tab changes, or navigation do not alter the running investigation.
-2. Gray-bar/search-redacted descendants are outside the frozen scope and can never
-   be discovered by a later agent refinement.
+2. Gray-bar/search-redacted nodes are outside the evidence set and can never be
+   discovered by a later agent refinement. Contentless ancestor objects may be
+   retained solely to preserve the nested path to matching evidence.
 3. Direct note reopening is allowed only for sources already shown to the agent in
    the current investigation.
 4. Tag facets report both matching-note and matching-result-tree counts so their
    effect is not ambiguous in a hierarchical result set.
 5. Facets are bounded and ranked by frequency across the entire current result
-   state. Each note on the current page still exposes its exact user-assigned tags,
-   including tags that do not appear in the bounded overall facet summary.
+   state. Each evidence note on the current page exposes both its exact
+   user-assigned tags and its locally assigned/inferred search tags, including
+   tags that do not appear in the bounded overall facet summary. Parent and
+   ancestor tags apply to descendants by hierarchy and are not repeated on each
+   child payload.
 6. Regex is not an initial action. The architecture leaves a safe extension seam,
    but phase one supports tag and exact-text refinements only.
 7. Final synthesis rehydrates the original sources selected to support the answer.
@@ -102,9 +106,11 @@ unbounded scope. Approval of this plan includes approval of that behavior.
   and gray/redacted sibling or descendant placeholders are not silently promoted
   into the agent scope.
 - The frozen snapshot retains immutable references to the searchable text, exact
-  tags, effective searchable tags, hierarchy IDs, timestamps, and ordering needed
+  tags, locally inferred searchable tags, hierarchy IDs, timestamps, and ordering needed
   for deterministic run-local refinement. A later note edit cannot silently change
   what this in-flight investigation searches.
+- Every evidence page is serialized as root note JSON objects with recursively
+  nested `children`; it is never flattened into an unrelated note array.
 
 ### Redaction and privacy
 
@@ -136,8 +142,9 @@ unbounded scope. Approval of this plan includes approval of that behavior.
 - `reopen_sources` can access only observed IDs.
 - `answer` supplies a bounded set of observed source IDs that MetaList rehydrates
   automatically for final synthesis.
-- Final response citations remain restricted to the rehydrated, non-redacted
-  source set and continue to use the existing root-deduplicated References UI.
+- Final response citations remain restricted to exact rehydrated, non-redacted
+  source notes. The visible References UI remains root-deduplicated, while its
+  navigation query retains cited child UUIDs so unrelated siblings stay redacted.
 
 ## Proposed Run-Local Models
 
@@ -167,6 +174,7 @@ Immutable server-only run state:
 - normalized descriptor;
 - ordered eligible root IDs;
 - ordered eligible note IDs within each root;
+- frozen parent/child paths used to serialize recursive result-tree objects;
 - frozen searchable note records;
 - whole-scope note and result-tree counts;
 - complete normalized tag-frequency index;
@@ -297,11 +305,9 @@ separate summarization inference call per page.
   count, then case-insensitive tag text for stability.
 - Exact per-note payloads retain the note's user-assigned tags in their original
   order/spelling, independently of facet truncation and ranking.
-- Meta/inherited/inferred-tag treatment must be explicit:
-  - facet matching uses the same effective searchable tags as normal MetaList
-    search so a proposed filter predicts real membership;
-  - each page separately exposes exact user-assigned tags so the agent can
-    distinguish direct tagging from inherited/inferred search behavior.
+- Agent tag behavior is deliberately literal: facets, per-note payloads, and later
+  refinements use only directly assigned raw tags. Untagged notes omit `tags`;
+  inherited, implied, and ontology-expanded tags are neither sent nor matched.
 - Add a namespace-scoped `maximum ranked tags per facet page` control to AI Agent
   Settings. Use a bounded default and range justified by context-budget fixtures;
   do not serialize every namespace tag by default.
@@ -310,6 +316,9 @@ separate summarization inference call per page.
 
 - Keep the small high-level route call so ordinary questions, greetings, and
   general-knowledge requests can choose `respond` without loading note pages.
+- Give that route a content-free snapshot of the exact active user search query,
+  scope metadata, and result counts. Explicit requests to use the user's saved
+  notes must be constrained by Instructor to `investigate_current_scope`.
 - Replace high-level `search_notes` with `investigate_current_scope`.
 - The base system prompt describes only when to respond directly versus investigate
   the user's frozen scope. It contains no detailed search grammar.
@@ -326,6 +335,8 @@ separate summarization inference call per page.
     from the ranked facet page.
 - Instructor continues to own every structured route/investigation call. Direct
   Ollama streaming remains limited to final prose.
+- Bound every generation over the wire (512 route; 1,024 query, investigation,
+  and final prose) and show a live approximate output-token count in eye mode.
 - Use a flat required wire schema rather than a root union/reference layout, while
   preserving strong internal action models and semantic validators.
 - Version the prompt/skill override contract. Existing saved overrides targeting
@@ -441,8 +452,8 @@ Introduce focused services rather than putting scope logic in the FastAPI route:
 Retain the existing namespace-scoped controls:
 
 - maximum characters per note;
-- maximum result trees per note page;
-- maximum total note characters per page.
+- approximate serialized-input tokens per evidence page (default 5,000), with
+  greedy root-atomic packing and variable root counts;
 
 Add:
 
@@ -475,7 +486,7 @@ the server from the active user context.
 1. Add effective-tag frequency indexes with note/tree counts and deterministic
    ranking.
 2. Preserve exact user-assigned tags in every serialized page note.
-3. Implement bounded note pages and bounded facet pages.
+3. Implement token-budgeted, root-atomic note pages and bounded facet pages.
 4. Implement tag refinement, exact-text refinement, next-page, and state-stack
    backtracking with `St ⊆ S0` assertions.
 5. Add observed-source tracking and restricted source reopening.
@@ -506,8 +517,10 @@ without causing context to grow with total pages read.
 4. Enforce action-specific preconditions and backtracking/source rules in code.
 5. On `answer`, rehydrate the declared observed sources and build final context from
    verified content plus the final summary.
-6. Preserve current citation allowlisting, child-preview replacement, and root-level
-   References behavior.
+6. Preserve citation allowlisting and child-preview replacement. Put exact
+   `[[UUID]]` tokens beside evidence for the model to copy, programmatically number
+   validated cited notes, then group the visible References UI by root without
+   discarding the exact child UUIDs used for redacted reference navigation.
 7. Remove the obsolete query-parameterization call, accumulated raw tool-result
    transcript, global duplicate-query guards, and dead action/schema code after
    parity tests pass.

@@ -16,11 +16,17 @@ const VALID_PROMPTS = Object.freeze({
 });
 
 const VALID_SKILL = Object.freeze({
-    skillId: 'search_notes',
-    title: 'Search notes',
-    description: 'Generate a focused MetaList query.',
-    triggerAction: 'search_notes',
-    preferenceKey: 'pref.ai.skill.search_notes',
+    skillId: 'scoped_investigation_v5',
+    title: 'Investigate current scope',
+    description: 'Investigate only the frozen MetaList scope.',
+    triggerAction: 'investigate_current_scope',
+    preferenceKey: 'pref.ai.skill.scoped_investigation_v5',
+    supersededPreferenceKeys: [
+        'pref.ai.skill.scoped_investigation_v4',
+        'pref.ai.skill.scoped_investigation_v3',
+        'pref.ai.skill.scoped_investigation_v2',
+        'pref.ai.skill.search_notes',
+    ],
     content: 'Use positive search terms.',
 });
 
@@ -41,6 +47,7 @@ test('validateAgentPromptDefaultsPayload converts the API field names', () => {
             description: VALID_SKILL.description,
             trigger_action: VALID_SKILL.triggerAction,
             preference_key: VALID_SKILL.preferenceKey,
+            superseded_preference_keys: VALID_SKILL.supersededPreferenceKeys,
             content: VALID_SKILL.content,
         }],
     }), {

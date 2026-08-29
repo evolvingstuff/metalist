@@ -16,6 +16,7 @@ _CONNECT_TIMEOUT_SECONDS = 5.0
 _READ_TIMEOUT_SECONDS = 300.0
 _ALLOWED_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _ALLOWED_THINKING_LEVELS = frozenset({"off", "low", "medium", "high"})
+_MAX_ERROR_DETAIL_CHARACTERS = 2_000
 
 
 class OllamaProviderError(RuntimeError):
@@ -324,6 +325,7 @@ class OllamaProvider:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
+        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         wire_request = self._build_chat_wire_request(
@@ -331,6 +333,7 @@ class OllamaProvider:
             model=model,
             thinking_level=thinking_level,
             messages=messages,
+            max_output_tokens=max_output_tokens,
         )
         on_request(wire_request)
         url = wire_request["url"]
@@ -341,7 +344,13 @@ class OllamaProvider:
         try:
             async with self._client() as client:
                 async with client.stream("POST", url, json=request_payload) as response:
-                    response.raise_for_status()
+                    if response.is_error:
+                        await response.aread()
+                        detail = self._parse_error_response(response_text=response.text)
+                        raise OllamaProviderError(
+                            f"Ollama chat request failed with HTTP "
+                            f"{response.status_code}: {detail}"
+                        )
                     async for event in self._stream_response_events(response=response):
                         if event["type"] == "done":
                             did_finish = True
@@ -358,6 +367,7 @@ class OllamaProvider:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
+        max_output_tokens: int,
     ) -> dict[str, object]:
         normalized_model = validate_ollama_model(model)
         think_value = resolve_ollama_think_value(
@@ -365,11 +375,18 @@ class OllamaProvider:
             thinking_level=thinking_level,
         )
         self._validate_messages(messages)
+        if (
+            not isinstance(max_output_tokens, int)
+            or isinstance(max_output_tokens, bool)
+            or max_output_tokens < 1
+        ):
+            raise ValueError("Ollama maximum output tokens must be positive")
         request_payload: dict[str, object] = {
             "model": normalized_model,
             "messages": messages,
             "stream": True,
             "think": think_value,
+            "options": {"num_predict": max_output_tokens},
         }
         url = _api_url(base_url=base_url, endpoint="/chat")
         return {"method": "POST", "url": url, "body": request_payload}
@@ -406,6 +423,24 @@ class OllamaProvider:
                 else:
                     yield {"type": "done"}
                 return
+
+    @staticmethod
+    def _parse_error_response(*, response_text: str) -> str:
+        if not isinstance(response_text, str):
+            raise TypeError("Ollama error response text must be a string")
+        try:
+            payload = json.loads(response_text)
+        except json.JSONDecodeError as exc:
+            raise OllamaProviderError(
+                "Ollama returned malformed JSON for an HTTP error"
+            ) from exc
+        if not isinstance(payload, dict) or "error" not in payload:
+            raise OllamaProviderError("Ollama HTTP error response is malformed")
+        error = payload["error"]
+        if not isinstance(error, str) or error.strip() == "":
+            raise OllamaProviderError("Ollama HTTP error detail is malformed")
+        detail = " ".join(error.split())
+        return detail[:_MAX_ERROR_DETAIL_CHARACTERS]
 
     @staticmethod
     def _parse_usage(*, payload: dict[str, object]) -> dict[str, int]:

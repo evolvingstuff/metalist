@@ -12,47 +12,36 @@ def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
     assert DEFAULT_AGENT_PROMPTS.system_prompt != ""
     normalized_system_prompt = " ".join(DEFAULT_AGENT_PROMPTS.system_prompt.split())
     assert "Prefer Markdown for final answers" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "LaTeX math delimiters" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "Mermaid code blocks" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "one bounded page" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "A broad synthesis is not complete merely because one page was read" in (
-        normalized_system_prompt
-    )
-    assert "Reducing the result count" in normalized_system_prompt
-    assert "is not by itself a reason to search again" in normalized_system_prompt
-    assert "Never describe a retrieved subset as all matching notes" in (
-        normalized_system_prompt
-    )
-    assert "read_notes_by_id" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "bypass retrieval limits" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "Never read or summarize an" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "gray search-redaction bars" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "Search the note index" in normalized_system_prompt
-    assert "Every search_notes TOOL_RESULT is content-bearing" in (
-        DEFAULT_AGENT_PROMPTS.system_prompt
-    )
-    assert "notes[].content_text" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "LaTeX math" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "Mermaid diagrams" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "investigate_current_scope" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "ordinary conversation/general knowledge" in normalized_system_prompt
+    assert "frozen, server-enforced snapshot" in normalized_system_prompt
     assert "do not substitute general knowledge" in (
         DEFAULT_AGENT_PROMPTS.final_response_prompt.casefold()
     )
-    assert "copy its exact `note_id` value from the relevant TOOL_RESULT" in (
-        DEFAULT_AGENT_PROMPTS.system_prompt
+    normalized_final_prompt = " ".join(
+        DEFAULT_AGENT_PROMPTS.final_response_prompt.split()
     )
-    assert "quoted preview of that specific" in DEFAULT_AGENT_PROMPTS.system_prompt
-    assert "group the clickable References section by top-level root note" in (
-        normalized_system_prompt
+    assert (
+        "every note-derived paragraph or list item"
+        in normalized_final_prompt.casefold()
     )
+    assert "An uncited note-derived claim is invalid" in normalized_final_prompt
+    assert "[[UUID]]" in normalized_final_prompt
+    assert "same evidence object" in normalized_final_prompt
+    assert "candidate evidence set" in normalized_final_prompt
+    assert "current question" in normalized_final_prompt
+    assert "Do not introduce citation tokens with labels" in normalized_final_prompt
+    assert "exact citation token" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "root-deduplicated reference links" in normalized_system_prompt
     assert "Citations are current-run evidence only" in normalized_system_prompt
-    assert "Never reuse note IDs or citations from earlier turns" in (
-        normalized_system_prompt
-    )
-    assert "the current run did not retrieve any notes" in normalized_system_prompt
-    assert "Do not write" in normalized_system_prompt
-    assert "your own References heading or list" in DEFAULT_AGENT_PROMPTS.system_prompt
+    assert "must never be reused from an earlier turn" in normalized_system_prompt
+    assert "do not write your own References section" in normalized_system_prompt
     assert DEFAULT_AGENT_PROMPTS.render_final_response_request(
         basis="Use the retrieved note.",
     ).startswith("FINAL_RESPONSE_REQUEST\nStructured basis: Use the retrieved note.")
-    assert "Never invent or imitate a UUID" in (
+    assert "never print a bare UUID" in (
         DEFAULT_AGENT_PROMPTS.final_response_prompt
     )
     assert DEFAULT_AGENT_PROMPTS.render_tool_result(

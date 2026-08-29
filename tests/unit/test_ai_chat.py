@@ -4,8 +4,10 @@ import json
 import httpx
 import pytest
 
+from app.services.ai_chat import AiChatActivityTimer
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ollama_provider import OllamaProvider
+from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import OllamaModelContext
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import resolve_ollama_think_value
@@ -39,6 +41,8 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         status="started",
         label="Waiting for Ollama · attempt 1 of 2",
         approx_input_tokens=1_234,
+        output_tokens_received=0,
+        duration_ms=1_250.5,
     )
     store.complete_turn(
         session_key="session-a",
@@ -59,6 +63,8 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
             "status": "started",
             "label": "Waiting for Ollama · attempt 1 of 2",
             "approx_input_tokens": 1_234,
+            "output_tokens_received": 0,
+            "duration_ms": 1_250.5,
         }
     ]
     assert session_a["messages"][0]["activities"] == []
@@ -92,6 +98,8 @@ def test_chat_store_builds_ollama_history_without_thinking_trace() -> None:
         status="started",
         label="Structured output invalid (ValidationError) · Instructor will retry",
         approx_input_tokens=1_567,
+        output_tokens_received=0,
+        duration_ms=250.0,
     )
     store.complete_turn(
         session_key="session-a",
@@ -105,6 +113,46 @@ def test_chat_store_builds_ollama_history_without_thinking_trace() -> None:
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hi there"},
     ]
+
+
+def test_activity_timer_retains_completed_step_duration() -> None:
+    timer = AiChatActivityTimer()
+    started = timer.stamp(
+        event={
+            "action": "search_notes",
+            "status": "started",
+            "label": "Searching notes",
+            "duration_ms": 0.0,
+        },
+        observed_at=10.0,
+    )
+    completed = timer.stamp(
+        event={
+            "action": "search_notes",
+            "status": "completed",
+            "label": "Search complete",
+            "duration_ms": 0.0,
+        },
+        observed_at=11.75,
+    )
+
+    assert started["duration_ms"] == 0.0
+    assert completed["duration_ms"] == 1_750.0
+
+
+def test_activity_timer_preserves_authoritative_model_duration() -> None:
+    timer = AiChatActivityTimer()
+    event = timer.stamp(
+        event={
+            "action": "validation",
+            "status": "completed",
+            "label": "Structured action validated",
+            "duration_ms": 2_778.334,
+        },
+        observed_at=10.0,
+    )
+
+    assert event["duration_ms"] == 2_778.334
 
 
 def test_chat_store_removes_prior_note_citations_from_provider_history() -> None:
@@ -357,9 +405,10 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
         assert payload == {
             "model": "qwen3:8b",
             "messages": [{"role": "user", "content": "Count to two"}],
-            "stream": True,
-            "think": "low",
-        }
+                "stream": True,
+                "think": "low",
+                "options": {"num_predict": 4_096},
+            }
         return httpx.Response(
             200,
             headers={"content-type": "application/x-ndjson"},
@@ -381,6 +430,7 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
                 model="qwen3:8b",
                 thinking_level="low",
                 messages=[{"role": "user", "content": "Count to two"}],
+                max_output_tokens=4_096,
                 on_request=wire_requests.append,
             )
         ]
@@ -394,9 +444,10 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
             "body": {
                 "model": "qwen3:8b",
                 "messages": [{"role": "user", "content": "Count to two"}],
-                "stream": True,
-                "think": "low",
-            },
+                    "stream": True,
+                    "think": "low",
+                    "options": {"num_predict": 4_096},
+                },
         }
     ]
     assert chunks == [
@@ -406,6 +457,41 @@ def test_ollama_provider_streams_thinking_and_content_separately() -> None:
         {"type": "content_delta", "text": "!"},
         {"type": "done", "usage": {"prompt_eval_count": 23, "eval_count": 8}},
     ]
+
+
+def test_ollama_provider_preserves_http_error_detail_for_debugging() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "http://127.0.0.1:11434/api/chat"
+        return httpx.Response(
+            400,
+            headers={"content-type": "application/json"},
+            json={"error": "model rejected the chat template"},
+        )
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+
+    async def collect_chunks() -> list[dict[str, object]]:
+        return [
+            chunk
+            async for chunk in provider.stream_chat(
+                base_url="http://127.0.0.1:11434",
+                model="qwen2.5:7b-instruct",
+                thinking_level="off",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_output_tokens=4_096,
+                on_request=lambda request: None,
+            )
+        ]
+
+    with pytest.raises(
+        OllamaProviderError,
+        match=(
+            "Ollama chat request failed with HTTP 400: "
+            "model rejected the chat template"
+        ),
+    ):
+        asyncio.run(collect_chunks())
 
 
 def test_gpt_oss_requests_medium_thinking_level() -> None:
@@ -427,6 +513,7 @@ def test_gpt_oss_requests_medium_thinking_level() -> None:
                 model="gpt-oss:20b",
                 thinking_level="medium",
                 messages=[{"role": "user", "content": "Hello"}],
+                max_output_tokens=4_096,
                 on_request=lambda request: None,
             )
         ]

@@ -54,6 +54,17 @@ class SearchScope:
     matched_note_ids: Optional[Set[str]] = None
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedViewScope:
+    """Canonical, explicit note membership for one complete MetaList view."""
+
+    filter_active: bool
+    allowed_note_ids: frozenset[str]
+    matched_note_ids: frozenset[str]
+    ordered_root_ids: tuple[str, ...]
+    total_root_count: int
+
+
 def _extract_direct_uuid_note_ids(clause: SearchClause) -> Set[str]:
     candidates: Set[str] = set()
     for token in clause.required_tags:
@@ -271,6 +282,86 @@ def _filter_scope_by_date(
     root_ids_with_matches = {_root_id_for_note(note_id) for note_id in date_matched_note_ids}
     root_ids_ordered = [root_id for root_id in ordered_root_ids if root_id in root_ids_with_matches]
     return allowed_note_ids, root_ids_ordered, len(root_ids_ordered)
+
+
+def resolve_view_scope_membership(
+    *,
+    search: str,
+    sort_mode: str,
+    date_filter: object,
+    is_untagged_view: bool,
+) -> ResolvedViewScope:
+    """Resolve evidence membership using the same rules as ``/notes/view``.
+
+    ``matched_note_ids`` contains only evidence-bearing matches. The separate
+    ``allowed_note_ids`` set may additionally contain ancestors required to render
+    the hierarchy and must never be treated as agent evidence.
+    """
+    if not isinstance(search, str):
+        raise TypeError("search must be a string")
+    if not isinstance(is_untagged_view, bool):
+        raise TypeError("is_untagged_view must be a bool")
+    normalized_sort_mode = normalize_sort_mode(sort_mode)
+    if normalized_sort_mode == "normal":
+        ordered_root_ids = note_store.get_children(None)
+    else:
+        root_sort_timestamps = get_root_sort_timestamps(normalized_sort_mode)
+        ordered_root_ids = get_root_ids_for_sort_mode(
+            normalized_sort_mode,
+            root_timestamps=root_sort_timestamps,
+        )
+    normalized_date_filter = normalize_date_filter(date_filter)
+    if is_untagged_view:
+        search_scope = _apply_untagged_view(ordered_root_ids=ordered_root_ids)
+    else:
+        search_scope = resolve_search_scope(
+            search=search,
+            editing_note_id=None,
+            sort_mode=normalized_sort_mode,
+            ordered_root_ids=ordered_root_ids,
+        )
+
+    filter_active = search_scope.search_active
+    if search_scope.search_active:
+        if search_scope.allowed_note_ids is None:
+            raise RuntimeError("active search scope missing allowed_note_ids")
+        if search_scope.matched_note_ids is None:
+            raise RuntimeError("active search scope missing matched_note_ids")
+        if search_scope.search_root_ids_ordered is None:
+            raise RuntimeError("active search scope missing ordered root ids")
+        allowed_note_ids = set(search_scope.allowed_note_ids)
+        matched_note_ids = set(search_scope.matched_note_ids)
+        scoped_root_ids = list(search_scope.search_root_ids_ordered)
+    else:
+        allowed_note_ids = set(note_store.list_note_ids())
+        matched_note_ids = set(allowed_note_ids)
+        scoped_root_ids = list(ordered_root_ids)
+
+    if normalized_date_filter is not None:
+        filter_active = True
+        date_matched_note_ids = {
+            note_id
+            for note_id in matched_note_ids
+            if note_store.has_note(note_id)
+            and note_matches_date_filter(
+                note_store.get_note(note_id),
+                normalized_date_filter,
+            )
+        }
+        allowed_note_ids, scoped_root_ids, _root_count = _filter_scope_by_date(
+            date_filter=normalized_date_filter,
+            matched_note_ids=matched_note_ids,
+            ordered_root_ids=ordered_root_ids,
+        )
+        matched_note_ids = date_matched_note_ids
+
+    return ResolvedViewScope(
+        filter_active=filter_active,
+        allowed_note_ids=frozenset(allowed_note_ids),
+        matched_note_ids=frozenset(matched_note_ids),
+        ordered_root_ids=tuple(scoped_root_ids),
+        total_root_count=len(scoped_root_ids),
+    )
 
 
 def build_activity_summary(

@@ -60,6 +60,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     );
     const {
         isViewingReferenceSource,
+        getActiveReferenceSourceQuery,
         popReferenceNavigationEntryForActiveTab,
         pushReferenceNavigationEntry,
         updateReferenceSourceIndicator,
@@ -76,8 +77,9 @@ test('nested reference source entries expose and dismiss one temporary context a
         },
         tabOrder: ['original', 'source-1', 'source-2'],
     }, { emitUpdate: false });
-    pushReferenceNavigationEntry('original', 'source-1');
+    pushReferenceNavigationEntry('original', 'source-1', 'uuid-1');
     assert.equal(isViewingReferenceSource(), true);
+    assert.equal(getActiveReferenceSourceQuery(), 'uuid-1');
     assert.equal(indicator.hidden, false);
 
     ModeContext.hydrateTabState({
@@ -89,10 +91,11 @@ test('nested reference source entries expose and dismiss one temporary context a
         },
         tabOrder: ['original', 'source-1', 'source-2'],
     }, { emitUpdate: false });
-    pushReferenceNavigationEntry('source-1', 'source-2');
+    pushReferenceNavigationEntry('source-1', 'source-2', 'uuid-2');
     assert.deepEqual(popReferenceNavigationEntryForActiveTab(), {
         fromTabId: 'source-1',
         toTabId: 'source-2',
+        referenceQuery: 'uuid-2',
     });
     assert.equal(indicator.hidden, true);
 
@@ -109,6 +112,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     assert.deepEqual(popReferenceNavigationEntryForActiveTab(), {
         fromTabId: 'original',
         toTabId: 'source-1',
+        referenceQuery: 'uuid-1',
     });
     assert.equal(indicator.hidden, true);
 

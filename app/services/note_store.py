@@ -1180,6 +1180,24 @@ class NoteStore:
 
         return record
 
+    def list_local_effective_tag_terms(
+        self,
+        *,
+        note_id: str,
+        plaintext: str,
+    ) -> FrozenSet[str]:
+        """Infer searchable tags from this note alone, excluding ancestors."""
+        if not isinstance(note_id, str) or note_id == "":
+            raise TypeError("note_id must be a non-empty string")
+        if not isinstance(plaintext, str):
+            raise TypeError("plaintext must be a string")
+        record = self.get_note(note_id)
+        ontology = get_ontology()
+        return ontology.infer_effective_tags(
+            base_tags=record.tag_terms,
+            plaintext=plaintext,
+        )
+
     def has_note(self, note_id: str) -> bool:
         with self._lock:
             return note_id in self._note_map

@@ -2572,6 +2572,18 @@ body.ai-chat-resizing * {
     border-bottom-left-radius: 0;
 }
 
+.ai-chat-scope-chip {
+    align-self: flex-start;
+    padding: 3px 7px;
+    border: 1px solid #bae6fd;
+    border-radius: 999px;
+    background: #f0f9ff;
+    color: #075985;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
 .ai-chat-message-content {
     overflow-wrap: anywhere;
     font-size: 13px;
@@ -2588,6 +2600,24 @@ body.ai-chat-resizing * {
     border-radius: 3px;
     background: #f1f5f9;
     color: #334155;
+}
+
+.ai-chat-citation-marker {
+    margin-left: 0.08em;
+    color: #2563eb;
+    font-size: 0.72em;
+    font-weight: 700;
+    line-height: 0;
+    vertical-align: super;
+}
+
+.ai-chat-citation-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.ai-chat-citation-link:hover {
+    text-decoration: underline;
 }
 
 .ai-chat-references {
@@ -2613,6 +2643,19 @@ body.ai-chat-resizing * {
     margin: 0;
     padding: 0;
     list-style: none;
+}
+
+.ai-chat-references li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+}
+
+.ai-chat-reference-number {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
 }
 
 .ai-chat-references .ai-chat-note-reference {
@@ -2725,6 +2768,28 @@ body.ai-chat-resizing * {
     font-weight: 500;
     opacity: 0.72;
     white-space: nowrap;
+}
+
+.ai-chat-activity-output-token-count {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ai-chat-activity-output-token-count.is-live::before {
+    animation: ai-chat-output-token-pulse 1s ease-in-out infinite;
+    background: currentColor;
+    border-radius: 50%;
+    content: "";
+    display: inline-block;
+    height: 0.4em;
+    margin-right: 0.35em;
+    width: 0.4em;
+}
+
+@keyframes ai-chat-output-token-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.15); }
 }
 
 .ai-chat-activity-elapsed {
@@ -3247,11 +3312,19 @@ html[data-theme="dark"] .ai-chat-note-mention {
     color: #e2e8f0;
 }
 
+html[data-theme="dark"] .ai-chat-citation-marker {
+    color: #93c5fd;
+}
+
 html[data-theme="dark"] .ai-chat-references {
     border-top-color: #334155;
 }
 
 html[data-theme="dark"] .ai-chat-references h4 {
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .ai-chat-reference-number {
     color: #94a3b8;
 }
 

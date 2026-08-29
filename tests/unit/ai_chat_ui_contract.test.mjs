@@ -64,6 +64,7 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(template, /id="ai-chat-diagnostics-toggle"[^>]*aria-pressed="false"/);
     assert.match(template, /id="ai-agent-debug-dialog"/);
     assert.match(template, /id="ai-agent-debug-enabled"[^>]*type="checkbox"[^>]*checked/);
+    assert.match(template, /id="ai-agent-debug-copy-all"[^>]*disabled/);
     assert.match(template, /Current or most recent run only/);
     assert.match(css, /\.ai-agent-debug-dialog[\s\S]*?width:\s*min\(1100px, 94vw\)/);
     assert.match(css, /\.ai-agent-debug-event[\s\S]*?summary/);
@@ -74,6 +75,9 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(debugView, /run\.events/);
     assert.match(debugView, /document\.createElement\('details'\)/);
     assert.match(debugView, /JSON\.stringify\(event\.detail, null, 2\)/);
+    assert.match(debugView, /navigator\.clipboard\.writeText/);
+    assert.match(debugView, /JSON\.stringify\(this\._snapshot\.run, null, 2\)/);
+    assert.match(debugView, /Copied complete trace to clipboard/);
     assert.match(debugView, /Latest trace recorded\. Enable exact details to inspect payloads/);
     assert.match(debugView, /this\._renderRun\(payload\.run, payload\.enabled\)/);
     assert.match(debugView, /this\._closeFromBackdropClick\(event\)/);
@@ -99,6 +103,9 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(controller, /query\.className = 'ai-chat-activity-query'/);
     assert.match(controller, /tokenCount\.className = 'ai-chat-activity-token-count'/);
     assert.match(controller, /`≈ \$\{activity\.approx_input_tokens\.toLocaleString\(\)\} input tokens`/);
+    assert.match(controller, /activity\.output_tokens_received\.toLocaleString\(\)/);
+    assert.match(controller, /ai-chat-activity-output-token-count/);
+    assert.match(css, /@keyframes ai-chat-output-token-pulse/);
     assert.match(css, /\.ai-chat-working-indicator/);
     assert.match(css, /\.ai-chat-activity-query/);
     assert.match(css, /\.ai-chat-activity-token-count/);
@@ -119,16 +126,52 @@ test('AI agent settings expose bounded note retrieval controls', () => {
 
     assert.match(settingsModal, /id="ai-agent-max-note-characters"/);
     assert.match(settingsModal, /min="500" max="10000"/);
+    assert.doesNotMatch(settingsModal, /id="ai-agent-max-page-characters"/);
+    assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
+    assert.match(settingsModal, /min="500" max="24000"/);
     assert.match(settingsModal, /id="ai-agent-max-notes-per-page"/);
-    assert.match(settingsModal, /min="1" max="100"/);
-    assert.match(settingsModal, /Maximum result trees per search page/);
-    assert.match(settingsModal, /id="ai-agent-max-page-characters"/);
-    assert.match(settingsModal, /min="5000" max="100000"/);
+    assert.match(settingsModal, /Maximum result trees per evidence page/);
+    assert.match(settingsModal, /id="ai-agent-max-ranked-tags-per-page"/);
+    assert.match(settingsModal, /id="ai-agent-max-working-summary-characters"/);
+    assert.match(settingsModal, /A result tree is never/);
     assert.match(settingsModal, /search-redacted branches are excluded/);
     assert.match(commandController, /readAgentRetrievalSettings/);
     assert.match(commandController, /maxNoteCharacters/);
-    assert.match(commandController, /maxPageCharacters/);
-    assert.match(commandController, /maxNotesPerPage/);
+    assert.match(commandController, /maxPageApproximateTokens/);
+});
+
+
+test('chat accepts scoped-investigation lifecycle activities', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+
+    for (const action of [
+        'scope',
+        'investigate_current_scope',
+        'evidence_selection',
+        'investigation_step',
+        'investigation_page',
+        'investigation_facets',
+        'investigation_refinement',
+        'investigation_sources',
+    ]) {
+        assert.match(controller, new RegExp(`'${action}'`));
+    }
+    assert.match(controller, /activity\.duration_ms/);
+    assert.match(controller, /Step duration/);
+    assert.match(controller, /_formatActivityDuration/);
+});
+
+
+test('chat freezes the active scope only when submitting a turn', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const submitMethod = /async _submitMessage\(\) \{[\s\S]*?\n    \}/.exec(controller)?.[0];
+    const settingsMethod = /_syncSettingsControls\(\) \{[\s\S]*?\n    \}/.exec(controller)?.[0];
+
+    assert.ok(submitMethod);
+    assert.ok(settingsMethod);
+    assert.match(submitMethod, /const scope = captureActiveAgentScope\(\)/);
+    assert.match(submitMethod, /streamAiChat\(\{[\s\S]*?scope,/);
+    assert.doesNotMatch(settingsMethod, /captureActiveAgentScope/);
 });
 
 
@@ -428,7 +471,7 @@ test('streaming keeps drafting available and reset cancels the active Ollama req
     assert.match(controller, /new AbortController\(\)/);
     assert.match(controller, /label: 'Cancelled by user'/);
     assert.match(controller, /assistantMessage\.rendered_content = event\.rendered_content/);
-    assert.match(chatApi, /streamAiChat\(\{ settings, message, onEvent, signal \}\)/);
+    assert.match(chatApi, /streamAiChat\(\{ settings, message, scope, onEvent, signal \}\)/);
     assert.match(chatApi, /signal,/);
     assert.doesNotMatch(controller, /this\._elements\.clear\.disabled = isBusy/);
     assert.match(

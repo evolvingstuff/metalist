@@ -200,7 +200,7 @@ test('typing in search dismisses reference source mode without leaving the activ
     sourceTabState.tabOrder.push(sourceTabId);
     sourceTabState.activeTabId = sourceTabId;
     ModeContext.hydrateTabState(sourceTabState, { emitUpdate: false });
-    pushReferenceNavigationEntry(originalTabId, sourceTabId);
+    pushReferenceNavigationEntry(originalTabId, sourceTabId, 'reference-uuid');
 
     t.after(async () => {
         cancelDebouncedSearchExecution();

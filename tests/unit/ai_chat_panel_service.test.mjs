@@ -120,6 +120,30 @@ test('model wait response and validation phases update one attempt panel', () =>
 });
 
 
+test('live output-token updates replace the active model request panel', () => {
+    const activities = [
+        {
+            sequence: 1,
+            action: 'model_request',
+            status: 'started',
+            label: 'Ollama updating evidence and choosing next step · attempt 1 of 2',
+            approx_input_tokens: 12000,
+            output_tokens_received: 8,
+        },
+        {
+            sequence: 2,
+            action: 'model_request',
+            status: 'started',
+            label: 'Ollama updating evidence and choosing next step · attempt 1 of 2',
+            approx_input_tokens: 12000,
+            output_tokens_received: 16,
+        },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[1]]);
+});
+
+
 test('model retries remain visible between independently collapsed attempt panels', () => {
     const activities = [
         {
@@ -169,6 +193,21 @@ test('response lifecycle updates one panel even when its completed label changes
     ];
 
     assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[1]]);
+});
+
+
+test('response retry updates the existing lifecycle panel', () => {
+    const activities = [
+        { action: 'respond', status: 'started', label: 'Writing response' },
+        {
+            action: 'respond',
+            status: 'started',
+            label: 'Ollama rejected the response before output · retrying attempt 2 of 2',
+        },
+        { action: 'respond', status: 'completed', label: 'Response complete' },
+    ];
+
+    assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[2]]);
 });
 
 
@@ -232,7 +271,7 @@ test('search activity labels expose the query as a separate display part', () =>
 
 test('NDJSON parser retains incomplete tail while returning complete stream events', () => {
     const parsed = parseAiChatNdjsonBuffer(
-        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234}\n'
+        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0,"duration_ms":1250.5}\n'
         + '{"type":"thinking_delta","text":"hmm","rendered_text":"<p>hmm</p>"}\n'
         + '{"type":"content_delta","text":"Hi","rendered_text":"<p>Hi',
     );
@@ -244,6 +283,8 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
             status: 'started',
             label: 'Searching notes',
             approx_input_tokens: 1234,
+            output_tokens_received: 0,
+            duration_ms: 1250.5,
         },
         {
             type: 'thinking_delta',
@@ -293,9 +334,9 @@ test('NDJSON parser rejects malformed action status events', () => {
     );
     assert.throws(
         () => parseAiChatNdjsonBuffer(
-            '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes"}\n',
+            '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0}\n',
         ),
-        /action_status requires positive approx_input_tokens/,
+        /action_status requires non-negative finite duration_ms/,
     );
 });
 

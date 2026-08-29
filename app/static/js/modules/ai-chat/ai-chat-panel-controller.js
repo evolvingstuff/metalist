@@ -18,6 +18,10 @@ import {
     queueMermaidDiagramRendering,
 } from '../mode-manager/services/mermaid-render-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+import {
+    getActiveReferenceSourceQuery,
+    isViewingReferenceSource,
+} from '../mode-manager/services/reference-source-navigation-service.js';
 import * as Logger from '../mode-manager/mode-logger.js';
 import { showContextMenu } from '../context-menu/context-menu-service.js';
 import {
@@ -75,6 +79,81 @@ function validateMessage(message) {
 }
 
 
+function extractReferenceNoteIds(referenceQuery) {
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('extractReferenceNoteIds requires reference query');
+    }
+    const matches = referenceQuery.match(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    );
+    if (!matches || matches.length === 0) {
+        throw new Error('Reference source query contains no note UUIDs');
+    }
+    const unique = [...new Set(matches.map((noteId) => noteId.toLowerCase()))];
+    if (unique.length !== matches.length) {
+        throw new Error('Reference source query contains duplicate note UUIDs');
+    }
+    return unique;
+}
+
+
+export function captureActiveAgentScope() {
+    const activeTabId = ModeContext.activeTabId;
+    if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+        throw new Error('Active agent scope requires active tab id');
+    }
+    const searchQuery = ModeContext.getExecutedSearchQuery(activeTabId);
+    if (typeof searchQuery !== 'string') {
+        throw new Error('Active agent scope requires executed search query');
+    }
+    const sortMode = ModeContext.activeTabSortMode;
+    const dateFilter = ModeContext.activeTabDateFilter;
+    let scopeKind = 'all_notes';
+    let label = 'All notes';
+    let referenceRootIds = [];
+    if (isViewingReferenceSource()) {
+        scopeKind = 'reference';
+        label = 'Reference source';
+        const referenceQuery = getActiveReferenceSourceQuery();
+        if (referenceQuery !== searchQuery) {
+            throw new Error('Reference source query differs from executed tab search');
+        }
+        referenceRootIds = extractReferenceNoteIds(referenceQuery);
+    } else if (ModeContext.isUntaggedView) {
+        if (searchQuery !== '') {
+            throw new Error('Untagged scope requires empty executed search');
+        }
+        scopeKind = 'untagged';
+        label = 'Untagged notes';
+    } else if (searchQuery.trim() !== '') {
+        scopeKind = 'search';
+        label = searchQuery;
+    }
+    let dateFilterActive = false;
+    let dateFilterMetric = '';
+    let dateFilterStart = '';
+    let dateFilterEnd = '';
+    if (dateFilter !== null) {
+        dateFilterActive = true;
+        dateFilterMetric = dateFilter.metric;
+        dateFilterStart = dateFilter.startDate;
+        dateFilterEnd = dateFilter.endDate;
+    }
+    return {
+        scope_kind: scopeKind,
+        active_tab_id: activeTabId,
+        search_query: searchQuery,
+        sort_mode: sortMode,
+        date_filter_active: dateFilterActive,
+        date_filter_metric: dateFilterMetric,
+        date_filter_start: dateFilterStart,
+        date_filter_end: dateFilterEnd,
+        reference_root_ids: referenceRootIds,
+        label,
+    };
+}
+
+
 const AI_ACTIVITY_ACTIONS = new Set([
     'planning',
     'model_request',
@@ -87,6 +166,14 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'cancel',
     'ollama_runtime',
     'model_context',
+    'scope',
+    'investigate_current_scope',
+    'evidence_selection',
+    'investigation_step',
+    'investigation_page',
+    'investigation_facets',
+    'investigation_refinement',
+    'investigation_sources',
 ]);
 
 
@@ -108,6 +195,15 @@ function validateActivity(activity) {
     }
     if (!Number.isInteger(activity.approx_input_tokens) || activity.approx_input_tokens < 1) {
         throw new Error('AI chat activity approximate input tokens must be positive');
+    }
+    if (
+        !Number.isInteger(activity.output_tokens_received)
+        || activity.output_tokens_received < 0
+    ) {
+        throw new Error('AI chat activity output tokens must be non-negative');
+    }
+    if (!Number.isFinite(activity.duration_ms) || activity.duration_ms < 0) {
+        throw new Error('AI chat activity duration must be non-negative and finite');
     }
     return activity;
 }
@@ -784,6 +880,7 @@ class AiChatPanelController {
             return;
         }
         const settings = this._getSettings();
+        const scope = captureActiveAgentScope();
         if (!this._models.includes(settings.model)) {
             this._appendLocalErrorPanel('Select an installed Ollama model first.');
             return;
@@ -845,6 +942,7 @@ class AiChatPanelController {
             await streamAiChat({
                 settings,
                 message,
+                scope,
                 signal: abortController.signal,
                 onEvent: (event) => {
                     if (event.type === 'action_status') {
@@ -854,6 +952,9 @@ class AiChatPanelController {
                             status: event.status,
                             label: event.label,
                             approx_input_tokens: event.approx_input_tokens,
+                            output_tokens_received: event.output_tokens_received,
+                            duration_ms: event.duration_ms,
+                            received_at_ms: Date.now(),
                         });
                         void AgentDebugView.refreshIfOpen();
                     } else if (event.type === 'thinking_delta') {
@@ -977,10 +1078,38 @@ class AiChatPanelController {
     _syncThinkingElapsed() {
         const elapsed = this._formatThinkingElapsed();
         for (const element of this._elements.messages.querySelectorAll(
-            '.ai-chat-thinking-elapsed, .ai-chat-activity-elapsed',
+            '.ai-chat-thinking-elapsed',
         )) {
             element.textContent = elapsed;
         }
+        for (const element of this._elements.messages.querySelectorAll(
+            '.ai-chat-activity-elapsed.is-live',
+        )) {
+            const baseDurationMs = Number(element.dataset.baseDurationMs);
+            const receivedAtMs = Number(element.dataset.receivedAtMs);
+            if (!Number.isFinite(baseDurationMs) || !Number.isFinite(receivedAtMs)) {
+                throw new Error('Live AI activity duration metadata is invalid');
+            }
+            element.textContent = this._formatActivityDuration(
+                baseDurationMs + (Date.now() - receivedAtMs),
+            );
+        }
+    }
+
+    _formatActivityDuration(durationMs) {
+        if (!Number.isFinite(durationMs) || durationMs < 0) {
+            throw new Error('Activity duration must be non-negative and finite');
+        }
+        if (durationMs < 1_000) {
+            return `${Math.round(durationMs)}ms`;
+        }
+        if (durationMs < 60_000) {
+            return `${(durationMs / 1_000).toFixed(1)}s`;
+        }
+        const totalSeconds = Math.floor(durationMs / 1_000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
     }
 
     _appendLocalErrorPanel(message) {
@@ -1012,6 +1141,13 @@ class AiChatPanelController {
             const article = document.createElement('article');
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
             article.dataset.messageId = message.id;
+
+            if (message.role === 'assistant') {
+                const scopeChip = this._renderScopeChip(message);
+                if (scopeChip !== null) {
+                    article.appendChild(scopeChip);
+                }
+            }
 
             if (
                 this._showDiagnosticActivities
@@ -1113,6 +1249,21 @@ class AiChatPanelController {
         this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
     }
 
+    _renderScopeChip(message) {
+        validateMessage(message);
+        const completedScopes = message.activities.filter(
+            (activity) => activity.action === 'scope' && activity.status === 'completed',
+        );
+        if (completedScopes.length === 0) {
+            return null;
+        }
+        const latest = completedScopes[completedScopes.length - 1];
+        const chip = document.createElement('div');
+        chip.className = 'ai-chat-scope-chip';
+        chip.textContent = latest.label.replace(/^Scope ready · /, 'Scope · ');
+        return chip;
+    }
+
     _renderActivities(message) {
         const activities = document.createElement('div');
         activities.className = 'ai-chat-activities';
@@ -1150,13 +1301,39 @@ class AiChatPanelController {
                 + 'agent context at four characters per token.'
             );
             panel.append(marker, label, tokenCount);
-            if (isCurrent) {
-                const elapsed = document.createElement('span');
-                elapsed.className = 'ai-chat-activity-elapsed';
-                elapsed.textContent = this._formatThinkingElapsed();
-                elapsed.setAttribute('aria-label', 'Elapsed time');
-                panel.appendChild(elapsed);
+            if (activity.output_tokens_received > 0) {
+                const outputTokenCount = document.createElement('span');
+                outputTokenCount.className = 'ai-chat-activity-output-token-count';
+                outputTokenCount.textContent = (
+                    `≈ ${activity.output_tokens_received.toLocaleString()} output tokens`
+                );
+                outputTokenCount.title = (
+                    'Approximate generated size received so far, estimated at four '
+                    + 'characters per token.'
+                );
+                if (activity.status === 'started') {
+                    outputTokenCount.classList.add('is-live');
+                    outputTokenCount.setAttribute('aria-label', (
+                        `${activity.output_tokens_received.toLocaleString()} approximate `
+                        + 'output tokens received so far'
+                    ));
+                }
+                panel.appendChild(outputTokenCount);
             }
+            const elapsed = document.createElement('span');
+            elapsed.className = 'ai-chat-activity-elapsed';
+            elapsed.textContent = this._formatActivityDuration(activity.duration_ms);
+            elapsed.setAttribute('aria-label', 'Step duration');
+            if (
+                isCurrent
+                && activity.status === 'started'
+                && Number.isFinite(activity.received_at_ms)
+            ) {
+                elapsed.classList.add('is-live');
+                elapsed.dataset.baseDurationMs = String(activity.duration_ms);
+                elapsed.dataset.receivedAtMs = String(activity.received_at_ms);
+            }
+            panel.appendChild(elapsed);
             activities.appendChild(panel);
         }
         return activities;

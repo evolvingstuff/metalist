@@ -37,6 +37,20 @@ function requireNonBlankString(label, value) {
 }
 
 
+function requireUniqueNonBlankStrings(label, values) {
+    if (!Array.isArray(values)) {
+        throw new Error(`${label} must be an array`);
+    }
+    const normalized = values.map((value, index) => (
+        requireNonBlankString(`${label} entry ${index + 1}`, value)
+    ));
+    if (new Set(normalized).size !== normalized.length) {
+        throw new Error(`${label} entries must be unique`);
+    }
+    return normalized;
+}
+
+
 function parseTemplateFields(label, value) {
     const fields = [];
     for (let index = 0; index < value.length; index += 1) {
@@ -166,6 +180,10 @@ export function inspectAgentSkillSet(skills) {
                 `Agent skill ${index + 1} preference key`,
                 skill.preferenceKey,
             ),
+            supersededPreferenceKeys: requireUniqueNonBlankStrings(
+                `Agent skill ${index + 1} superseded preference keys`,
+                skill.supersededPreferenceKeys,
+            ),
             content: skill.content,
         };
     });
@@ -232,6 +250,7 @@ export function validateAgentPromptDefaultsPayload(payload) {
             description: skill.description,
             triggerAction: skill.trigger_action,
             preferenceKey: skill.preference_key,
+            supersededPreferenceKeys: skill.superseded_preference_keys,
             content: skill.content,
         })),
     });

@@ -14,10 +14,16 @@ test('agent retrieval settings use bounded defaults', () => {
         maxNoteCharacters: 2000,
         maxPageCharacters: 20000,
         maxNotesPerPage: 50,
+        maxPageApproximateTokens: 5000,
+        maxRankedTagsPerPage: 50,
+        maxWorkingSummaryCharacters: 8000,
     });
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNoteCharacters, 2000);
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageCharacters, 20000);
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNotesPerPage, 50);
+    assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens, 5000);
+    assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxRankedTagsPerPage, 50);
+    assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxWorkingSummaryCharacters, 8000);
 });
 
 
@@ -26,12 +32,18 @@ test('agent retrieval settings read namespace preference values', () => {
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters, '4000'],
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters, '30000'],
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage, '3'],
+        [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '7000'],
+        [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage, '25'],
+        [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters, '12000'],
     ]);
 
     assert.deepEqual(readAgentRetrievalSettings((key) => preferences.get(key) ?? null), {
         maxNoteCharacters: 4000,
         maxPageCharacters: 30000,
         maxNotesPerPage: 3,
+        maxPageApproximateTokens: 7000,
+        maxRankedTagsPerPage: 25,
+        maxWorkingSummaryCharacters: 12000,
     });
 });
 
@@ -42,6 +54,9 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxNoteCharacters: 499,
             maxPageCharacters: 20000,
             maxNotesPerPage: 5,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 8000,
         }),
         /500 to 10000/,
     );
@@ -50,6 +65,9 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxNoteCharacters: 8000,
             maxPageCharacters: 20000,
             maxNotesPerPage: 101,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 8000,
         }),
         /1 to 100/,
     );
@@ -58,7 +76,43 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxNoteCharacters: 2000,
             maxPageCharacters: 4999,
             maxNotesPerPage: 50,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 8000,
         }),
         /5000 to 100000/,
+    );
+    assert.throws(
+        () => validateAgentRetrievalSettings({
+            maxNoteCharacters: 2000,
+            maxPageCharacters: 20000,
+            maxNotesPerPage: 50,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 201,
+            maxWorkingSummaryCharacters: 8000,
+        }),
+        /1 to 200/,
+    );
+    assert.throws(
+        () => validateAgentRetrievalSettings({
+            maxNoteCharacters: 2000,
+            maxPageCharacters: 20000,
+            maxNotesPerPage: 50,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 1999,
+        }),
+        /2000 to 32000/,
+    );
+    assert.throws(
+        () => validateAgentRetrievalSettings({
+            maxNoteCharacters: 2000,
+            maxPageCharacters: 20000,
+            maxNotesPerPage: 50,
+            maxPageApproximateTokens: 24001,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 8000,
+        }),
+        /500 to 24000/,
     );
 });

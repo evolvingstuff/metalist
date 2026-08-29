@@ -6,8 +6,31 @@ import instructor
 from openai import AsyncOpenAI
 
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import EvidenceSelection
+from app.services.agent.actions import InvestigationStep
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
+from app.services.agent.ollama_inference import _response_finish_reason
+from app.services.agent.ollama_inference import _structured_max_output_tokens
+
+
+def test_structured_output_limits_are_bounded_by_response_type() -> None:
+    assert _structured_max_output_tokens(AgentRouteEnvelope) == 512
+    assert _structured_max_output_tokens(EvidenceSelection) == 512
+    assert _structured_max_output_tokens(InvestigationStep) == 2_048
+
+
+def test_structured_retry_can_identify_output_limit_truncation() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": '{"partial":'},
+                "finish_reason": "length",
+            }
+        ]
+    }
+
+    assert _response_finish_reason(response) == "length"
 
 
 class FakeInstructorClient:
@@ -27,7 +50,7 @@ class FakeInstructorClient:
     def on(self, event_name: str, handler) -> None:
         self.handlers[event_name] = handler
 
-    async def create_with_completion(self, **kwargs):
+    async def create_partial(self, **kwargs):
         self.create_kwargs = kwargs
         request_handler = self.handlers["completion:kwargs"]
         response_handler = self.handlers["completion:response"]
@@ -42,6 +65,7 @@ class FakeInstructorClient:
                 },
             },
             extra_body=kwargs["extra_body"],
+            max_tokens=kwargs["max_tokens"],
             temperature=kwargs["temperature"],
         )
         assert len(self.wire_request_hooks) == 1
@@ -58,27 +82,28 @@ class FakeInstructorClient:
                         "schema": AgentRouteEnvelope.model_json_schema(),
                     },
                 },
-                "stream": False,
+                "stream": True,
                 "temperature": kwargs["temperature"],
+                "max_tokens": kwargs["max_tokens"],
                 "think": kwargs["extra_body"]["think"],
             },
         )
         await self.wire_request_hooks[0](wire_request)
-        raw_response = SimpleNamespace(
-            model_dump=lambda **options: {
+        response_chunks = [
+            SimpleNamespace(
+                model_dump=lambda **options: {
                 "id": "chatcmpl-action",
                 "model": "qwen2.5:7b-instruct",
                 "choices": [
                     {
-                        "message": {
-                            "role": "assistant",
+                        "delta": {
                             "content": (
                                 '{"kind":"respond","note_ids":[],'
                                 '"reason":"Reply to the greeting."}'
                             ),
                             "reasoning": "A greeting needs no note tools.",
-                            "tool_calls": None,
-                        }
+                        },
+                        "finish_reason": "stop",
                     }
                 ],
                 "usage": {
@@ -87,16 +112,31 @@ class FakeInstructorClient:
                     "total_tokens": 39,
                     "prompt_tokens_details": {"cached_tokens": 0},
                 },
-            }
-        )
-        response_handler(raw_response)
+                }
+            )
+        ]
+
+        async def chunk_iterator():
+            for chunk in response_chunks:
+                yield chunk
+
+        class FakeStream:
+            def __init__(self) -> None:
+                self._iterator = chunk_iterator()
+
+            def __aiter__(self):
+                return self._iterator
+
+        stream = FakeStream()
+        response_handler(stream)
+        async for _chunk in stream:
+            pass
         response_model = kwargs["response_model"]
-        parsed = response_model(
+        yield response_model(
             kind="respond",
             note_ids=[],
             reason="Reply to the greeting.",
         )
-        return parsed, raw_response
 
 
 def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
@@ -138,7 +178,8 @@ def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
     assert factory_call["model"] == "qwen2.5:7b-instruct"
     assert factory_call["mode"] is instructor.Mode.JSON_SCHEMA
     assert fake_client.create_kwargs["response_model"] is AgentRouteEnvelope
-    assert fake_client.create_kwargs["max_retries"] == 1
+    assert fake_client.create_kwargs["max_retries"] == 0
+    assert fake_client.create_kwargs["max_tokens"] == 512
     assert fake_client.create_kwargs["extra_body"] == {"think": False}
     assert fake_client.create_kwargs["temperature"] == 0
     assert fake_client.is_closed is True
@@ -158,15 +199,19 @@ def test_structured_inference_uses_instructor_ollama_and_captures_exact_attempt(
     assert response.attempts[0].error == ""
     assert [progress.phase for progress in progress_events] == [
         "attempt_started",
+        "output_progress",
         "response_received",
         "attempt_succeeded",
     ]
+    assert progress_events[1].output_tokens_received > 0
+    assert progress_events[-1].output_tokens_received > 0
     assert all(progress.attempt == 1 for progress in progress_events)
     assert all(progress.max_attempts == 2 for progress in progress_events)
     wire_request = progress_events[0].wire_request
     assert wire_request["method"] == "POST"
     assert wire_request["url"] == "http://127.0.0.1:11434/v1/chat/completions"
     assert wire_request["body"]["think"] is False
+    assert wire_request["body"]["max_tokens"] == 512
     assert wire_request["body"]["messages"][1] == {
         "role": "user",
         "content": "Are you there?",

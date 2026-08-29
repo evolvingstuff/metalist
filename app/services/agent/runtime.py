@@ -3,28 +3,48 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
 from app.services.agent.actions import AgentRouteAction
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import EvidenceSelection
+from app.services.agent.actions import EvidenceSelectionConstraints
 from app.services.agent.actions import ReadNotesByIdAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.actions import SearchNotesIntent
 from app.services.agent.actions import SearchNotesAction
 from app.services.agent.actions import SearchQueryEnvelope
+from app.services.agent.actions import InvestigationStep
+from app.services.agent.actions import InvestigationStepConstraints
+from app.services.agent.actions import ScopedRouteEnvelope
+from app.services.agent.actions import ScopedRouteConstraints
+from app.services.agent.actions import WorkingSummary
+from app.services.agent.actions import bind_investigation_step_constraints
+from app.services.agent.actions import bind_evidence_selection_constraints
+from app.services.agent.actions import bind_scoped_route_constraints
 from app.services.agent.actions import parse_agent_route_json
 from app.services.agent.actions import parse_search_query_json
+from app.services.agent.actions import request_explicitly_requires_saved_notes
+from app.services.agent.actions import request_requires_complete_scope_coverage
+from app.services.agent.actions import validate_working_summary_for_observed_sources
 from app.services.agent.context import AgentContextBuilder
+from app.services.agent.context import serialize_investigation_note_page
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
+from app.services.agent.investigation import InvestigationNotePage
+from app.services.agent.investigation import InvestigationState
+from app.services.agent.investigation import TagFacetPage
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
@@ -32,14 +52,19 @@ from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import AgentSkill
 from app.services.agent.skill_settings import AgentSkillSet
+from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
 from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.token_estimation import estimate_input_tokens
+from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
+from app.services.ollama_provider import OllamaProviderError
 from app.services.search_query import parse_search_query
 
 
 _MAX_ACTION_STEPS = 8
+_MAX_INVESTIGATION_STEPS = 16
+_FINAL_RESPONSE_MAX_OUTPUT_TOKENS = 1_024
 _SearchClauseKey = tuple[
     frozenset[str],
     frozenset[str],
@@ -91,6 +116,543 @@ class AgentRuntime:
         self._permission_policy = permission_policy
         self._tool_registry = tool_registry
         self._trace_store = trace_store
+
+    async def stream_scoped(
+        self,
+        *,
+        session_key: str,
+        base_url: str,
+        selected_model: str,
+        thinking_level: str,
+        canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
+        skills: AgentSkillSet,
+        retrieval_settings: AgentRetrievalSettings,
+        frozen_scope: ScopedSearchSnapshot,
+    ) -> AsyncIterator[dict[str, object]]:
+        run, initial_messages = self._start_run(
+            session_key=session_key,
+            base_url=base_url,
+            selected_model=selected_model,
+            thinking_level=thinking_level,
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+            skills=skills,
+            retrieval_settings=retrieval_settings,
+        )
+        # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
+        try:
+            async for event in self._run_scoped_steps(
+                run=run,
+                canonical_messages=canonical_messages,
+                initial_messages=initial_messages,
+                frozen_scope=frozen_scope,
+            ):
+                yield event
+        # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
+        except asyncio.CancelledError:
+            self._record_failure(
+                session_key=session_key,
+                run_id=run.run_id,
+                error="Agent run interrupted",
+            )
+            raise
+        # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
+        except Exception as exc:
+            self._record_failure(
+                session_key=session_key,
+                run_id=run.run_id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+
+    async def _run_scoped_steps(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        initial_messages: list[dict[str, str]],
+        frozen_scope: ScopedSearchSnapshot,
+    ) -> AsyncIterator[dict[str, object]]:
+        if not isinstance(frozen_scope, ScopedSearchSnapshot):
+            raise TypeError("frozen_scope must be ScopedSearchSnapshot")
+        if frozen_scope.session_key != run.session_key:
+            raise RuntimeError("Frozen scope belongs to another session")
+        initial_tokens = estimate_input_tokens(initial_messages)
+        snapshot = frozen_scope
+        state = InvestigationState.start(
+            snapshot=snapshot,
+            settings=run.retrieval_settings,
+        )
+        scope_page_count = state.total_note_pages
+        scope_label = (
+            f"Scope ready · {snapshot.descriptor.label} · {snapshot.note_count} "
+            f"notes in {snapshot.result_tree_count} result trees · "
+            f"{scope_page_count} evidence pages"
+        )
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="FROZEN_SCOPE",
+            label="Frozen active MetaList scope",
+            detail={
+                "descriptor": snapshot.descriptor.model_dump(mode="json"),
+                "note_count": snapshot.note_count,
+                "result_tree_count": snapshot.result_tree_count,
+                "evidence_page_count": scope_page_count,
+                "ordered_note_ids": list(snapshot.ordered_note_ids),
+                "ordered_root_ids": list(snapshot.ordered_root_ids),
+            },
+            duration_ms=0.0,
+        )
+        yield self._status_event(
+            "scope",
+            "completed",
+            scope_label,
+            approx_input_tokens=initial_tokens,
+        )
+        async for event in self._ensure_model_context(run=run, messages=initial_messages):
+            yield event
+
+        route_messages = self._context_builder.build_scoped_route_messages(
+            canonical_messages=canonical_messages,
+            prompts=run.prompts,
+            snapshot=snapshot,
+            evidence_page_count=scope_page_count,
+        )
+        route_progress: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
+        route_task = asyncio.create_task(
+            self._select_scoped_route(
+                run=run,
+                messages=route_messages,
+                on_progress=lambda progress: self._publish_inference_progress(
+                    run=run,
+                    progress_queue=route_progress,
+                    progress=progress,
+                    purpose=InferencePurpose.ACTION_SELECTION,
+                ),
+            )
+        )
+        async for progress in self._stream_progress_until_complete(
+            progress_queue=route_progress,
+            action_task=route_task,
+        ):
+            yield self._progress_status_event(
+                progress,
+                purpose=InferencePurpose.ACTION_SELECTION,
+            )
+        route = await route_task
+        route_tokens = estimate_input_tokens(route_messages)
+        yield self._status_event(
+            route.kind,
+            "completed",
+            f"Selected action · {route.kind.replace('_', ' ')} · {self._compact_status_reason(route.reason)}",
+            approx_input_tokens=route_tokens,
+        )
+        if route.kind == "respond":
+            action = RespondAction(kind="respond", basis=route.reason)
+            async for event in self._stream_final_response(
+                run=run,
+                messages=initial_messages,
+                action=action,
+                reference_note_ids=(),
+            ):
+                yield event
+            return
+
+        assert route.kind == "investigate_current_scope"
+        skill = run.skills.for_action(route.kind)
+        self._record_skill_activation(run=run, skill=skill)
+        yield self._status_event(
+            "skill",
+            "completed",
+            f"Activated skill · {skill.title}",
+            approx_input_tokens=route_tokens,
+        )
+        note_page = state.current_note_page()
+        facet_page = state.current_facet_page()
+        working_summary = WorkingSummary(
+            answer_relevant_facts=[],
+            possible_conclusions=[],
+            contradictions_or_uncertainties=[],
+            unresolved_questions=[],
+            useful_search_terms_or_tags=[],
+        )
+        reopened_sources: tuple[dict[str, object], ...] = ()
+        yield self._status_event(
+            "investigation_page",
+            "completed",
+            self._note_page_status_label(note_page),
+            approx_input_tokens=route_tokens,
+        )
+        if note_page.total_pages == 1:
+            self._record_evidence_payload(
+                run=run,
+                note_page=note_page,
+                facet_page=facet_page,
+                reopened_sources=(),
+            )
+            selection_skill = run.skills.for_action("evidence_selection")
+            self._record_skill_activation(run=run, skill=selection_skill)
+            yield self._status_event(
+                "skill",
+                "completed",
+                f"Activated skill · {selection_skill.title}",
+                approx_input_tokens=route_tokens,
+            )
+            selection_messages = (
+                self._context_builder.build_single_page_evidence_selection_messages(
+                    canonical_messages=canonical_messages,
+                    prompts=run.prompts,
+                    skill=selection_skill,
+                    state=state,
+                    note_page=note_page,
+                )
+            )
+            selection_tokens = estimate_input_tokens(selection_messages)
+            yield self._status_event(
+                "evidence_selection",
+                "started",
+                "Selecting evidence that directly answers the current question",
+                approx_input_tokens=selection_tokens,
+            )
+            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
+            selection_task = asyncio.create_task(
+                self._select_single_page_evidence(
+                    run=run,
+                    messages=selection_messages,
+                    allowed_note_ids=frozenset(note_page.evidence_note_ids),
+                    on_progress=lambda progress: self._publish_inference_progress(
+                        run=run,
+                        progress_queue=progress_queue,
+                        progress=progress,
+                        purpose=InferencePurpose.EVIDENCE_SELECTION,
+                    ),
+                )
+            )
+            async for progress in self._stream_progress_until_complete(
+                progress_queue=progress_queue,
+                action_task=selection_task,
+            ):
+                yield self._progress_status_event(
+                    progress,
+                    purpose=InferencePurpose.EVIDENCE_SELECTION,
+                )
+            selection = await selection_task
+            verified_sources: tuple[dict[str, object], ...] = ()
+            if selection.relevant_note_ids:
+                verified_sources = state.reopen_sources(
+                    note_ids=selection.relevant_note_ids
+                )
+            reference_note_ids = self._reference_note_ids(
+                verified_sources=verified_sources,
+            )
+            self._trace_store.append_event(
+                session_key=run.session_key,
+                run_id=run.run_id,
+                event_type="FINAL_EVIDENCE",
+                label="Selected one-page authoritative answer sources",
+                detail={
+                    "selection": selection.model_dump(mode="json"),
+                    "sources": list(verified_sources),
+                },
+                duration_ms=0.0,
+            )
+            selected_count = len(reference_note_ids)
+            selected_noun = "notes"
+            if selected_count == 1:
+                selected_noun = "note"
+            yield self._status_event(
+                "evidence_selection",
+                "completed",
+                (
+                    f"Selected {selected_count} directly relevant {selected_noun} · "
+                    f"{self._compact_status_reason(selection.reason)}"
+                ),
+                approx_input_tokens=selection_tokens,
+            )
+            final_messages = self._context_builder.build_scoped_final_messages(
+                canonical_messages=canonical_messages,
+                prompts=run.prompts,
+                state=state,
+                working_summary=working_summary,
+                verified_sources=verified_sources,
+                reference_note_ids=reference_note_ids,
+                basis=(
+                    "the exact sources selected from the complete one-page frozen "
+                    "evidence scope"
+                ),
+            )
+            async for event in self._stream_prebuilt_final_response(
+                run=run,
+                final_messages=final_messages,
+                reference_note_ids=reference_note_ids,
+            ):
+                yield event
+            return
+        for _step_number in range(1, _MAX_INVESTIGATION_STEPS + 1):
+            self._record_evidence_payload(
+                run=run,
+                note_page=note_page,
+                facet_page=facet_page,
+                reopened_sources=reopened_sources,
+            )
+            step_messages = self._context_builder.build_scoped_investigation_messages(
+                canonical_messages=canonical_messages,
+                prompts=run.prompts,
+                skill=skill,
+                state=state,
+                note_page=note_page,
+                facet_page=facet_page,
+                working_summary=working_summary,
+                reopened_sources=reopened_sources,
+            )
+            reopened_sources = ()
+            step_tokens = estimate_input_tokens(step_messages)
+            yield self._status_event(
+                "investigation_step",
+                "started",
+                "Updating evidence summary and selecting next investigation step",
+                approx_input_tokens=step_tokens,
+            )
+            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
+            step_task = asyncio.create_task(
+                self._select_investigation_step(
+                    run=run,
+                    messages=step_messages,
+                    state=state,
+                    note_page=note_page,
+                    facet_page=facet_page,
+                    requires_complete_scope_coverage=(
+                        request_requires_complete_scope_coverage(
+                            canonical_messages[-1]["content"]
+                        )
+                    ),
+                    on_progress=lambda progress: self._publish_inference_progress(
+                        run=run,
+                        progress_queue=progress_queue,
+                        progress=progress,
+                        purpose=InferencePurpose.INVESTIGATION_STEP,
+                    ),
+                )
+            )
+            async for progress in self._stream_progress_until_complete(
+                progress_queue=progress_queue,
+                action_task=step_task,
+            ):
+                yield self._progress_status_event(
+                    progress,
+                    purpose=InferencePurpose.INVESTIGATION_STEP,
+                )
+            step = await step_task
+            validate_working_summary_for_observed_sources(
+                summary=step.working_summary,
+                observed_source_ids=state.observed_source_ids,
+                maximum_characters=run.retrieval_settings.max_working_summary_characters,
+            )
+            working_summary = step.working_summary
+            summary_characters = len(
+                working_summary.model_dump_json(exclude_none=False)
+            )
+            self._record_investigation_step(
+                run=run,
+                state=state,
+                step=step,
+                summary_characters=summary_characters,
+            )
+            yield self._status_event(
+                "investigation_step",
+                "completed",
+                (
+                    f"Selected step · {step.action_kind.replace('_', ' ')} · "
+                    f"{summary_characters:,} summary chars · "
+                    f"{self._compact_status_reason(step.reason)}"
+                ),
+                approx_input_tokens=step_tokens,
+            )
+            if step.action_kind == "answer":
+                if not set(step.answer_source_ids).issubset(state.observed_source_ids):
+                    raise AgentExecutionError("Answer selected unobserved source ids")
+                verified_sources: tuple[dict[str, object], ...] = ()
+                if step.answer_source_ids:
+                    yield self._status_event(
+                        "investigation_sources",
+                        "started",
+                        (
+                            f"Verifying {len(step.answer_source_ids)} answer sources"
+                        ),
+                        approx_input_tokens=step_tokens,
+                    )
+                    verified_sources = state.reopen_sources(
+                        note_ids=step.answer_source_ids
+                    )
+                    self._trace_store.append_event(
+                        session_key=run.session_key,
+                        run_id=run.run_id,
+                        event_type="FINAL_EVIDENCE",
+                        label="Rehydrated authoritative answer sources",
+                        detail={
+                            "source_ids": list(step.answer_source_ids),
+                            "sources": list(verified_sources),
+                        },
+                        duration_ms=0.0,
+                    )
+                    yield self._status_event(
+                        "investigation_sources",
+                        "completed",
+                        (
+                            f"Verified {len(verified_sources)} answer sources"
+                        ),
+                        approx_input_tokens=step_tokens,
+                    )
+                reference_note_ids = self._reference_note_ids(
+                    verified_sources=verified_sources,
+                )
+                final_messages = self._context_builder.build_scoped_final_messages(
+                    canonical_messages=canonical_messages,
+                    prompts=run.prompts,
+                    state=state,
+                    working_summary=working_summary,
+                    verified_sources=verified_sources,
+                    reference_note_ids=reference_note_ids,
+                    basis=step.reason,
+                )
+                async for event in self._stream_prebuilt_final_response(
+                    run=run,
+                    final_messages=final_messages,
+                    reference_note_ids=reference_note_ids,
+                ):
+                    yield event
+                return
+            if step.action_kind == "page_next":
+                yield self._status_event(
+                    "investigation_page",
+                    "started",
+                    "Loading next evidence page",
+                    approx_input_tokens=step_tokens,
+                )
+                note_page = state.page_next()
+                completed_action = "investigation_page"
+                completed_label = self._note_page_status_label(note_page)
+            elif step.action_kind == "refine_tags":
+                yield self._status_event(
+                    "investigation_refinement",
+                    "started",
+                    f"Applying tag refinement · {step.tag_expression}",
+                    approx_input_tokens=step_tokens,
+                )
+                note_page = state.refine_tags(expression=step.tag_expression)
+                facet_page = state.current_facet_page()
+                completed_action = "investigation_refinement"
+                completed_label = (
+                    f"Tag refinement ready · {note_page.matching_note_count} notes in "
+                    f"{note_page.matching_result_tree_count} result trees · "
+                    f"{step.tag_expression}"
+                )
+            elif step.action_kind == "refine_exact_text":
+                yield self._status_event(
+                    "investigation_refinement",
+                    "started",
+                    f"Applying exact-text refinement · {step.exact_text}",
+                    approx_input_tokens=step_tokens,
+                )
+                note_page = state.refine_exact_text(text=step.exact_text)
+                facet_page = state.current_facet_page()
+                completed_action = "investigation_refinement"
+                completed_label = (
+                    f"Exact-text refinement ready · {note_page.matching_note_count} "
+                    f"notes in {note_page.matching_result_tree_count} result trees · "
+                    f"{step.exact_text}"
+                )
+            elif step.action_kind == "inspect_tag_facets":
+                yield self._status_event(
+                    "investigation_facets",
+                    "started",
+                    f"Inspecting tag facets · page {step.facet_page}",
+                    approx_input_tokens=step_tokens,
+                )
+                facet_page = state.inspect_tag_facets(page=step.facet_page)
+                completed_action = "investigation_facets"
+                completed_label = (
+                    f"Tag facets ready · page {facet_page.page} of "
+                    f"{facet_page.total_pages} · {facet_page.total_facets} tags"
+                )
+            elif step.action_kind == "backtrack":
+                yield self._status_event(
+                    "investigation_refinement",
+                    "started",
+                    f"Backtracking · {step.backtrack_state_id}",
+                    approx_input_tokens=step_tokens,
+                )
+                note_page = state.backtrack(state_id=step.backtrack_state_id)
+                facet_page = state.current_facet_page()
+                completed_action = "investigation_refinement"
+                completed_label = (
+                    f"Backtracked · {note_page.state_id} · "
+                    f"{note_page.matching_note_count} notes in "
+                    f"{note_page.matching_result_tree_count} result trees"
+                )
+            elif step.action_kind == "reopen_sources":
+                yield self._status_event(
+                    "investigation_sources",
+                    "started",
+                    f"Reopening {len(step.source_ids)} authoritative sources",
+                    approx_input_tokens=step_tokens,
+                )
+                reopened_sources = state.reopen_sources(note_ids=step.source_ids)
+                completed_action = "investigation_sources"
+                completed_label = (
+                    f"Reopened {len(reopened_sources)} authoritative sources"
+                )
+            else:
+                raise RuntimeError(f"Unsupported investigation action {step.action_kind}")
+            self._record_investigation_action_result(
+                run=run,
+                state=state,
+                step=step,
+                note_page=note_page,
+                facet_page=facet_page,
+                reopened_sources=reopened_sources,
+            )
+            yield self._status_event(
+                completed_action,
+                "completed",
+                completed_label,
+                approx_input_tokens=step_tokens,
+            )
+        raise AgentExecutionError(
+            f"Agent exceeded {_MAX_INVESTIGATION_STEPS} investigation steps"
+        )
+
+    async def _ensure_model_context(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[dict[str, object]]:
+        input_tokens = estimate_input_tokens(messages)
+        yield self._status_event(
+            "model_context",
+            "started",
+            "Loading Ollama model and checking context",
+            approx_input_tokens=input_tokens,
+        )
+        context_window = await self._inference.inspect_context_window(
+            base_url=run.base_url,
+            model=run.selected_model,
+        )
+        self._record_model_context(run=run, context_window=context_window)
+        if not context_window.is_sufficient:
+            raise AgentExecutionError(
+                f"{context_window.model} is loaded with {context_window.loaded_tokens:,} "
+                f"context tokens; MetaList requires {context_window.required_tokens:,}."
+            )
+        yield self._status_event(
+            "model_context",
+            "completed",
+            f"Ollama context ready · {context_window.loaded_tokens:,} tokens",
+            approx_input_tokens=input_tokens,
+        )
 
     async def stream(
         self,
@@ -432,6 +994,126 @@ class AgentRuntime:
         self._record_action(run=run, action=action)
         return action, messages
 
+    async def _select_scoped_route(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+        on_progress: Callable[[StructuredInferenceProgress], None],
+    ) -> ScopedRouteEnvelope:
+        model = self._model_policy.for_stage(
+            purpose=InferencePurpose.ACTION_SELECTION,
+            selected_model=run.selected_model,
+        )
+        user_message = messages[-1]["content"]
+        constraints = ScopedRouteConstraints(
+            explicit_saved_notes_request=request_explicitly_requires_saved_notes(
+                user_message
+            ),
+        )
+        with bind_scoped_route_constraints(constraints):
+            response = await self._request_structured_inference(
+                run=run,
+                model=model,
+                messages=messages,
+                response_model=ScopedRouteEnvelope,
+                purpose=InferencePurpose.ACTION_SELECTION,
+                on_progress=on_progress,
+            )
+            route = ScopedRouteEnvelope.model_validate_json(response.content)
+        self._record_structured_attempts(
+            run=run,
+            attempts=response.attempts,
+            parsed=route.model_dump(),
+            purpose=InferencePurpose.ACTION_SELECTION,
+        )
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="ACTION",
+            label=f"Action: {route.kind}",
+            detail={"action": route.model_dump(mode="json")},
+            duration_ms=0.0,
+        )
+        return route
+
+    async def _select_investigation_step(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+        state: InvestigationState,
+        note_page: InvestigationNotePage,
+        facet_page: TagFacetPage,
+        requires_complete_scope_coverage: bool,
+        on_progress: Callable[[StructuredInferenceProgress], None],
+    ) -> InvestigationStep:
+        model = self._model_policy.for_stage(
+            purpose=InferencePurpose.INVESTIGATION_STEP,
+            selected_model=run.selected_model,
+        )
+        constraints = InvestigationStepConstraints(
+            has_next_note_page=(
+                note_page.page < note_page.total_pages
+            ),
+            requires_complete_scope_coverage=requires_complete_scope_coverage,
+            current_facet_page=facet_page.page,
+            total_facet_pages=facet_page.total_pages,
+            disclosed_tags=state.disclosed_tags,
+            disclosed_state_ids=frozenset(state.disclosed_state_ids),
+            observed_source_ids=state.observed_source_ids,
+        )
+        with bind_investigation_step_constraints(constraints):
+            response = await self._request_structured_inference(
+                run=run,
+                model=model,
+                messages=messages,
+                response_model=InvestigationStep,
+                purpose=InferencePurpose.INVESTIGATION_STEP,
+                on_progress=on_progress,
+            )
+            step = InvestigationStep.model_validate_json(response.content)
+        self._record_structured_attempts(
+            run=run,
+            attempts=response.attempts,
+            parsed=step.model_dump(mode="json"),
+            purpose=InferencePurpose.INVESTIGATION_STEP,
+        )
+        return step
+
+    async def _select_single_page_evidence(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+        allowed_note_ids: frozenset[str],
+        on_progress: Callable[[StructuredInferenceProgress], None],
+    ) -> EvidenceSelection:
+        model = self._model_policy.for_stage(
+            purpose=InferencePurpose.EVIDENCE_SELECTION,
+            selected_model=run.selected_model,
+        )
+        constraints = EvidenceSelectionConstraints(
+            allowed_note_ids=allowed_note_ids,
+        )
+        with bind_evidence_selection_constraints(constraints):
+            response = await self._request_structured_inference(
+                run=run,
+                model=model,
+                messages=messages,
+                response_model=EvidenceSelection,
+                purpose=InferencePurpose.EVIDENCE_SELECTION,
+                on_progress=on_progress,
+            )
+            selection = EvidenceSelection.model_validate_json(response.content)
+        self._record_structured_attempts(
+            run=run,
+            attempts=response.attempts,
+            parsed=selection.model_dump(mode="json"),
+            purpose=InferencePurpose.EVIDENCE_SELECTION,
+        )
+        return selection
+
     async def _prepare_search_action(
         self,
         *,
@@ -474,7 +1156,7 @@ class AgentRuntime:
         run: _RunContext,
         model: str,
         messages: list[dict[str, str]],
-        response_model: type[AgentRouteEnvelope] | type[SearchQueryEnvelope],
+        response_model: type[BaseModel],
         purpose: InferencePurpose,
         on_progress: Callable[[StructuredInferenceProgress], None],
     ) -> InferenceResponse:
@@ -498,6 +1180,10 @@ class AgentRuntime:
             response_label = "agent route"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 response_label = "search query"
+            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
+                response_label = "evidence selection"
+            elif purpose == InferencePurpose.INVESTIGATION_STEP:
+                response_label = "investigation step"
             attempt_count = len(exc.attempts)
             attempt_label = "attempt"
             if attempt_count != 1:
@@ -558,6 +1244,8 @@ class AgentRuntime:
         purpose: InferencePurpose,
     ) -> None:
         event = self._progress_status_event(progress, purpose=purpose)
+        if progress.phase == "output_progress":
+            return
         if progress.phase == "attempt_started":
             self._record_wire_request(
                 run=run,
@@ -744,14 +1432,30 @@ class AgentRuntime:
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(reference_note_ids, tuple):
             raise TypeError("reference_note_ids must be a tuple")
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.FINAL_RESPONSE,
-            selected_model=run.selected_model,
-        )
         final_messages = self._context_builder.append_final_request(
             messages=messages,
             action=action,
             prompts=run.prompts,
+        )
+        async for event in self._stream_prebuilt_final_response(
+            run=run,
+            final_messages=final_messages,
+            reference_note_ids=reference_note_ids,
+        ):
+            yield event
+
+    async def _stream_prebuilt_final_response(
+        self,
+        *,
+        run: _RunContext,
+        final_messages: list[dict[str, str]],
+        reference_note_ids: tuple[str, ...],
+    ) -> AsyncIterator[dict[str, object]]:
+        if not isinstance(reference_note_ids, tuple):
+            raise TypeError("reference_note_ids must be a tuple")
+        model = self._model_policy.for_stage(
+            purpose=InferencePurpose.FINAL_RESPONSE,
+            selected_model=run.selected_model,
         )
         final_input_tokens = estimate_input_tokens(final_messages)
         yield self._status_event(
@@ -762,42 +1466,221 @@ class AgentRuntime:
         )
         started_at = time.perf_counter()
         state = _FinalStreamState(thinking="", content="", usage={}, did_finish=False)
-        async for event in self._inference.stream_text(
-            base_url=run.base_url,
-            model=model,
-            thinking_level=run.thinking_level,
-            messages=final_messages,
-            on_request=lambda wire_request: self._record_wire_request(
-                run=run,
-                purpose=InferencePurpose.FINAL_RESPONSE,
-                attempt=1,
-                max_attempts=1,
-                wire_request=wire_request,
-            ),
-        ):
-            should_yield = self._consume_final_event(event=event, state=state)
-            if should_yield:
-                if event["type"] == "content_delta":
-                    yield {
-                        **event,
-                        "reference_note_ids": list(reference_note_ids),
-                    }
-                else:
-                    yield event
+        last_reported_output_tokens = 0
+        for attempt in (1, 2):
+            state = _FinalStreamState(thinking="", content="", usage={}, did_finish=False)
+            # lint: allow-PY001 rationale="retry a failed external Ollama stream only before output"
+            try:
+                async for event in self._inference.stream_text(
+                    base_url=run.base_url,
+                    model=model,
+                    thinking_level=run.thinking_level,
+                    messages=final_messages,
+                    max_output_tokens=_FINAL_RESPONSE_MAX_OUTPUT_TOKENS,
+                    on_request=lambda wire_request, current_attempt=attempt: self._record_wire_request(
+                        run=run,
+                        purpose=InferencePurpose.FINAL_RESPONSE,
+                        attempt=current_attempt,
+                        max_attempts=2,
+                        wire_request=wire_request,
+                    ),
+                ):
+                    should_yield = self._consume_final_event(event=event, state=state)
+                    output_tokens_received = estimate_text_tokens(
+                        f"{state.thinking}{state.content}"
+                    )
+                    if output_tokens_received >= last_reported_output_tokens + 8:
+                        last_reported_output_tokens = output_tokens_received
+                        yield self._output_status_event(
+                            "respond",
+                            "started",
+                            "Writing response",
+                            approx_input_tokens=final_input_tokens,
+                            output_tokens_received=output_tokens_received,
+                            duration_ms=(time.perf_counter() - started_at) * 1_000,
+                        )
+                    if should_yield:
+                        if event["type"] == "content_delta":
+                            yield {
+                                **event,
+                                "reference_note_ids": list(reference_note_ids),
+                            }
+                        else:
+                            yield event
+                break
+            except OllamaProviderError:
+                has_partial_output = any(
+                    (state.thinking != "", state.content != "")
+                )
+                if has_partial_output or attempt == 2:
+                    raise
+                yield self._status_event(
+                    "respond",
+                    "started",
+                    (
+                        "Ollama rejected the response before output · "
+                        "retrying attempt 2 of 2"
+                    ),
+                    approx_input_tokens=final_input_tokens,
+                )
         self._validate_final_stream(state)
         duration_ms = (time.perf_counter() - started_at) * 1_000
         self._record_final_response(run=run, state=state, duration_ms=duration_ms)
         self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
-        yield self._status_event(
+        final_output_tokens = estimate_text_tokens(
+            f"{state.thinking}{state.content}"
+        )
+        if "eval_count" in state.usage:
+            final_output_tokens = state.usage["eval_count"]
+        yield self._output_status_event(
             "respond",
             "completed",
             "Response complete",
             approx_input_tokens=final_input_tokens,
+            output_tokens_received=final_output_tokens,
+            duration_ms=duration_ms,
         )
         yield {
             "type": "done",
             "reference_note_ids": list(reference_note_ids),
         }
+
+    def _record_investigation_step(
+        self,
+        *,
+        run: _RunContext,
+        state: InvestigationState,
+        step: InvestigationStep,
+        summary_characters: int,
+    ) -> None:
+        if summary_characters < 1:
+            raise ValueError("Investigation summary character count must be positive")
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="INVESTIGATION_STEP",
+            label=f"Investigation step: {step.action_kind}",
+            detail={
+                "state_id": state.current_state_id,
+                "action": step.model_dump(mode="json"),
+                "summary_characters": summary_characters,
+                "observed_source_ids": sorted(state.observed_source_ids),
+            },
+            duration_ms=0.0,
+        )
+
+    def _record_evidence_payload(
+        self,
+        *,
+        run: _RunContext,
+        note_page: InvestigationNotePage,
+        facet_page: TagFacetPage,
+        reopened_sources: tuple[dict[str, object], ...],
+    ) -> None:
+        if not isinstance(facet_page, TagFacetPage):
+            raise TypeError("facet_page must be TagFacetPage")
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="EVIDENCE_PAYLOAD",
+            label=(
+                f"Evidence payload sent to Ollama · page {note_page.page} "
+                f"of {note_page.total_pages}"
+            ),
+            detail={
+                "note_page": serialize_investigation_note_page(note_page),
+                "facet_page": {
+                    "page": facet_page.page,
+                    "total_pages": facet_page.total_pages,
+                    "total_facets": facet_page.total_facets,
+                    "facets": [
+                        {
+                            "tag": facet.tag,
+                            "matching_notes": facet.note_count,
+                            "matching_result_trees": facet.result_tree_count,
+                        }
+                        for facet in facet_page.facets
+                    ],
+                },
+                "reopened_sources": list(reopened_sources),
+            },
+            duration_ms=0.0,
+        )
+
+    def _record_investigation_action_result(
+        self,
+        *,
+        run: _RunContext,
+        state: InvestigationState,
+        step: InvestigationStep,
+        note_page: InvestigationNotePage,
+        facet_page: TagFacetPage,
+        reopened_sources: tuple[dict[str, object], ...],
+    ) -> None:
+        if not isinstance(facet_page, TagFacetPage):
+            raise TypeError("facet_page must be TagFacetPage")
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="INVESTIGATION_RESULT",
+            label=f"Investigation result: {step.action_kind}",
+            detail={
+                "state_id": state.current_state_id,
+                "action_kind": step.action_kind,
+                "note_page": {
+                    "page": note_page.page,
+                    "total_pages": note_page.total_pages,
+                    "matching_note_count": note_page.matching_note_count,
+                    "matching_result_tree_count": (
+                        note_page.matching_result_tree_count
+                    ),
+                    "result_tree_ids": list(note_page.result_tree_ids),
+                    "result_trees": list(note_page.result_trees),
+                    "returned_character_count": note_page.returned_character_count,
+                    "returned_approximate_token_count": (
+                        note_page.returned_approximate_token_count
+                    ),
+                },
+                "facet_page": {
+                    "page": facet_page.page,
+                    "total_pages": facet_page.total_pages,
+                    "total_facets": facet_page.total_facets,
+                },
+                "reopened_sources": list(reopened_sources),
+            },
+            duration_ms=0.0,
+        )
+
+    @staticmethod
+    def _note_page_status_label(note_page: InvestigationNotePage) -> str:
+        if not isinstance(note_page, InvestigationNotePage):
+            raise TypeError("note_page must be InvestigationNotePage")
+        return (
+            f"Evidence page ready · page {note_page.page} of {note_page.total_pages} · "
+            f"{note_page.matching_note_count} notes in "
+            f"{note_page.matching_result_tree_count} result trees · "
+            f"≈ {note_page.returned_approximate_token_count:,} evidence tokens · "
+            f"{note_page.returned_character_count:,} content chars"
+        )
+
+    @staticmethod
+    def _reference_note_ids(
+        *,
+        verified_sources: tuple[dict[str, object], ...],
+    ) -> tuple[str, ...]:
+        if not isinstance(verified_sources, tuple):
+            raise TypeError("verified_sources must be a tuple")
+        reference_note_ids: list[str] = []
+        seen_note_ids: set[str] = set()
+        for source in verified_sources:
+            note_id = source["note_id"]
+            if not isinstance(note_id, str) or note_id == "":
+                raise RuntimeError("Verified source note_id must be non-empty")
+            if note_id in seen_note_ids:
+                continue
+            seen_note_ids.add(note_id)
+            reference_note_ids.append(note_id)
+        return tuple(reference_note_ids)
 
     @staticmethod
     def _merge_reference_note_ids(
@@ -1045,48 +1928,86 @@ class AgentRuntime:
             operation_label = "Ollama choosing next action"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 operation_label = "Ollama preparing MetaList search query"
+            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
+                operation_label = "Ollama selecting directly relevant evidence"
+            elif purpose == InferencePurpose.INVESTIGATION_STEP:
+                operation_label = "Ollama updating evidence and choosing next step"
             label = f"{operation_label} · {attempt_label}"
             if progress.attempt > 1:
                 label = f"Instructor retrying · {label}"
-            return AgentRuntime._status_event(
+            return AgentRuntime._output_status_event(
                 "model_request",
                 "started",
                 label,
                 approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
+            )
+        if progress.phase == "output_progress":
+            operation_label = "Ollama choosing next action"
+            if purpose == InferencePurpose.SEARCH_QUERY:
+                operation_label = "Ollama preparing MetaList search query"
+            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
+                operation_label = "Ollama selecting directly relevant evidence"
+            elif purpose == InferencePurpose.INVESTIGATION_STEP:
+                operation_label = "Ollama updating evidence and choosing next step"
+            return AgentRuntime._output_status_event(
+                "model_request",
+                "started",
+                f"{operation_label} · {attempt_label}",
+                approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
             )
         if progress.phase == "response_received":
             response_label = "Ollama returned next-action choice"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 response_label = "Ollama returned search-query proposal"
-            return AgentRuntime._status_event(
+            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
+                response_label = "Ollama returned evidence selection"
+            elif purpose == InferencePurpose.INVESTIGATION_STEP:
+                response_label = "Ollama returned investigation-step proposal"
+            return AgentRuntime._output_status_event(
                 "validation",
                 "started",
                 f"{response_label} · validating {attempt_label}",
                 approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
             )
         if progress.phase == "retrying":
-            return AgentRuntime._status_event(
+            return AgentRuntime._output_status_event(
                 "retry",
                 "started",
                 f"{progress.failure_kind} ({progress.error_type}) · Instructor will retry",
                 approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
             )
         if progress.phase == "attempt_failed":
-            return AgentRuntime._status_event(
+            return AgentRuntime._output_status_event(
                 "retry",
                 "completed",
                 f"{progress.failure_kind} ({progress.error_type}) · no retries remain",
                 approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
             )
         if progress.phase == "attempt_succeeded":
             output_label = "Structured action validated"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 output_label = "Structured search query validated"
-            return AgentRuntime._status_event(
+            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
+                output_label = "Structured evidence selection validated"
+            elif purpose == InferencePurpose.INVESTIGATION_STEP:
+                output_label = "Structured investigation step validated"
+            return AgentRuntime._output_status_event(
                 "validation",
                 "completed",
                 f"{output_label} · {attempt_label}",
                 approx_input_tokens=approx_input_tokens,
+                output_tokens_received=progress.output_tokens_received,
+                duration_ms=progress.duration_ms,
             )
         raise ValueError(f"Unsupported structured inference phase: {progress.phase}")
 
@@ -1210,4 +2131,39 @@ class AgentRuntime:
             "status": status,
             "label": label,
             "approx_input_tokens": approx_input_tokens,
+            "output_tokens_received": 0,
+            "duration_ms": 0.0,
         }
+
+    @staticmethod
+    def _output_status_event(
+        action: str,
+        status: str,
+        label: str,
+        *,
+        approx_input_tokens: int,
+        output_tokens_received: int,
+        duration_ms: float,
+    ) -> dict[str, object]:
+        if (
+            not isinstance(output_tokens_received, int)
+            or isinstance(output_tokens_received, bool)
+            or output_tokens_received < 0
+        ):
+            raise ValueError("Output tokens received must be a non-negative integer")
+        if (
+            not isinstance(duration_ms, (int, float))
+            or isinstance(duration_ms, bool)
+            or not math.isfinite(duration_ms)
+            or duration_ms < 0
+        ):
+            raise ValueError("Activity duration must be a non-negative finite number")
+        event = AgentRuntime._status_event(
+            action,
+            status,
+            label,
+            approx_input_tokens=approx_input_tokens,
+        )
+        event["output_tokens_received"] = output_tokens_received
+        event["duration_ms"] = float(duration_ms)
+        return event

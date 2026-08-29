@@ -43,4 +43,17 @@ test('AI reference collections open a combined OR search in a new tab', async ()
     assert.match(mouseEvents, /openReferenceQueryInNewTab\(referenceQuery\)/);
     assert.match(keyboardEvents, /export async function openReferenceQueryInNewTab/);
     assert.match(keyboardEvents, /runReferenceSearchInActiveTab\(referenceQuery/);
+
+    const mouseDownExclusion = mouseEvents.match(
+        /function isMouseDownOutsideEditExclusion[\s\S]*?function handleSearchFieldMouseDown/,
+    );
+    assert.ok(mouseDownExclusion);
+    assert.match(mouseDownExclusion[0], /\.ai-chat-open-all-references/);
+});
+
+test('AI reference links prefer their exact evidence query over the displayed root', async () => {
+    const mouseEvents = await readFile(MOUSE_EVENTS_URL, 'utf8');
+
+    assert.match(mouseEvents, /closest\('\[data-ref-query\]'\)/);
+    assert.match(mouseEvents, /openReferenceQueryInNewTab\(referenceQuery\)/);
 });

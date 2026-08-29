@@ -86,7 +86,8 @@ export class AgentPromptEditorModal extends BaseModal {
             skills: [],
             isLoading: true,
             isSaving: false,
-            hasOverrides: false,
+            hasActiveOverrides: false,
+            incompatiblePreferenceKeys: [],
             error: '',
         };
     }
@@ -111,9 +112,18 @@ export class AgentPromptEditorModal extends BaseModal {
         }
         const state = this.getModalState();
         const disabled = state.isSaving ? 'disabled' : '';
-        const sourceLabel = state.hasOverrides
+        const sourceLabel = state.hasActiveOverrides
             ? 'Using namespace-specific overrides.'
             : 'Using packaged defaults.';
+        const compatibilityNotice = state.incompatiblePreferenceKeys.length === 0
+            ? ''
+            : `
+                <p class="agent-prompt-editor-compatibility" role="status">
+                    A saved override targets an older agent action contract and is not
+                    being applied. Save these prompts or Restore packaged defaults to
+                    remove the incompatible override.
+                </p>
+            `;
         const controlsDisabled = [
             state.isLoading,
             state.isSaving,
@@ -167,6 +177,7 @@ export class AgentPromptEditorModal extends BaseModal {
                     conversation history.
                 </p>
                 <p class="agent-prompt-editor-source">${sourceLabel}</p>
+                ${compatibilityNotice}
                 ${editor}
                 <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
                 <div class="form-actions agent-prompt-editor-actions">
@@ -283,15 +294,20 @@ export class AgentPromptEditorModal extends BaseModal {
             const defaults = validateAgentPromptDefaultsPayload(payload);
             const overrides = this._readOverrides(defaults.skills);
             const instructions = resolveEffectiveInstructions(defaults, overrides);
+            const incompatiblePreferenceKeys = overrides.skills.flatMap(
+                (skill) => skill.incompatiblePreferenceKeys,
+            );
+            const hasActiveOverrides = [
+                overrides.systemPrompt,
+                overrides.finalResponsePrompt,
+                overrides.toolResultPrompt,
+                ...overrides.skills.map((skill) => skill.content),
+            ].some((value) => value !== null);
             this.updateModalState({
                 ...instructions,
                 isLoading: false,
-                hasOverrides: [
-                    overrides.systemPrompt,
-                    overrides.finalResponsePrompt,
-                    overrides.toolResultPrompt,
-                    ...overrides.skills.map((skill) => skill.content),
-                ].some((value) => value !== null),
+                incompatiblePreferenceKeys,
+                hasActiveOverrides,
                 error: '',
             });
         }

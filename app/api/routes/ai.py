@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import math
+import time
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal, Self
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
@@ -16,6 +19,7 @@ from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
+from app.services.ai_chat import AiChatActivityTimer
 from app.services.ai_chat import ai_chat_store
 from app.services.ai_chat_rendering import find_note_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
@@ -27,6 +31,8 @@ from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompt_settings import resolve_agent_prompt_set
 from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
+from app.services.agent.scope import AgentScopeDescriptor
+from app.services.agent.scope import scoped_search_snapshot_factory
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
@@ -44,6 +50,7 @@ from app.services.ollama_provider import ollama_provider
 from app.services.ollama_provider import resolve_ollama_think_value
 from app.services.ollama_provider import validate_ollama_model
 from app.services.sync import set_clipboard
+from app.services.tab_state import tab_state_store
 from app.services.tokens import token_service
 
 
@@ -60,18 +67,20 @@ agent_runtime = AgentRuntime(
 )
 
 
-def _event_reference_note_ids(event: dict[str, object]) -> frozenset[str]:
+def _event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
     raw_note_ids = event["reference_note_ids"]
     if not isinstance(raw_note_ids, list):
         raise RuntimeError("Agent reference_note_ids event field must be a list")
-    note_ids: set[str] = set()
+    note_ids: list[str] = []
+    seen_note_ids: set[str] = set()
     for note_id in raw_note_ids:
         if not isinstance(note_id, str) or note_id == "":
             raise RuntimeError("Agent reference note id must be non-empty")
-        if note_id in note_ids:
+        if note_id in seen_note_ids:
             raise RuntimeError("Agent reference_note_ids event field has duplicates")
-        note_ids.add(note_id)
-    return frozenset(note_ids)
+        seen_note_ids.add(note_id)
+        note_ids.append(note_id)
+    return tuple(note_ids)
 
 
 class AiModelsRequest(BaseModel):
@@ -91,6 +100,7 @@ class AiSkillDefaultResponse(BaseModel):
     trigger_action: str
     preference_key: str
     content: str
+    superseded_preference_keys: list[str]
 
 
 class AiPromptDefaultsResponse(BaseModel):
@@ -119,6 +129,7 @@ class AiChatRequest(BaseModel):
     model: str
     thinking_level: Literal["off", "low", "medium", "high"]
     message: str = Field(..., max_length=32_000)
+    scope: AgentScopeDescriptor
 
     @field_validator("model")
     @classmethod
@@ -147,6 +158,15 @@ class AiChatActivity(BaseModel):
     status: Literal["started", "completed"]
     label: str
     approx_input_tokens: int = Field(..., ge=1)
+    output_tokens_received: int = Field(..., ge=0)
+    duration_ms: float = Field(..., ge=0)
+
+    @field_validator("duration_ms")
+    @classmethod
+    def validate_duration_ms(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("AI chat activity duration must be finite")
+        return value
 
 
 class AiChatMessage(BaseModel):
@@ -243,6 +263,7 @@ def get_ai_prompt_defaults(
                 trigger_action=skill.trigger_action,
                 preference_key=skill.preference_key,
                 content=skill.content,
+                superseded_preference_keys=list(skill.superseded_preference_keys),
             )
             for skill in DEFAULT_AGENT_SKILLS.skills
         ],
@@ -326,8 +347,10 @@ def get_ai_session(
                         action=activity["action"],
                         status=activity["status"],
                         label=activity["label"],
-                        approx_input_tokens=activity["approx_input_tokens"],
-                    )
+                            approx_input_tokens=activity["approx_input_tokens"],
+                            output_tokens_received=activity["output_tokens_received"],
+                            duration_ms=activity["duration_ms"],
+                        )
                     for index, activity in enumerate(activities, start=1)
                 ],
             )
@@ -441,6 +464,32 @@ def stream_ai_chat(
     prompts = resolve_agent_prompt_set(preferences=preferences)
     skills = resolve_agent_skill_set(preferences=preferences)
     retrieval_settings = resolve_agent_retrieval_settings(preferences=preferences)
+    authoritative_active_tab_id = tab_state_store.get_active_tab_id()
+    if payload.scope.active_tab_id != authoritative_active_tab_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Active MetaList tab changed before Send",
+        )
+    authoritative_search_query = tab_state_store.get_search_query(
+        tab_id=payload.scope.active_tab_id
+    )
+    authoritative_sort_mode = tab_state_store.get_sort_mode(
+        tab_id=payload.scope.active_tab_id
+    )
+    authoritative_date_filter_value = tab_state_store.get_date_filter(
+        tab_id=payload.scope.active_tab_id
+    )
+    authoritative_date_filter: dict[str, str] = {}
+    if authoritative_date_filter_value is not None:
+        authoritative_date_filter = authoritative_date_filter_value
+    frozen_scope = scoped_search_snapshot_factory.freeze(
+        descriptor=payload.scope,
+        authoritative_search_query=authoritative_search_query,
+        authoritative_sort_mode=authoritative_sort_mode,
+        authoritative_date_filter=authoritative_date_filter,
+        run_id=str(uuid4()),
+        session_key=session_key,
+    )
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,
         user_content=payload.message,
@@ -457,17 +506,21 @@ def stream_ai_chat(
     async def stream_events() -> AsyncIterator[str]:
         accumulated_thinking = ""
         accumulated_content = ""
-        reference_note_ids = frozenset()
+        reference_note_ids: tuple[str, ...] = ()
         has_reference_scope = False
         latest_approx_input_tokens = initial_approx_input_tokens
+        latest_output_tokens_received = 0
+        activity_timer = AiChatActivityTimer()
         try:
-            runtime_started_event = {
+            runtime_started_event = activity_timer.stamp(event={
                 "type": "action_status",
                 "action": "ollama_runtime",
                 "status": "started",
                 "label": "Starting MetaList-managed Ollama · 32,768-token context",
                 "approx_input_tokens": latest_approx_input_tokens,
-            }
+                "output_tokens_received": 0,
+                "duration_ms": 0.0,
+            }, observed_at=time.perf_counter())
             ai_chat_store.append_activity(
                 session_key=session_key,
                 turn_id=turn_id,
@@ -475,10 +528,12 @@ def stream_ai_chat(
                 status=runtime_started_event["status"],
                 label=runtime_started_event["label"],
                 approx_input_tokens=runtime_started_event["approx_input_tokens"],
+                output_tokens_received=runtime_started_event["output_tokens_received"],
+                duration_ms=runtime_started_event["duration_ms"],
             )
             yield f"{json.dumps(runtime_started_event, separators=(',', ':'))}\n"
             runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
-            runtime_ready_event = {
+            runtime_ready_event = activity_timer.stamp(event={
                 "type": "action_status",
                 "action": "ollama_runtime",
                 "status": "completed",
@@ -487,7 +542,9 @@ def stream_ai_chat(
                     f"{runtime_info.context_tokens:,}-token context"
                 ),
                 "approx_input_tokens": latest_approx_input_tokens,
-            }
+                "output_tokens_received": 0,
+                "duration_ms": 0.0,
+            }, observed_at=time.perf_counter())
             ai_chat_store.append_activity(
                 session_key=session_key,
                 turn_id=turn_id,
@@ -495,9 +552,11 @@ def stream_ai_chat(
                 status=runtime_ready_event["status"],
                 label=runtime_ready_event["label"],
                 approx_input_tokens=runtime_ready_event["approx_input_tokens"],
+                output_tokens_received=runtime_ready_event["output_tokens_received"],
+                duration_ms=runtime_ready_event["duration_ms"],
             )
             yield f"{json.dumps(runtime_ready_event, separators=(',', ':'))}\n"
-            async for event in agent_runtime.stream(
+            async for event in agent_runtime.stream_scoped(
                 session_key=session_key,
                 base_url=runtime_info.base_url,
                 selected_model=payload.model,
@@ -506,6 +565,7 @@ def stream_ai_chat(
                 prompts=prompts,
                 skills=skills,
                 retrieval_settings=retrieval_settings,
+                frozen_scope=frozen_scope,
             ):
                 event_type = event["type"]
                 outgoing_event = event
@@ -548,6 +608,11 @@ def stream_ai_chat(
                         ),
                     }
                 elif event_type == "action_status":
+                    event = activity_timer.stamp(
+                        event=event,
+                        observed_at=time.perf_counter(),
+                    )
+                    outgoing_event = event
                     event_approx_input_tokens = event["approx_input_tokens"]
                     if (
                         not isinstance(event_approx_input_tokens, int)
@@ -558,6 +623,24 @@ def stream_ai_chat(
                             "Agent action status approximate input tokens are invalid"
                         )
                     latest_approx_input_tokens = event_approx_input_tokens
+                    event_output_tokens = event["output_tokens_received"]
+                    if (
+                        not isinstance(event_output_tokens, int)
+                        or isinstance(event_output_tokens, bool)
+                        or event_output_tokens < 0
+                    ):
+                        raise RuntimeError(
+                            "Agent action status output tokens are invalid"
+                        )
+                    latest_output_tokens_received = event_output_tokens
+                    event_duration_ms = event["duration_ms"]
+                    if (
+                        not isinstance(event_duration_ms, (int, float))
+                        or isinstance(event_duration_ms, bool)
+                        or not math.isfinite(event_duration_ms)
+                        or event_duration_ms < 0
+                    ):
+                        raise RuntimeError("Agent action status duration is invalid")
                     ai_chat_store.append_activity(
                         session_key=session_key,
                         turn_id=turn_id,
@@ -565,6 +648,8 @@ def stream_ai_chat(
                         status=event["status"],
                         label=event["label"],
                         approx_input_tokens=event_approx_input_tokens,
+                        output_tokens_received=event_output_tokens,
+                        duration_ms=event_duration_ms,
                     )
                 elif event_type == "done":
                     event_reference_note_ids = _event_reference_note_ids(event)
@@ -616,6 +701,8 @@ def stream_ai_chat(
                 status="completed",
                 label="Cancelled by user",
                 approx_input_tokens=latest_approx_input_tokens,
+                output_tokens_received=latest_output_tokens_received,
+                duration_ms=0.0,
             )
             ai_chat_store.fail_turn(
                 session_key=session_key,

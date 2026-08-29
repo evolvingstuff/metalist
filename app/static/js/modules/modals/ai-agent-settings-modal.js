@@ -68,6 +68,9 @@ export class AiAgentSettingsModal extends BaseModal {
             maxNoteCharacters: settings.maxNoteCharacters,
             maxPageCharacters: settings.maxPageCharacters,
             maxNotesPerPage: settings.maxNotesPerPage,
+            maxPageApproximateTokens: settings.maxPageApproximateTokens,
+            maxRankedTagsPerPage: settings.maxRankedTagsPerPage,
+            maxWorkingSummaryCharacters: settings.maxWorkingSummaryCharacters,
             installedModels: [],
             isLoadingModels: false,
             downloadModel: '',
@@ -136,21 +139,29 @@ export class AiAgentSettingsModal extends BaseModal {
                     <fieldset class="ai-agent-retrieval-settings">
                         <legend>Note retrieval limits</legend>
                         <p>
-                            Limits apply to content sent to Ollama. Search pages contain
-                            matching nodes from a bounded number of result trees;
-                            search-redacted branches are excluded.
+                            Evidence pages pack complete result trees in user-visible order
+                            up to an approximate input-token target. A result tree is never
+                            divided between pages; search-redacted branches are excluded.
                         </p>
                         <label for="ai-agent-max-note-characters">
                             <span>Maximum characters per note</span>
                             <input id="ai-agent-max-note-characters" type="number" min="500" max="10000" step="1" value="${state.maxNoteCharacters}" ${disabledAttribute}>
                         </label>
+                        <label for="ai-agent-max-page-approximate-tokens">
+                            <span>Approximate input tokens per evidence page</span>
+                            <input id="ai-agent-max-page-approximate-tokens" type="number" min="500" max="24000" step="100" value="${state.maxPageApproximateTokens}" ${disabledAttribute}>
+                        </label>
                         <label for="ai-agent-max-notes-per-page">
-                            <span>Maximum result trees per search page</span>
+                            <span>Maximum result trees per evidence page</span>
                             <input id="ai-agent-max-notes-per-page" type="number" min="1" max="100" step="1" value="${state.maxNotesPerPage}" ${disabledAttribute}>
                         </label>
-                        <label for="ai-agent-max-page-characters">
-                            <span>Maximum total note characters per result page</span>
-                            <input id="ai-agent-max-page-characters" type="number" min="5000" max="100000" step="1" value="${state.maxPageCharacters}" ${disabledAttribute}>
+                        <label for="ai-agent-max-ranked-tags-per-page">
+                            <span>Maximum ranked tags per facet page</span>
+                            <input id="ai-agent-max-ranked-tags-per-page" type="number" min="1" max="200" step="1" value="${state.maxRankedTagsPerPage}" ${disabledAttribute}>
+                        </label>
+                        <label for="ai-agent-max-working-summary-characters">
+                            <span>Maximum working-summary characters</span>
+                            <input id="ai-agent-max-working-summary-characters" type="number" min="2000" max="32000" step="1" value="${state.maxWorkingSummaryCharacters}" ${disabledAttribute}>
                         </label>
                     </fieldset>
                 </div>
@@ -192,11 +203,17 @@ export class AiAgentSettingsModal extends BaseModal {
         const maxNoteCharactersInput = document.getElementById(
             'ai-agent-max-note-characters',
         );
-        const maxPageCharactersInput = document.getElementById(
-            'ai-agent-max-page-characters',
+        const maxPageApproximateTokensInput = document.getElementById(
+            'ai-agent-max-page-approximate-tokens',
         );
         const maxNotesPerPageInput = document.getElementById(
             'ai-agent-max-notes-per-page',
+        );
+        const maxRankedTagsPerPageInput = document.getElementById(
+            'ai-agent-max-ranked-tags-per-page',
+        );
+        const maxWorkingSummaryCharactersInput = document.getElementById(
+            'ai-agent-max-working-summary-characters',
         );
         const downloadButton = document.getElementById('ai-agent-download');
         const saveButton = document.getElementById('ai-agent-save');
@@ -207,11 +224,17 @@ export class AiAgentSettingsModal extends BaseModal {
         if (!(maxNoteCharactersInput instanceof HTMLInputElement)) {
             throw new Error('AI settings maximum note characters input missing');
         }
-        if (!(maxPageCharactersInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum page characters input missing');
+        if (!(maxPageApproximateTokensInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings approximate page tokens input missing');
         }
         if (!(maxNotesPerPageInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum notes per page input missing');
+            throw new Error('AI settings maximum result trees input missing');
+        }
+        if (!(maxRankedTagsPerPageInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings maximum ranked tags input missing');
+        }
+        if (!(maxWorkingSummaryCharactersInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings maximum working summary input missing');
         }
         if (!(installedModelSelect instanceof HTMLSelectElement)) {
             throw new Error('AI settings installed model selector missing');
@@ -239,15 +262,27 @@ export class AiAgentSettingsModal extends BaseModal {
                 error: '',
             });
         };
-        maxPageCharactersInput.oninput = () => {
+        maxPageApproximateTokensInput.oninput = () => {
             this.updateModalState({
-                maxPageCharacters: Number(maxPageCharactersInput.value),
+                maxPageApproximateTokens: Number(maxPageApproximateTokensInput.value),
                 error: '',
             });
         };
         maxNotesPerPageInput.oninput = () => {
             this.updateModalState({
                 maxNotesPerPage: Number(maxNotesPerPageInput.value),
+                error: '',
+            });
+        };
+        maxRankedTagsPerPageInput.oninput = () => {
+            this.updateModalState({
+                maxRankedTagsPerPage: Number(maxRankedTagsPerPageInput.value),
+                error: '',
+            });
+        };
+        maxWorkingSummaryCharactersInput.oninput = () => {
+            this.updateModalState({
+                maxWorkingSummaryCharacters: Number(maxWorkingSummaryCharactersInput.value),
                 error: '',
             });
         };
@@ -402,6 +437,9 @@ export class AiAgentSettingsModal extends BaseModal {
             maxNoteCharacters: state.maxNoteCharacters,
             maxPageCharacters: state.maxPageCharacters,
             maxNotesPerPage: state.maxNotesPerPage,
+            maxPageApproximateTokens: state.maxPageApproximateTokens,
+            maxRankedTagsPerPage: state.maxRankedTagsPerPage,
+            maxWorkingSummaryCharacters: state.maxWorkingSummaryCharacters,
         };
         const validationMessage = getAgentRetrievalSettingsValidationMessage(
             retrievalCandidate,

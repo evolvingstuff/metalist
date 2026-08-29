@@ -47,6 +47,10 @@ export function collapseCompletedActivityPairs(activities) {
             && activity.status === 'completed'
             && previous.status === 'started'
             && previous.action === activity.action;
+        const updatesPreviousStartedLifecycle = previous
+            && activity.status === 'started'
+            && previous.status === 'started'
+            && previous.action === activity.action;
         const previousAttempt = previous
             ? /attempt \d+ of \d+/.exec(previous.label)?.[0]
             : undefined;
@@ -60,7 +64,12 @@ export function collapseCompletedActivityPairs(activities) {
             && previous.action === 'planning'
             && previous.status === 'started'
             && ['model_request', 'validation'].includes(activity.action);
-        if (completesPrevious || advancesSameModelAttempt || beginsPlannedModelRequest) {
+        if (
+            completesPrevious
+            || updatesPreviousStartedLifecycle
+            || advancesSameModelAttempt
+            || beginsPlannedModelRequest
+        ) {
             displayedActivities[displayedActivities.length - 1] = activity;
         } else {
             displayedActivities.push(activity);
@@ -189,6 +198,18 @@ function validateAiStreamEvent(event) {
         && (!Number.isInteger(event.approx_input_tokens) || event.approx_input_tokens < 1)
     ) {
         throw new Error('action_status requires positive approx_input_tokens');
+    }
+    if (
+        event.type === 'action_status'
+        && (!Number.isInteger(event.output_tokens_received) || event.output_tokens_received < 0)
+    ) {
+        throw new Error('action_status requires non-negative output_tokens_received');
+    }
+    if (
+        event.type === 'action_status'
+        && (!Number.isFinite(event.duration_ms) || event.duration_ms < 0)
+    ) {
+        throw new Error('action_status requires non-negative finite duration_ms');
     }
     if (
         (event.type === 'thinking_delta' || event.type === 'content_delta')

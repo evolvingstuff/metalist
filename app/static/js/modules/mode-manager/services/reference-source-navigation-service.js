@@ -44,6 +44,19 @@ export function isViewingReferenceSource() {
     return findReferenceNavigationEntryIndexForActiveTab() !== -1;
 }
 
+export function getActiveReferenceSourceQuery() {
+    pruneReferenceNavigationStackToExistingTabs();
+    const entryIndex = findReferenceNavigationEntryIndexForActiveTab();
+    if (entryIndex === -1) {
+        return '';
+    }
+    const entry = referenceNavigationStack[entryIndex];
+    if (typeof entry.referenceQuery !== 'string' || entry.referenceQuery.length === 0) {
+        throw new Error('Reference navigation entry missing referenceQuery');
+    }
+    return entry.referenceQuery;
+}
+
 export function updateReferenceSourceIndicator() {
     const indicator = document.getElementById('reference-source-indicator');
     if (!(indicator instanceof HTMLElement)) {
@@ -52,14 +65,17 @@ export function updateReferenceSourceIndicator() {
     indicator.hidden = !isViewingReferenceSource();
 }
 
-export function pushReferenceNavigationEntry(fromTabId, toTabId) {
+export function pushReferenceNavigationEntry(fromTabId, toTabId, referenceQuery) {
     if (typeof fromTabId !== 'string' || fromTabId.length === 0) {
         throw new Error('pushReferenceNavigationEntry requires fromTabId');
     }
     if (typeof toTabId !== 'string' || toTabId.length === 0) {
         throw new Error('pushReferenceNavigationEntry requires toTabId');
     }
-    referenceNavigationStack.push({ fromTabId, toTabId });
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('pushReferenceNavigationEntry requires referenceQuery');
+    }
+    referenceNavigationStack.push({ fromTabId, toTabId, referenceQuery });
     updateReferenceSourceIndicator();
 }
 

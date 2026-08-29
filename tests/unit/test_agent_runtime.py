@@ -22,6 +22,7 @@ from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
+from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
@@ -30,6 +31,8 @@ from app.services.agent.retrieval_settings import DEFAULT_AGENT_RETRIEVAL_SETTIN
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
+from app.services.agent.skill_settings import AgentSkill
+from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.tools import ToolPermission
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
@@ -38,6 +41,18 @@ from app.services.agent.trace import AgentTraceStore
 
 
 TEST_TIMESTAMP = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+LEGACY_SEARCH_SKILLS = AgentSkillSet(
+    skills=(
+        AgentSkill(
+            skill_id="search_notes",
+            title="Search notes",
+            description="Legacy runtime test skill",
+            trigger_action="search_notes",
+            preference_key="test.legacy.search",
+            content="Produce a structured MetaList search query such as foo OR bar baz.",
+        ),
+    )
+)
 
 
 def _assert_positive_activity_token_counts(events: list[dict[str, object]]) -> None:
@@ -49,6 +64,12 @@ def _assert_positive_activity_token_counts(events: list[dict[str, object]]) -> N
         and event["approx_input_tokens"] > 0
         for event in activities
     )
+    assert all(
+        isinstance(event["duration_ms"], (int, float))
+        and not isinstance(event["duration_ms"], bool)
+        and event["duration_ms"] >= 0
+        for event in activities
+    )
 
 
 def _without_activity_token_counts(
@@ -58,7 +79,11 @@ def _without_activity_token_counts(
         {
             key: value
             for key, value in event.items()
-            if key != "approx_input_tokens"
+            if key not in {
+                "approx_input_tokens",
+                "output_tokens_received",
+                "duration_ms",
+            }
         }
         for event in events
     ]
@@ -130,8 +155,40 @@ def test_selected_action_status_exposes_every_action_reason(
         "action": action.kind,
         "status": "completed",
         "label": expected_label,
-        "approx_input_tokens": 1_234,
-    }
+            "approx_input_tokens": 1_234,
+            "output_tokens_received": 0,
+            "duration_ms": 0.0,
+        }
+
+
+def test_structured_output_progress_reports_tokens_on_the_active_model_panel() -> None:
+    progress = StructuredInferenceProgress(
+        phase="output_progress",
+        attempt=1,
+        max_attempts=2,
+        failure_kind="",
+        error_type="",
+        error_message="",
+        duration_ms=50.0,
+        wire_request={
+            "method": "POST",
+            "url": "http://127.0.0.1:11434/v1/chat/completions",
+            "body": {"messages": [{"role": "user", "content": "Summarize"}]},
+        },
+        output_tokens_received=24,
+    )
+
+    event = AgentRuntime._progress_status_event(
+        progress,
+        purpose=InferencePurpose.INVESTIGATION_STEP,
+    )
+
+    assert event["action"] == "model_request"
+    assert event["status"] == "started"
+    assert event["output_tokens_received"] == 24
+    assert event["label"] == (
+        "Ollama updating evidence and choosing next step · attempt 1 of 2"
+    )
 
 
 def _children_in_record_order(
@@ -206,6 +263,7 @@ class FakeInferenceAdapter:
                             "stream": False,
                         },
                     },
+                    output_tokens_received=0,
                 )
             )
         return InferenceResponse(
@@ -233,8 +291,10 @@ class FakeInferenceAdapter:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
+        max_output_tokens: int,
         on_request,
     ):
+        assert max_output_tokens == 1_024
         self.final_requests.append(
             {
                 "base_url": base_url,
@@ -346,7 +406,7 @@ def _collect_runtime_events(runtime: AgentRuntime) -> list[dict[str, object]]:
                     {"role": "user", "content": "What did I decide about storage?"}
                 ],
                 prompts=DEFAULT_AGENT_PROMPTS,
-                skills=DEFAULT_AGENT_SKILLS,
+                skills=LEGACY_SEARCH_SKILLS,
                 retrieval_settings=DEFAULT_AGENT_RETRIEVAL_SETTINGS,
             )
         ]
@@ -712,7 +772,7 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     assert started_labels[5] == (
         "Ollama returned search-query proposal · validating attempt 1 of 2"
     )
-    assert len(started_labels) == 11
+    assert len(started_labels) == 12
     assert started_labels[6] == 'Searching notes · page 1 · "storage"'
     assert started_labels[7] == "Preparing action selection"
     assert started_labels[8] == "Ollama choosing next action · attempt 1 of 2"
@@ -720,9 +780,15 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         "Ollama returned next-action choice · validating attempt 1 of 2"
     )
     assert started_labels[10] == "Writing response"
-    assert _without_activity_token_counts(events[-4:]) == [
-        {"type": "thinking_delta", "text": "Final reasoning"},
-        {
+    assert _without_activity_token_counts(events[-5:]) == [
+            {"type": "thinking_delta", "text": "Final reasoning"},
+            {
+                "type": "action_status",
+                "action": "respond",
+                "status": "started",
+                "label": "Writing response",
+            },
+            {
             "type": "content_delta",
             "text": "The answer uses your SQLite note.",
             "reference_note_ids": ["note-sqlite"],
@@ -842,7 +908,7 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         "Ollama wire request: search-query · attempt 1 of 2"
     )
     assert wire_requests[-1]["label"] == (
-        "Ollama wire request: final-response · attempt 1 of 1"
+        "Ollama wire request: final-response · attempt 1 of 2"
     )
     assert wire_requests[-1]["detail"]["body"]["messages"] == final_context
     assert "SYSTEM_PROMPT" not in event_types
@@ -1086,6 +1152,7 @@ def test_runtime_records_instructor_validation_retry_attempts() -> None:
                             "attempt": attempt,
                         },
                     },
+                    output_tokens_received=0,
                 )
             )
         return InferenceResponse(
@@ -1219,19 +1286,16 @@ def test_context_builder_uses_packaged_prompt_resources() -> None:
         action_name="search_notes",
         payload_json='{"notes":[]}',
     ) == 'TOOL_RESULT search_notes\n{"notes":[]}'
-    assert DEFAULT_AGENT_PROMPTS.render_final_response_request(
+    final_request = DEFAULT_AGENT_PROMPTS.render_final_response_request(
         basis="No retrieval was needed.",
-        ) == (
-            "FINAL_RESPONSE_REQUEST\n"
-            "Structured basis: No retrieval was needed.\n"
-            "Answer the user's original request directly. If a current-run search_notes\n"
-            "TOOL_RESULT exists, synthesize the substantive, non-redundant evidence in its\n"
-            "`notes[].content_text`; do not substitute general knowledge or treat `note_id` as\n"
-            "a handle requiring another read. To cite a supporting note, copy its exact\n"
-            "`note_id` from a TOOL_RESULT in this run and wrap that copied value in double square\n"
-            "brackets. Never invent or imitate a UUID, and never print a bare UUID. Do not\n"
-            "mention this control message."
-        )
+    )
+    assert final_request.startswith(
+        "FINAL_RESPONSE_REQUEST\nStructured basis: No retrieval was needed.\n"
+    )
+    assert "citations are mandatory" in final_request
+    assert "Every note-derived\nparagraph or list item" in final_request
+    assert "[[UUID]]" in final_request
+    assert "same evidence object" in final_request
 
 
 def test_trace_store_always_keeps_latest_run_and_exact_details_default_on() -> None:
