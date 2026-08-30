@@ -42,7 +42,7 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
     );
     assert.match(
         templateSource,
-        /id="search-results-count" class="search-results-count">0 roots<\/div>/,
+        /id="search-results-count" class="search-results-count">0<\/div>/,
     );
     assert.match(
         cssSource,

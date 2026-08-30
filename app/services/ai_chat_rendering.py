@@ -36,6 +36,13 @@ _NUMBERED_NOTE_CITATION_RE = re.compile(
     r"\[citation:(?P<number>[1-9][0-9]*)\]",
     re.IGNORECASE,
 )
+_CITATION_MARKER_HTML_RE = re.compile(
+    r'<sup class="ai-chat-citation-marker" '
+    r'aria-label="Reference (?P<number>[1-9][0-9]*)">'
+    r'<a href="#" class="ai-chat-citation-link note-reference-link" '
+    r'data-ref-note-id="[^"]+" data-ref-query="[^"]+">'
+    r'\[(?P<display_number>[1-9][0-9]*)\]</a></sup>'
+)
 _STANDALONE_SOURCE_LINE_RE = re.compile(
     r"^[ \t]*[-+*]\s+(?:\*\*)?(?:sources?|note\s+ids?)(?:\*\*)?\s*:",
     re.IGNORECASE,
@@ -452,9 +459,12 @@ def _replace_citations_in_text(
     output: list[str] = []
     cited_note_ids: list[str] = []
     handled_note_citation = False
+    previous_marker_output_index: int | None = None
+    previous_marker_root_id: str | None = None
+    previous_marker_note_ids: list[str] = []
     cursor = 0
     for match in _NOTE_CITATION_RE.finditer(text):
-        output.append(text[cursor : match.start()])
+        preceding_text = text[cursor : match.start()]
         reference_note_id = match.group("reference")
         if reference_note_id is not None:
             note_id = reference_note_id
@@ -464,6 +474,10 @@ def _replace_citations_in_text(
         note_id = note_id.translate(_UUID_DASH_TRANSLATION).lower()
         handled_note_citation = True
         if note_id not in allowed_note_ids:
+            output.append(preceding_text)
+            previous_marker_output_index = None
+            previous_marker_root_id = None
+            previous_marker_note_ids = []
             cursor = match.end()
             continue
         if not context.has_note(note_id):
@@ -478,17 +492,35 @@ def _replace_citations_in_text(
             )
         if reference_note_id is not None:
             reference_number = citation_number_by_root_id[root_note_id]
-            escaped_root_note_id = html.escape(root_note_id, quote=True)
-            output.append(
-                '<sup class="ai-chat-citation-marker" '
-                f'aria-label="Reference {reference_number}">'
-                '<a href="#" class="ai-chat-citation-link note-reference-link" '
-                f'data-ref-note-id="{escaped_root_note_id}" '
-                f'data-ref-query="{html.escape(note_id, quote=True)}">'
-                f"[{reference_number}]</a></sup>"
+            can_merge_with_previous_marker = (
+                previous_marker_output_index is not None
+                and preceding_text.strip() == ""
+                and previous_marker_root_id == root_note_id
             )
+            if can_merge_with_previous_marker:
+                if note_id not in previous_marker_note_ids:
+                    previous_marker_note_ids.append(note_id)
+                assert previous_marker_output_index is not None
+                output[previous_marker_output_index] = _render_citation_marker(
+                    reference_number=reference_number,
+                    root_note_id=root_note_id,
+                    cited_note_ids=tuple(previous_marker_note_ids),
+                )
+            else:
+                output.append(preceding_text)
+                previous_marker_note_ids = [note_id]
+                output.append(
+                    _render_citation_marker(
+                        reference_number=reference_number,
+                        root_note_id=root_note_id,
+                        cited_note_ids=tuple(previous_marker_note_ids),
+                    )
+                )
+                previous_marker_output_index = len(output) - 1
+                previous_marker_root_id = root_note_id
             cited_note_ids.append(note_id)
         else:
+            output.append(preceding_text)
             preview = get_note_reference_preview(
                 reference_note_id=note_id,
                 context=context,
@@ -500,9 +532,68 @@ def _replace_citations_in_text(
                 "</span>"
             )
             cited_note_ids.append(note_id)
+            previous_marker_output_index = None
+            previous_marker_root_id = None
+            previous_marker_note_ids = []
         cursor = match.end()
     output.append(text[cursor:])
-    return "".join(output), cited_note_ids, handled_note_citation
+    replaced_text = _sort_adjacent_citation_marker_runs("".join(output))
+    return replaced_text, cited_note_ids, handled_note_citation
+
+
+def _render_citation_marker(
+    *,
+    reference_number: int,
+    root_note_id: str,
+    cited_note_ids: tuple[str, ...],
+) -> str:
+    if reference_number < 1:
+        raise ValueError("Citation reference number must be positive")
+    if len(cited_note_ids) == 0:
+        raise ValueError("Citation marker requires at least one cited note")
+    reference_query = " OR ".join(cited_note_ids)
+    return (
+        '<sup class="ai-chat-citation-marker" '
+        f'aria-label="Reference {reference_number}">'
+        '<a href="#" class="ai-chat-citation-link note-reference-link" '
+        f'data-ref-note-id="{html.escape(root_note_id, quote=True)}" '
+        f'data-ref-query="{html.escape(reference_query, quote=True)}">'
+        f"[{reference_number}]</a></sup>"
+    )
+
+
+def _sort_adjacent_citation_marker_runs(rendered_text: str) -> str:
+    marker_matches = list(_CITATION_MARKER_HTML_RE.finditer(rendered_text))
+    if len(marker_matches) < 2:
+        return rendered_text
+    output: list[str] = []
+    cursor = 0
+    marker_index = 0
+    while marker_index < len(marker_matches):
+        run_start_index = marker_index
+        run_end_index = run_start_index + 1
+        while run_end_index < len(marker_matches):
+            preceding_match = marker_matches[run_end_index - 1]
+            next_match = marker_matches[run_end_index]
+            between_markers = rendered_text[preceding_match.end() : next_match.start()]
+            if between_markers.strip() != "":
+                break
+            run_end_index += 1
+
+        first_match = marker_matches[run_start_index]
+        output.append(rendered_text[cursor : first_match.start()])
+        marker_run = marker_matches[run_start_index:run_end_index]
+        marker_run.sort(key=lambda match: int(match.group("number")))
+        for marker_match in marker_run:
+            reference_number = marker_match.group("number")
+            display_number = marker_match.group("display_number")
+            if display_number != reference_number:
+                raise RuntimeError("AI citation marker number does not match its label")
+            output.append(marker_match.group(0))
+        cursor = marker_matches[run_end_index - 1].end()
+        marker_index = run_end_index
+    output.append(rendered_text[cursor:])
+    return "".join(output)
 
 
 def _render_references_section(
@@ -542,9 +633,11 @@ def _render_references_section(
 
     return (
         '<section class="ai-chat-references" aria-label="References">'
-        "<h4>References</h4>"
+        '<details class="ai-chat-references-disclosure">'
+        '<summary class="ai-chat-references-heading">References</summary>'
         f'<ol>{"".join(reference_items)}</ol>'
         f"{open_all_html}"
+        "</details>"
         "</section>"
     )
 

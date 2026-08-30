@@ -36,14 +36,9 @@ canonical search/sort/date state, then resolves actual note membership itself.
 The browser never submits a trusted corpus-sized UUID list. Later typing, tab
 switches, or reference navigation do not change the running request.
 
-The assistant turn shows a persistent scope chip such as:
-
-```text
-Scope · project-foo · 834 notes in 217 result trees
-```
-
-An empty search is explicitly `Scope · All notes`. The chip remains visible when
-developer diagnostics are hidden.
+The assistant turn does not repeat this scope above its response. When developer
+diagnostics are visible, the scope-freezing activity panel shows the label and
+note/tree counts.
 
 The same note/tree counts are supplied to the route-selection model before note
 content is loaded. Evidence sizing is deferred until the selected action actually
@@ -215,7 +210,10 @@ notice; it is preserved but never applied until Save or Restore removes it.
   numbered citation instead of briefly rendering as a note-title mention.
 - Inline markers render as clickable superscript `[1]` links. A separate References
   section contains preview-labeled links deduplicated by top-level result tree;
-  `Open all references` is available for multiple roots.
+  `Open all references` is available for multiple roots. References are withheld
+  until streaming completes, then appear inside a collapsed disclosure. Completion
+  scrolls slightly past the answer so the disclosure heading is visible without
+  automatically exposing or scrolling through the reference list.
 - Root deduplication is presentational only. Each reference retains the exact cited
   child UUIDs as its hidden navigation query. If multiple cited children share a
   root, the query is `UUID1 OR UUID2`; normal search behavior preserves both paths

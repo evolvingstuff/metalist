@@ -352,6 +352,9 @@ groups cited children by root, but its hidden navigation query retains the exact
 cited child UUIDs. Multiple cited children under one root use `UUID1 OR UUID2`, so
 the existing search renderer preserves both ancestor paths and gray-redacts unrelated
 sibling branches. An empty catalog produces no citations or References section.
+During streaming, reference UI is withheld. Completed References render as a
+collapsed disclosure, and the transcript reveals only its heading at the bottom of
+the viewport until the user expands it.
 
 Canonical conversation remains only user messages and completed assistant-visible
 prose. Scope, skills, actions, summaries, pages, facets, traces, and citations are
@@ -377,9 +380,8 @@ transient working state and do not enter later conversation context.
 
 ## UI and Debug
 
-- A persistent scope chip remains visible on the assistant turn even when the
-  developer eye toggle is off: for example,
-  `Scope · project-foo · 834 notes in 217 result trees`.
+- The assistant response does not carry a persistent scope chip. Eye mode exposes
+  the frozen scope label and counts through its lifecycle panels.
 - Eye mode retains in-place lifecycle panels for scope freezing, model calls,
   evidence pages, direct one-page generation, summary/action selection,
   refinements, facets, source reopening, and final writing. Each panel carries a

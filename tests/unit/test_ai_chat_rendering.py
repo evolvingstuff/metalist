@@ -67,6 +67,12 @@ def test_ai_chat_renderer_moves_bare_note_uuid_to_references_section() -> None:
     body_html, references_html = rendered.split('<section class="ai-chat-references"')
     assert 'class="note-reference-link"' not in body_html
     assert 'aria-label="References"' in references_html
+    assert '<details class="ai-chat-references-disclosure">' in references_html
+    assert (
+        '<summary class="ai-chat-references-heading">References</summary>'
+        in references_html
+    )
+    assert '<details class="ai-chat-references-disclosure" open' not in references_html
     assert 'class="ai-chat-note-reference note-reference-block' in rendered
     assert f'data-ref-note-id="{ROOT_NOTE_ID}"' in rendered
     assert 'class="note-reference-link"' in rendered
@@ -134,6 +140,47 @@ def test_ai_chat_renderer_deduplicates_repeated_reference_links() -> None:
     assert rendered.count('class="ai-chat-citation-marker"') == 1
     assert rendered.count('class="note-reference-link"') == 1
     assert 'class="ai-chat-open-all-references"' not in rendered
+
+
+def test_ai_chat_renderer_collapses_adjacent_duplicate_citation_markers() -> None:
+    rendered = render_ai_chat_markdown_to_html(
+        f"Supported claim. [[{NOTE_ID}]][[{NOTE_ID}]]",
+        notes=FakeNotes(),
+        allowed_note_ids=(NOTE_ID,),
+    )
+
+    assert rendered.count('class="ai-chat-citation-marker"') == 1
+    assert rendered.count(">[1]</a></sup>") == 1
+    assert f'data-ref-query="{NOTE_ID}"' in rendered
+
+
+def test_ai_chat_renderer_collapses_adjacent_same_root_citation_markers() -> None:
+    rendered = render_ai_chat_markdown_to_html(
+        f"Supported claim. [[{NOTE_ID}]] [[{SECOND_NOTE_ID}]]",
+        notes=FakeNotes(),
+        allowed_note_ids=(NOTE_ID, SECOND_NOTE_ID),
+    )
+
+    expected_query = f"{NOTE_ID} OR {SECOND_NOTE_ID}"
+    assert rendered.count('class="ai-chat-citation-marker"') == 1
+    assert rendered.count(">[1]</a></sup>") == 1
+    assert rendered.count(f'data-ref-query="{expected_query}"') == 2
+
+
+def test_ai_chat_renderer_sorts_adjacent_citations_by_reference_number() -> None:
+    rendered = render_ai_chat_markdown_to_html(
+        (
+            f"First source [[{ROOT_NOTE_ID}]]. "
+            f"Second source [[{OTHER_ROOT_NOTE_ID}]]. "
+            f"Combined [[{OTHER_ROOT_NOTE_ID}]][[{ROOT_NOTE_ID}]]."
+        ),
+        notes=FakeNotes(),
+        allowed_note_ids=(ROOT_NOTE_ID, OTHER_ROOT_NOTE_ID),
+    )
+
+    body_html, _references_html = rendered.split('<section class="ai-chat-references"')
+    combined_html = body_html.split("Combined ", maxsplit=1)[1]
+    assert combined_html.index(">[1]</a></sup>") < combined_html.index(">[2]</a></sup>")
 
 
 def test_ai_chat_renderer_adds_open_all_link_with_or_query_for_multiple_refs() -> None:

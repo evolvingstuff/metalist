@@ -203,6 +203,7 @@ class AiChatPanelController {
         this._initialized = false;
         this._messages = [];
         this._expandedThinkingMessageIds = new Set();
+        this._expandedReferenceMessageIds = new Set();
         this._showDiagnosticActivities = false;
         this._isBusy = false;
         this._thinkingStartedAtMs = 0;
@@ -812,6 +813,7 @@ class AiChatPanelController {
                 throw new Error('AI chat session response missing messages');
             }
             this._expandedThinkingMessageIds.clear();
+            this._expandedReferenceMessageIds.clear();
             this._messages = payload.messages.map(validateMessage);
             this._render({ shouldScrollToBottom });
             await queueMermaidDiagramRendering(this._elements.messages);
@@ -850,6 +852,7 @@ class AiChatPanelController {
             this._isClearingSession = false;
         }
         this._expandedThinkingMessageIds.clear();
+        this._expandedReferenceMessageIds.clear();
         this._messages = [];
         this._render({ shouldScrollToBottom: true });
         await AgentDebugView.refreshIfOpen();
@@ -1141,13 +1144,6 @@ class AiChatPanelController {
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
             article.dataset.messageId = message.id;
 
-            if (message.role === 'assistant') {
-                const scopeChip = this._renderScopeChip(message);
-                if (scopeChip !== null) {
-                    article.appendChild(scopeChip);
-                }
-            }
-
             if (
                 this._showDiagnosticActivities
                 && message.role === 'assistant'
@@ -1232,6 +1228,24 @@ class AiChatPanelController {
                 } else {
                     content.textContent = message.content;
                 }
+                const referenceDisclosure = content.querySelector(
+                    'details.ai-chat-references-disclosure',
+                );
+                if (referenceDisclosure !== null) {
+                    if (!(referenceDisclosure instanceof HTMLDetailsElement)) {
+                        throw new Error('AI chat reference disclosure must be details');
+                    }
+                    referenceDisclosure.open = (
+                        this._expandedReferenceMessageIds.has(message.id)
+                    );
+                    referenceDisclosure.addEventListener('toggle', () => {
+                        if (referenceDisclosure.open) {
+                            this._expandedReferenceMessageIds.add(message.id);
+                        } else {
+                            this._expandedReferenceMessageIds.delete(message.id);
+                        }
+                    });
+                }
                 article.appendChild(content);
             }
             if (message.status === 'error') {
@@ -1250,10 +1264,10 @@ class AiChatPanelController {
             return;
         }
         this._elements.messages.scrollTop = previousScrollTop;
-        this._positionReferencesBelowViewport();
+        this._revealReferencesHeaderAtViewportBottom();
     }
 
-    _positionReferencesBelowViewport() {
+    _revealReferencesHeaderAtViewportBottom() {
         const lastMessage = this._elements.messages.lastElementChild;
         if (!(lastMessage instanceof HTMLElement)) {
             return;
@@ -1269,25 +1283,18 @@ class AiChatPanelController {
             - messagesBounds.top
             + this._elements.messages.scrollTop
         );
+        const referencePreviewHeight = Math.min(
+            48,
+            Math.ceil(referencesBounds.height),
+        );
         this._elements.messages.scrollTop = Math.max(
             0,
-            Math.ceil(referenceTop - this._elements.messages.clientHeight),
+            Math.ceil(
+                referenceTop
+                - this._elements.messages.clientHeight
+                + referencePreviewHeight
+            ),
         );
-    }
-
-    _renderScopeChip(message) {
-        validateMessage(message);
-        const completedScopes = message.activities.filter(
-            (activity) => activity.action === 'scope' && activity.status === 'completed',
-        );
-        if (completedScopes.length === 0) {
-            return null;
-        }
-        const latest = completedScopes[completedScopes.length - 1];
-        const chip = document.createElement('div');
-        chip.className = 'ai-chat-scope-chip';
-        chip.textContent = latest.label.replace(/^Scope ready · /, 'Scope · ');
-        return chip;
     }
 
     _renderActivities(message) {

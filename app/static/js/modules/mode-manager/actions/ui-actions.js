@@ -166,8 +166,7 @@ function updateSearchResultsCount(snapshot, tabId) {
     const hasUntaggedView = snapshot.isUntaggedView === true;
     const isSearching = searchQuery.trim().length > 0;
     const total = isSearching || hasDateFilter || hasUntaggedView ? searchRootCountTotal : rootCountTotal;
-    const rootLabel = total === 1 ? 'root' : 'roots';
-    el.textContent = `${total.toLocaleString('en-US')} ${rootLabel}`;
+    el.textContent = total.toLocaleString('en-US');
 }
 
 export async function actionRefreshAndMaybeSelect(options) {

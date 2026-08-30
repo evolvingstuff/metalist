@@ -171,6 +171,16 @@ test('chat accepts scoped-investigation lifecycle activities', () => {
 });
 
 
+test('chat scope is available through diagnostics without a persistent response chip', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+
+    assert.match(controller, /'scope'/);
+    assert.doesNotMatch(controller, /_renderScopeChip|ai-chat-scope-chip/);
+    assert.doesNotMatch(css, /\.ai-chat-scope-chip/);
+});
+
+
 test('chat freezes the active scope only when submitting a turn', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
@@ -511,8 +521,9 @@ test('streaming keeps drafting available and reset cancels the active Ollama req
 });
 
 
-test('completion keeps references below the viewport instead of auto-scrolling into them', () => {
+test('completion reveals the collapsed References header without scrolling through refs', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
 
     assert.match(
         controller,
@@ -520,8 +531,11 @@ test('completion keeps references below the viewport instead of auto-scrolling i
     );
     assert.match(
         controller,
-        /querySelector\('\.ai-chat-references'\)[\s\S]*?referenceTop[\s\S]*?clientHeight/,
+        /querySelector\('\.ai-chat-references'\)[\s\S]*?referencePreviewHeight[\s\S]*?clientHeight/,
     );
+    assert.match(controller, /details\.ai-chat-references-disclosure/);
+    assert.match(controller, /this\._expandedReferenceMessageIds\.has\(message\.id\)/);
+    assert.match(css, /\.ai-chat-references-heading\s*\{[\s\S]*?cursor:\s*pointer;/);
     assert.doesNotMatch(
         controller,
         /_render\(\)[\s\S]*?messages\.scrollTop = this\._elements\.messages\.scrollHeight/,
