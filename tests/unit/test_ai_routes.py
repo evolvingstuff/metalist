@@ -665,7 +665,6 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             skills,
             retrieval_settings,
             frozen_scope,
-            include_evidence_rationale,
         ):
             assert session_key == "session-key"
             assert base_url == "http://127.0.0.1:11435"
@@ -682,7 +681,6 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert retrieval_settings.max_page_approximate_tokens == 7_000
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
-            assert include_evidence_rationale is True
             yield {
                 "type": "action_status",
                 "action": "planning",
@@ -1097,11 +1095,9 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             skills,
             retrieval_settings,
             frozen_scope,
-            include_evidence_rationale,
         ):
             del session_key, base_url, selected_model, thinking_level
             del prompts, skills, retrieval_settings, frozen_scope
-            del include_evidence_rationale
             assert canonical_messages == [
                 {"role": "user", "content": "Summarize testosterone notes"},
                 {"role": "assistant", "content": "Sleep affects testosterone."},
@@ -1190,11 +1186,10 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             skills,
             retrieval_settings,
             frozen_scope,
-            include_evidence_rationale,
         ):
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings
-            del frozen_scope, include_evidence_rationale
+            del frozen_scope
             raise OllamaProviderError("Ollama generation failed")
             yield
 

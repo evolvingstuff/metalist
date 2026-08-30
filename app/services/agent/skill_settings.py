@@ -6,15 +6,13 @@ from dataclasses import dataclass
 
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
 from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL
-from app.services.agent.skills import SELECT_RELEVANT_EVIDENCE_SKILL
 
 
 SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v5"
 SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY = (
     "pref.ai.skill.scoped_investigation_v5"
 )
-SELECT_RELEVANT_EVIDENCE_SKILL_ID = "select_relevant_evidence_v1"
-SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
+LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
     "pref.ai.skill.select_relevant_evidence_v1"
 )
 LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY = (
@@ -29,9 +27,9 @@ LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
 AGENT_SKILL_PREFERENCE_KEYS = (
     SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
-    SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
 )
 SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
+    LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY,
@@ -124,17 +122,6 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             superseded_preference_keys=(
                 *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
             ),
-        ),
-        AgentSkill(
-            skill_id=SELECT_RELEVANT_EVIDENCE_SKILL_ID,
-            title="Select relevant evidence",
-            description=(
-                "Chooses the exact notes a one-page final response may use, based "
-                "on the user's narrower current question."
-            ),
-            trigger_action="evidence_selection",
-            preference_key=SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
-            content=SELECT_RELEVANT_EVIDENCE_SKILL,
         ),
     )
 )

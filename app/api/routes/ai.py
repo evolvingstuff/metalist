@@ -703,7 +703,6 @@ def stream_ai_chat(
                 skills=skills,
                 retrieval_settings=retrieval_settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=payload.show_diagnostics,
             ):
                 event_type = event["type"]
                 outgoing_event = event

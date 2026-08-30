@@ -135,10 +135,7 @@ class AgentRuntime:
         skills: AgentSkillSet,
         retrieval_settings: AgentRetrievalSettings,
         frozen_scope: ScopedSearchSnapshot,
-        include_evidence_rationale: bool,
     ) -> AsyncIterator[dict[str, object]]:
-        if not isinstance(include_evidence_rationale, bool):
-            raise TypeError("include_evidence_rationale must be bool")
         run, initial_messages = self._start_run(
             session_key=session_key,
             base_url=base_url,
@@ -156,7 +153,6 @@ class AgentRuntime:
                 canonical_messages=canonical_messages,
                 initial_messages=initial_messages,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=include_evidence_rationale,
             ):
                 yield event
         # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
@@ -183,7 +179,6 @@ class AgentRuntime:
         canonical_messages: list[dict[str, str]],
         initial_messages: list[dict[str, str]],
         frozen_scope: ScopedSearchSnapshot,
-        include_evidence_rationale: bool,
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(frozen_scope, ScopedSearchSnapshot):
             raise TypeError("frozen_scope must be ScopedSearchSnapshot")
@@ -305,100 +300,36 @@ class AgentRuntime:
                 facet_page=facet_page,
                 reopened_sources=(),
             )
-            selection_skill = run.skills.for_action("evidence_selection")
-            self._record_skill_activation(run=run, skill=selection_skill)
-            yield self._status_event(
-                "skill",
-                "completed",
-                f"Activated skill · {selection_skill.title}",
-                approx_input_tokens=route_tokens,
-            )
-            selection_messages = (
-                self._context_builder.build_single_page_evidence_selection_messages(
+            final_messages, reference_note_ids = (
+                self._context_builder.build_single_page_scoped_final_messages(
                     canonical_messages=canonical_messages,
                     prompts=run.prompts,
-                    skill=selection_skill,
                     state=state,
                     note_page=note_page,
-                    include_rationale=include_evidence_rationale,
+                    basis="the complete one-page frozen evidence scope",
                 )
             )
-            selection_tokens = estimate_input_tokens(selection_messages)
-            yield self._status_event(
-                "evidence_selection",
-                "started",
-                "Selecting evidence that directly answers the current question",
-                approx_input_tokens=selection_tokens,
-            )
-            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
-            selection_task = asyncio.create_task(
-                self._select_single_page_evidence(
-                    run=run,
-                    messages=selection_messages,
-                    allowed_note_ids=frozenset(note_page.evidence_note_ids),
-                    include_rationale=include_evidence_rationale,
-                    on_progress=lambda progress: self._publish_inference_progress(
-                        run=run,
-                        progress_queue=progress_queue,
-                        progress=progress,
-                        purpose=InferencePurpose.EVIDENCE_SELECTION,
-                    ),
-                )
-            )
-            async for progress in self._stream_progress_until_complete(
-                progress_queue=progress_queue,
-                action_task=selection_task,
-            ):
-                yield self._progress_status_event(
-                    progress,
-                    purpose=InferencePurpose.EVIDENCE_SELECTION,
-                    provider_label=self._provider_label,
-                )
-            selection = await selection_task
-            verified_sources: tuple[dict[str, object], ...] = ()
-            if selection.relevant_note_ids:
-                verified_sources = state.reopen_sources(
-                    note_ids=selection.relevant_note_ids
-                )
-            reference_note_ids = self._reference_note_ids(
-                verified_sources=verified_sources,
-            )
+            final_tokens = estimate_input_tokens(final_messages)
             self._trace_store.append_event(
                 session_key=run.session_key,
                 run_id=run.run_id,
                 event_type="FINAL_EVIDENCE",
-                label="Selected one-page authoritative answer sources",
+                label="Complete one-page authoritative evidence scope",
                 detail={
-                    "selection": selection.model_dump(mode="json"),
-                    "sources": list(verified_sources),
+                    "source_ids": list(reference_note_ids),
+                    "result_tree_ids": list(note_page.result_tree_ids),
                 },
                 duration_ms=0.0,
             )
-            selected_count = len(reference_note_ids)
-            selected_noun = "notes"
-            if selected_count == 1:
-                selected_noun = "note"
             yield self._status_event(
-                "evidence_selection",
+                "investigation_sources",
                 "completed",
-                self._evidence_selection_status_label(
-                    selection=selection,
-                    selected_count=selected_count,
-                    selected_noun=selected_noun,
+                (
+                    "Complete evidence scope ready · generating response from "
+                    f"{len(note_page.evidence_note_ids)} notes in "
+                    f"{len(note_page.result_tree_ids)} result trees"
                 ),
-                approx_input_tokens=selection_tokens,
-            )
-            final_messages = self._context_builder.build_scoped_final_messages(
-                canonical_messages=canonical_messages,
-                prompts=run.prompts,
-                state=state,
-                working_summary=working_summary,
-                verified_sources=verified_sources,
-                reference_note_ids=reference_note_ids,
-                basis=(
-                    "the exact sources selected from the complete one-page frozen "
-                    "evidence scope"
-                ),
+                approx_input_tokens=final_tokens,
             )
             async for event in self._stream_prebuilt_final_response(
                 run=run,

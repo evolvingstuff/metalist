@@ -39,8 +39,8 @@ POST /api2/ai/chat + required AgentScopeDescriptor
       → investigate:
           activate scoped-investigation skill
           build first ordered note page + whole-subset tag facets
-          → one page: Instructor selects directly relevant evidence IDs
-                      rehydrate only those sources and stream final prose
+          → one page: send the complete raw nested result-tree page directly to
+                      final prose generation
           → multiple pages:
           Instructor InvestigationStep:
             replace WorkingSummary
@@ -196,23 +196,17 @@ to the model.
 ## Bounded Working Context
 
 When the frozen scope fits on one evidence page, the runtime bypasses
-`WorkingSummary` but does not send the whole candidate page to the prose writer.
-Instructor first returns a structured selection containing at most 12 exact IDs
-from that page. The eye state is frozen when the user submits the turn: visible
-diagnostics use `EvidenceSelection` with a required concise `reason`, while hidden
-diagnostics use `EvidenceSelectionWithoutRationale`, whose only field is
-`relevant_note_ids`. Dynamic Pydantic constraints reject invented or out-of-page IDs.
-The current user's narrowest constraint—not the broader scope query—defines
-relevance; sharing the scope topic while addressing a different subtopic or
-mechanism is insufficient. The
-runtime rehydrates only the selected frozen records and exposes only those records
-and their ready-to-copy `[[UUID]]` citation tokens to final response generation.
-This isolates relevance judgment in a small, inspectable structured call and makes
-it impossible for final prose to drift into an unselected sibling. An empty
-selection is valid when the candidate scope does not answer the question. For
-multi-page investigation,
-`WorkingSummary` is a complete replacement value on every step. It
-contains source-backed facts, tentative conclusions, contradictions/uncertainties,
+`WorkingSummary` and sends that complete raw page of recursively nested result
+trees directly to final prose generation. Every evidence object carries its own
+ready-to-copy `[[UUID]]` citation token, and every evidence ID on the page is an
+allowlisted candidate citation. The final writer must apply the current user's
+exact request as the relevance constraint and omit unrelated candidate nodes; the
+server still validates every emitted citation against the frozen page.
+
+For multi-page investigation, each decision receives the raw current page plus the
+latest bounded summary. `WorkingSummary` is a complete replacement value on every
+step. It contains source-backed facts, tentative conclusions,
+contradictions/uncertainties,
 unresolved questions, and useful terms/tags. Each evidence entry carries its exact
 source IDs; the runtime derives the deduplicated reference set from those structured
 entries. Every evidence ID must be observed, and the serialized summary defaults to an
@@ -231,10 +225,9 @@ from:
 
 Prior raw pages, earlier summary versions, and abandoned tool transcripts are not
 appended. Agent Debug still records each exact wire request at the time it occurs.
-Every generation has a response-type ceiling: 512 tokens for routes and one-page
-evidence selection, 2,048 for multi-page investigation steps, and 1,024 for legacy
-search-query preparation and final prose. Structured
-requests carry `max_tokens`; native final-response streams carry
+Every generation has a response-type ceiling: 512 tokens for routes, 2,048 for
+multi-page investigation steps, and 1,024 for legacy search-query preparation and
+final prose. Structured requests carry `max_tokens`; native final-response streams carry
 `options.num_predict`. Instructor partial streaming provides schema-aware parsing
 while live activity reports an approximate output-token count. These limits prevent
 malformed or repetitive output from generating without a practical bound.
@@ -264,14 +257,10 @@ transient working state and do not enter later conversation context.
 - `skills/scoped-investigation.md` contains investigation semantics, sufficiency
   guidance, action rules, tag grammar, paging/order hints, and summary/provenance
   requirements.
-- `skills/select-relevant-evidence.md` contains the narrow one-page relevance
-  contract. It is activated only for the structured `EvidenceSelection` call and
-  is editable/restorable with the other skills.
 - Namespace prompt/skill overrides are frozen at run start and editable through
   `Agent prompts…`.
 - The nested scoped skill uses versioned key
-  `pref.ai.skill.scoped_investigation_v5`; one-page relevance selection uses
-  `pref.ai.skill.select_relevant_evidence_v1`. Saved verbose-payload v4,
+  `pref.ai.skill.scoped_investigation_v5`. Saved verbose-payload v4,
   inherited-tag v3, flat-page
   `pref.ai.skill.scoped_investigation_v2`, and legacy
   `pref.ai.skill.search_notes` overrides are preserved but never applied. The
@@ -284,7 +273,7 @@ transient working state and do not enter later conversation context.
   developer eye toggle is off: for example,
   `Scope · project-foo · 834 notes in 217 result trees · 9 evidence pages`.
 - Eye mode retains in-place lifecycle panels for scope freezing, model calls,
-  evidence pages, one-page relevance selection, summary/action selection,
+  evidence pages, direct one-page generation, summary/action selection,
   refinements, facets, source reopening, and final writing. Each panel carries a
   separate approximate input-token count.
 - Hidden eye mode still shows one compact live Working indicator without exposing

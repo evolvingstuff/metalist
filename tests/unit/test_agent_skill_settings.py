@@ -5,6 +5,9 @@ from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V4_PRE
 from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY
 from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY
 from app.services.agent.skill_settings import LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY
+from app.services.agent.skill_settings import (
+    LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
+)
 from app.services.agent.skill_settings import SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY
 from app.services.agent.skill_settings import resolve_agent_skill_set
 from app.services.agent.skill_settings import validate_agent_skill_content
@@ -36,13 +39,20 @@ def test_packaged_investigation_skill_explains_scope_and_bounded_navigation() ->
     assert "ranking hint rather than proof of relevance" in normalized_skill
 
 
-def test_packaged_evidence_selection_skill_requires_narrow_request_match() -> None:
-    skill = DEFAULT_AGENT_SKILLS.for_action("evidence_selection")
+def test_one_page_evidence_selection_skill_is_no_longer_active() -> None:
+    with pytest.raises(KeyError, match="Expected one agent skill"):
+        DEFAULT_AGENT_SKILLS.for_action("evidence_selection")
 
-    normalized_skill = " ".join(skill.content.split())
-    assert "narrowest constraint in the current request" in normalized_skill
-    assert "broad scope topic" in normalized_skill
-    assert "different subtopic or mechanism" in normalized_skill
+
+def test_old_evidence_selection_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v5"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY: (
+                    "Old evidence-selection instructions"
+                )
+            }
+        )
 
 
 def test_resolve_agent_skill_set_uses_namespace_override() -> None:

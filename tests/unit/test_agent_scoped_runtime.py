@@ -332,7 +332,6 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=False,
             )
         ]
 
@@ -566,7 +565,6 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=False,
             )
         ]
 
@@ -588,23 +586,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
     assert events[-1] == {"type": "done", "reference_note_ids": []}
 
 
-@pytest.mark.parametrize(
-    ("include_evidence_rationale", "selection_payload"),
-    (
-        (
-            True,
-            {
-                "relevant_note_ids": ["note-a"],
-                "reason": "Only note-a directly answers the exact exercise question.",
-            },
-        ),
-        (False, {"relevant_note_ids": ["note-a"]}),
-    ),
-)
-def test_exact_saved_notes_request_routes_into_note_evidence(
-    include_evidence_rationale: bool,
-    selection_payload: dict[str, object],
-) -> None:
+def test_exact_saved_notes_request_routes_into_raw_single_page_evidence() -> None:
     inference = _FakeInference()
     inference.outputs = [
         json.dumps(
@@ -612,8 +594,7 @@ def test_exact_saved_notes_request_routes_into_note_evidence(
                 "kind": "investigate_current_scope",
                 "reason": "The user explicitly asked to summarize their notes.",
             }
-        ),
-        json.dumps(selection_payload),
+        )
     ]
     descriptor = AgentScopeDescriptor(
         scope_kind="search",
@@ -689,7 +670,6 @@ def test_exact_saved_notes_request_routes_into_note_evidence(
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=include_evidence_rationale,
             )
         ]
 
@@ -704,30 +684,19 @@ def test_exact_saved_notes_request_routes_into_note_evidence(
     )
     assert route_request["explicit_saved_notes_request"] is True
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" not in route_context
-    selection_context = json.dumps(inference.structured_requests[1])
-    assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" in selection_context
-    assert "PRIVATE_UNRELATED_ONIONS_NOTE" in selection_context
-    if include_evidence_rationale:
-        assert "including a concise reason" in selection_context
-    else:
-        assert "EvidenceSelectionWithoutRationale" in selection_context
-        assert "Do not generate a reason" in selection_context
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" in final_context
-    assert "PRIVATE_UNRELATED_ONIONS_NOTE" not in final_context
-    assert "verified_authoritative_sources" in final_context
-    assert len(inference.structured_requests) == 2
-    selection_activity = next(
-        event
-        for event in events
-        if event["type"] == "action_status"
+    assert "PRIVATE_UNRELATED_ONIONS_NOTE" in final_context
+    assert "verified_authoritative_result_trees" in final_context
+    assert len(inference.structured_requests) == 1
+    assert not any(
+        event["type"] == "action_status"
         and event["action"] == "evidence_selection"
-        and event["status"] == "completed"
+        for event in events
     )
-    if include_evidence_rationale:
-        assert "Only note-a directly answers" in selection_activity["label"]
-    else:
-        assert selection_activity["label"] == "Selected 1 directly relevant note"
-    assert events[-1] == {"type": "done", "reference_note_ids": ["note-a"]}
+    assert events[-1] == {
+        "type": "done",
+        "reference_note_ids": ["note-a", "note-b"],
+    }
 
 
 def test_scoped_runtime_retries_final_response_only_before_output() -> None:
@@ -771,7 +740,6 @@ def test_scoped_runtime_retries_final_response_only_before_output() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=False,
             )
         ]
 
@@ -842,7 +810,6 @@ def test_scoped_runtime_does_not_retry_after_partial_final_output() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
-                include_evidence_rationale=False,
             )
         ]
 
