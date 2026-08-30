@@ -19,10 +19,6 @@ from instructor.v2.core.client import AsyncInstructor
 from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import EvidenceSelection
-from app.services.agent.actions import EvidenceSelectionWithoutRationale
-from app.services.agent.actions import InvestigationStep
-from app.services.agent.actions import NarrowContextPlan
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.inference import InferenceAttempt
@@ -41,9 +37,7 @@ from app.services.ollama_provider import resolve_ollama_think_value
 _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
 _ROUTE_MAX_OUTPUT_TOKENS = 512
-_EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS = 512
 _SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
-_INVESTIGATION_MAX_OUTPUT_TOKENS = 2_048
 
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
@@ -51,10 +45,6 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
-        EvidenceSelection: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
-        EvidenceSelectionWithoutRationale: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
-        InvestigationStep: _INVESTIGATION_MAX_OUTPUT_TOKENS,
-        NarrowContextPlan: _ROUTE_MAX_OUTPUT_TOKENS,
     }
     if response_model not in limits:
         raise RuntimeError(
@@ -614,7 +604,7 @@ def _structured_retry_messages(
         "The previous JSON failed schema validation. Correct it and return one "
         "complete, compact JSON object. Emit every required field and close the "
         "object well before the output limit. Do not repeat long source lists or "
-        f"restate the evidence page. Validation error: {failure}"
+        f"restate the request. Validation error: {failure}"
     )
     if _response_finish_reason(failed_response) == "length":
         return [
@@ -624,8 +614,8 @@ def _structured_retry_messages(
                 "content": (
                     "The previous response reached the output-token limit and was "
                     "discarded. Start over from the original evidence. Return one "
-                    "complete compact JSON object, use the schema's bounded summary "
-                    "sizes, emit every required action field, and close the object "
+                    "complete compact JSON object, emit every required action field, "
+                    "and close the object "
                     "well before the limit."
                 ),
             },

@@ -1,482 +1,183 @@
-# Agent Harness: User-bounded Read-only Investigation
+# Agent Harness: Single-Payload Read-only Investigation
 
-## Current Contract
+## Contract
 
-- MetaList owns orchestration; the HTTP route never asks an inference provider to
-  search the namespace directly.
-- Every chat request includes both the tab visible when Send was pressed and the
-  tab that owns the investigative scope. Normally they are the same. A temporary
-  Reference source view keeps the visible reference tab but retains the originating
-  search tab as its scope. The server verifies the visible tab, then checks the
-  originating tab's canonical search/sort/date state and resolves the actual members
-  itself.
-- The resolved `ScopedSearchSnapshot` is immutable and session-only. All later
-  paging, tag refinement, exact-text refinement, backtracking, and source reopening
-  are constrained to that snapshot.
-- Only true matching nodes are evidence. Render-only ancestors may appear as
-  contentless structural objects solely to preserve nesting; gray-bar content and
-  tags never enter the agent context. `@password` notes and their complete
-  descendant subtrees are excluded before counts, pages, facets, summaries, final
-  evidence, or traces for every provider.
-- A single namespace-level cloud privacy policy applies to OpenAI and future cloud
-  providers while local Ollama ignores its configurable lists. The policy supports
-  tag/text whitelists and blacklists; entries within each side are OR, a blacklist
-  match wins, and an empty whitelist admits notes not blacklisted. Tag rules use the
-  same inherited, implied, and synonym-expanded effective tags as canonical search.
-  Phrase rules are case-insensitive literal substrings. A directly hidden ancestor
-  hides its entire subtree, so a descendant can never be disclosed without its path.
-- Instructor owns all JSON/Pydantic calls. Final prose streams through the selected
-  provider's native client. The supported providers are MetaList-managed Ollama and
-  the OpenAI API; LiteLLM is not required by the current inference seam.
-- No create, edit, move, tag, trash, delete, SQL, filesystem, or shell action is
-  exposed.
+MetaList owns orchestration and evidence access. The selected model can either
+answer normally or investigate the exact result scope visible when the user pressed
+Send. It cannot search outside that boundary or mutate notes.
+
+Supported providers are MetaList-managed Ollama and the OpenAI API. Instructor owns
+the small structured routing call; final prose streams through the provider's native
+client. LiteLLM is not part of the current path.
 
 ## Runtime Flow
 
 ```text
-POST /api2/ai/chat + required AgentScopeDescriptor
-  → verify visible tab and originating scope tab's canonical state
-  → apply the provider disclosure boundary and prune hidden subtrees
-  → freeze the already-filtered ScopedSearchSnapshot (S0)
-  → AiChatSessionStore.start_turn
-  → resolve selected inference provider
-      → Ollama: ManagedOllamaRuntime.ensure_running + verify active context
-      → OpenAI: resolve the server-side API key for this authenticated session
-  → AgentRuntime.stream_scoped
-      → freeze ScopedSearchSnapshot (S0)
-      → Instructor route: respond | investigate_current_scope
-      → respond: stream final prose without note evidence
-      → investigate:
-          activate scoped-investigation skill
-          build first ordered note page + whole-subset tag facets
-          → one page: send the complete raw nested result-tree page directly to
-                      final prose generation
-          → multiple pages:
-          Instructor InvestigationStep:
-            replace WorkingSummary
-            assess evidence sufficiency
-            select one bounded action
-          execute action with St ⊆ S0 assertions
-          rebuild context with current page/state/summary only
-          repeat (maximum 16 steps)
-          rehydrate selected observed sources
-          number root-deduplicated references and stream final prose
-  → AiChatSessionStore.complete_turn
+POST /api2/ai/chat + AgentScopeDescriptor
+  → verify the visible tab and originating scope tab
+  → resolve canonical search/sort/date membership server-side
+  → apply the provider disclosure boundary
+  → freeze immutable ScopedSearchSnapshot S0
+  → select provider and verify its runtime/credential
+  → Instructor route: respond | investigate_current_scope
+      respond:
+        stream final prose without note content
+      investigate_current_scope:
+        activate scoped-investigation skill
+        walk complete root trees in canonical order
+        retain the longest leading prefix within the provider token limit
+        serialize one full nested evidence payload
+        stream the final answer directly from that payload
+  → complete the in-memory chat turn
 ```
 
-OpenAI requests use the selected supported model and reasoning effort, set
-`store: false`, and keep the authorization header/API key out of trace wire bodies.
-In password-protected namespaces the API key is encrypted with the namespace DEK
-and stored in `app_settings`. In plaintext namespaces it is held only in server
-memory under the authenticated session key: a browser refresh retains it, while
-logout, lock/session replacement, or process restart removes it. The raw key is
-never returned to the browser after configuration.
-
-Every completed OpenAI request also contributes its API-reported usage to a
-process-local cost tracker. The tracker separates ordinary uncached input, cached
-input, cache-write input, and output tokens, and applies the exact selected model's
-standard per-million-token prices. Requests above OpenAI's 272,000-input-token
-threshold use the documented long-context rates for the complete request. A
-structured validation retry is a separate billable request and is therefore
-recorded separately; an output-limit or other rejected finish reason is recorded
-before MetaList surfaces the failure. If an interrupted response never supplies a
-final usage object, MetaList cannot account for it, so the UI deliberately labels
-the total as estimated. Pricing constants were verified against the
-[OpenAI pricing documentation](https://developers.openai.com/api/docs/pricing) on
-2026-08-30.
-
-The aggregate exists only in the namespace server process. It is not written to
-SQLite, files, browser storage, chat history, or Agent Debug. An authenticated
-Reset action clears the dollar total and all four token counters; clearing the chat
-does not. Process restart also returns it to zero.
-
-The high-level route sees the canonical conversation, the base system prompt, and
-a trailing content-free `ROUTE_SELECTION_REQUEST` containing the exact current
-request plus the user-driven search query, scope kind/label, sort/date state,
-and matching note/tree counts. It does not size or serialize note evidence merely
-to choose a route. Putting
-the current request beside the routing instruction prevents an older note task from
-being mistaken for the current follow-up. It
-chooses `respond` for ordinary conversation/general knowledge and
-`investigate_current_scope` only when the answer depends on saved-note evidence.
-Corrections, objections, and challenges to the prior answer route to `respond`
-unless they explicitly request fresh note evidence. Direct final-response payloads
-repeat the exact current request, declare an empty reference catalog, and require a
-short correction without adjacent topics or invented note citations.
-Explicit requests to summarize, search, review, or otherwise use the user's saved
-notes are bound into Instructor validation: `respond` is invalid and must retry as
-`investigate_current_scope`. The route context never contains note content and does
-not construct a global query.
-
-The investigation call uses a flat, fully required `InvestigationStep` schema.
-Inactive action arguments use explicit empty sentinels, avoiding root unions and
-schema references that are unreliable with small local models. Static rules and
-run-dependent rules are both bound into Pydantic validation: unavailable next
-pages, out-of-range facet pages, undisclosed tags/state IDs, and unobserved source
-IDs therefore participate in Instructor's visible retry rather than failing after
-an apparently valid response.
-
-Activity and trace labels omit a redundant counter on the initial structured
-attempt. If validation or the provider fails and Instructor retries, the retry and
-its validation labels explicitly show `attempt 2 of 2`; numeric attempt metadata
-remains present in exact debug payloads for both attempts.
+There is no paging cursor, next-page decision, working summary, source-ranking
+memory, facet browser, or automatic tag narrowing. A request gets at most one
+evidence payload.
 
 ## Scope and Ordering
 
 `app/services/agent/scope.py` freezes:
 
 - normalized scope kind and label;
-- canonical search/sort/date descriptor;
-- eligible matching note IDs in visible hierarchy order;
-- ordered result-tree roots;
-- every ancestor path required to nest matching evidence inside its original tree;
-- disclosure-safe plain text;
-- exact tag-bar text and user tag terms in original order/spelling;
-- locally assigned/inferred searchable tags, hierarchy IDs, and timestamps.
+- canonical search, sort, and date descriptor;
+- matching note IDs in visible hierarchy order;
+- ordered result-tree roots and structural ancestor paths;
+- disclosure-safe note content, directly assigned raw tags, and timestamps.
 
-Supported frozen scope kinds are `search`, `all_notes`, and `untagged`; the wire
-model retains `reference` compatibility for older clients. An empty normal search
-is explicit `All notes`, not an absent/unbounded scope. Opening a Reference source
-is navigation over the notes UI, not a new evidence boundary: subsequent chat turns
-continue to capture the originating scope tab until the temporary view is dismissed.
-Clicking another AI response reference replaces the active AI reference query in
-that temporary tab. Following ordinary references from inside notes retains the
-existing stacked navigation behavior.
+Supported scope kinds are Search, All notes, and Untagged notes. A temporary AI
+Reference source keeps the originating search as the evidence boundary for later
+questions. Clicking another AI reference replaces that temporary reference query;
+ordinary references followed inside notes retain their separate stacked navigation
+behavior.
 
-Membership comes from the same `resolve_search_scope`, date filtering, untagged
-membership, root sorting, `SearchIndex`, and `NoteStore` behavior as `/notes/view`.
-`ResolvedViewScope` separates `matched_note_ids` from `allowed_note_ids`, so an
-ancestor retained only to render a date/search match cannot become agent evidence.
+Only true matches are evidence. An ancestor retained solely to preserve a path is a
+contentless structural object. Search-redacted content never enters the snapshot.
+The snapshot stores frozen records, not live note handles, so edits and navigation
+cannot alter an in-flight request.
 
-The snapshot stores frozen records rather than live handles. Later edits or UI
-navigation cannot change an in-flight run. The object becomes unreachable when the
-stream finishes/cancels/fails; no run scope is written to SQLite or disk.
+## Disclosure Boundary
 
-## Cloud Privacy Policy
+`@password` notes and their complete descendant subtrees are always excluded.
 
-`app/services/agent/cloud_privacy.py` resolves the shared policy from encrypted
-namespace client preferences where namespace encryption is enabled. It evaluates
-each candidate and every canonical ancestor before `ScopedSearchSnapshot` is built.
-Consequently hidden notes cannot influence scope counts, evidence serialization,
-facets, narrowing, citations, provider prompts, or Agent Debug payloads.
+Cloud providers additionally share one namespace-level policy with tag/text
+whitelists and blacklists. Entries on each side are OR; blacklist wins. Tag rules
+use canonical inherited, implied, and synonym-expanded effective tags. Text rules
+are case-insensitive literal substrings. A hidden ancestor hides every descendant.
+Ollama ignores the configurable cloud lists but still respects `@password`.
 
-The four ordered policy lists are whitelisted tags, whitelisted plaintext phrases,
-blacklisted tags, and blacklisted plaintext phrases. Matching is case-insensitive.
-Tag evaluation reads `SearchIndex.list_effective_tag_terms_for_note`, so ancestor
-inheritance and ontology implications/synonyms have exactly the same meaning as in
-search. Text evaluation uses the note's disclosure-safe plain text. The
-non-overridable `@password` rule remains active for local and cloud providers.
+Filtering happens before counts, token sizing, serialization, citations, or Agent
+Debug. The hover preview calls the same evaluator and gives hidden notes a readable
+gray background; the preview is explanatory, while server filtering is the security
+boundary.
 
-`POST /api2/ai/cloud-privacy/preview` applies the same server evaluator to visible
-note IDs. While the pointer is over the chat column, the browser gives every hidden
-note in the current view a readable gray background; it does not replace content
-with search-redaction bars. This preview is explanatory only—the frozen-scope filter
-is the security boundary.
+## One Evidence Payload
 
-## Investigation State
+`app/services/agent/investigation.py` performs one lazy ordered prefix walk after
+the route chooses `investigate_current_scope`:
 
-`app/services/agent/investigation.py` owns one mutable run cursor over immutable
-`S0`:
+1. Serialize and estimate each complete root tree in canonical order.
+2. Retain it if the cumulative estimate remains within the provider limit.
+3. Stop before the first root that would overflow.
+4. Omit that root and every following root.
+5. Fail visibly if the first complete root alone exceeds the limit.
 
-- current subset and disclosed state IDs;
-- one-based result-tree page;
-- one-based tag-facet page;
-- observed source IDs;
-- disclosed tag terms;
-- refinement history for backtracking.
+A root is atomic and never split. Retained notes contain their full disclosure-safe
+content; there is no per-note character limit or truncation metadata. Token sizing
+is not performed during startup, normal note interaction, route selection, or search
+rendering.
 
-Every subset is asserted unique, ordered exactly as `S0`, and contained in `S0`.
-Evidence pages serialize a `result_trees` array. Each entry is a root note object
-whose descendants are recursively nested under `children`; the model never receives
-a flat note list. Content-bearing nodes carry note IDs, content, timestamps, and
-only their directly assigned raw `tags`; untagged nodes omit `tags`. Leaf nodes
-omit `children`, and parent/root IDs are not repeated because nesting communicates
-the hierarchy. Inherited, implied, and ontology-expanded tags are never included
-or used for agent facets/refinements. Nonmatching or
-protected ancestors required to preserve a path have `is_evidence: false` and carry
-only an ID and nested children—never content, tags, or timestamps.
-Refinements are cumulative; backtracking can restore only a state already disclosed
-to the model.
+The payload is a `result_trees` array. Each root is a JSON object with recursively
+nested `children`. Evidence nodes contain `note_id`, `content_text`, created/updated
+timestamps, and directly assigned raw `tags` when present. Untagged nodes omit
+`tags`; leaf nodes omit `children`; nesting communicates parent/root relationships.
+Contentless structural ancestors contain only their ID, `is_evidence: false`, and
+the retained child path.
 
-### Note pages
+The final request includes exact original/included/omitted note and root counts. If
+anything was omitted, the model is told not to claim exhaustive scope coverage.
+The current user request, rather than the broad search topic, defines relevance.
 
-- Pages greedily pack complete top-level result trees in frozen MetaList order to
-  a provider-specific approximate serialized-input-token target (Ollama default
-  5,000, configurable 500–24,000; OpenAI default 250,000, configurable
-  500–500,000),
-  with a separate provider-specific hard cap of 50 result trees by default
-  (configurable 1–100). Tree counts therefore vary by page, and whichever bound is
-  reached first starts the next page.
-- A root tree is atomic and never crosses a page boundary. A single tree whose
-  structure alone exceeds the target occupies its own page; content is reduced as
-  far as possible without dropping its structural metadata.
-- All matching nodes beneath selected roots retain frozen visible order.
-- Each note returns bounded content (default 2,000 chars; 500–10,000), original
-  content length, truncation state, exact user tags/tag bar, parent/root IDs, and
-  ISO created/updated timestamps.
-- All retrieval limits are stored independently for Ollama and OpenAI. Selecting a
-  provider resolves only that provider's settings; changing OpenAI page sizing can
-  never alter the Ollama configuration, or vice versa.
-- Persisted values equal to the former OpenAI defaults (24,000 page tokens and
-  48,000 narrowing tokens) resolve to the new 250,000/500,000 defaults; all other
-  custom values remain unchanged.
-- Page cost includes the compact serialized JSON—not merely `content_text`—so IDs,
-  tags, timestamps, hierarchy, keys, and punctuation consume the same budget.
-- `token_estimation.py` provides one deterministic provider-neutral estimate for
-  both page packing and debug feedback. It separately estimates ASCII word runs,
-  numeric runs, punctuation/control whitespace, and UTF-8 non-ASCII sequences.
-- Notes serialized on a page become observed and may later be reopened/cited.
+## Configuration
 
-### Tag facets
+The only retrieval setting is a provider-specific maximum approximate evidence
+token count:
 
-- Facets are computed across the entire current subset, never only the note page.
-- Facets enumerate directly assigned raw tags. Ontology-equivalent spellings are
-  attached as explicit synonym metadata (for example `ML3 = MetaList`) so the
-  model can understand meaning without receiving inherited or implied tags.
-- Each facet reports unique matching-note and matching-result-tree counts.
-- Case-equivalent terms collapse deterministically.
-- Ordering is descending note count, descending tree count, then tag text.
-- Facet pages default to 50 tags and are configurable from 1–200.
-- A tag refinement may reference only a term already disclosed by a facet or page
-  note. Syntax uses existing MetaList tag grammar; no regex action exists.
+- Ollama default 5,000; allowed 500–24,000.
+- OpenAI default 250,000; allowed 500–500,000.
 
-### Current one-page overflow experiment
+The deterministic estimator covers the serialized JSON, not just note text. The
+same estimate is used for retention and developer feedback.
 
-The active overflow strategy is deliberately simple for evaluation. After the
-route selects `investigate_current_scope`, MetaList walks the deterministic root
-order and retains the longest complete-root prefix whose serialized evidence cost
-does not exceed the provider's evidence-page token target. This experiment ignores
-the separate result-tree-count cap, so OpenAI can approach its 250,000-token page
-target instead of stopping after 50 roots. It removes all later root trees from the
-run-local subset, never splits a root tree, never changes root order, and never
-escapes the frozen user scope. The retained raw nested page then goes directly to
-final generation. The final prompt states that later roots were intentionally
-omitted, supplies exact included/omitted note and result-tree counts, and forbids
-claiming exhaustive scope coverage.
+Old preferences for maximum note characters, character-sized pages, roots per
+page, ranked tags per facet, working-summary characters, and ideal narrowed-scope
+tokens are obsolete. They are ignored and removed during normal preference writes.
 
-This sizing is lazy. Startup, normal note interaction, view snapshots, the search
-header, and content-free route selection do not tokenize result trees. Only an
-`investigate_current_scope` run enters the prefix walk. Root costs are evaluated in
-order, and the walk stops immediately after the first root that would overflow the
-page; no later roots are tokenized. The retained roots reuse the lazy serialized
-root-cost cache when the final bounded page is built.
+## Routing and Prompts
 
-Developer-eye activity reports original versus retained note/tree counts, the
-number of trailing trees and notes omitted, and the retained serialized-token estimate.
-Agent Debug stores the exact retained and omitted root UUID lists in session-only
-trace state.
+The route sees canonical conversation history plus a content-free block containing
+the exact current user request, user search, scope kind/label, sort/date state, and
+note/root counts. It does not serialize note content to choose a route.
 
-The tag-narrowing and rolling multi-page implementation below remains intact as a
-separate internal overflow mode so this experiment can be reversed without
-reconstructing that machinery.
+`respond` is for general conversation and corrections that do not explicitly ask
+for fresh saved-note evidence. An explicit request to summarize, search, review, or
+otherwise use saved notes is bound by validation to
+`investigate_current_scope`.
 
-### Legacy multipage automatic context narrowing (retained)
+The packaged scoped skill describes one authoritative payload and direct final
+answer. No skill or prompt describes page traversal, summary mutation, facet
+selection, or context narrowing.
 
-After route selection chooses `investigate_current_scope`, MetaList estimates the
-full serialized-token cost of the frozen subset before exposing a raw evidence
-page. If that cost exceeds the provider-specific ideal narrowed-scope target, the
-`narrow_context_v1` skill receives the exact current request, immutable user search
-boundary, ranked raw-tag facets with effective inherited-match note/tree counts,
-and synonym relationships. Tags already positively required by every OR branch
-of the user search are reported as existing constraints and excluded from the
-candidate facets, so the model cannot propose a redundant constraint such as
-`ML3` for an `ML3 -journal` scope. Formatting/meta tags beginning with `@` are
-also excluded because they do not express semantic evidence relevance. Ontology
-keys differing only by case contribute a merged synonym set because MetaList tag
-matching is case-insensitive; this never expands the plan's legal output values,
-which remain the exact raw tags listed in the frozen-context facets. Per-run
-case-folded ontology equivalence lookups are cached, so facet construction does
-not rescan the entire ontology for every candidate-tag/note comparison. Facet
-counts are aggregated once per unique inherited raw tag instead of rescanning
-every note for every candidate. Full-scope sizing and facet construction run
-outside the async server loop while a live automatic-narrowing status remains
-visible and cancellation-responsive.
-Defaults are 10,000 approximate tokens for Ollama and 500,000 for OpenAI—two
-default evidence pages for each provider. Ollama is configurable from
-1,000–200,000; OpenAI is configurable from 1,000–500,000.
+## Citations and References
 
-The model returns only an ordered list of disclosed raw tags. The prompt asks it
-to aim for up to three candidates, capped by the eligible semantic-tag count, so
-MetaList can measure useful alternatives instead of receiving an unnecessarily
-short plan. This is guidance rather than schema enforcement: a one-tag plan is
-always valid. MetaList tests the
-prefixes cumulatively as AND constraints (`tag-a`, then `tag-a tag-b`, and so on)
-inside the current frozen subset. It measures every proposed prefix until one
-produces zero results, rejects that zero-result prefix, and selects the first
-non-empty candidate at or below the
-configured token target. Because cumulative AND prefixes can only shrink, that
-candidate is the closest one below the target. If every proposed prefix remains
-above target, MetaList retains the smallest non-empty result reached. Only the
-selected candidate becomes a new investigation state, and every state remains a
-server-asserted subset of `S0`; model output can therefore never broaden the user
-search.
+Evidence note IDs are valid citation sources. The model cites a supporting claim by
+copying `[[UUID]]` from the same note object whose `content_text` supports it. The
+server rejects invented, stale, prior-turn, or undisclosed UUIDs, deduplicates
+repeated adjacent citations, orders citation groups numerically, and renders
+clickable superscript numbers.
 
-Narrowing uses normal raw-tag inheritance paths. If `A` contains sibling children
-`B` and `C`, and `C` contains `D`, requiring a tag on `C` retains evidence `C` and
-`D`, renders structural ancestor `A`, and removes unrelated sibling `B`. Requiring
-tags found only on sibling branches `B` and `C` yields zero because no single
-note-to-ancestor path satisfies both constraints. Narrowing never drops a
-matching note's descendants or structural ancestors.
+The References disclosure is assembled after streaming completes and starts
+collapsed. Visible reference links are deduplicated by root for navigation, while
+their hidden queries retain the exact cited child UUIDs so unrelated siblings remain
+redacted. Opening all references uses an OR query over the exact cited UUIDs without
+changing the visible search field.
 
-The first experiment intentionally uses raw tags only. A future facet source may
-add clearly distinguished LLM-assigned "ghost tags" for broader coverage. A
-separate future soft-ranking phase may award root-note trees points for matching
-suggested phrases without excluding trees that lack those phrases; neither
-extension may escape `S0`.
+## Session, Cancellation, and Debugging
 
-Developer-eye activity shows the original and target sizes, the complete ordered
-tag list proposed by the model, every tested cumulative prefix with resulting
-note/tree/token counts, rejected zero-result prefixes, and the selected final
-expression. Agent Debug retains the exact model request and response plus the
-complete programmatic evaluation table as copyable session-only trace data.
+Conversation, activities, scope, evidence, and traces are server-memory session
+state. Only user and completed assistant prose become later canonical conversation
+context. Clear Chat and Stop abort active provider work; logout, auth reset, lock,
+or process restart releases run state.
 
-### Action set
+Developer-eye mode shows route validation, selected action/reason, root-prefix
+retention, evidence payload size, retries, final writing, approximate token counts,
+and per-step duration. Agent Debug always retains the latest run in session memory
+so it can be opened after a failure. Its evidence event contains the exact one
+payload sent for answer generation, and Copy all produces complete formatted JSON.
+Traces are never persisted.
 
-- `page_next`: advance when another ordered note page exists.
-- `refine_tags`: narrow with disclosed tag terms and normal AND/OR/exclusion
-  semantics.
-- `refine_exact_text`: narrow by a bounded, case-insensitive literal substring.
-- `inspect_tag_facets`: inspect another deterministic facet page.
-- `backtrack`: restore a disclosed earlier subset.
-- `reopen_sources`: rehydrate 1–12 previously observed frozen records.
-- `answer`: declare sufficient evidence. MetaList then rehydrates the 32
-  highest-rated accumulated note IDs as final-answer candidates.
+## Provider Details
 
-## Bounded Working Context
+Ollama is started lazily on `127.0.0.1:11435`, cloud disabled, with managed runtime
+ownership and context verification before inference.
 
-When the active run-local scope fits on one evidence page, the runtime bypasses
-`WorkingSummary` and sends that complete raw page of recursively nested result
-trees directly to final prose generation. Every evidence object carries its own
-ready-to-copy `[[UUID]]` citation token, and every evidence ID on the page is an
-allowlisted candidate citation. The final writer must apply the current user's
-exact request as the relevance constraint and omit unrelated candidate nodes; the
-server still validates every emitted citation against the frozen page. Under the
-current overflow experiment, this same direct path receives the retained leading
-root-tree prefix and is explicitly told that it is not exhaustive.
+OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted
+with the namespace DEK; plaintext namespaces hold it only in authenticated server
+session memory. The raw key is never returned to the browser or included in traces.
 
-For multi-page investigation, each decision receives the raw current page without
-the accumulated ratings from earlier pages. It returns only applicable current-page
-note IDs and an integer importance score from 1–100. This prevents scores for a new
-page from being anchored by earlier ratings. MetaList merges pages
-programmatically, deduplicates IDs using their highest score, sorts them by score,
-and retains the best 64. Every rated ID must occur on the current page, and the
-serialized ratings default to an 8,000-character budget configurable from
-2,000–32,000.
-
-`AgentContextBuilder.build_scoped_investigation_messages` reconstructs each call
-from:
-
-- base prompt and canonical conversation;
-- active scoped-investigation skill;
-- frozen scope metadata;
-- current state/disclosed IDs and terms;
-- current facet page;
-- current note page or reopened sources.
-
-Prior raw pages, accumulated ratings, earlier summary versions, and abandoned tool
-transcripts are not appended. Agent Debug still records each exact wire request at
-the time it occurs.
-Every generation has a response-type ceiling: 512 tokens for routes, 2,048 for
-multi-page investigation steps, and 1,024 for legacy search-query preparation.
-Final prose is provider-specific: 1,024 tokens for Ollama and 8,192 for OpenAI.
-Structured requests carry their provider's output-token option; native
-final-response streams carry `options.num_predict` for Ollama or
-`max_completion_tokens` for OpenAI. OpenAI `finish_reason="length"` is a provider
-failure and can never be recorded as a completed partial answer. Instructor partial
-streaming provides schema-aware parsing while live activity reports an approximate
-output-token count. These limits prevent malformed or repetitive output from
-generating without a practical bound.
-
-On `answer`, `build_scoped_final_messages` receives the accumulated rankings and
-newly serialized frozen source records for the 32 highest-rated candidates. Final
-note claims must be grounded in those authoritative records rather than the lossy
-rankings. The final writer may use and cite any supporting subset of the 32; unused
-candidates must not become citations or References entries. The runtime
-places an exact `[[UUID]]` token beside each evidence source. The model must copy the
-token from the same object whose content supports the claim; the final-response
-prompt requires at least one direct token in every note-derived paragraph or list
-item. The server validates the UUID against the current-run allowlist, assigns the
-visible reference number, and renders a superscript marker. The visible References UI
-groups cited children by root, but its hidden navigation query retains the exact
-cited child UUIDs. Multiple cited children under one root use `UUID1 OR UUID2`, so
-the existing search renderer preserves both ancestor paths and gray-redacts unrelated
-sibling branches. An empty catalog produces no citations or References section.
-During streaming, reference UI is withheld. Completed References render as a
-collapsed disclosure, and the transcript reveals only its heading at the bottom of
-the viewport until the user expands it.
-
-Canonical conversation remains only user messages and completed assistant-visible
-prose. Scope, skills, actions, summaries, pages, facets, traces, and citations are
-transient working state and do not enter later conversation context.
-
-## Prompt and Override Contract
-
-- `prompts/system.md` contains only the read-only role, high-level route guidance,
-  current-turn/history rules, citation contract, and Markdown/LaTeX/Mermaid output
-  preference.
-- `skills/scoped-investigation.md` contains investigation semantics, sufficiency
-  guidance, action rules, tag grammar, paging/order hints, and summary/provenance
-  requirements.
-- Namespace prompt/skill overrides are frozen at run start and editable through
-  `Agent prompts…`.
-- The nested scoped skill uses versioned key
-  `pref.ai.skill.scoped_investigation_v6`. Saved prose-summary v5, verbose-payload v4,
-  inherited-tag v3, flat-page
-  `pref.ai.skill.scoped_investigation_v2`, and legacy
-  `pref.ai.skill.search_notes` overrides are preserved but never applied. The
-  editor displays an explicit incompatibility notice; Save or Restore removes
-  them atomically.
-
-## UI and Debug
-
-- The assistant response does not carry a persistent scope chip. Eye mode exposes
-  the frozen scope label and counts through its lifecycle panels.
-- Eye mode retains in-place lifecycle panels for scope freezing, model calls,
-  evidence pages, direct one-page generation, summary/action selection,
-  refinements, facets, source reopening, and final writing. Each panel carries a
-  separate approximate input-token count.
-- Hidden eye mode still shows one compact live Working indicator without exposing
-  refinement/search details.
-- When OpenAI is selected, a compact tracker below the chat header shows estimated
-  spend plus new-input, cached-input, cache-write, and output token totals. It
-  refreshes after completed intermediate and final OpenAI calls and has an explicit
-  Reset button. Ollama does not display this cloud-cost tracker.
-- Agent Debug records frozen scope/counts, every exact provider request/response and
-  retry, every full summary replacement, action arguments/reason, state transition,
-  page/tool payload, source rehydration, timing, error, and final response. Every
-  investigation request gets a dedicated evidence-payload event containing the
-  exact compact note-page JSON sent to the model. Copy all writes the complete
-  latest-run trace as formatted JSON for bug reports.
-- Debug is latest-run session memory only. Clear/logout/lock/restart behavior is
-  unchanged; nothing is persisted.
-- Stop and Clear Chat abort the active browser/server stream, which cancels pending
-  Instructor/provider work and releases run-local state.
+Completed OpenAI calls contribute API-reported uncached input, cached input,
+cache-write input, and output usage to a process-memory cost tracker. The tracker
+uses model-specific and long-context pricing, is labeled estimated because an
+interrupted request may not return final usage, and is cleared only by Reset or
+process restart.
 
 ## Main Files
 
-- API: `app/api/routes/ai.py`
-- Runtime: `app/services/agent/runtime.py`
-- Scope freeze: `app/services/agent/scope.py`
-- Investigation state/actions: `app/services/agent/investigation.py`,
-  `app/services/agent/actions.py`
-- Context: `app/services/agent/context.py`
-- Settings: `app/services/agent/retrieval_settings.py`
-- Prompts/skills: `app/services/agent/prompts/`, `app/services/agent/skills/`,
-  `app/services/agent/skill_settings.py`
-- Inference/debug: `app/services/agent/inference.py`,
-  `app/services/agent/ollama_inference.py`,
-  `app/services/agent/openai_inference.py`,
-  `app/services/agent/openai_cost_tracking.py`, `app/services/agent/trace.py`
-- OpenAI credentials: `app/services/openai_credentials.py`
-- Cloud privacy: `app/services/agent/cloud_privacy.py`
-- Scope UI: `app/static/js/modules/ai-chat/ai-chat-panel-controller.js`
-- Settings/prompt UI: `app/static/js/modules/modals/ai-agent-settings-modal.js`,
-  `app/static/js/modules/modals/agent-prompt-editor-modal.js`
-
-## Deferred Seams
-
-- LiteLLM may wrap the provider-neutral inference seam if routing or fallbacks
-  later justify the dependency.
-- Regex refinement requires a separate safe-engine/time/budget design.
-- Any note mutation requires new closed actions, permissions, confirmation UX, and
-  tests; it must not be added by widening this read-only loop.
+- `app/services/agent/runtime.py`: orchestration and streaming.
+- `app/services/agent/scope.py`: immutable user-bounded scope.
+- `app/services/agent/investigation.py`: ordered complete-root retention.
+- `app/services/agent/evidence_serialization.py`: full nested evidence JSON.
+- `app/services/agent/context.py`: route and direct final request assembly.
+- `app/services/agent/retrieval_settings.py`: provider evidence-token limit.
+- `app/services/agent/cloud_privacy.py`: cloud disclosure policy.
+- `app/services/agent/trace.py`: session-only debug events.

@@ -6,15 +6,16 @@ from dataclasses import dataclass
 
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
 from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL
-from app.services.agent.skills import NARROW_CONTEXT_SKILL
 
 
-SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v6"
+SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v7"
 SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v7"
+)
+LEGACY_NARROW_CONTEXT_SKILL_PREFERENCE_KEY = "pref.ai.skill.narrow_context_v1"
+LEGACY_SCOPED_INVESTIGATION_V6_PREFERENCE_KEY = (
     "pref.ai.skill.scoped_investigation_v6"
 )
-NARROW_CONTEXT_SKILL_ID = "narrow_context_v1"
-NARROW_CONTEXT_SKILL_PREFERENCE_KEY = "pref.ai.skill.narrow_context_v1"
 LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
     "pref.ai.skill.select_relevant_evidence_v1"
 )
@@ -33,9 +34,10 @@ LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
 AGENT_SKILL_PREFERENCE_KEYS = (
     SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
-    NARROW_CONTEXT_SKILL_PREFERENCE_KEY,
 )
 SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
+    LEGACY_NARROW_CONTEXT_SKILL_PREFERENCE_KEY,
+    LEGACY_SCOPED_INVESTIGATION_V6_PREFERENCE_KEY,
     LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY,
@@ -121,8 +123,8 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             skill_id=SCOPED_INVESTIGATION_SKILL_ID,
             title="Investigate current scope",
             description=(
-                "Pages, refines, ranks, and verifies evidence only inside the "
-                "frozen active MetaList result scope."
+                "Answers directly from one ordered, token-bounded evidence payload "
+                "inside the frozen active MetaList result scope."
             ),
             trigger_action="investigate_current_scope",
             preference_key=SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
@@ -130,17 +132,6 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             superseded_preference_keys=(
                 *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
             ),
-        ),
-        AgentSkill(
-            skill_id=NARROW_CONTEXT_SKILL_ID,
-            title="Narrow context",
-            description=(
-                "Proposes ordered raw tags for cumulative, scope-confined token "
-                "reduction before evidence paging."
-            ),
-            trigger_action="narrow_context",
-            preference_key=NARROW_CONTEXT_SKILL_PREFERENCE_KEY,
-            content=NARROW_CONTEXT_SKILL,
         ),
     )
 )
@@ -153,8 +144,8 @@ def resolve_agent_skill_set(*, preferences: dict[str, str]) -> AgentSkillSet:
         key in preferences for key in SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
     ):
         raise ValueError(
-            "Saved skill override is incompatible with the nested scoped "
-            "investigation v6 action contract. Open AI Agent Settings to review "
+            "Saved skill override is incompatible with the direct scoped "
+            "investigation v7 evidence contract. Open AI Agent Settings to review "
             "and restore the new default."
         )
     resolved_skills: list[AgentSkill] = []

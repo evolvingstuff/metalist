@@ -160,7 +160,7 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'investigate_current_scope',
     'evidence_selection',
     'investigation_step',
-    'investigation_page',
+    'investigation_evidence',
     'investigation_facets',
     'investigation_refinement',
     'investigation_sources',

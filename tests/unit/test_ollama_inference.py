@@ -6,9 +6,7 @@ import instructor
 from openai import AsyncOpenAI
 
 from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import EvidenceSelection
-from app.services.agent.actions import EvidenceSelectionWithoutRationale
-from app.services.agent.actions import InvestigationStep
+from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
 from app.services.agent.ollama_inference import _response_finish_reason
@@ -17,9 +15,7 @@ from app.services.agent.ollama_inference import _structured_max_output_tokens
 
 def test_structured_output_limits_are_bounded_by_response_type() -> None:
     assert _structured_max_output_tokens(AgentRouteEnvelope) == 512
-    assert _structured_max_output_tokens(EvidenceSelection) == 512
-    assert _structured_max_output_tokens(EvidenceSelectionWithoutRationale) == 512
-    assert _structured_max_output_tokens(InvestigationStep) == 2_048
+    assert _structured_max_output_tokens(SearchQueryEnvelope) == 1_024
 
 
 def test_structured_retry_can_identify_output_limit_truncation() -> None:

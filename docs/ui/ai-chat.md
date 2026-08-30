@@ -15,9 +15,9 @@
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
-- Every generation is bounded over the wire: route selection uses 512 output tokens;
-  multi-page investigation steps use 2,048; query requests use 1,024; final prose
-  uses 1,024 with Ollama and 8,192 with OpenAI. If OpenAI reports that this limit
+- Every generation is bounded over the wire: route selection uses 512 output tokens,
+  query requests use 1,024, and final prose uses 1,024 with Ollama and 8,192 with
+  OpenAI. If OpenAI reports that this limit
   truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
 
@@ -42,7 +42,7 @@ note/tree counts.
 
 The same note/tree counts are supplied to the route-selection model before note
 content is loaded. Evidence sizing is deferred until the selected action actually
-needs saved-note content; evidence panels then report the retained page and its
+needs saved-note content; evidence panels then report the retained payload and its
 approximate token count.
 
 Only true matching nodes become evidence. Ancestors needed to make the result tree
@@ -55,7 +55,7 @@ privacy policy. Tag whitelists and blacklists use inherited and ontology-expande
 effective tags; text lists use case-insensitive literal substrings. Entries in a
 whitelist are OR, entries in a blacklist are OR, and blacklists win. If any ancestor
 is hidden, every descendant is hidden as well. The resulting filtered set—not the
-original search set—drives counts, evidence, facets, references, and debug payloads.
+original search set—drives counts, evidence, references, and debug payloads.
 
 ## Investigation Behavior
 
@@ -71,90 +71,53 @@ with the exact active user search query, scope label/kind, sort/date state, and
 result counts. Explicit saved-note requests cannot validate as a direct `respond`.
 Note content enters the model context only after investigation is selected.
 
-An investigation begins with the first ordered page of matching result trees plus
-a ranked tag-facet page covering the whole current subset. If that page is the
-complete scope, a small structured Instructor call selects only the exact note IDs
-that directly answer the current user question. MetaList rehydrates only those
-sources for final response generation; it does not create a redundant rolling
-summary, and the prose writer never receives unselected candidate notes. Multi-page
-investigations use subsequent Instructor calls to replace a
-bounded working summary and choose exactly one action: page next, tag refinement,
-exact-text refinement, inspect more tag facets, backtrack, reopen observed sources,
-or answer.
+An investigation walks matching root trees in visible order and retains the longest
+leading prefix of complete trees that fits the selected provider's evidence-token
+limit. It then sends that one nested payload directly to final response generation.
+There is no second evidence page, working summary, facet selection, tag-narrowing
+step, or source-rehydration pass.
 
-Raw prior pages are removed from the next model context. Only the current page,
-current state/facets, replacement summary, and any requested source reopens remain.
-Before answering, MetaList rehydrates the selected frozen source records, so final
-wording is based on authoritative note content rather than summary memory.
+Every retained note carries its full disclosure-safe content. If a later root would
+overflow the limit, that root and every following root are omitted. The final model
+receives exact included/omitted note and root counts and is forbidden from claiming
+exhaustive coverage when anything was omitted.
 
-The agent cannot:
+The agent cannot expand beyond the frozen scope, request another evidence payload,
+or cite an undisclosed note ID. Those boundaries are enforced programmatically.
 
-- use a tag it has not seen in a facet or exact per-note tag list;
-- reopen or cite an unobserved note ID;
-- request a page/facet/state that does not exist;
-- refine outside the frozen original scope;
-- use regex in this release.
+## Ordering and Evidence Limit
 
-Those rules are validated programmatically inside the Instructor retry boundary,
-not left to prompt compliance.
-
-## Ordering, Pages, and Facets
-
-- Note pages use MetaList's canonical top-level result-tree order and visible node
+- Evidence uses MetaList's canonical top-level result-tree order and visible node
   order. SearchIndex membership never becomes ordering.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
-- Evidence pages greedily pack complete result trees, in canonical order, to an
-  approximate serialized-input-token target. Ollama defaults to 5,000 tokens and
-  is configurable from 500–24,000. OpenAI defaults to 250,000 and is configurable
-  from 500–500,000. The providers have independent settings. Page 1 may therefore
-  contain many more roots than page 2 when page 2's roots are longer.
-- A separate hard cap allows at most 50 result trees per evidence page by default
-  (configurable from 1–100). Whichever limit is reached first starts the next page.
-- A root tree is never divided between pages. An individually oversized tree gets
-  a page of its own and its note content is reduced toward the target without
-  dropping hierarchy metadata.
-- Current overflow experiment: when an investigated scope has more than one page,
-  MetaList ignores the result-tree-count cap and retains the longest ordered prefix
-  of complete root trees within the provider's evidence-page token budget. It drops
-  trailing root trees from that run-local evidence subset and sends the retained
-  nested page directly to the model. The model payload carries exact
-  included/omitted note and result-tree counts. Eye mode shows those counts, omitted
-  trailing roots, and retained tokens. The older tag-narrowing and rolling
-  multi-page path remains in the code as a separate internal mode.
-- Each matching note returns at most 2,000 content characters by default (range
-  500–10,000). This is a separate per-note guard, not the page-size mechanism.
+- MetaList greedily packs complete result trees into one payload. Ollama defaults
+  to 5,000 approximate tokens and is configurable from 500–24,000. OpenAI defaults
+  to 250,000 and is configurable from 500–500,000. The providers have independent
+  settings.
+- A root tree is never divided. If the first root alone exceeds the limit, the run
+  fails visibly; otherwise the first root that would overflow and all following
+  roots are omitted.
+- Matching notes are not character-truncated. The evidence limit applies only to
+  the complete serialized payload.
 - The estimate covers compact serialized JSON, including content, UUIDs, tags,
   timestamps, hierarchy, object keys, and punctuation. The same deterministic
   estimator drives the debug-panel token estimates.
-- Each page is a `result_trees` array of root note objects with recursively nested
+- The payload is a `result_trees` array of root note objects with recursively nested
   `children`, not a flat note list. Content-bearing nodes expose note IDs, content,
   created/updated timestamps, and directly assigned raw tags in tag-bar order.
   Untagged notes omit `tags`; leaf notes omit `children`; parent/root IDs are not
-  repeated because nesting already communicates the hierarchy. Truncation metadata
-  appears only when content is actually truncated.
+  repeated because nesting already communicates the hierarchy.
   Contentless `is_evidence: false` ancestors preserve paths to nested matches
   without disclosing gray/redacted note information.
-- Ranked facets cover the whole current subset and report both matching-note and
-  matching-result-tree counts. Default facet page size is 50 tags (range 1–200).
-- Facets and agent tag refinements use directly assigned raw tags only. They do not
-  use inherited, implied, or ontology-expanded tags.
-- Multi-page ratings contain only current-page note IDs plus 1–100 importance
-  scores. Earlier ratings are withheld from each new page-scoring call, then merged
-  programmatically; the best 64 are retained and the top 32 are expanded as
-  final-answer candidates. The writer cites only the supporting subset it actually
-  uses. The serialized ratings default to 8,000 characters (range 2,000–32,000).
 
-The six active limits are namespace-scoped controls in `AI Agent Settings…`:
-per-note characters, approximate evidence-page tokens, result trees per evidence
-page, ranked facets per page, working-summary characters, and the automatic
-narrowing target. The narrowing target defaults to 10,000 for Ollama and 500,000
-for OpenAI.
+The only retrieval control in `AI Agent Settings…` is the provider-specific maximum
+approximate evidence-token count.
 
 ## Configuration and Managed Ollama
 
 - Open `AI Agent Settings…` from the command palette or chat gear to select an
-  installed model, download a named model, and edit investigation budgets.
+  installed model, download a named model, and edit the evidence-token limit.
 - The same settings modal has one Cloud privacy section shared by all cloud
   providers. Its four one-entry-per-line fields configure whitelisted tags,
   whitelisted text phrases, blacklisted tags, and blacklisted text phrases. Ollama
@@ -201,8 +164,8 @@ notice; it is preserved but never applied until Save or Restore removes it.
   settings, and close. Eye visibility is namespace-scoped and survives restart.
 - With eye mode hidden, an active request still shows one compact Working indicator
   with phase and elapsed time. With eye mode visible, tinted panels report scope,
-  model attempts/retries, selected action and reason, pages, refinements, facets,
-  source reopens, and response writing. Logical start/completion events update one
+  model attempts/retries, selected action and reason, retained/omitted root counts,
+  the exact evidence payload, and response writing. Logical start/completion events update one
   panel; retries remain separate. Every panel includes approximate input tokens;
   model-generation panels also show approximate output tokens as chunks arrive.
   Every panel shows its own retained duration; the current panel counts live and
@@ -259,14 +222,14 @@ notice; it is preserved but never applied until Save or Restore removes it.
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
   refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.
-  Scope, skills, summaries, facets, pages, actions, tool payloads, reasoning, and
+  Scope, skills, actions, tool payloads, reasoning, and
   citations are transient.
 - The latest debug trace is always captured so Agent Debug can be opened after a
   failure. Starting another run replaces it.
 - Exact detail is shown by default and may be toggled after a run without changing
   capture. The outline records every exact outbound Ollama body and response,
-  retry/validation state, frozen scope/counts, summary replacement, action reason,
-  state transition, bounded evidence payload, source rehydration, timing, and final
+  retry/validation state, frozen scope/counts, action reason, retained/omitted
+  roots, the bounded evidence payload, timing, and final
   response.
 - Every investigation request has an `Evidence payload sent to Ollama` entry with
   the exact compact note tree for that request. `Copy all` copies the complete

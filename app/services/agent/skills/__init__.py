@@ -14,4 +14,3 @@ def load_skill(name: str) -> str:
 
 SEARCH_NOTES_SKILL = load_skill("search-notes.md")
 SCOPED_INVESTIGATION_SKILL = load_skill("scoped-investigation.md")
-NARROW_CONTEXT_SKILL = load_skill("narrow-context.md")

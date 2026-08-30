@@ -6,13 +6,9 @@ import json
 
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
-from app.services.agent.actions import WorkingSummary
 from app.services.agent.actions import request_explicitly_requires_saved_notes
-from app.services.agent.actions import request_requires_complete_scope_coverage
-from app.services.agent.investigation import InvestigationNotePage
+from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
-from app.services.agent.investigation import TagFacetPage
-from app.services.agent.investigation import InvestigationScopeSize
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.skill_settings import AgentSkill
@@ -37,21 +33,18 @@ def _reference_catalog(note_ids: tuple[str, ...]) -> list[dict[str, str]]:
     ]
 
 
-def serialize_investigation_note_page(
-    note_page: InvestigationNotePage,
+def serialize_investigation_evidence_payload(
+    evidence_payload: InvestigationEvidencePayload,
 ) -> dict[str, object]:
-    if not isinstance(note_page, InvestigationNotePage):
-        raise TypeError("note_page must be InvestigationNotePage")
+    if not isinstance(evidence_payload, InvestigationEvidencePayload):
+        raise TypeError(
+            "evidence_payload must be InvestigationEvidencePayload"
+        )
     return {
-        "state_id": note_page.state_id,
-        "page": note_page.page,
-        "total_pages": note_page.total_pages,
-        "matching_note_count": note_page.matching_note_count,
-        "matching_result_tree_count": note_page.matching_result_tree_count,
-        "evidence_note_ids": list(note_page.evidence_note_ids),
-        "result_trees": list(note_page.result_trees),
+        "evidence_note_ids": list(evidence_payload.evidence_note_ids),
+        "result_trees": list(evidence_payload.result_trees),
         "returned_approximate_token_count": (
-            note_page.returned_approximate_token_count
+            evidence_payload.returned_approximate_token_count
         ),
     }
 
@@ -190,242 +183,29 @@ class AgentContextBuilder:
         )
         return [*with_action, {"role": "user", "content": content}]
 
-    def build_scoped_investigation_messages(
-        self,
-        *,
-        canonical_messages: list[dict[str, str]],
-        prompts: AgentPromptSet,
-        skill: AgentSkill,
-        state: InvestigationState,
-        note_page: InvestigationNotePage,
-        facet_page: TagFacetPage,
-        reopened_sources: tuple[dict[str, object], ...],
-    ) -> list[dict[str, str]]:
-        """Rebuild one bounded step context; previous raw pages never enter it."""
-        base = self.build_initial_messages(
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-        )
-        with_skill = self.activate_skill(messages=base, skill=skill)
-        snapshot = state.snapshot
-        requires_complete_scope_coverage = request_requires_complete_scope_coverage(
-            canonical_messages[-1]["content"]
-        )
-        available_actions = [
-            "refine_tags",
-            "refine_exact_text",
-            "reopen_sources",
-        ]
-        if note_page.page < note_page.total_pages:
-            available_actions.insert(0, "page_next")
-        if not (
-            requires_complete_scope_coverage
-            and note_page.page < note_page.total_pages
-        ):
-            available_actions.append("answer")
-        if facet_page.total_pages > 1:
-            available_actions.append("inspect_tag_facets")
-        if len(state.disclosed_state_ids) > 1:
-            available_actions.append("backtrack")
-        runtime_payload = {
-            "instruction": (
-                "Score only applicable evidence notes from the current note_page, "
-                "then choose exactly one next action using the required "
-                "InvestigationStep schema. working_summary must contain only "
-                "note_id and importance (1-100) entries from this page. Omit notes "
-                "that do not help answer the current request. MetaList will merge "
-                "these scores with earlier pages after this response; earlier scores "
-                "are intentionally undisclosed so this page is rated independently. "
-                "Current note content is answerable evidence, not an ID-only preview."
-            ),
-            "frozen_scope": {
-                "kind": snapshot.descriptor.scope_kind,
-                "label": snapshot.descriptor.label,
-                "search_query": snapshot.descriptor.search_query,
-                "note_count": snapshot.note_count,
-                "result_tree_count": snapshot.result_tree_count,
-                "evidence_page_count": note_page.total_pages,
-            },
-            "current_state": {
-                "state_id": state.current_state_id,
-                "disclosed_state_ids": list(state.disclosed_state_ids),
-                "observed_source_ids": sorted(state.observed_source_ids),
-                "disclosed_tags": sorted(state.disclosed_tags),
-            },
-            "available_actions": available_actions,
-            "coverage_requirement": (
-                "complete" if requires_complete_scope_coverage else "question-dependent"
-            ),
-            "tag_facets": {
-                "page": facet_page.page,
-                "total_pages": facet_page.total_pages,
-                "total_facets": facet_page.total_facets,
-                "facets": [
-                    {
-                        "tag": facet.tag,
-                        "matching_notes": facet.note_count,
-                        "matching_result_trees": facet.result_tree_count,
-                    }
-                    for facet in facet_page.facets
-                ],
-            },
-            "note_page": serialize_investigation_note_page(note_page),
-            "reopened_sources": list(reopened_sources),
-        }
-        return [
-            *with_skill,
-            {
-                "role": "user",
-                "content": "SCOPED_INVESTIGATION_STATE\n"
-                + json.dumps(runtime_payload, sort_keys=True, separators=(",", ":")),
-            },
-        ]
-
-    def build_narrow_context_messages(
-        self,
-        *,
-        canonical_messages: list[dict[str, str]],
-        prompts: AgentPromptSet,
-        skill: AgentSkill,
-        state: InvestigationState,
-        facet_page: TagFacetPage,
-        original_size: InvestigationScopeSize,
-        target_approximate_tokens: int,
-    ) -> list[dict[str, str]]:
-        if target_approximate_tokens < 1:
-            raise ValueError("Narrowing target must be positive")
-        base = self.build_initial_messages(
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-        )
-        with_skill = self.activate_skill(messages=base, skill=skill)
-        snapshot = state.snapshot
-        suggested_proposed_tags = min(3, len(facet_page.facets))
-        if suggested_proposed_tags < 1:
-            raise RuntimeError("Narrow-context prompt requires eligible tag facets")
-        payload = {
-            "instruction": (
-                "Return ordered_tags using the NarrowContextPlan schema. The tags "
-                "are tested cumulatively as AND constraints. Use only exact tag "
-                "values from tag_facets. Synonyms explain meaning but are not "
-                "additional allowed output values. Tags already required by the "
-                "immutable user search and @-prefixed formatting tags are excluded "
-                "from tag_facets. When useful, aim for suggested_proposed_tags "
-                "ordered candidates rather than stopping after one; this is "
-                "guidance, not a schema requirement."
-            ),
-            "current_user_request": canonical_messages[-1]["content"],
-            "immutable_frozen_scope": {
-                "kind": snapshot.descriptor.scope_kind,
-                "label": snapshot.descriptor.label,
-                "search_query": snapshot.descriptor.search_query,
-                "note_count": original_size.note_count,
-                "result_tree_count": original_size.result_tree_count,
-                "approximate_tokens": original_size.approximate_token_count,
-            },
-            "target_approximate_tokens": target_approximate_tokens,
-            "suggested_proposed_tags": suggested_proposed_tags,
-            "already_required_scope_tags": sorted(state.required_scope_tags),
-            "tag_facets": [
-                {
-                    "tag": facet.tag,
-                    "synonyms": list(facet.synonyms),
-                    "matching_notes": facet.note_count,
-                    "matching_result_trees": facet.result_tree_count,
-                }
-                for facet in facet_page.facets
-            ],
-            "facet_coverage": {
-                "page": facet_page.page,
-                "total_pages": facet_page.total_pages,
-                "presented_tags": len(facet_page.facets),
-                "total_tags": facet_page.total_facets,
-            },
-        }
-        return [
-            *with_skill,
-            {
-                "role": "user",
-                "content": "NARROW_CONTEXT_REQUEST\n"
-                + json.dumps(payload, sort_keys=True, separators=(",", ":")),
-            },
-        ]
-
     def build_scoped_final_messages(
         self,
         *,
         canonical_messages: list[dict[str, str]],
         prompts: AgentPromptSet,
         state: InvestigationState,
-        working_summary: WorkingSummary,
-        verified_sources: tuple[dict[str, object], ...],
-        reference_note_ids: tuple[str, ...],
-        basis: str,
-    ) -> list[dict[str, str]]:
-        if not isinstance(reference_note_ids, tuple):
-            raise TypeError("reference_note_ids must be a tuple")
-        allowed_note_ids = frozenset(reference_note_ids)
-        cited_sources: list[dict[str, object]] = []
-        for source in verified_sources:
-            note_id = source["note_id"]
-            if not isinstance(note_id, str) or note_id == "":
-                raise RuntimeError("Verified source note_id must be non-empty")
-            if note_id not in allowed_note_ids:
-                raise RuntimeError("Verified source is absent from reference catalog")
-            cited_sources.append(
-                {
-                    **source,
-                    "citation_token": _exact_citation_token(note_id),
-                }
-            )
-        base = self.build_initial_messages(
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-        )
-        final_payload = {
-            "instruction": prompts.render_final_response_request(basis=basis),
-            "frozen_scope": {
-                "kind": state.snapshot.descriptor.scope_kind,
-                "label": state.snapshot.descriptor.label,
-                "note_count": state.snapshot.note_count,
-                "result_tree_count": state.snapshot.result_tree_count,
-            },
-            "working_summary": working_summary.model_dump(mode="json"),
-            "reference_catalog": _reference_catalog(reference_note_ids),
-            "verified_authoritative_sources": cited_sources,
-        }
-        return [
-            *base,
-            {
-                "role": "user",
-                "content": "FINAL_RESPONSE_REQUEST\n"
-                + json.dumps(final_payload, sort_keys=True, separators=(",", ":")),
-            },
-        ]
-
-    def build_single_page_scoped_final_messages(
-        self,
-        *,
-        canonical_messages: list[dict[str, str]],
-        prompts: AgentPromptSet,
-        state: InvestigationState,
-        note_page: InvestigationNotePage,
+        evidence_payload: InvestigationEvidencePayload,
         basis: str,
     ) -> tuple[list[dict[str, str]], tuple[str, ...]]:
-        """Send one bounded evidence page directly to final generation."""
-        if not isinstance(note_page, InvestigationNotePage):
-            raise TypeError("note_page must be InvestigationNotePage")
-        if note_page.total_pages != 1 or note_page.page != 1:
-            raise ValueError("Single-page final context requires the first bounded page")
+        """Send one bounded evidence payload directly to final generation."""
+        if not isinstance(evidence_payload, InvestigationEvidencePayload):
+            raise TypeError(
+                "evidence_payload must be InvestigationEvidencePayload"
+            )
         if not isinstance(basis, str) or basis.strip() == "":
-            raise ValueError("Single-page final basis must be non-empty")
-        reference_note_ids = note_page.evidence_note_ids
+            raise ValueError("Scoped final basis must be non-empty")
+        reference_note_ids = evidence_payload.evidence_note_ids
         base = self.build_initial_messages(
             canonical_messages=canonical_messages,
             prompts=prompts,
         )
-        included_note_count = note_page.matching_note_count
-        included_result_tree_count = note_page.matching_result_tree_count
+        included_note_count = len(evidence_payload.evidence_note_ids)
+        included_result_tree_count = len(evidence_payload.result_tree_ids)
         omitted_note_count = state.snapshot.note_count - included_note_count
         omitted_result_tree_count = (
             state.snapshot.result_tree_count - included_result_tree_count
@@ -440,7 +220,6 @@ class AgentContextBuilder:
                 "search_query": state.snapshot.descriptor.search_query,
                 "note_count": state.snapshot.note_count,
                 "result_tree_count": state.snapshot.result_tree_count,
-                "evidence_page_count": 1,
             },
             "evidence_coverage": {
                 "included_note_count": included_note_count,
@@ -454,14 +233,14 @@ class AgentContextBuilder:
                 f"{included_result_tree_count} result trees and omits "
                 f"{omitted_note_count} notes in {omitted_result_tree_count} result "
                 "trees from the frozen scope. The current user's exact request defines "
-                "relevance; this page is candidate evidence, not a checklist. Omit "
+                "relevance; this payload is candidate evidence, not a checklist. Omit "
                 "nodes that do not directly answer the request even if they share the "
                 "scope topic. Cite supporting claims as [[note_id]], copying note_id "
                 "from the same evidence object whose content_text supports the claim. "
                 "Do not infer a citation from tree position or merely cite the "
                 "enclosing root."
             ),
-            "authoritative_result_trees": list(note_page.result_trees),
+            "authoritative_result_trees": list(evidence_payload.result_trees),
         }
         return (
             [
@@ -474,63 +253,6 @@ class AgentContextBuilder:
             ],
             reference_note_ids,
         )
-
-    def build_single_page_evidence_selection_messages(
-        self,
-        *,
-        canonical_messages: list[dict[str, str]],
-        prompts: AgentPromptSet,
-        skill: AgentSkill,
-        state: InvestigationState,
-        note_page: InvestigationNotePage,
-        include_rationale: bool,
-    ) -> list[dict[str, str]]:
-        """Ask for a small exact-ID relevance decision before prose generation."""
-        if not isinstance(note_page, InvestigationNotePage):
-            raise TypeError("note_page must be InvestigationNotePage")
-        if note_page.page != 1 or note_page.total_pages != 1:
-            raise ValueError("Evidence selection requires one complete evidence page")
-        if not isinstance(include_rationale, bool):
-            raise TypeError("include_rationale must be bool")
-        base = self.build_initial_messages(
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-        )
-        with_skill = self.activate_skill(messages=base, skill=skill)
-        response_schema = "EvidenceSelectionWithoutRationale"
-        instruction = (
-            "Apply the active skill and return only relevant_note_ids through "
-            "EvidenceSelectionWithoutRationale. Do not generate a reason or "
-            "rationale field."
-        )
-        if include_rationale:
-            response_schema = "EvidenceSelection"
-            instruction = (
-                "Apply the active skill and return EvidenceSelection, including "
-                "a concise reason for the selected IDs."
-            )
-        payload = {
-            "instruction": instruction,
-            "response_schema": response_schema,
-            "current_user_request": canonical_messages[-1]["content"],
-            "frozen_scope": {
-                "kind": state.snapshot.descriptor.scope_kind,
-                "label": state.snapshot.descriptor.label,
-                "search_query": state.snapshot.descriptor.search_query,
-                "note_count": state.snapshot.note_count,
-                "result_tree_count": state.snapshot.result_tree_count,
-                "evidence_page_count": 1,
-            },
-            "candidate_evidence_page": serialize_investigation_note_page(note_page),
-        }
-        return [
-            *with_skill,
-            {
-                "role": "user",
-                "content": "EVIDENCE_SELECTION_REQUEST\n"
-                + json.dumps(payload, sort_keys=True, separators=(",", ":")),
-            },
-        ]
 
     @staticmethod
     def _validate_canonical_messages(messages: list[dict[str, str]]) -> None:

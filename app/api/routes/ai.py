@@ -63,7 +63,6 @@ from app.services.ollama_provider import validate_ollama_model
 from app.services.openai_credentials import OpenAICredentialInputError
 from app.services.openai_credentials import openai_credential_store
 from app.services.openai_credentials import validate_openai_api_key
-from app.services.ontology_rules_store import get_ontology
 from app.services.sync import set_clipboard
 from app.services.tab_state import tab_state_store
 from app.services.tokens import token_service
@@ -83,7 +82,6 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
         tool_registry=read_only_agent_tools,
         trace_store=agent_trace_store,
         provider_label=inference.provider_label,
-        ontology_provider=get_ontology,
     )
 
 

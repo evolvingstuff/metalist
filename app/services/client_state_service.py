@@ -23,28 +23,9 @@ from app.services.agent.prompt_settings import validate_system_prompt
 from app.services.agent.prompt_settings import validate_tool_result_prompt
 from app.services.agent.cloud_privacy import CLOUD_PRIVACY_POLICY_PREFERENCE_KEY
 from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_preference
-from app.services.agent.retrieval_settings import MAX_NOTE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_NOTES_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_PAGE_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import validate_max_note_characters_preference
-from app.services.agent.retrieval_settings import validate_max_notes_per_page_preference
-from app.services.agent.retrieval_settings import validate_max_page_characters_preference
 from app.services.agent.retrieval_settings import validate_max_page_approximate_tokens_preference
-from app.services.agent.retrieval_settings import validate_max_ranked_tags_per_page_preference
-from app.services.agent.retrieval_settings import validate_max_working_summary_characters_preference
-from app.services.agent.retrieval_settings import validate_ideal_narrowed_scope_approximate_tokens_preference
-from app.services.agent.retrieval_settings import validate_openai_ideal_narrowed_scope_approximate_tokens_preference
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.skill_settings import AGENT_SKILL_PREFERENCE_KEYS
 from app.services.agent.skill_settings import SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
@@ -82,33 +63,11 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
-    MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "agent_max_note_characters",
-    MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "agent_max_page_characters",
-    MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "agent_max_notes_per_page",
     MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "agent_max_page_approximate_tokens"
     ),
-    MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "agent_max_ranked_tags_per_page",
-    MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: (
-        "agent_max_working_summary_characters"
-    ),
-    IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
-        "agent_ideal_narrowed_scope_approximate_tokens"
-    ),
-    OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "agent_max_note_characters",
-    OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "agent_max_page_characters",
-    OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "agent_max_notes_per_page",
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"
-    ),
-    OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: (
-        "agent_max_ranked_tags_per_page"
-    ),
-    OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: (
-        "agent_max_working_summary_characters"
-    ),
-    OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
-        "openai_agent_ideal_narrowed_scope_approximate_tokens"
     ),
     SYSTEM_PROMPT_PREFERENCE_KEY: "agent_system_prompt",
     FINAL_RESPONSE_PROMPT_PREFERENCE_KEY: "agent_final_response_prompt",
@@ -127,6 +86,18 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.reminder_ack_sound_id",
         "pref.search_suggestion_falloff",
         "pref.show_note_timestamps",
+        "pref.ai.retrieval.max_note_characters",
+        "pref.ai.retrieval.max_page_characters",
+        "pref.ai.retrieval.max_notes_per_page",
+        "pref.ai.retrieval.max_ranked_tags_per_page",
+        "pref.ai.retrieval.max_working_summary_characters",
+        "pref.ai.retrieval.ideal_narrowed_scope_approximate_tokens",
+        "pref.ai.openai.retrieval.max_note_characters",
+        "pref.ai.openai.retrieval.max_page_characters",
+        "pref.ai.openai.retrieval.max_notes_per_page",
+        "pref.ai.openai.retrieval.max_ranked_tags_per_page",
+        "pref.ai.openai.retrieval.max_working_summary_characters",
+        "pref.ai.openai.retrieval.ideal_narrowed_scope_approximate_tokens",
     }
 )
 
@@ -239,30 +210,10 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":
             _validate_ai_chat_composer_height_preference(key=key, value=value)
-        elif allowed_values == "agent_max_note_characters":
-            value = validate_max_note_characters_preference(value)
-        elif allowed_values == "agent_max_page_characters":
-            value = validate_max_page_characters_preference(value)
-        elif allowed_values == "agent_max_notes_per_page":
-            value = validate_max_notes_per_page_preference(value)
         elif allowed_values == "agent_max_page_approximate_tokens":
             value = validate_max_page_approximate_tokens_preference(value)
         elif allowed_values == "openai_agent_max_page_approximate_tokens":
             value = validate_openai_max_page_approximate_tokens_preference(value)
-        elif allowed_values == "agent_max_ranked_tags_per_page":
-            value = validate_max_ranked_tags_per_page_preference(value)
-        elif allowed_values == "agent_max_working_summary_characters":
-            value = validate_max_working_summary_characters_preference(value)
-        elif allowed_values == "agent_ideal_narrowed_scope_approximate_tokens":
-            value = validate_ideal_narrowed_scope_approximate_tokens_preference(
-                value
-            )
-        elif allowed_values == "openai_agent_ideal_narrowed_scope_approximate_tokens":
-            value = (
-                validate_openai_ideal_narrowed_scope_approximate_tokens_preference(
-                    value
-                )
-            )
         elif allowed_values == "agent_system_prompt":
             value = validate_system_prompt(value)
         elif allowed_values == "agent_final_response_prompt":

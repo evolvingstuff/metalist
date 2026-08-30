@@ -146,28 +146,23 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
 });
 
 
-test('AI agent settings expose bounded note retrieval controls', () => {
+test('AI agent settings expose one provider-specific evidence limit', () => {
     const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
-    assert.match(settingsModal, /id="ai-agent-max-note-characters"/);
-    assert.match(settingsModal, /min="500" max="10000"/);
-    assert.doesNotMatch(settingsModal, /id="ai-agent-max-page-characters"/);
     assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
     assert.match(settingsModal, /isOpenAi \? 500000 : 24000/);
-    assert.match(settingsModal, /isOpenAi \? 500000 : 200000/);
-    assert.match(settingsModal, /id="ai-agent-max-notes-per-page"/);
-    assert.match(settingsModal, /id="ai-agent-ideal-narrowed-scope-approximate-tokens"/);
-    assert.match(settingsModal, /Maximum result trees per evidence page/);
-    assert.match(settingsModal, /id="ai-agent-max-ranked-tags-per-page"/);
-    assert.match(settingsModal, /id="ai-agent-max-working-summary-characters"/);
-    assert.match(settingsModal, /A result tree is never/);
-    assert.match(settingsModal, /search-redacted branches are excluded/);
-    assert.match(settingsModal, /\$\{isOpenAi \? 'OpenAI' : 'Ollama'\} note retrieval limits/);
+    assert.match(settingsModal, /Maximum approximate evidence tokens/);
+    assert.match(settingsModal, /A result tree is never divided/);
+    assert.match(settingsModal, /trailing trees are omitted/);
+    assert.doesNotMatch(settingsModal, /max-note-characters/);
+    assert.doesNotMatch(settingsModal, /max-notes-per-page/);
+    assert.doesNotMatch(settingsModal, /max-ranked-tags-per-page/);
+    assert.doesNotMatch(settingsModal, /max-working-summary-characters/);
+    assert.doesNotMatch(settingsModal, /ideal-narrowed-scope/);
     assert.match(commandController, /openAiRetrievalSettings/);
     assert.match(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
-    assert.match(commandController, /maxNoteCharacters/);
     assert.match(commandController, /maxPageApproximateTokens/);
 });
 
@@ -208,7 +203,7 @@ test('chat accepts scoped-investigation lifecycle activities', () => {
         'investigate_current_scope',
         'evidence_selection',
         'investigation_step',
-        'investigation_page',
+        'investigation_evidence',
         'investigation_facets',
         'investigation_refinement',
         'investigation_sources',

@@ -8,9 +8,6 @@ from enum import Enum
 class InferencePurpose(str, Enum):
     ACTION_SELECTION = "action-selection"
     SEARCH_QUERY = "search-query"
-    EVIDENCE_SELECTION = "evidence-selection"
-    INVESTIGATION_STEP = "investigation-step"
-    CONTEXT_NARROWING = "context-narrowing"
     FINAL_RESPONSE = "final-response"
 
 

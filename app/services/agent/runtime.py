@@ -14,32 +14,19 @@ from pydantic import BaseModel
 
 from app.services.agent.actions import AgentRouteAction
 from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import EvidenceSelection
-from app.services.agent.actions import EvidenceSelectionConstraints
-from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import ReadNotesByIdAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.actions import SearchNotesIntent
 from app.services.agent.actions import SearchNotesAction
 from app.services.agent.actions import SearchQueryEnvelope
-from app.services.agent.actions import InvestigationStep
-from app.services.agent.actions import InvestigationStepConstraints
-from app.services.agent.actions import NarrowContextConstraints
-from app.services.agent.actions import NarrowContextPlan
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import ScopedRouteConstraints
-from app.services.agent.actions import WorkingSummary
-from app.services.agent.actions import bind_investigation_step_constraints
-from app.services.agent.actions import bind_narrow_context_constraints
-from app.services.agent.actions import bind_evidence_selection_constraints
 from app.services.agent.actions import bind_scoped_route_constraints
 from app.services.agent.actions import parse_agent_route_json
 from app.services.agent.actions import parse_search_query_json
 from app.services.agent.actions import request_explicitly_requires_saved_notes
-from app.services.agent.actions import request_requires_complete_scope_coverage
-from app.services.agent.actions import validate_working_summary_for_observed_sources
 from app.services.agent.context import AgentContextBuilder
-from app.services.agent.context import serialize_investigation_note_page
+from app.services.agent.context import serialize_investigation_evidence_payload
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
@@ -47,10 +34,8 @@ from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
-from app.services.agent.investigation import InvestigationNotePage
+from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
-from app.services.agent.investigation import TagFacetPage
-from app.services.agent.investigation import NarrowingResult
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
@@ -66,13 +51,9 @@ from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
 from app.services.search_query import parse_search_query
-from app.services.tag_ontology import TagOntology
 
 
 _MAX_ACTION_STEPS = 8
-_MAX_INVESTIGATION_STEPS = 16
-_SCOPED_EVIDENCE_OVERFLOW_MODE = "retain_first_page_root_prefix"
-_LEGACY_MULTIPAGE_OVERFLOW_MODE = "multipage_summary"
 _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
     "Ollama": 1_024,
     "OpenAI": 8_192,
@@ -84,7 +65,7 @@ _SearchClauseKey = tuple[
     frozenset[str],
 ]
 _SearchQueryKey = frozenset[_SearchClauseKey]
-_SearchRequestKey = tuple[_SearchQueryKey, int]
+_SearchRequestKey = _SearchQueryKey
 
 
 class AgentExecutionError(Exception):
@@ -129,7 +110,6 @@ class AgentRuntime:
         tool_registry: ReadOnlyAgentToolRegistry,
         trace_store: AgentTraceStore,
         provider_label: str,
-        ontology_provider: Callable[[], TagOntology],
     ) -> None:
         if not isinstance(provider_label, str) or provider_label == "":
             raise ValueError("Agent runtime provider label must be non-empty")
@@ -140,7 +120,6 @@ class AgentRuntime:
         self._tool_registry = tool_registry
         self._trace_store = trace_store
         self._provider_label = provider_label
-        self._ontology_provider = ontology_provider
 
     async def stream_scoped(
         self,
@@ -205,10 +184,9 @@ class AgentRuntime:
             raise RuntimeError("Frozen scope belongs to another session")
         initial_tokens = estimate_message_tokens(initial_messages)
         snapshot = frozen_scope
-        state = InvestigationState.start_with_ontology(
+        state = InvestigationState.start(
             snapshot=snapshot,
             settings=run.retrieval_settings,
-            ontology=self._ontology_provider(),
         )
         scope_label = (
             f"Scope ready · {snapshot.descriptor.label} · {snapshot.note_count} "
@@ -293,546 +271,105 @@ class AgentRuntime:
             f"Activated skill · {skill.title}",
             approx_input_tokens=route_tokens,
         )
-        single_page_basis = "the complete one-page frozen evidence scope"
-        single_page_ready_label = "Complete evidence scope ready"
-        single_page_trace_label = "Complete one-page authoritative evidence scope"
-        narrowing_target = (
-            run.retrieval_settings.ideal_narrowed_scope_approximate_tokens
+        retention = await asyncio.to_thread(
+            state.retain_root_prefix_within_token_budget
         )
-        if _SCOPED_EVIDENCE_OVERFLOW_MODE == "retain_first_page_root_prefix":
-            retention = await asyncio.to_thread(
-                state.retain_root_prefix_within_token_budget
-            )
-            if retention.dropped_root_ids:
-                dropped_root_count = len(retention.dropped_root_ids)
-                dropped_note_count = (
-                    retention.original_note_count - retention.retained_note_count
-                )
-                self._trace_store.append_event(
-                    session_key=run.session_key,
-                    run_id=run.run_id,
-                    event_type="EVIDENCE_ROOT_PREFIX_RETAINED",
-                    label="Retained leading root trees within one-page token budget",
-                    detail={
-                        "original": {
-                            "note_count": retention.original_note_count,
-                            "result_tree_count": retention.original_result_tree_count,
-                        },
-                        "retained": {
-                            "note_count": retention.retained_note_count,
-                            "result_tree_count": retention.retained_result_tree_count,
-                            "approximate_token_count": (
-                                retention.retained_approximate_token_count
-                            ),
-                        },
-                        "target_approximate_token_count": (
-                            run.retrieval_settings.max_page_approximate_tokens
-                        ),
-                        "retained_root_ids": list(retention.retained_root_ids),
-                        "dropped_root_ids": list(retention.dropped_root_ids),
-                    },
-                    duration_ms=0.0,
-                )
-                yield self._status_event(
-                    "evidence_root_prefix",
-                    "completed",
-                    (
-                        "Retained token-bounded root prefix · "
-                        f"{retention.retained_result_tree_count} of "
-                        f"{retention.original_result_tree_count} result trees · "
-                        f"{retention.retained_note_count} of "
-                        f"{retention.original_note_count} notes · omitted "
-                        f"{dropped_root_count} trailing result trees and "
-                        f"{dropped_note_count} notes · "
-                        f"≈ {retention.retained_approximate_token_count:,} of "
-                        f"{run.retrieval_settings.max_page_approximate_tokens:,} "
-                        "target tokens"
-                    ),
-                    approx_input_tokens=route_tokens,
-                )
-                single_page_basis = (
-                    "the leading root-tree prefix retained by the current one-page "
-                    "overflow experiment; later frozen-scope roots were deliberately "
-                    "omitted, so do not claim exhaustive scope coverage"
-                )
-                single_page_ready_label = "Retained leading evidence prefix ready"
-                single_page_trace_label = (
-                    "Experimental retained leading root-tree evidence prefix"
-                )
-            scope_requires_narrowing = False
-        elif _SCOPED_EVIDENCE_OVERFLOW_MODE == _LEGACY_MULTIPAGE_OVERFLOW_MODE:
-            original_scope_size = await asyncio.to_thread(state.current_scope_size)
+        dropped_root_count = len(retention.dropped_root_ids)
+        dropped_note_count = retention.original_note_count - retention.retained_note_count
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="EVIDENCE_ROOT_PREFIX_RETAINED",
+            label="Retained ordered root trees within the evidence token budget",
+            detail={
+                "original_note_count": retention.original_note_count,
+                "original_result_tree_count": retention.original_result_tree_count,
+                "retained_note_count": retention.retained_note_count,
+                "retained_result_tree_count": retention.retained_result_tree_count,
+                "retained_approximate_token_count": (
+                    retention.retained_approximate_token_count
+                ),
+                "target_approximate_token_count": (
+                    run.retrieval_settings.max_page_approximate_tokens
+                ),
+                "retained_root_ids": list(retention.retained_root_ids),
+                "dropped_root_ids": list(retention.dropped_root_ids),
+            },
+            duration_ms=0.0,
+        )
+        basis = "the complete frozen evidence scope"
+        if dropped_root_count:
             yield self._status_event(
-                "context_narrowing",
-                "started",
+                "evidence_root_prefix",
+                "completed",
                 (
-                    "Evaluating automatic narrowing · "
-                    f"{state.total_note_pages} evidence pages"
+                    "Retained token-bounded evidence · "
+                    f"{retention.retained_result_tree_count} of "
+                    f"{retention.original_result_tree_count} result trees · "
+                    f"{retention.retained_note_count} of "
+                    f"{retention.original_note_count} notes · omitted "
+                    f"{dropped_root_count} trailing result trees and "
+                    f"{dropped_note_count} notes · "
+                    f"≈ {retention.retained_approximate_token_count:,} of "
+                    f"{run.retrieval_settings.max_page_approximate_tokens:,} tokens"
                 ),
                 approx_input_tokens=route_tokens,
             )
-            scope_requires_narrowing = (
-                original_scope_size.approximate_token_count > narrowing_target
+            basis = (
+                "the leading ordered complete-root subset retained within the "
+                "single evidence token budget; later frozen-scope roots were "
+                "omitted, so do not claim exhaustive scope coverage"
             )
-        else:
-            raise RuntimeError(
-                "Unknown scoped evidence overflow mode: "
-                f"{_SCOPED_EVIDENCE_OVERFLOW_MODE}"
-            )
-        narrowing_facet_page = None
-        if scope_requires_narrowing:
-            yield self._status_event(
-                "context_narrowing",
-                "started",
-                (
-                    "Automatic narrowing required · original scope "
-                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
-                    f"target ≈ {narrowing_target:,} tokens · calculating eligible "
-                    "context tags"
-                ),
-                approx_input_tokens=route_tokens,
-            )
-            narrowing_facet_page = await asyncio.to_thread(
-                state.current_narrowing_facet_page
-            )
-        if (
-            scope_requires_narrowing
-            and narrowing_facet_page is not None
-            and narrowing_facet_page.facets
-        ):
-            narrow_skill = run.skills.for_action("narrow_context")
-            self._record_skill_activation(run=run, skill=narrow_skill)
-            yield self._status_event(
-                "skill",
-                "completed",
-                f"Activated skill · {narrow_skill.title}",
-                approx_input_tokens=route_tokens,
-            )
-            narrow_messages = self._context_builder.build_narrow_context_messages(
-                canonical_messages=canonical_messages,
-                prompts=run.prompts,
-                skill=narrow_skill,
-                state=state,
-                facet_page=narrowing_facet_page,
-                original_size=original_scope_size,
-                target_approximate_tokens=narrowing_target,
-            )
-            narrow_tokens = estimate_message_tokens(narrow_messages)
-            yield self._status_event(
-                "context_narrowing",
-                "started",
-                (
-                    "Planning cumulative tag narrowing · original scope "
-                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
-                    f"target ≈ {narrowing_target:,} tokens"
-                ),
-                approx_input_tokens=narrow_tokens,
-            )
-            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
-            narrow_task = asyncio.create_task(
-                self._select_narrow_context_plan(
-                    run=run,
-                    messages=narrow_messages,
-                    allowed_tags=frozenset(
-                        facet.tag.casefold()
-                        for facet in narrowing_facet_page.facets
-                    ),
-                    on_progress=lambda progress: self._publish_inference_progress(
-                        run=run,
-                        progress_queue=progress_queue,
-                        progress=progress,
-                        purpose=InferencePurpose.CONTEXT_NARROWING,
-                    ),
-                )
-            )
-            async for progress in self._stream_progress_until_complete(
-                progress_queue=progress_queue,
-                action_task=narrow_task,
-            ):
-                yield self._progress_status_event(
-                    progress,
-                    purpose=InferencePurpose.CONTEXT_NARROWING,
-                    provider_label=self._provider_label,
-                )
-            narrow_plan = await narrow_task
-            proposed_tags_label = "AI proposed cumulative tags · none"
-            if narrow_plan.ordered_tags:
-                proposed_tags_label = (
-                    "AI proposed cumulative tags · "
-                    + " → ".join(narrow_plan.ordered_tags)
-                )
-            yield self._status_event(
-                "context_narrowing_plan",
-                "completed",
-                proposed_tags_label,
-                approx_input_tokens=narrow_tokens,
-            )
-            narrowing_result = state.narrow_by_ordered_tags(
-                ordered_tags=narrow_plan.ordered_tags,
-                target_approximate_tokens=narrowing_target,
-            )
-            self._record_context_narrowing(
-                run=run,
-                plan=narrow_plan,
-                result=narrowing_result,
-            )
-            proposed_tag_count = len(narrow_plan.ordered_tags)
-            for attempt_index, attempt in enumerate(
-                narrowing_result.attempts,
-                start=1,
-            ):
-                attempt_label = (
-                    f"Tested cumulative prefix {attempt_index} of "
-                    f"{proposed_tag_count} · {attempt.expression} · "
-                    f"{attempt.note_count} notes in {attempt.result_tree_count} "
-                    f"result trees · ≈ {attempt.approximate_token_count:,} tokens"
-                )
-                if attempt.rejected_zero_results:
-                    attempt_label = (
-                        f"Rejected zero-result prefix {attempt_index} of "
-                        f"{proposed_tag_count} · {attempt.expression}"
-                    )
-                yield self._status_event(
-                    "context_narrowing_test",
-                    "completed",
-                    attempt_label,
-                    approx_input_tokens=narrow_tokens,
-                )
-            selected_label = "No useful non-empty tag narrowing · retained original scope"
-            if narrowing_result.did_narrow:
-                selected_label = (
-                    f"Narrowed scope · {narrowing_result.selected_expression} · "
-                    f"{narrowing_result.selected.note_count} notes in "
-                    f"{narrowing_result.selected.result_tree_count} result trees · "
-                    f"≈ {narrowing_result.selected.approximate_token_count:,} tokens"
-                )
-            yield self._status_event(
-                "context_narrowing",
-                "completed",
-                selected_label,
-                approx_input_tokens=narrow_tokens,
-            )
-        elif scope_requires_narrowing:
-            yield self._status_event(
-                "context_narrowing",
-                "completed",
-                (
-                    "No additional tag constraints available · retained original "
-                    f"scope at ≈ {original_scope_size.approximate_token_count:,} "
-                    "tokens"
-                ),
-                approx_input_tokens=route_tokens,
-            )
-        elif _SCOPED_EVIDENCE_OVERFLOW_MODE == _LEGACY_MULTIPAGE_OVERFLOW_MODE:
-            yield self._status_event(
-                "context_narrowing",
-                "completed",
-                (
-                    "Automatic narrowing not required · original scope "
-                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
-                    f"target ≈ {narrowing_target:,} tokens"
-                ),
-                approx_input_tokens=route_tokens,
-            )
-        facet_page = state.current_facet_page()
-        if _SCOPED_EVIDENCE_OVERFLOW_MODE == "retain_first_page_root_prefix":
-            note_page = state.current_scope_as_single_page()
-        else:
-            note_page = state.current_note_page()
-        working_summary = WorkingSummary(ranked_notes=[])
-        reopened_sources: tuple[dict[str, object], ...] = ()
+        evidence_payload = state.current_scope_payload()
         yield self._status_event(
-            "investigation_page",
+            "investigation_evidence",
             "completed",
-            self._note_page_status_label(note_page),
-            approx_input_tokens=note_page.returned_approximate_token_count,
+            self._evidence_payload_status_label(evidence_payload),
+            approx_input_tokens=(
+                evidence_payload.returned_approximate_token_count
+            ),
         )
-        if note_page.total_pages == 1:
-            self._record_evidence_payload(
-                run=run,
-                note_page=note_page,
-                facet_page=facet_page,
-                reopened_sources=(),
-            )
-            final_messages, reference_note_ids = (
-                self._context_builder.build_single_page_scoped_final_messages(
-                    canonical_messages=canonical_messages,
-                    prompts=run.prompts,
-                    state=state,
-                    note_page=note_page,
-                    basis=single_page_basis,
-                )
-            )
-            final_tokens = estimate_message_tokens(final_messages)
-            self._trace_store.append_event(
-                session_key=run.session_key,
-                run_id=run.run_id,
-                event_type="FINAL_EVIDENCE",
-                label=single_page_trace_label,
-                detail={
-                    "source_ids": list(reference_note_ids),
-                    "result_tree_ids": list(note_page.result_tree_ids),
-                },
-                duration_ms=0.0,
-            )
-            yield self._status_event(
-                "investigation_sources",
-                "completed",
-                (
-                    f"{single_page_ready_label} · generating response from "
-                    f"{len(note_page.evidence_note_ids)} notes in "
-                    f"{len(note_page.result_tree_ids)} result trees"
-                ),
-                approx_input_tokens=final_tokens,
-            )
-            async for event in self._stream_prebuilt_final_response(
-                run=run,
-                final_messages=final_messages,
-                reference_note_ids=reference_note_ids,
-            ):
-                yield event
-            return
-        for _step_number in range(1, _MAX_INVESTIGATION_STEPS + 1):
-            self._record_evidence_payload(
-                run=run,
-                note_page=note_page,
-                facet_page=facet_page,
-                reopened_sources=reopened_sources,
-            )
-            step_messages = self._context_builder.build_scoped_investigation_messages(
+        self._record_evidence_payload(
+            run=run,
+            evidence_payload=evidence_payload,
+        )
+        final_messages, reference_note_ids = (
+            self._context_builder.build_scoped_final_messages(
                 canonical_messages=canonical_messages,
                 prompts=run.prompts,
-                skill=skill,
                 state=state,
-                note_page=note_page,
-                facet_page=facet_page,
-                reopened_sources=reopened_sources,
+                evidence_payload=evidence_payload,
+                basis=basis,
             )
-            reopened_sources = ()
-            step_tokens = estimate_message_tokens(step_messages)
-            yield self._status_event(
-                "investigation_step",
-                "started",
-                "Updating evidence summary and selecting next investigation step",
-                approx_input_tokens=step_tokens,
-            )
-            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
-            step_task = asyncio.create_task(
-                self._select_investigation_step(
-                    run=run,
-                    messages=step_messages,
-                    state=state,
-                    note_page=note_page,
-                    facet_page=facet_page,
-                    requires_complete_scope_coverage=(
-                        request_requires_complete_scope_coverage(
-                            canonical_messages[-1]["content"]
-                        )
-                    ),
-                    on_progress=lambda progress: self._publish_inference_progress(
-                        run=run,
-                        progress_queue=progress_queue,
-                        progress=progress,
-                        purpose=InferencePurpose.INVESTIGATION_STEP,
-                    ),
-                )
-            )
-            async for progress in self._stream_progress_until_complete(
-                progress_queue=progress_queue,
-                action_task=step_task,
-            ):
-                yield self._progress_status_event(
-                    progress,
-                    purpose=InferencePurpose.INVESTIGATION_STEP,
-                    provider_label=self._provider_label,
-                )
-            step = await step_task
-            validate_working_summary_for_observed_sources(
-                summary=step.working_summary,
-                observed_source_ids=frozenset(note_page.evidence_note_ids),
-                maximum_characters=run.retrieval_settings.max_working_summary_characters,
-            )
-            working_summary = working_summary.merged_with(
-                page_summary=step.working_summary,
-                maximum=64,
-            )
-            summary_characters = len(
-                working_summary.model_dump_json(exclude_none=False)
-            )
-            self._record_investigation_step(
-                run=run,
-                state=state,
-                step=step,
-                working_summary=working_summary,
-                summary_characters=summary_characters,
-            )
-            yield self._status_event(
-                "investigation_step",
-                "completed",
-                (
-                    f"Selected step · {step.action_kind.replace('_', ' ')} · "
-                    f"rated {len(step.working_summary.ranked_notes)} page notes · "
-                    f"retained {len(working_summary.ranked_notes)} ranked notes · "
-                    f"{self._compact_status_reason(step.reason)}"
-                ),
-                approx_input_tokens=step_tokens,
-            )
-            if step.action_kind == "answer":
-                answer_source_ids = list(
-                    working_summary.top_source_ids(maximum=32)
-                )
-                if not set(answer_source_ids).issubset(state.observed_source_ids):
-                    raise AgentExecutionError("Ranked summary contains unobserved sources")
-                verified_sources: tuple[dict[str, object], ...] = ()
-                if answer_source_ids:
-                    yield self._status_event(
-                        "investigation_sources",
-                        "started",
-                        (
-                            f"Verifying {len(answer_source_ids)} answer candidates"
-                        ),
-                        approx_input_tokens=step_tokens,
-                    )
-                    verified_sources = state.rehydrate_answer_sources(
-                        note_ids=answer_source_ids
-                    )
-                    self._trace_store.append_event(
-                        session_key=run.session_key,
-                        run_id=run.run_id,
-                        event_type="FINAL_EVIDENCE",
-                        label="Rehydrated authoritative answer sources",
-                        detail={
-                            "source_ids": answer_source_ids,
-                            "sources": list(verified_sources),
-                        },
-                        duration_ms=0.0,
-                    )
-                    yield self._status_event(
-                        "investigation_sources",
-                        "completed",
-                        (
-                            f"Verified {len(verified_sources)} answer candidates"
-                        ),
-                        approx_input_tokens=step_tokens,
-                    )
-                reference_note_ids = self._reference_note_ids(
-                    verified_sources=verified_sources,
-                )
-                final_messages = self._context_builder.build_scoped_final_messages(
-                    canonical_messages=canonical_messages,
-                    prompts=run.prompts,
-                    state=state,
-                    working_summary=working_summary,
-                    verified_sources=verified_sources,
-                    reference_note_ids=reference_note_ids,
-                    basis=step.reason,
-                )
-                async for event in self._stream_prebuilt_final_response(
-                    run=run,
-                    final_messages=final_messages,
-                    reference_note_ids=reference_note_ids,
-                ):
-                    yield event
-                return
-            if step.action_kind == "page_next":
-                yield self._status_event(
-                    "investigation_page",
-                    "started",
-                    "Loading next evidence page",
-                    approx_input_tokens=step_tokens,
-                )
-                note_page = state.page_next()
-                completed_action = "investigation_page"
-                completed_label = self._note_page_status_label(note_page)
-            elif step.action_kind == "refine_tags":
-                yield self._status_event(
-                    "investigation_refinement",
-                    "started",
-                    f"Applying tag refinement · {step.tag_expression}",
-                    approx_input_tokens=step_tokens,
-                )
-                note_page = state.refine_tags(expression=step.tag_expression)
-                facet_page = state.current_facet_page()
-                completed_action = "investigation_refinement"
-                completed_label = (
-                    f"Tag refinement ready · {note_page.matching_note_count} notes in "
-                    f"{note_page.matching_result_tree_count} result trees · "
-                    f"{step.tag_expression}"
-                )
-            elif step.action_kind == "refine_exact_text":
-                yield self._status_event(
-                    "investigation_refinement",
-                    "started",
-                    f"Applying exact-text refinement · {step.exact_text}",
-                    approx_input_tokens=step_tokens,
-                )
-                note_page = state.refine_exact_text(text=step.exact_text)
-                facet_page = state.current_facet_page()
-                completed_action = "investigation_refinement"
-                completed_label = (
-                    f"Exact-text refinement ready · {note_page.matching_note_count} "
-                    f"notes in {note_page.matching_result_tree_count} result trees · "
-                    f"{step.exact_text}"
-                )
-            elif step.action_kind == "inspect_tag_facets":
-                yield self._status_event(
-                    "investigation_facets",
-                    "started",
-                    f"Inspecting tag facets · page {step.facet_page}",
-                    approx_input_tokens=step_tokens,
-                )
-                facet_page = state.inspect_tag_facets(page=step.facet_page)
-                completed_action = "investigation_facets"
-                completed_label = (
-                    f"Tag facets ready · page {facet_page.page} of "
-                    f"{facet_page.total_pages} · {facet_page.total_facets} tags"
-                )
-            elif step.action_kind == "backtrack":
-                yield self._status_event(
-                    "investigation_refinement",
-                    "started",
-                    f"Backtracking · {step.backtrack_state_id}",
-                    approx_input_tokens=step_tokens,
-                )
-                note_page = state.backtrack(state_id=step.backtrack_state_id)
-                facet_page = state.current_facet_page()
-                completed_action = "investigation_refinement"
-                completed_label = (
-                    f"Backtracked · {note_page.state_id} · "
-                    f"{note_page.matching_note_count} notes in "
-                    f"{note_page.matching_result_tree_count} result trees"
-                )
-            elif step.action_kind == "reopen_sources":
-                yield self._status_event(
-                    "investigation_sources",
-                    "started",
-                    f"Reopening {len(step.source_ids)} authoritative sources",
-                    approx_input_tokens=step_tokens,
-                )
-                reopened_sources = state.reopen_sources(note_ids=step.source_ids)
-                completed_action = "investigation_sources"
-                completed_label = (
-                    f"Reopened {len(reopened_sources)} authoritative sources"
-                )
-            else:
-                raise RuntimeError(f"Unsupported investigation action {step.action_kind}")
-            self._record_investigation_action_result(
-                run=run,
-                state=state,
-                step=step,
-                note_page=note_page,
-                facet_page=facet_page,
-                reopened_sources=reopened_sources,
-            )
-            yield self._status_event(
-                completed_action,
-                "completed",
-                completed_label,
-                approx_input_tokens=step_tokens,
-            )
-        raise AgentExecutionError(
-            f"Agent exceeded {_MAX_INVESTIGATION_STEPS} investigation steps"
         )
+        final_tokens = estimate_message_tokens(final_messages)
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="FINAL_EVIDENCE",
+            label="Single authoritative evidence payload",
+            detail={
+                "source_ids": list(reference_note_ids),
+                "result_tree_ids": list(evidence_payload.result_tree_ids),
+            },
+            duration_ms=0.0,
+        )
+        yield self._status_event(
+            "investigation_sources",
+            "completed",
+            (
+                "Evidence ready · generating response from "
+                f"{len(evidence_payload.evidence_note_ids)} notes in "
+                f"{len(evidence_payload.result_tree_ids)} result trees"
+            ),
+            approx_input_tokens=final_tokens,
+        )
+        async for event in self._stream_prebuilt_final_response(
+            run=run,
+            final_messages=final_messages,
+            reference_note_ids=reference_note_ids,
+        ):
+            yield event
 
     async def _ensure_model_context(
         self,
@@ -1118,7 +655,7 @@ class AgentRuntime:
                     respond_action = RespondAction(
                         kind="respond",
                         basis=(
-                            "The proposed search repeats a completed query and page, so "
+                            "The proposed search repeats a completed query, so "
                             "do not execute it again. Answer using the evidence already "
                             "retrieved."
                         ),
@@ -1127,7 +664,7 @@ class AgentRuntime:
                     yield self._status_event(
                         "search_notes",
                         "completed",
-                        f"Skipped duplicate search · page {action.page} · {action.query}",
+                        f"Skipped duplicate search · {action.query}",
                         approx_input_tokens=current_input_tokens,
                     )
                     self._record_action(run=run, action=respond_action)
@@ -1252,139 +789,6 @@ class AgentRuntime:
         )
         return route
 
-    async def _select_investigation_step(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        state: InvestigationState,
-        note_page: InvestigationNotePage,
-        facet_page: TagFacetPage,
-        requires_complete_scope_coverage: bool,
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> InvestigationStep:
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.INVESTIGATION_STEP,
-            selected_model=run.selected_model,
-        )
-        constraints = InvestigationStepConstraints(
-            has_next_note_page=(
-                note_page.page < note_page.total_pages
-            ),
-            requires_complete_scope_coverage=requires_complete_scope_coverage,
-            current_facet_page=facet_page.page,
-            total_facet_pages=facet_page.total_pages,
-            disclosed_tags=state.disclosed_tags,
-            disclosed_state_ids=frozenset(state.disclosed_state_ids),
-            observed_source_ids=state.observed_source_ids,
-        )
-        with bind_investigation_step_constraints(constraints):
-            response = await self._request_structured_inference(
-                run=run,
-                model=model,
-                messages=messages,
-                response_model=InvestigationStep,
-                purpose=InferencePurpose.INVESTIGATION_STEP,
-                on_progress=on_progress,
-            )
-            step = InvestigationStep.model_validate_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=step.model_dump(mode="json"),
-            purpose=InferencePurpose.INVESTIGATION_STEP,
-        )
-        return step
-
-    async def _select_narrow_context_plan(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        allowed_tags: frozenset[str],
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> NarrowContextPlan:
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.CONTEXT_NARROWING,
-            selected_model=run.selected_model,
-        )
-        if not allowed_tags:
-            raise RuntimeError("Context narrowing requires eligible tags")
-        constraints = NarrowContextConstraints(allowed_tags=allowed_tags)
-        with bind_narrow_context_constraints(constraints):
-            response = await self._request_structured_inference(
-                run=run,
-                model=model,
-                messages=messages,
-                response_model=NarrowContextPlan,
-                purpose=InferencePurpose.CONTEXT_NARROWING,
-                on_progress=on_progress,
-            )
-            plan = NarrowContextPlan.model_validate_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=plan.model_dump(mode="json"),
-            purpose=InferencePurpose.CONTEXT_NARROWING,
-        )
-        return plan
-
-    async def _select_single_page_evidence(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        allowed_note_ids: frozenset[str],
-        include_rationale: bool,
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> EvidenceSelection | EvidenceSelectionWithoutRationale:
-        if not isinstance(include_rationale, bool):
-            raise TypeError("include_rationale must be bool")
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.EVIDENCE_SELECTION,
-            selected_model=run.selected_model,
-        )
-        constraints = EvidenceSelectionConstraints(
-            allowed_note_ids=allowed_note_ids,
-        )
-        response_model: type[EvidenceSelection] | type[
-            EvidenceSelectionWithoutRationale
-        ] = EvidenceSelectionWithoutRationale
-        if include_rationale:
-            response_model = EvidenceSelection
-        with bind_evidence_selection_constraints(constraints):
-            response = await self._request_structured_inference(
-                run=run,
-                model=model,
-                messages=messages,
-                response_model=response_model,
-                purpose=InferencePurpose.EVIDENCE_SELECTION,
-                on_progress=on_progress,
-            )
-            selection = response_model.model_validate_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=selection.model_dump(mode="json"),
-            purpose=InferencePurpose.EVIDENCE_SELECTION,
-        )
-        return selection
-
-    @staticmethod
-    def _evidence_selection_status_label(
-        *,
-        selection: EvidenceSelection | EvidenceSelectionWithoutRationale,
-        selected_count: int,
-        selected_noun: str,
-    ) -> str:
-        label = f"Selected {selected_count} directly relevant {selected_noun}"
-        if isinstance(selection, EvidenceSelection):
-            return (
-                f"{label} · "
-                f"{AgentRuntime._compact_status_reason(selection.reason)}"
-            )
-        return label
-
     async def _prepare_search_action(
         self,
         *,
@@ -1451,12 +855,6 @@ class AgentRuntime:
             response_label = "agent route"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 response_label = "search query"
-            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                response_label = "evidence selection"
-            elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                response_label = "investigation step"
-            elif purpose == InferencePurpose.CONTEXT_NARROWING:
-                response_label = "context-narrowing plan"
             attempt_count = len(exc.attempts)
             attempt_label = "attempt"
             if attempt_count != 1:
@@ -1605,7 +1003,7 @@ class AgentRuntime:
                 "allowed": False,
                 "permission": "read",
                 "mutates": False,
-                "reason": "The same semantic query and page already completed.",
+                "reason": "The same semantic query already completed.",
                 "arguments": action.model_dump(),
             },
             duration_ms=0.0,
@@ -1826,194 +1224,41 @@ class AgentRuntime:
             "reference_note_ids": list(reference_note_ids),
         }
 
-    def _record_investigation_step(
-        self,
-        *,
-        run: _RunContext,
-        state: InvestigationState,
-        step: InvestigationStep,
-        working_summary: WorkingSummary,
-        summary_characters: int,
-    ) -> None:
-        if summary_characters < 1:
-            raise ValueError("Investigation summary character count must be positive")
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="INVESTIGATION_STEP",
-            label=f"Investigation step: {step.action_kind}",
-            detail={
-                "state_id": state.current_state_id,
-                "action": step.model_dump(mode="json"),
-                "merged_working_summary": working_summary.model_dump(mode="json"),
-                "summary_characters": summary_characters,
-                "observed_source_ids": sorted(state.observed_source_ids),
-            },
-            duration_ms=0.0,
-        )
-
     def _record_evidence_payload(
         self,
         *,
         run: _RunContext,
-        note_page: InvestigationNotePage,
-        facet_page: TagFacetPage,
-        reopened_sources: tuple[dict[str, object], ...],
+        evidence_payload: InvestigationEvidencePayload,
     ) -> None:
-        if not isinstance(facet_page, TagFacetPage):
-            raise TypeError("facet_page must be TagFacetPage")
         self._trace_store.append_event(
             session_key=run.session_key,
             run_id=run.run_id,
             event_type="EVIDENCE_PAYLOAD",
-            label=(
-                f"Evidence payload sent to {self._provider_label} · page {note_page.page} "
-                f"of {note_page.total_pages}"
-            ),
+            label=f"Evidence payload sent to {self._provider_label}",
             detail={
-                "note_page": serialize_investigation_note_page(note_page),
-                "facet_page": {
-                    "page": facet_page.page,
-                    "total_pages": facet_page.total_pages,
-                    "total_facets": facet_page.total_facets,
-                    "facets": [
-                        {
-                            "tag": facet.tag,
-                            "synonyms": list(facet.synonyms),
-                            "matching_notes": facet.note_count,
-                            "matching_result_trees": facet.result_tree_count,
-                        }
-                        for facet in facet_page.facets
-                    ],
-                },
-                "reopened_sources": list(reopened_sources),
-            },
-            duration_ms=0.0,
-        )
-
-    def _record_context_narrowing(
-        self,
-        *,
-        run: _RunContext,
-        plan: NarrowContextPlan,
-        result: NarrowingResult,
-    ) -> None:
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="CONTEXT_NARROWING",
-            label="Cumulative tag narrowing evaluation",
-            detail={
-                "plan": plan.model_dump(mode="json"),
-                "target_approximate_tokens": (
-                    result.target_approximate_token_count
+                "evidence_payload": serialize_investigation_evidence_payload(
+                    evidence_payload
                 ),
-                "original": {
-                    "note_count": result.original.note_count,
-                    "result_tree_count": result.original.result_tree_count,
-                    "approximate_tokens": (
-                        result.original.approximate_token_count
-                    ),
-                },
-                "attempts": [
-                    {
-                        "tags": list(attempt.tags),
-                        "expression": attempt.expression,
-                        "note_count": attempt.note_count,
-                        "result_tree_count": attempt.result_tree_count,
-                        "approximate_tokens": attempt.approximate_token_count,
-                        "rejected_zero_results": (
-                            attempt.rejected_zero_results
-                        ),
-                    }
-                    for attempt in result.attempts
-                ],
-                "selected_tags": list(result.selected_tags),
-                "selected_expression": result.selected_expression,
-                "selected": {
-                    "note_count": result.selected.note_count,
-                    "result_tree_count": result.selected.result_tree_count,
-                    "approximate_tokens": (
-                        result.selected.approximate_token_count
-                    ),
-                },
-                "did_narrow": result.did_narrow,
-            },
-            duration_ms=0.0,
-        )
-
-    def _record_investigation_action_result(
-        self,
-        *,
-        run: _RunContext,
-        state: InvestigationState,
-        step: InvestigationStep,
-        note_page: InvestigationNotePage,
-        facet_page: TagFacetPage,
-        reopened_sources: tuple[dict[str, object], ...],
-    ) -> None:
-        if not isinstance(facet_page, TagFacetPage):
-            raise TypeError("facet_page must be TagFacetPage")
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="INVESTIGATION_RESULT",
-            label=f"Investigation result: {step.action_kind}",
-            detail={
-                "state_id": state.current_state_id,
-                "action_kind": step.action_kind,
-                "note_page": {
-                    "page": note_page.page,
-                    "total_pages": note_page.total_pages,
-                    "matching_note_count": note_page.matching_note_count,
-                    "matching_result_tree_count": (
-                        note_page.matching_result_tree_count
-                    ),
-                    "result_tree_ids": list(note_page.result_tree_ids),
-                    "result_trees": list(note_page.result_trees),
-                    "returned_character_count": note_page.returned_character_count,
-                    "returned_approximate_token_count": (
-                        note_page.returned_approximate_token_count
-                    ),
-                },
-                "facet_page": {
-                    "page": facet_page.page,
-                    "total_pages": facet_page.total_pages,
-                    "total_facets": facet_page.total_facets,
-                },
-                "reopened_sources": list(reopened_sources),
             },
             duration_ms=0.0,
         )
 
     @staticmethod
-    def _note_page_status_label(note_page: InvestigationNotePage) -> str:
-        if not isinstance(note_page, InvestigationNotePage):
-            raise TypeError("note_page must be InvestigationNotePage")
+    def _evidence_payload_status_label(
+        evidence_payload: InvestigationEvidencePayload,
+    ) -> str:
+        if not isinstance(evidence_payload, InvestigationEvidencePayload):
+            raise TypeError(
+                "evidence_payload must be InvestigationEvidencePayload"
+            )
         return (
-            f"Evidence page ready · page {note_page.page} of {note_page.total_pages} · "
-            f"{note_page.matching_note_count} notes in "
-            f"{note_page.matching_result_tree_count} result trees"
+            "Evidence ready · "
+            f"{len(evidence_payload.evidence_note_ids)} notes in "
+            f"{len(evidence_payload.result_tree_ids)} result trees · "
+            "≈ "
+            f"{evidence_payload.returned_approximate_token_count:,} "
+            "evidence tokens"
         )
-
-    @staticmethod
-    def _reference_note_ids(
-        *,
-        verified_sources: tuple[dict[str, object], ...],
-    ) -> tuple[str, ...]:
-        if not isinstance(verified_sources, tuple):
-            raise TypeError("verified_sources must be a tuple")
-        reference_note_ids: list[str] = []
-        seen_note_ids: set[str] = set()
-        for source in verified_sources:
-            note_id = source["note_id"]
-            if not isinstance(note_id, str) or note_id == "":
-                raise RuntimeError("Verified source note_id must be non-empty")
-            if note_id in seen_note_ids:
-                continue
-            seen_note_ids.add(note_id)
-            reference_note_ids.append(note_id)
-        return tuple(reference_note_ids)
 
     @staticmethod
     def _merge_reference_note_ids(
@@ -2187,7 +1432,7 @@ class AgentRuntime:
     @staticmethod
     def _tool_status_label(action: SearchNotesAction | ReadNotesByIdAction) -> str:
         if isinstance(action, SearchNotesAction):
-            return f"Searching notes · page {action.page} · {action.query}"
+            return f"Searching notes · {action.query}"
         count = len(action.note_ids)
         noun = "notes"
         if count == 1:
@@ -2206,8 +1451,7 @@ class AgentRuntime:
             matched_note_count = result.payload["matched_note_count"]
             returned_count = result.payload["returned_count"]
             returned_note_count = result.payload["returned_note_count"]
-            total_pages = result.payload["total_pages"]
-            page_is_out_of_range = result.payload["page_is_out_of_range"]
+            omitted_count = result.payload["omitted_count"]
             assert isinstance(matched_count, int) and not isinstance(matched_count, bool)
             assert isinstance(matched_note_count, int) and not isinstance(
                 matched_note_count,
@@ -2221,18 +1465,15 @@ class AgentRuntime:
                 returned_count,
                 bool,
             )
-            assert isinstance(total_pages, int) and not isinstance(total_pages, bool)
-            assert isinstance(page_is_out_of_range, bool)
+            assert isinstance(omitted_count, int) and not isinstance(
+                omitted_count,
+                bool,
+            )
             assert matched_count >= 0
             assert matched_note_count >= 0
             assert returned_count >= 0
             assert returned_note_count >= 0
-            assert total_pages >= 1
-            if page_is_out_of_range:
-                return (
-                    f"Search page unavailable · page {action.page} of {total_pages} · "
-                    f"{action.query}"
-                )
+            assert omitted_count >= 0
             result_tree_noun = "result trees"
             if matched_count == 1:
                 result_tree_noun = "result tree"
@@ -2242,8 +1483,8 @@ class AgentRuntime:
             return (
                 f"Search complete · {returned_count} of {matched_count} "
                 f"{result_tree_noun} · {returned_note_count} of {matched_note_count} "
-                f"{matching_note_noun} · "
-                f"page {action.page} of {total_pages} · {action.query}"
+                f"{matching_note_noun} · {omitted_count} trailing result trees "
+                f"omitted · {action.query}"
             )
         return AgentRuntime._tool_status_label(action)
 
@@ -2274,16 +1515,6 @@ class AgentRuntime:
                 operation_label = (
                     f"{provider_label} preparing MetaList search query"
                 )
-            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                operation_label = (
-                    f"{provider_label} selecting directly relevant evidence"
-                )
-            elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                operation_label = (
-                    f"{provider_label} updating evidence and choosing next step"
-                )
-            elif purpose == InferencePurpose.CONTEXT_NARROWING:
-                operation_label = f"{provider_label} planning tag narrowing"
             label = f"{operation_label}{attempt_suffix}"
             if progress.attempt > 1:
                 label = f"Instructor retrying · {label}"
@@ -2301,16 +1532,6 @@ class AgentRuntime:
                 operation_label = (
                     f"{provider_label} preparing MetaList search query"
                 )
-            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                operation_label = (
-                    f"{provider_label} selecting directly relevant evidence"
-                )
-            elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                operation_label = (
-                    f"{provider_label} updating evidence and choosing next step"
-                )
-            elif purpose == InferencePurpose.CONTEXT_NARROWING:
-                operation_label = f"{provider_label} planning tag narrowing"
             return AgentRuntime._output_status_event(
                 "model_request",
                 "started",
@@ -2325,16 +1546,6 @@ class AgentRuntime:
                 response_label = (
                     f"{provider_label} returned search-query proposal"
                 )
-            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                response_label = (
-                    f"{provider_label} returned evidence selection"
-                )
-            elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                response_label = (
-                    f"{provider_label} returned investigation-step proposal"
-                )
-            elif purpose == InferencePurpose.CONTEXT_NARROWING:
-                response_label = f"{provider_label} returned tag-narrowing plan"
             return AgentRuntime._output_status_event(
                 "validation",
                 "started",
@@ -2368,12 +1579,6 @@ class AgentRuntime:
             output_label = "Structured action validated"
             if purpose == InferencePurpose.SEARCH_QUERY:
                 output_label = "Structured search query validated"
-            elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                output_label = "Structured evidence selection validated"
-            elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                output_label = "Structured investigation step validated"
-            elif purpose == InferencePurpose.CONTEXT_NARROWING:
-                output_label = "Structured tag-narrowing plan validated"
             return AgentRuntime._output_status_event(
                 "validation",
                 "completed",
@@ -2464,7 +1669,7 @@ class AgentRuntime:
     def _search_request_key(action: SearchNotesAction) -> _SearchRequestKey:
         if not isinstance(action, SearchNotesAction):
             raise TypeError("Search request key requires a SearchNotesAction")
-        return AgentRuntime._search_query_semantic_key(action.query), action.page
+        return AgentRuntime._search_query_semantic_key(action.query)
 
     @staticmethod
     def _search_query_semantic_key(query: str) -> _SearchQueryKey:

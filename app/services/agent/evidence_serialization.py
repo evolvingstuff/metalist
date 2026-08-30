@@ -16,7 +16,6 @@ class EvidenceNoteTokenSource:
     explicit_tag_terms: tuple[str, ...]
     created_at: str
     updated_at: str
-    character_limit: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +56,6 @@ def _estimate_cached_root_tree_tokens(
             explicit_tag_terms=note.explicit_tag_terms,
             created_at=note.created_at,
             updated_at=note.updated_at,
-            character_limit=note.character_limit,
         )
         for note in evidence_notes
     }
@@ -85,23 +83,17 @@ def serialize_evidence_note_payload(
     explicit_tag_terms: tuple[str, ...],
     created_at: str,
     updated_at: str,
-    character_limit: int,
 ) -> dict[str, object]:
     if note_id == "":
         raise ValueError("Evidence note id must not be empty")
-    if character_limit < 0:
-        raise ValueError("Note character limit must not be negative")
-    returned_text = content_text[:character_limit]
     payload: dict[str, object] = {
         "note_id": note_id,
-        "content_text": returned_text,
+        "content_text": content_text,
         "created_at": created_at,
         "updated_at": updated_at,
     }
     if explicit_tag_terms:
         payload["tags"] = list(explicit_tag_terms)
-    if len(returned_text) < len(content_text):
-        payload["truncated_from_character_count"] = len(content_text)
     return payload
 
 

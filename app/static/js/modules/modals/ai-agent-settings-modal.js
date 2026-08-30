@@ -58,15 +58,7 @@ function renderInstalledModelOptions(state) {
 function retrievalStateFields(settings, provider) {
     const validated = validateAgentRetrievalSettings(settings, provider);
     return {
-        maxNoteCharacters: validated.maxNoteCharacters,
-        maxPageCharacters: validated.maxPageCharacters,
-        maxNotesPerPage: validated.maxNotesPerPage,
         maxPageApproximateTokens: validated.maxPageApproximateTokens,
-        maxRankedTagsPerPage: validated.maxRankedTagsPerPage,
-        maxWorkingSummaryCharacters: validated.maxWorkingSummaryCharacters,
-        idealNarrowedScopeApproximateTokens: (
-            validated.idealNarrowedScopeApproximateTokens
-        ),
     };
 }
 
@@ -170,7 +162,6 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         const disabledAttribute = state.isDownloading ? 'disabled' : '';
         const maximumPageApproximateTokens = isOpenAi ? 500000 : 24000;
-        const maximumNarrowedScopeApproximateTokens = isOpenAi ? 500000 : 200000;
         const progressHiddenAttribute = state.downloadTotal > 0 ? '' : 'hidden';
         const progressMaximum = state.downloadTotal > 0 ? state.downloadTotal : 1;
         const installedModelOptions = renderInstalledModelOptions(state);
@@ -271,35 +262,15 @@ export class AiAgentSettingsModal extends BaseModal {
                         </select>
                     </label>
                     <fieldset class="ai-agent-retrieval-settings">
-                        <legend>${isOpenAi ? 'OpenAI' : 'Ollama'} note retrieval limits</legend>
+                        <legend>${isOpenAi ? 'OpenAI' : 'Ollama'} evidence limit</legend>
                         <p>
-                            Evidence pages pack complete result trees in user-visible order
-                            up to an approximate input-token target. A result tree is never
-                            divided between pages; search-redacted branches are excluded.
+                            One evidence payload contains complete result trees in
+                            user-visible order up to this approximate token limit.
+                            A result tree is never divided; trailing trees are omitted.
                         </p>
-                        <label for="ai-agent-max-note-characters">
-                            <span>Maximum characters per note</span>
-                            <input id="ai-agent-max-note-characters" type="number" min="500" max="10000" step="1" value="${state.maxNoteCharacters}" ${disabledAttribute}>
-                        </label>
                         <label for="ai-agent-max-page-approximate-tokens">
-                            <span>Approximate input tokens per evidence page</span>
+                            <span>Maximum approximate evidence tokens</span>
                             <input id="ai-agent-max-page-approximate-tokens" type="number" min="500" max="${maximumPageApproximateTokens}" step="100" value="${state.maxPageApproximateTokens}" ${disabledAttribute}>
-                        </label>
-                        <label for="ai-agent-ideal-narrowed-scope-approximate-tokens">
-                            <span>Ideal narrowed-scope approximate tokens</span>
-                            <input id="ai-agent-ideal-narrowed-scope-approximate-tokens" type="number" min="1000" max="${maximumNarrowedScopeApproximateTokens}" step="1000" value="${state.idealNarrowedScopeApproximateTokens}" ${disabledAttribute}>
-                        </label>
-                        <label for="ai-agent-max-notes-per-page">
-                            <span>Maximum result trees per evidence page</span>
-                            <input id="ai-agent-max-notes-per-page" type="number" min="1" max="100" step="1" value="${state.maxNotesPerPage}" ${disabledAttribute}>
-                        </label>
-                        <label for="ai-agent-max-ranked-tags-per-page">
-                            <span>Maximum ranked tags per facet page</span>
-                            <input id="ai-agent-max-ranked-tags-per-page" type="number" min="1" max="200" step="1" value="${state.maxRankedTagsPerPage}" ${disabledAttribute}>
-                        </label>
-                        <label for="ai-agent-max-working-summary-characters">
-                            <span>Maximum working-summary characters</span>
-                            <input id="ai-agent-max-working-summary-characters" type="number" min="2000" max="32000" step="1" value="${state.maxWorkingSummaryCharacters}" ${disabledAttribute}>
                         </label>
                     </fieldset>
                     <fieldset class="ai-agent-cloud-privacy-settings">
@@ -346,23 +317,8 @@ export class AiAgentSettingsModal extends BaseModal {
         const openAiApiKeyInput = document.getElementById('ai-agent-openai-api-key');
         const openAiSaveButton = document.getElementById('ai-agent-openai-save');
         const openAiRemoveButton = document.getElementById('ai-agent-openai-remove');
-        const maxNoteCharactersInput = document.getElementById(
-            'ai-agent-max-note-characters',
-        );
         const maxPageApproximateTokensInput = document.getElementById(
             'ai-agent-max-page-approximate-tokens',
-        );
-        const maxNotesPerPageInput = document.getElementById(
-            'ai-agent-max-notes-per-page',
-        );
-        const idealNarrowedScopeApproximateTokensInput = document.getElementById(
-            'ai-agent-ideal-narrowed-scope-approximate-tokens',
-        );
-        const maxRankedTagsPerPageInput = document.getElementById(
-            'ai-agent-max-ranked-tags-per-page',
-        );
-        const maxWorkingSummaryCharactersInput = document.getElementById(
-            'ai-agent-max-working-summary-characters',
         );
         const whitelistTagsInput = document.getElementById(
             'ai-agent-cloud-whitelist-tags',
@@ -395,23 +351,8 @@ export class AiAgentSettingsModal extends BaseModal {
         if (state.provider === 'openai' && !(openAiRemoveButton instanceof HTMLButtonElement)) {
             throw new Error('AI settings OpenAI remove button missing');
         }
-        if (!(maxNoteCharactersInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum note characters input missing');
-        }
         if (!(maxPageApproximateTokensInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings approximate page tokens input missing');
-        }
-        if (!(maxNotesPerPageInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum result trees input missing');
-        }
-        if (!(idealNarrowedScopeApproximateTokensInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings ideal narrowed-scope tokens input missing');
-        }
-        if (!(maxRankedTagsPerPageInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum ranked tags input missing');
-        }
-        if (!(maxWorkingSummaryCharactersInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings maximum working summary input missing');
+            throw new Error('AI settings approximate evidence tokens input missing');
         }
         for (const [input, label] of [
             [whitelistTagsInput, 'whitelisted tags'],
@@ -474,40 +415,10 @@ export class AiAgentSettingsModal extends BaseModal {
                 error.textContent = '';
             };
         }
-        maxNoteCharactersInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'maxNoteCharacters',
-                Number(maxNoteCharactersInput.value),
-            );
-        };
         maxPageApproximateTokensInput.oninput = () => {
             this._updateRetrievalSetting(
                 'maxPageApproximateTokens',
                 Number(maxPageApproximateTokensInput.value),
-            );
-        };
-        idealNarrowedScopeApproximateTokensInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'idealNarrowedScopeApproximateTokens',
-                Number(idealNarrowedScopeApproximateTokensInput.value),
-            );
-        };
-        maxNotesPerPageInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'maxNotesPerPage',
-                Number(maxNotesPerPageInput.value),
-            );
-        };
-        maxRankedTagsPerPageInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'maxRankedTagsPerPage',
-                Number(maxRankedTagsPerPageInput.value),
-            );
-        };
-        maxWorkingSummaryCharactersInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'maxWorkingSummaryCharacters',
-                Number(maxWorkingSummaryCharactersInput.value),
             );
         };
         whitelistTagsInput.oninput = () => {

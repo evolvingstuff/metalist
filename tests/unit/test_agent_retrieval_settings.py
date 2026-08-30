@@ -1,152 +1,58 @@
 import pytest
 
-from app.services.agent.retrieval_settings import AgentRetrievalSettings
-from app.services.agent.retrieval_settings import DEFAULT_AGENT_RETRIEVAL_SETTINGS
-from app.services.agent.retrieval_settings import DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
-from app.services.agent.retrieval_settings import MAX_NOTE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_PAGE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_NOTES_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
+from app.services.agent.retrieval_settings import (
+    DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+    DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
+    MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY,
+    OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY,
+    AgentRetrievalSettings,
+    resolve_agent_retrieval_settings,
+    validate_max_page_approximate_tokens_preference,
+    validate_openai_max_page_approximate_tokens_preference,
+)
 
 
-def test_agent_retrieval_settings_use_bounded_defaults() -> None:
-    assert resolve_agent_retrieval_settings(preferences={}, provider="ollama") == (
-        DEFAULT_AGENT_RETRIEVAL_SETTINGS
+def test_defaults_define_only_one_evidence_token_limit() -> None:
+    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS == AgentRetrievalSettings(
+        max_page_approximate_tokens=5_000,
     )
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_note_characters == 2_000
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_page_characters == 20_000
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_notes_per_page == 50
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens == 5_000
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_ranked_tags_per_page == 50
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_working_summary_characters == 8_000
-    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.ideal_narrowed_scope_approximate_tokens == 10_000
-    assert resolve_agent_retrieval_settings(
-        preferences={},
-        provider="openai",
-    ) == DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
-    assert (
-        DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens
-        == 250_000
-    )
-    assert DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.ideal_narrowed_scope_approximate_tokens == 500_000
-
-
-def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
-    settings = resolve_agent_retrieval_settings(
-        provider="ollama",
-        preferences={
-            MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "4000",
-            MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "30000",
-            MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "3",
-            MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "7000",
-            MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "25",
-            MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "12000",
-            IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "18000",
-        }
-    )
-
-    assert settings == AgentRetrievalSettings(
-        max_note_characters=4_000,
-        max_page_characters=30_000,
-        max_notes_per_page=3,
-        max_page_approximate_tokens=7_000,
-        max_ranked_tags_per_page=25,
-        max_working_summary_characters=12_000,
-        ideal_narrowed_scope_approximate_tokens=18_000,
+    assert DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS == AgentRetrievalSettings(
+        max_page_approximate_tokens=250_000,
     )
 
 
-def test_agent_retrieval_settings_keep_provider_preferences_independent() -> None:
+def test_provider_preferences_are_independent() -> None:
     preferences = {
         MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "7000",
-        OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "6000",
-        OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "80000",
-        OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "75",
         OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "500000",
-        OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "125",
-        OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "24000",
-        OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "52000",
     }
-
-    ollama = resolve_agent_retrieval_settings(
+    assert resolve_agent_retrieval_settings(
         preferences=preferences,
         provider="ollama",
-    )
-    openai = resolve_agent_retrieval_settings(
+    ).max_page_approximate_tokens == 7_000
+    assert resolve_agent_retrieval_settings(
         preferences=preferences,
         provider="openai",
-    )
-
-    assert ollama.max_page_approximate_tokens == 7_000
-    assert ollama.max_note_characters == 2_000
-    assert openai == AgentRetrievalSettings(
-        max_note_characters=6_000,
-        max_page_characters=80_000,
-        max_notes_per_page=75,
-        max_page_approximate_tokens=500_000,
-        max_ranked_tags_per_page=125,
-        max_working_summary_characters=24_000,
-        ideal_narrowed_scope_approximate_tokens=52_000,
-    )
+    ).max_page_approximate_tokens == 500_000
 
 
-def test_agent_retrieval_settings_migrate_former_openai_defaults() -> None:
+def test_legacy_openai_default_migrates_to_current_default() -> None:
     settings = resolve_agent_retrieval_settings(
-        provider="openai",
         preferences={
             OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "24000",
-            OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "48000",
         },
+        provider="openai",
     )
-
-    assert settings.max_page_approximate_tokens == 250_000
-    assert settings.ideal_narrowed_scope_approximate_tokens == 500_000
+    assert settings == DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
 
 
-def test_agent_retrieval_settings_reject_unknown_provider() -> None:
-    with pytest.raises(ValueError, match="Unsupported agent retrieval provider"):
-        resolve_agent_retrieval_settings(preferences={}, provider="anthropic")
+@pytest.mark.parametrize("value", ["", "0499", "499", "24001", "1.5"])
+def test_ollama_evidence_token_limit_rejects_invalid_values(value: str) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        validate_max_page_approximate_tokens_preference(value)
 
 
-@pytest.mark.parametrize(
-    (
-        "max_note_characters",
-        "max_page_characters",
-        "max_notes_per_page",
-        "max_page_approximate_tokens",
-    ),
-    [
-        (499, 20_000, 50, 5_000),
-        (10_001, 20_000, 50, 5_000),
-        (2_000, 4_999, 50, 5_000),
-        (2_000, 100_001, 50, 5_000),
-        (2_000, 20_000, 0, 5_000),
-        (2_000, 20_000, 101, 5_000),
-        (2_000, 20_000, 50, 499),
-        (2_000, 20_000, 50, 500_001),
-    ],
-)
-def test_agent_retrieval_settings_reject_out_of_range_values(
-    max_note_characters: int,
-    max_page_characters: int,
-    max_notes_per_page: int,
-    max_page_approximate_tokens: int,
-) -> None:
-    with pytest.raises(ValueError):
-        AgentRetrievalSettings(
-            max_note_characters=max_note_characters,
-            max_page_characters=max_page_characters,
-            max_notes_per_page=max_notes_per_page,
-            max_page_approximate_tokens=max_page_approximate_tokens,
-        )
+@pytest.mark.parametrize("value", ["", "0499", "499", "500001", "1.5"])
+def test_openai_evidence_token_limit_rejects_invalid_values(value: str) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        validate_openai_max_page_approximate_tokens_preference(value)

@@ -720,9 +720,6 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert prompts.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
             assert prompts.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
             assert skills == DEFAULT_AGENT_SKILLS
-            assert retrieval_settings.max_note_characters == 4_000
-            assert retrieval_settings.max_page_characters == 30_000
-            assert retrieval_settings.max_notes_per_page == 3
             assert retrieval_settings.max_page_approximate_tokens == 7_000
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
@@ -751,9 +748,6 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         "load_client_preferences",
         lambda *, token: {
             SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt",
-            "pref.ai.retrieval.max_note_characters": "4000",
-            "pref.ai.retrieval.max_page_characters": "30000",
-            "pref.ai.retrieval.max_notes_per_page": "3",
             "pref.ai.retrieval.max_page_approximate_tokens": "7000",
         },
     )

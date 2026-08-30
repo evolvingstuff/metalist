@@ -830,47 +830,11 @@ class CommandPaletteController {
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
             [modelPreferenceKey]: settings.model.trim(),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
-                ollamaRetrievalSettings.maxNoteCharacters,
-            ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters]: String(
-                ollamaRetrievalSettings.maxPageCharacters,
-            ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
-                ollamaRetrievalSettings.maxNotesPerPage,
-            ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 ollamaRetrievalSettings.maxPageApproximateTokens,
             ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage]: String(
-                ollamaRetrievalSettings.maxRankedTagsPerPage,
-            ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
-                ollamaRetrievalSettings.maxWorkingSummaryCharacters,
-            ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens]: String(
-                ollamaRetrievalSettings.idealNarrowedScopeApproximateTokens,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
-                openAiRetrievalSettings.maxNoteCharacters,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters]: String(
-                openAiRetrievalSettings.maxPageCharacters,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
-                openAiRetrievalSettings.maxNotesPerPage,
-            ),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage]: String(
-                openAiRetrievalSettings.maxRankedTagsPerPage,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
-                openAiRetrievalSettings.maxWorkingSummaryCharacters,
-            ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens]: String(
-                openAiRetrievalSettings.idealNarrowedScopeApproximateTokens,
             ),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,

@@ -11,7 +11,6 @@ def test_lazy_root_tree_token_estimate_counts_nested_payload_and_metadata() -> N
         explicit_tag_terms=("foo",),
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-02T00:00:00+00:00",
-        character_limit=2_000,
     )
     child = EvidenceNoteTokenSource(
         note_id="child",
@@ -19,7 +18,6 @@ def test_lazy_root_tree_token_estimate_counts_nested_payload_and_metadata() -> N
         explicit_tag_terms=(),
         created_at="2026-01-03T00:00:00+00:00",
         updated_at="2026-01-04T00:00:00+00:00",
-        character_limit=2_000,
     )
     structure = (
         EvidenceTreeTokenSource(
