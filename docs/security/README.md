@@ -426,6 +426,15 @@ swap, or filesystem snapshots.
 ### Agent Access
 - MetaList does not expose an MCP endpoint, MCP client, agent sidecar, or agent-specific command-line entry point.
 - Legacy `mcp_port` values may remain in schema-v1 namespace launch-profile rows and backup metadata for compatibility, but no runtime listener or route consumes them.
+- The read-only AI chat freezes server-resolved view membership. Before any cloud
+  prompt or debug trace is constructed, a namespace-level disclosure policy removes
+  notes matching configured blacklist tags/phrases and requires an OR whitelist
+  match when a whitelist is present. Tag checks use inherited plus ontology-expanded
+  search tags, blacklist wins, and a hidden ancestor removes its full subtree.
+  `@password` always removes its full subtree for local and cloud providers.
+- `POST /api2/ai/cloud-privacy/preview` is authenticated and applies the same
+  evaluator to visible note IDs solely to render readable gray hover feedback. It
+  does not replace or weaken server-side scope filtering.
 
 ### Multi-Client Support
 - Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace)

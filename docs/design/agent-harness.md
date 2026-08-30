@@ -15,8 +15,16 @@
   are constrained to that snapshot.
 - Only true matching nodes are evidence. Render-only ancestors may appear as
   contentless structural objects solely to preserve nesting; gray-bar content and
-  tags never enter the agent context. `@password` content and tags are excluded
-  before pages, facets, summaries, final evidence, or traces.
+  tags never enter the agent context. `@password` notes and their complete
+  descendant subtrees are excluded before counts, pages, facets, summaries, final
+  evidence, or traces for every provider.
+- A single namespace-level cloud privacy policy applies to OpenAI and future cloud
+  providers while local Ollama ignores its configurable lists. The policy supports
+  tag/text whitelists and blacklists; entries within each side are OR, a blacklist
+  match wins, and an empty whitelist admits notes not blacklisted. Tag rules use the
+  same inherited, implied, and synonym-expanded effective tags as canonical search.
+  Phrase rules are case-insensitive literal substrings. A directly hidden ancestor
+  hides its entire subtree, so a descendant can never be disclosed without its path.
 - Instructor owns all JSON/Pydantic calls. Final prose streams through the selected
   provider's native client. The supported providers are MetaList-managed Ollama and
   the OpenAI API; LiteLLM is not required by the current inference seam.
@@ -28,6 +36,8 @@
 ```text
 POST /api2/ai/chat + required AgentScopeDescriptor
   → verify visible tab and originating scope tab's canonical state
+  → apply the provider disclosure boundary and prune hidden subtrees
+  → freeze the already-filtered ScopedSearchSnapshot (S0)
   → AiChatSessionStore.start_turn
   → resolve selected inference provider
       → Ollama: ManagedOllamaRuntime.ensure_running + verify active context
@@ -123,6 +133,27 @@ ancestor retained only to render a date/search match cannot become agent evidenc
 The snapshot stores frozen records rather than live handles. Later edits or UI
 navigation cannot change an in-flight run. The object becomes unreachable when the
 stream finishes/cancels/fails; no run scope is written to SQLite or disk.
+
+## Cloud Privacy Policy
+
+`app/services/agent/cloud_privacy.py` resolves the shared policy from encrypted
+namespace client preferences where namespace encryption is enabled. It evaluates
+each candidate and every canonical ancestor before `ScopedSearchSnapshot` is built.
+Consequently hidden notes cannot influence scope counts, evidence serialization,
+facets, narrowing, citations, provider prompts, or Agent Debug payloads.
+
+The four ordered policy lists are whitelisted tags, whitelisted plaintext phrases,
+blacklisted tags, and blacklisted plaintext phrases. Matching is case-insensitive.
+Tag evaluation reads `SearchIndex.list_effective_tag_terms_for_note`, so ancestor
+inheritance and ontology implications/synonyms have exactly the same meaning as in
+search. Text evaluation uses the note's disclosure-safe plain text. The
+non-overridable `@password` rule remains active for local and cloud providers.
+
+`POST /api2/ai/cloud-privacy/preview` applies the same server evaluator to visible
+note IDs. While the pointer is over the chat column, the browser gives every hidden
+note in the current view a readable gray background; it does not replace content
+with search-redaction bars. This preview is explanatory only—the frozen-scope filter
+is the security boundary.
 
 ## Investigation State
 
@@ -414,6 +445,7 @@ transient working state and do not enter later conversation context.
   `app/services/agent/ollama_inference.py`,
   `app/services/agent/openai_inference.py`, `app/services/agent/trace.py`
 - OpenAI credentials: `app/services/openai_credentials.py`
+- Cloud privacy: `app/services/agent/cloud_privacy.py`
 - Scope UI: `app/static/js/modules/ai-chat/ai-chat-panel-controller.js`
 - Settings/prompt UI: `app/static/js/modules/modals/ai-agent-settings-modal.js`,
   `app/static/js/modules/modals/agent-prompt-editor-modal.js`

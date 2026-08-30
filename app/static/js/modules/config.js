@@ -145,6 +145,7 @@ export const CONFIG = {
             PROMPT_DEFAULTS: `${API_AI_BASE}/prompts/defaults`,
             SESSION: `${API_AI_BASE}/session`,
             DEBUG: `${API_AI_BASE}/debug`,
+            CLOUD_PRIVACY_PREVIEW: `${API_AI_BASE}/cloud-privacy/preview`,
             CHAT: `${API_AI_BASE}/chat`,
             COPY_MESSAGE: (messageId) => `${API_AI_BASE}/messages/${messageId}/copy`,
         }

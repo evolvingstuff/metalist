@@ -58,6 +58,7 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "loadOpenAiCredentialStatus",
     "saveOpenAiCredential",
     "clearOpenAiCredential",
+    "previewCloudPrivacy",
 )
 
 JS_ALLOWED_TRY_CALLEE_PREFIXES = (

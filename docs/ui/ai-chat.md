@@ -46,8 +46,16 @@ needs saved-note content; evidence panels then report the retained page and its
 approximate token count.
 
 Only true matching nodes become evidence. Ancestors needed to make the result tree
-readable appear only as contentless structural objects. Gray/redacted and protected
-`@password` content and tags are excluded entirely.
+readable appear only as contentless structural objects. Gray/redacted content is
+excluded. A protected `@password` note hides itself and its complete descendant
+subtree from every model.
+
+Before a cloud scope is frozen, MetaList also applies the namespace's shared cloud
+privacy policy. Tag whitelists and blacklists use inherited and ontology-expanded
+effective tags; text lists use case-insensitive literal substrings. Entries in a
+whitelist are OR, entries in a blacklist are OR, and blacklists win. If any ancestor
+is hidden, every descendant is hidden as well. The resulting filtered set—not the
+original search set—drives counts, evidence, facets, references, and debug payloads.
 
 ## Investigation Behavior
 
@@ -147,6 +155,15 @@ for OpenAI.
 
 - Open `AI Agent Settings…` from the command palette or chat gear to select an
   installed model, download a named model, and edit investigation budgets.
+- The same settings modal has one Cloud privacy section shared by all cloud
+  providers. Its four one-entry-per-line fields configure whitelisted tags,
+  whitelisted text phrases, blacklisted tags, and blacklisted text phrases. Ollama
+  ignores these configurable lists; the automatic `@password` boundary still
+  applies. The policy is namespace-scoped and is encrypted with client preferences
+  when the namespace is password-protected.
+- Hovering the AI chat column asks the server to preview that boundary over the
+  current note view. Notes the selected provider cannot receive keep readable text
+  but receive a gray background until the pointer leaves chat.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
   Selection persists immediately; GPT-OSS does not offer Thinking Off.
 - MetaList lazily starts one owned Ollama daemon shared by namespaces at

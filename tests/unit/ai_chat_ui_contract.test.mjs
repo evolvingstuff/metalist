@@ -146,6 +146,34 @@ test('AI agent settings expose bounded note retrieval controls', () => {
 });
 
 
+test('cloud AI privacy settings and hover visualization share a server boundary', () => {
+    const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+
+    for (const inputId of [
+        'ai-agent-cloud-whitelist-tags',
+        'ai-agent-cloud-whitelist-phrases',
+        'ai-agent-cloud-blacklist-tags',
+        'ai-agent-cloud-blacklist-phrases',
+    ]) {
+        assert.match(settingsModal, new RegExp(`id="${inputId}"`));
+    }
+    assert.match(settingsModal, /<code>@password<\/code> is always hidden/);
+    assert.match(commandController, /CLOUD_PRIVACY_POLICY_PREFERENCE_KEY/);
+    assert.match(commandController, /serializeCloudPrivacyPolicy/);
+    assert.match(chatApi, /CLOUD_PRIVACY_PREVIEW/);
+    assert.match(controller, /pointerenter/);
+    assert.match(controller, /pointerleave/);
+    assert.match(controller, /previewCloudPrivacy/);
+    assert.match(controller, /cloud-ai-private-preview/);
+    assert.match(css, /\.note\.cloud-ai-private-preview/);
+    assert.doesNotMatch(controller, /classList\.add\('search-redacted'\)/);
+});
+
+
 test('chat accepts scoped-investigation lifecycle activities', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
@@ -549,9 +577,17 @@ test('command menu contains chat, AI configuration, and prompt editor actions', 
 
     assert.match(endpointSource, /id:\s*'pref\.show_ai_chat'/);
     assert.match(endpointSource, /id:\s*'form\.ai_agent_settings'/);
+    assert.match(endpointSource, /id:\s*'form\.cloud_ai_privacy'/);
     assert.match(endpointSource, /id:\s*'form\.agent_prompts'/);
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'pref.show_ai_chat'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.ai_agent_settings'));
+    const cloudPrivacyEndpoint = tagConfig.endpoints.find(
+        (endpoint) => endpoint.id === 'form.cloud_ai_privacy',
+    );
+    assert.ok(cloudPrivacyEndpoint);
+    assert.ok(cloudPrivacyEndpoint.tags.includes('privacy'));
+    assert.ok(cloudPrivacyEndpoint.tags.includes('whitelist'));
+    assert.ok(cloudPrivacyEndpoint.tags.includes('blacklist'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
 });
 

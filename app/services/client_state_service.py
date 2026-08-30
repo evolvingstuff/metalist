@@ -21,6 +21,8 @@ from app.services.agent.prompt_settings import TOOL_RESULT_PROMPT_PREFERENCE_KEY
 from app.services.agent.prompt_settings import validate_final_response_prompt
 from app.services.agent.prompt_settings import validate_system_prompt
 from app.services.agent.prompt_settings import validate_tool_result_prompt
+from app.services.agent.cloud_privacy import CLOUD_PRIVACY_POLICY_PREFERENCE_KEY
+from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_preference
 from app.services.agent.retrieval_settings import MAX_NOTE_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_NOTES_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_PAGE_CHARACTERS_PREFERENCE_KEY
@@ -79,6 +81,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.openai_model": "openai_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
+    CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
     MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "agent_max_note_characters",
     MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "agent_max_page_characters",
     MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "agent_max_notes_per_page",
@@ -268,6 +271,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             value = validate_tool_result_prompt(value)
         elif allowed_values == "agent_skill":
             value = validate_agent_skill_content(value)
+        elif allowed_values == "cloud_privacy_policy":
+            value = validate_cloud_privacy_policy_preference(value)
         elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value

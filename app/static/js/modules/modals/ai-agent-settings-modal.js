@@ -11,6 +11,11 @@ import {
     getAgentRetrievalSettingsValidationMessage,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
+import {
+    cloudPrivacyPolicyToTextFields,
+    getCloudPrivacyTextFieldsValidationMessage,
+    parseCloudPrivacyTextFields,
+} from '../ai-chat/cloud-privacy-policy.js';
 
 
 function escapeHtml(value) {
@@ -106,6 +111,7 @@ export class AiAgentSettingsModal extends BaseModal {
                 settings.openAiRetrievalSettings,
                 'openai',
             ),
+            ...cloudPrivacyPolicyToTextFields(settings.cloudPrivacyPolicy),
             ...retrievalStateFields(retrievalSettings, settings.provider),
             installedModels: [],
             isLoadingModels: false,
@@ -119,6 +125,24 @@ export class AiAgentSettingsModal extends BaseModal {
             downloadTotal: 0,
             error: '',
         };
+    }
+
+    focusCloudPrivacySettings() {
+        if (!this.isOpen) {
+            throw new Error('Cloud privacy settings cannot be focused while the modal is closed');
+        }
+        const fieldset = document.querySelector(
+            '#ai-agent-settings-modal .ai-agent-cloud-privacy-settings',
+        );
+        const firstInput = document.getElementById('ai-agent-cloud-whitelist-tags');
+        if (!(fieldset instanceof HTMLElement)) {
+            throw new Error('AI settings cloud privacy fieldset missing');
+        }
+        if (!(firstInput instanceof HTMLTextAreaElement)) {
+            throw new Error('AI settings cloud privacy first input missing');
+        }
+        fieldset.scrollIntoView({ block: 'start' });
+        firstInput.focus({ preventScroll: true });
     }
 
     showModalElement() {
@@ -278,6 +302,31 @@ export class AiAgentSettingsModal extends BaseModal {
                             <input id="ai-agent-max-working-summary-characters" type="number" min="2000" max="32000" step="1" value="${state.maxWorkingSummaryCharacters}" ${disabledAttribute}>
                         </label>
                     </fieldset>
+                    <fieldset class="ai-agent-cloud-privacy-settings">
+                        <legend>Cloud privacy</legend>
+                        <p>
+                            Applies to every cloud AI provider. Each whitelist is OR;
+                            each blacklist is OR; blacklists win. Tag rules use MetaList
+                            inheritance, implications, and synonyms. A hidden ancestor
+                            hides its entire subtree. <code>@password</code> is always hidden.
+                        </p>
+                        <label for="ai-agent-cloud-whitelist-tags">
+                            <span>Whitelisted tags · one per line</span>
+                            <textarea id="ai-agent-cloud-whitelist-tags" rows="4" maxlength="51400" placeholder="project-tag&#10;another-tag" ${disabledAttribute}>${escapeHtml(state.whitelistTagsText)}</textarea>
+                        </label>
+                        <label for="ai-agent-cloud-whitelist-phrases">
+                            <span>Whitelisted text phrases · one per line</span>
+                            <textarea id="ai-agent-cloud-whitelist-phrases" rows="4" maxlength="100200" placeholder="allowed phrase" ${disabledAttribute}>${escapeHtml(state.whitelistPhrasesText)}</textarea>
+                        </label>
+                        <label for="ai-agent-cloud-blacklist-tags">
+                            <span>Blacklisted tags · one per line</span>
+                            <textarea id="ai-agent-cloud-blacklist-tags" rows="4" maxlength="51400" placeholder="private-tag" ${disabledAttribute}>${escapeHtml(state.blacklistTagsText)}</textarea>
+                        </label>
+                        <label for="ai-agent-cloud-blacklist-phrases">
+                            <span>Blacklisted text phrases · one per line</span>
+                            <textarea id="ai-agent-cloud-blacklist-phrases" rows="4" maxlength="100200" placeholder="sensitive phrase" ${disabledAttribute}>${escapeHtml(state.blacklistPhrasesText)}</textarea>
+                        </label>
+                    </fieldset>
                 </div>
                 ${providerSpecificMarkup}
                 <p class="error-message">${escapeHtml(state.error)}</p>
@@ -315,6 +364,18 @@ export class AiAgentSettingsModal extends BaseModal {
         const maxWorkingSummaryCharactersInput = document.getElementById(
             'ai-agent-max-working-summary-characters',
         );
+        const whitelistTagsInput = document.getElementById(
+            'ai-agent-cloud-whitelist-tags',
+        );
+        const whitelistPhrasesInput = document.getElementById(
+            'ai-agent-cloud-whitelist-phrases',
+        );
+        const blacklistTagsInput = document.getElementById(
+            'ai-agent-cloud-blacklist-tags',
+        );
+        const blacklistPhrasesInput = document.getElementById(
+            'ai-agent-cloud-blacklist-phrases',
+        );
         const downloadButton = document.getElementById('ai-agent-download');
         const saveButton = document.getElementById('ai-agent-save');
         const cancelButton = document.getElementById('ai-agent-cancel');
@@ -351,6 +412,16 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         if (!(maxWorkingSummaryCharactersInput instanceof HTMLInputElement)) {
             throw new Error('AI settings maximum working summary input missing');
+        }
+        for (const [input, label] of [
+            [whitelistTagsInput, 'whitelisted tags'],
+            [whitelistPhrasesInput, 'whitelisted phrases'],
+            [blacklistTagsInput, 'blacklisted tags'],
+            [blacklistPhrasesInput, 'blacklisted phrases'],
+        ]) {
+            if (!(input instanceof HTMLTextAreaElement)) {
+                throw new Error(`AI settings cloud privacy ${label} input missing`);
+            }
         }
         if (!(installedModelSelect instanceof HTMLSelectElement)) {
             throw new Error('AI settings installed model selector missing');
@@ -438,6 +509,24 @@ export class AiAgentSettingsModal extends BaseModal {
                 'maxWorkingSummaryCharacters',
                 Number(maxWorkingSummaryCharactersInput.value),
             );
+        };
+        whitelistTagsInput.oninput = () => {
+            this.updateModalState({ whitelistTagsText: whitelistTagsInput.value, error: '' });
+        };
+        whitelistPhrasesInput.oninput = () => {
+            this.updateModalState({
+                whitelistPhrasesText: whitelistPhrasesInput.value,
+                error: '',
+            });
+        };
+        blacklistTagsInput.oninput = () => {
+            this.updateModalState({ blacklistTagsText: blacklistTagsInput.value, error: '' });
+        };
+        blacklistPhrasesInput.oninput = () => {
+            this.updateModalState({
+                blacklistPhrasesText: blacklistPhrasesInput.value,
+                error: '',
+            });
         };
         if (downloadButton instanceof HTMLButtonElement) {
             downloadButton.onclick = () => void this._handleDownload();
@@ -716,6 +805,13 @@ export class AiAgentSettingsModal extends BaseModal {
                 return;
             }
         }
+        const privacyValidationMessage = getCloudPrivacyTextFieldsValidationMessage(state);
+        if (privacyValidationMessage !== '') {
+            this.updateModalState({ error: privacyValidationMessage });
+            this.renderModalContent();
+            return;
+        }
+        const cloudPrivacyPolicy = parseCloudPrivacyTextFields(state);
         await this._saveSettings({
             provider: state.provider,
             model: state.model,
@@ -727,6 +823,7 @@ export class AiAgentSettingsModal extends BaseModal {
                 state.openAiRetrievalSettings,
                 'openai',
             ),
+            cloudPrivacyPolicy,
         });
         this.close();
     }

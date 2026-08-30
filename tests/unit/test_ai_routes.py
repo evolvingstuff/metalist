@@ -1014,6 +1014,74 @@ def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
     assert captured_freeze_arguments["authoritative_search_query"] == "testosterone"
 
 
+def test_cloud_privacy_preview_returns_hidden_ids_in_visible_order(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(ai_routes.note_store, "has_note", lambda note_id: True)
+    monkeypatch.setattr(
+        ai_routes,
+        "load_client_preferences",
+        lambda *, token: {"pref.ai.cloud_privacy_policy": "policy"},
+    )
+    boundary = object()
+
+    def resolve_boundary(*, preferences, provider):
+        captured["preferences"] = preferences
+        captured["provider"] = provider
+        return boundary
+
+    monkeypatch.setattr(ai_routes, "resolve_cloud_privacy_boundary", resolve_boundary)
+
+    def hidden_note_ids(*, note_ids, boundary):
+        captured["note_ids"] = note_ids
+        captured["boundary"] = boundary
+        return frozenset({"note-c", "note-a"})
+
+    monkeypatch.setattr(
+        ai_routes.cloud_privacy_evaluator,
+        "hidden_note_ids",
+        hidden_note_ids,
+    )
+
+    response = Response()
+    result = ai_routes.preview_cloud_privacy(
+        payload=ai_routes.CloudPrivacyPreviewRequest(
+            provider="openai",
+            note_ids=["note-a", "note-b", "note-c"],
+        ),
+        response=response,
+        token="auth-token",
+    )
+
+    assert result.hidden_note_ids == ["note-a", "note-c"]
+    assert captured == {
+        "preferences": {"pref.ai.cloud_privacy_policy": "policy"},
+        "provider": "openai",
+        "note_ids": ("note-a", "note-b", "note-c"),
+        "boundary": boundary,
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_cloud_privacy_preview_rejects_stale_visible_note_ids(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ai_routes.note_store,
+        "has_note",
+        lambda note_id: note_id != "deleted-note",
+    )
+
+    with pytest.raises(HTTPException, match="Visible note set changed") as error:
+        ai_routes.preview_cloud_privacy(
+            payload=ai_routes.CloudPrivacyPreviewRequest(
+                provider="openai",
+                note_ids=["deleted-note"],
+            ),
+            response=Response(),
+            token="auth-token",
+        )
+
+    assert error.value.status_code == 409
+
+
 def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> None:
     store = AiChatSessionStore()
 

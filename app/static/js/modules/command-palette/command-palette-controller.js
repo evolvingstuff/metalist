@@ -60,6 +60,12 @@ import {
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
 import {
+    CLOUD_PRIVACY_POLICY_PREFERENCE_KEY,
+    readCloudPrivacyPolicy,
+    serializeCloudPrivacyPolicy,
+    validateCloudPrivacyPolicy,
+} from '../ai-chat/cloud-privacy-policy.js';
+import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
 } from '../mode-manager/services/search-input-service.js';
@@ -400,6 +406,7 @@ class CommandPaletteController {
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
                 setIsUntaggedView: this.setIsUntaggedView.bind(this),
                 openAiAgentSettings: this.openAiAgentSettings.bind(this),
+                openCloudPrivacySettings: this.openCloudPrivacySettings.bind(this),
                 openAgentPromptEditor: this.openAgentPromptEditor.bind(this),
             },
         });
@@ -698,6 +705,9 @@ class CommandPaletteController {
             ),
             ollamaRetrievalSettings,
             openAiRetrievalSettings,
+            cloudPrivacyPolicy: readCloudPrivacyPolicy(
+                (key) => this._preferences.getRaw(key),
+            ),
             ...retrievalSettings,
         };
     }
@@ -811,6 +821,9 @@ class CommandPaletteController {
             settings.openAiRetrievalSettings,
             'openai',
         );
+        const cloudPrivacyPolicy = validateCloudPrivacyPolicy(
+            settings.cloudPrivacyPolicy,
+        );
         const modelPreferenceKey = settings.provider === 'openai'
             ? 'pref.ai.openai_model'
             : 'pref.ai.ollama_model';
@@ -858,6 +871,9 @@ class CommandPaletteController {
             ),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens]: String(
                 openAiRetrievalSettings.idealNarrowedScopeApproximateTokens,
+            ),
+            [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
+                cloudPrivacyPolicy,
             ),
         });
         document.dispatchEvent(new CustomEvent(
@@ -2564,7 +2580,10 @@ class CommandPaletteController {
         this._noteLayoutAppearanceModal.open();
     }
 
-    async openAiAgentSettings() {
+    async openAiAgentSettings(focusCloudPrivacy = false) {
+        if (typeof focusCloudPrivacy !== 'boolean') {
+            throw new Error('openAiAgentSettings requires boolean focusCloudPrivacy');
+        }
         const isReady = await this._prepareForModalOpen('commandPalette.openAiAgentSettings');
         if (!isReady) {
             return;
@@ -2576,6 +2595,13 @@ class CommandPaletteController {
             );
         }
         this._aiAgentSettingsModal.open();
+        if (focusCloudPrivacy) {
+            this._aiAgentSettingsModal.focusCloudPrivacySettings();
+        }
+    }
+
+    async openCloudPrivacySettings() {
+        await this.openAiAgentSettings(true);
     }
 
     async openAgentPromptEditor() {

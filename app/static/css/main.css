@@ -3222,8 +3222,42 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-weight: 600;
 }
 
+.ai-agent-cloud-privacy-settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 4px 0 0;
+    padding: 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
+
+.ai-agent-cloud-privacy-settings legend {
+    padding: 0 5px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.ai-agent-cloud-privacy-settings > p {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.ai-agent-cloud-privacy-settings > label {
+    display: grid;
+    gap: 6px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+}
+
 .ai-agent-settings-controls input,
 .ai-agent-settings-controls select,
+.ai-agent-settings-controls textarea,
 .ai-agent-model-download-row input {
     width: 100%;
     box-sizing: border-box;
@@ -3233,6 +3267,14 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     background: #ffffff;
     color: #1e293b;
     font: inherit;
+}
+
+.ai-agent-settings-controls textarea {
+    min-height: 90px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
 }
 
 .ai-agent-model-download {
@@ -3395,6 +3437,7 @@ html[data-theme="dark"] .ai-chat-working-indicator {
 html[data-theme="dark"] .ai-chat-composer textarea,
 html[data-theme="dark"] .ai-agent-settings-controls input,
 html[data-theme="dark"] .ai-agent-settings-controls select,
+html[data-theme="dark"] .ai-agent-settings-controls textarea,
 html[data-theme="dark"] .ai-agent-model-download-row input {
     border-color: #475569;
     background: #0f172a;
@@ -3421,6 +3464,19 @@ html[data-theme="dark"] .ai-agent-retrieval-settings > label {
 }
 
 html[data-theme="dark"] .ai-agent-retrieval-settings > p {
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .ai-agent-cloud-privacy-settings {
+    border-color: #475569;
+}
+
+html[data-theme="dark"] .ai-agent-cloud-privacy-settings legend,
+html[data-theme="dark"] .ai-agent-cloud-privacy-settings > label {
+    color: #cbd5e1;
+}
+
+html[data-theme="dark"] .ai-agent-cloud-privacy-settings > p {
     color: #94a3b8;
 }
 
@@ -3812,6 +3868,11 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria
     gap: 2px;
     background-color: #ffffff;
     transition: border-color 120ms ease;
+}
+
+.note.cloud-ai-private-preview {
+    background-color: #e5e7eb !important;
+    border-color: #9ca3af;
 }
 
 .note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {
@@ -6800,6 +6861,11 @@ html[data-theme="dark"] .note {
     border-color: var(--app-border-strong);
     color: var(--text-color);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+html[data-theme="dark"] .note.cloud-ai-private-preview {
+    background-color: #374151 !important;
+    border-color: #6b7280;
 }
 
 html[data-theme="dark"] .note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {

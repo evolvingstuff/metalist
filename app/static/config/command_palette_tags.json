@@ -73,6 +73,10 @@
       "tags": ["ai", "agent", "assistant", "ollama", "model", "models", "provider", "connection", "url", "configure", "configuration", "settings"]
     },
     {
+      "id": "form.cloud_ai_privacy",
+      "tags": ["ai", "agent", "cloud", "privacy", "private", "security", "whitelist", "blacklist", "allowlist", "blocklist", "tags", "phrases", "settings"]
+    },
+    {
       "id": "form.agent_prompts",
       "tags": ["ai", "agent", "assistant", "prompt", "prompts", "system", "instructions", "ollama", "inspect", "edit", "alter", "override", "defaults", "developer", "settings"]
     },

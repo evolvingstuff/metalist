@@ -144,6 +144,11 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.ollama_model": "qwen3:8b",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
+        "pref.ai.cloud_privacy_policy": (
+            '{"blacklist_phrases":["secret phrase"],'
+            '"blacklist_tags":["private"],'
+            '"whitelist_phrases":[],"whitelist_tags":["project"]}'
+        ),
         "pref.ai.retrieval.max_note_characters": "8000",
         "pref.ai.retrieval.max_page_characters": "30000",
         "pref.ai.retrieval.max_notes_per_page": "5",
@@ -175,6 +180,34 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
 
     assert saved == expected_preferences
     assert load_client_preferences(token="") == expected_preferences
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "{}",
+        '{"blacklist_phrases":[],"blacklist_tags":[],"whitelist_phrases":[]}',
+        (
+            '{"blacklist_phrases":[],"blacklist_tags":["bad tag"],'
+            '"whitelist_phrases":[],"whitelist_tags":[]}'
+        ),
+        (
+            '{"blacklist_phrases":[],"blacklist_tags":["private","PRIVATE"],'
+            '"whitelist_phrases":[],"whitelist_tags":[]}'
+        ),
+    ],
+)
+def test_save_client_preferences_rejects_invalid_cloud_privacy_policy(
+    memory_settings_db,
+    policy,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Cloud privacy"):
+        save_client_preferences(
+            preferences={"pref.ai.cloud_privacy_policy": policy},
+            token="",
+        )
 
 
 @pytest.mark.parametrize("width", ["279", "5001", "640.5", "0640"])

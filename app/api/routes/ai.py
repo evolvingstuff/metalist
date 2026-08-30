@@ -26,6 +26,8 @@ from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
 from app.services.agent.context import AgentContextBuilder
+from app.services.agent.cloud_privacy import cloud_privacy_evaluator
+from app.services.agent.cloud_privacy import resolve_cloud_privacy_boundary
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.model_policy import SingleModelPolicy
@@ -123,6 +125,27 @@ class OpenAICredentialRequest(BaseModel):
 class OpenAICredentialStatusResponse(BaseModel):
     configured: bool
     persistent: bool
+
+
+class CloudPrivacyPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ollama", "openai"]
+    note_ids: list[str] = Field(..., max_length=20_000)
+
+    @field_validator("note_ids")
+    @classmethod
+    def validate_note_ids(cls, values: list[str]) -> list[str]:
+        if any(not isinstance(value, str) or value.strip() == "" for value in values):
+            raise ValueError("Privacy preview note ids must be non-empty strings")
+        normalized = [value.strip() for value in values]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Privacy preview note ids must be unique")
+        return normalized
+
+
+class CloudPrivacyPreviewResponse(BaseModel):
+    hidden_note_ids: list[str]
 
 
 class AiSkillDefaultResponse(BaseModel):
@@ -376,6 +399,41 @@ def get_ai_prompt_defaults(
     )
 
 
+@router.post(
+    "/cloud-privacy/preview",
+    response_model=CloudPrivacyPreviewResponse,
+)
+@transactional_route
+def preview_cloud_privacy(
+    payload: CloudPrivacyPreviewRequest,
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> CloudPrivacyPreviewResponse:
+    response.headers["Cache-Control"] = "no-store"
+    missing_note_ids = [
+        note_id for note_id in payload.note_ids if not note_store.has_note(note_id)
+    ]
+    if missing_note_ids:
+        raise HTTPException(
+            status_code=409,
+            detail="Visible note set changed before privacy preview",
+        )
+    preferences = load_client_preferences(token=token)
+    boundary = resolve_cloud_privacy_boundary(
+        preferences=preferences,
+        provider=payload.provider,
+    )
+    hidden_note_ids = cloud_privacy_evaluator.hidden_note_ids(
+        note_ids=tuple(payload.note_ids),
+        boundary=boundary,
+    )
+    return CloudPrivacyPreviewResponse(
+        hidden_note_ids=[
+            note_id for note_id in payload.note_ids if note_id in hidden_note_ids
+        ]
+    )
+
+
 @router.post("/models/pull")
 @transactional_route
 def pull_ai_model(
@@ -588,6 +646,10 @@ def stream_ai_chat(
         preferences=preferences,
         provider=payload.provider,
     )
+    privacy_boundary = resolve_cloud_privacy_boundary(
+        preferences=preferences,
+        provider=payload.provider,
+    )
     authoritative_active_tab_id = tab_state_store.get_active_tab_id()
     if payload.scope.active_tab_id != authoritative_active_tab_id:
         raise HTTPException(
@@ -613,6 +675,7 @@ def stream_ai_chat(
         authoritative_date_filter=authoritative_date_filter,
         run_id=str(uuid4()),
         session_key=session_key,
+        privacy_boundary=privacy_boundary,
     )
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,

@@ -10,6 +10,9 @@ from typing import Literal, Mapping, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.agent.cloud_privacy import CloudPrivacyBoundary
+from app.services.agent.cloud_privacy import CloudPrivacyEvaluator
+from app.services.agent.cloud_privacy import cloud_privacy_evaluator
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.note_store import NoteRecord
 from app.services.note_store import NoteStore
@@ -153,9 +156,11 @@ class ScopedSearchSnapshotFactory:
         *,
         notes: NoteStore,
         view_scope_resolver: Callable[..., ResolvedViewScope],
+        privacy_evaluator: CloudPrivacyEvaluator,
     ) -> None:
         self._notes = notes
         self._view_scope_resolver = view_scope_resolver
+        self._privacy_evaluator = privacy_evaluator
 
     def freeze(
         self,
@@ -166,6 +171,7 @@ class ScopedSearchSnapshotFactory:
         authoritative_date_filter: dict[str, str],
         run_id: str,
         session_key: str,
+        privacy_boundary: CloudPrivacyBoundary,
     ) -> ScopedSearchSnapshot:
         if descriptor.search_query != authoritative_search_query:
             raise ValueError("Active tab search query changed before Send")
@@ -186,9 +192,14 @@ class ScopedSearchSnapshotFactory:
             is_untagged_view=descriptor.scope_kind == "untagged",
         )
         candidate_ids = set(resolved.matched_note_ids)
+        hidden_candidate_ids = self._privacy_evaluator.hidden_note_ids(
+            note_ids=tuple(candidate_ids),
+            boundary=privacy_boundary,
+        )
+        visible_candidate_ids = candidate_ids - hidden_candidate_ids
         ordered_candidate_ids = self._ordered_candidate_ids(
             ordered_root_ids=resolved.ordered_root_ids,
-            candidate_ids=candidate_ids,
+            candidate_ids=visible_candidate_ids,
         )
         frozen_notes: dict[str, FrozenScopedNote] = {}
         included_root_ids: list[str] = []
@@ -200,7 +211,9 @@ class ScopedSearchSnapshotFactory:
                 tags=record.tags,
             )
             if content_is_redacted:
-                continue
+                raise RuntimeError(
+                    "Privacy boundary admitted an @password note into agent scope"
+                )
             root_note_id = self._root_note_id(note_id)
             if root_note_id not in seen_root_ids:
                 seen_root_ids.add(root_note_id)
@@ -235,7 +248,10 @@ class ScopedSearchSnapshotFactory:
                 for note_id in descriptor.reference_root_ids
             }
             if descriptor_root_ids != set(included_root_ids):
-                raise ValueError("Reference roots do not match the resolved reference scope")
+                if not set(included_root_ids).issubset(descriptor_root_ids):
+                    raise ValueError(
+                        "Reference roots do not match the resolved reference scope"
+                    )
         return ScopedSearchSnapshot(
             run_id=run_id,
             session_key=session_key,
@@ -341,4 +357,5 @@ class ScopedSearchSnapshotFactory:
 scoped_search_snapshot_factory = ScopedSearchSnapshotFactory(
     notes=note_store,
     view_scope_resolver=resolve_view_scope_membership,
+    privacy_evaluator=cloud_privacy_evaluator,
 )

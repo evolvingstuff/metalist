@@ -4,6 +4,7 @@ import {
     copyAiChatResponse,
     listAiModels,
     loadAiChatSession,
+    previewCloudPrivacy,
     streamAiChat,
 } from './ai-chat-api.js';
 import { AgentDebugView } from './ai-agent-debug-view.js';
@@ -212,6 +213,9 @@ class AiChatPanelController {
         this._isLoadingModels = false;
         this._activeChatAbortController = null;
         this._activeChatCompletion = null;
+        this._privacyPreviewAbortController = null;
+        this._isPrivacyPreviewHovered = false;
+        this._privacyPreviewMutationObserver = null;
         this._isClearingSession = false;
         this._localMessageSequence = 0;
         this._getSettings = null;
@@ -229,6 +233,9 @@ class AiChatPanelController {
 
         this._handleVisibilityChanged = this._handleVisibilityChanged.bind(this);
         this._handleSettingsChanged = this._handleSettingsChanged.bind(this);
+        this._handlePrivacyPointerEnter = this._handlePrivacyPointerEnter.bind(this);
+        this._handlePrivacyPointerLeave = this._handlePrivacyPointerLeave.bind(this);
+        this._handlePrivacyNotesMutation = this._handlePrivacyNotesMutation.bind(this);
         this._handleMessageContextMenu = this._handleMessageContextMenu.bind(this);
         this._handlePointerMove = this._handlePointerMove.bind(this);
         this._handlePointerUp = this._handlePointerUp.bind(this);
@@ -320,6 +327,17 @@ class AiChatPanelController {
             throw new Error('Stored AI chat diagnostic visibility must be boolean');
         }
         this._bindEvents();
+        const notesContainer = requireElement('notes-container', HTMLElement);
+        this._privacyPreviewMutationObserver = new MutationObserver(
+            this._handlePrivacyNotesMutation,
+        );
+        this._privacyPreviewMutationObserver.observe(notesContainer, {
+            attributes: true,
+            attributeFilter: ['data-note-id', 'data-note-tags'],
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
         await AgentDebugView.init();
         this._initialized = true;
         this._syncDiagnosticActivityToggle();
@@ -387,6 +405,8 @@ class AiChatPanelController {
             window.addEventListener('pointercancel', this._handlePointerUp, { once: true });
         });
         elements.resizer.addEventListener('keydown', this._handleResizerKeydown);
+        elements.panel.addEventListener('pointerenter', this._handlePrivacyPointerEnter);
+        elements.panel.addEventListener('pointerleave', this._handlePrivacyPointerLeave);
         window.addEventListener('resize', this._handleWindowResize);
         document.addEventListener('metalist:ai-chat-visibility-changed', this._handleVisibilityChanged);
         document.addEventListener('metalist:ai-settings-changed', this._handleSettingsChanged);
@@ -401,6 +421,8 @@ class AiChatPanelController {
             this._syncResizerAria();
             this._elements.input.focus();
             void this._loadModels();
+        } else {
+            this._clearPrivacyPreview();
         }
     }
 
@@ -409,11 +431,101 @@ class AiChatPanelController {
             throw new Error('AI settings event is malformed');
         }
         this._syncSettingsControls();
+        if (this._isPrivacyPreviewHovered) {
+            void this._refreshPrivacyPreview();
+        }
         if (
             event.detail.reloadModels
             && document.body.classList.contains('pref-show-ai-chat')
         ) {
             void this._loadModels();
+        }
+    }
+
+    _handlePrivacyPointerEnter() {
+        this._isPrivacyPreviewHovered = true;
+        void this._refreshPrivacyPreview();
+    }
+
+    _handlePrivacyPointerLeave() {
+        this._isPrivacyPreviewHovered = false;
+        this._clearPrivacyPreview();
+    }
+
+    _handlePrivacyNotesMutation() {
+        if (this._isPrivacyPreviewHovered) {
+            void this._refreshPrivacyPreview();
+        }
+    }
+
+    _clearPrivacyPreview() {
+        if (this._privacyPreviewAbortController !== null) {
+            this._privacyPreviewAbortController.abort();
+            this._privacyPreviewAbortController = null;
+        }
+        const highlightedNotes = document.querySelectorAll(
+            '.note.cloud-ai-private-preview',
+        );
+        for (const noteElement of highlightedNotes) {
+            noteElement.classList.remove('cloud-ai-private-preview');
+        }
+    }
+
+    async _refreshPrivacyPreview() {
+        this._clearPrivacyPreview();
+        if (!this._isPrivacyPreviewHovered) {
+            return;
+        }
+        const notesContainer = requireElement('notes-container', HTMLElement);
+        const noteElements = Array.from(
+            notesContainer.querySelectorAll('.note[data-note-id]'),
+        );
+        if (noteElements.length === 0) {
+            return;
+        }
+        const noteIds = noteElements.map((noteElement) => {
+            const noteId = noteElement.dataset.noteId;
+            if (typeof noteId !== 'string' || noteId === '') {
+                throw new Error('Privacy preview note is missing data-note-id');
+            }
+            return noteId;
+        });
+        if (new Set(noteIds).size !== noteIds.length) {
+            throw new Error('Privacy preview visible note ids must be unique');
+        }
+        const settings = this._getSettings();
+        const abortController = new AbortController();
+        this._privacyPreviewAbortController = abortController;
+        try {
+            const payload = await previewCloudPrivacy({
+                provider: settings.provider,
+                noteIds,
+                signal: abortController.signal,
+            });
+            if (
+                abortController.signal.aborted
+                || !this._isPrivacyPreviewHovered
+                || this._privacyPreviewAbortController !== abortController
+            ) {
+                return;
+            }
+            const hiddenNoteIds = new Set(payload.hidden_note_ids);
+            for (const noteElement of noteElements) {
+                if (hiddenNoteIds.has(noteElement.dataset.noteId)) {
+                    noteElement.classList.add('cloud-ai-private-preview');
+                }
+            }
+        } catch (error) {
+            if (!abortController.signal.aborted) {
+                if (!(error instanceof AiApiError)) {
+                    throw error;
+                }
+                Logger.logError('Cloud AI privacy preview failed', error);
+            }
+        } finally {
+            if (this._privacyPreviewAbortController === abortController) {
+                this._privacyPreviewAbortController = null;
+            }
         }
     }
 

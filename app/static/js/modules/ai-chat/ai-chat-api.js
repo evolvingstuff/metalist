@@ -99,6 +99,39 @@ export async function setAiDebugExactDetails(enabled) {
 }
 
 
+export async function previewCloudPrivacy({ provider, noteIds, signal }) {
+    if (!['ollama', 'openai'].includes(provider)) {
+        throw new Error('previewCloudPrivacy requires supported provider');
+    }
+    if (!Array.isArray(noteIds)) {
+        throw new Error('previewCloudPrivacy requires note ids array');
+    }
+    if (noteIds.some((noteId) => typeof noteId !== 'string' || noteId === '')) {
+        throw new Error('previewCloudPrivacy note ids must be non-empty strings');
+    }
+    if (!(signal instanceof AbortSignal)) {
+        throw new Error('previewCloudPrivacy requires abort signal');
+    }
+    const response = await fetchAi(CONFIG.API.AI.CLOUD_PRIVACY_PREVIEW, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({
+            provider,
+            note_ids: noteIds,
+        }),
+        signal,
+    });
+    const payload = await readJsonResponse(
+        response,
+        'Failed to preview cloud AI privacy',
+    );
+    if (!Array.isArray(payload.hidden_note_ids)) {
+        throw new Error('Cloud AI privacy preview response is invalid');
+    }
+    return payload;
+}
+
+
 export async function copyAiChatResponse({ messageId, clientId }) {
     if (typeof messageId !== 'string' || messageId === '') {
         throw new Error('copyAiChatResponse requires messageId');

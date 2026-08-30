@@ -86,6 +86,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const getIsUntaggedView = requireAction(actions, 'getIsUntaggedView');
     const setIsUntaggedView = requireAction(actions, 'setIsUntaggedView');
     const openAiAgentSettings = requireAction(actions, 'openAiAgentSettings');
+    const openCloudPrivacySettings = requireAction(actions, 'openCloudPrivacySettings');
     const openAgentPromptEditor = requireAction(actions, 'openAgentPromptEditor');
 
     const defaults = {
@@ -272,6 +273,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'AI agent settings…',
             execute: async () => openAiAgentSettings(),
+        },
+        {
+            id: 'form.cloud_ai_privacy',
+            kind: 'form',
+            label: 'Cloud AI privacy…',
+            execute: async () => openCloudPrivacySettings(),
         },
         {
             id: 'form.agent_prompts',
