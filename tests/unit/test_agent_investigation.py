@@ -53,6 +53,7 @@ def _snapshot() -> ScopedSearchSnapshot:
     descriptor = AgentScopeDescriptor(
         scope_kind="all_notes",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="",
         sort_mode="normal",
         date_filter_active=False,

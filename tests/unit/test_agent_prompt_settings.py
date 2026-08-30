@@ -38,6 +38,11 @@ def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
     assert "Citations are current-run evidence only" in normalized_system_prompt
     assert "must never be reused from an earlier turn" in normalized_system_prompt
     assert "do not write your own References section" in normalized_system_prompt
+    assert "correction, objection, or challenge" in normalized_system_prompt
+    assert "do not repeat or regenerate the previous answer" in normalized_system_prompt
+    assert "unless explicitly asked to re-check notes" in normalized_system_prompt
+    assert "acknowledge the correction directly" in normalized_final_prompt
+    assert "Do not repeat prior answer" in normalized_final_prompt
     assert DEFAULT_AGENT_PROMPTS.render_final_response_request(
         basis="Use the retrieved note.",
     ).startswith("FINAL_RESPONSE_REQUEST\nStructured basis: Use the retrieved note.")

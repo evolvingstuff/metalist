@@ -85,7 +85,7 @@ unbounded scope. Approval of this plan includes approval of that behavior.
 - No regex action in the initial release.
 - No note creation, editing, movement, deletion, tagging, or other mutation.
 - No durable investigation summaries, traces, or source caches.
-- No LiteLLM or remote-provider work.
+- No LiteLLM, automatic provider routing, fallback, or cost-accounting layer.
 - No silent reuse of the existing global-search action under a new UI label.
 
 ## Architectural Invariants
@@ -155,12 +155,12 @@ fields and invalid cross-field combinations at the boundary.
 
 Client-visible description of the active UI state submitted with the chat turn:
 
-- scope kind: normal search, all notes, untagged, or reference source;
-- active tab ID;
+- scope kind: normal search, all notes, or untagged;
+- visible active tab ID and originating scope tab ID;
 - displayed search text or required empty placeholder;
 - date-filter signature/state;
 - sort mode;
-- temporary reference root IDs when applicable;
+- empty compatibility reference-ID list for current clients;
 - client-visible label used by the chat scope indicator.
 
 The server validates this descriptor against authenticated namespace/tab state and
@@ -404,8 +404,9 @@ Introduce focused services rather than putting scope logic in the FastAPI route:
 
 - Extend the required AI chat request with a validated active-scope descriptor.
 - At Send time, the chat controller reads the current ModeManager/tab state,
-  temporary-view state, search text, date filter, sort mode, and Reference source
-  context and submits one coherent snapshot descriptor.
+  search text, date filter, and sort mode. A temporary Reference source supplies
+  its retained originating scope instead of replacing that scope with the UUID
+  navigation query.
 - The server cross-checks client claims against authenticated tab/temporary-view
   state and resolves the authoritative membership set.
 - Do not send thousands of note IDs from the browser.
@@ -415,9 +416,9 @@ Introduce focused services rather than putting scope logic in the FastAPI route:
   Scope · project-foo · 834 notes in 217 result trees
   ```
 
-  Empty search renders `Scope · All notes`; reference/untagged scopes use their
-  established labels. The displayed scope remains the captured scope even if the
-  user navigates elsewhere while the run continues.
+  Empty search renders `Scope · All notes`; untagged scope uses its established
+  label. The displayed scope remains the captured scope even if the user navigates
+  elsewhere while the run continues.
 - Scope metadata is session-only transcript/debug state and is excluded from later
   canonical model history.
 
@@ -472,8 +473,8 @@ validated by the investigation schema.
 1. Add failing tests for required scope request fields and server-side resolution.
 2. Extract/reuse canonical search-scope resolution so `/notes/view` and the agent
    agree on membership and ordering.
-3. Implement immutable `ScopedSearchSnapshot` creation for normal, all-notes,
-   untagged, and Reference source contexts.
+3. Implement immutable `ScopedSearchSnapshot` creation for normal, all-notes, and
+   untagged contexts; Reference source navigation retains its originating context.
 4. Prove gray-bar nodes, protected content, unrelated roots, and post-Send UI changes
    cannot enter the scope.
 5. Add whole-scope counts and deterministic root/note ordering tests.
@@ -566,8 +567,8 @@ scoped-investigation architecture with no hidden fallback to global search.
 - Chat requests fail when the scope descriptor is missing or malformed.
 - Server resolution, not client UUID input, determines scope membership.
 - Empty search resolves explicitly to all eligible non-redacted notes.
-- Normal search/date/untagged/reference scopes match the main view's membership and
-  root order.
+- Normal search/date/untagged scopes match the main view's membership and root
+  order, including while a temporary Reference source is visible.
 - Ancestors used only for UI reachability and gray-bar descendants are excluded.
 - Protected values and their exclusive tags do not leak through facets or pages.
 - Tag facets are computed over the full current subset, not the current page.
@@ -638,8 +639,10 @@ scoped-investigation architecture with no hidden fallback to global search.
    subsequent wire requests while the structured summary remains.
 7. Ask for an exact date/value/quotation and verify the selected source is reopened
    before the final response.
-8. Open individual and combined References and verify the established temporary
-   Reference source context and dismissible return behavior still work.
+8. Open individual and combined AI References and verify a later AI reference
+   replaces the active temporary query, follow-up chat retains the originating
+   search scope, dismissible return behavior still works, and ordinary references
+   followed inside notes still stack.
 9. Cancel during a long structured step and verify Ollama work stops, the run records
    cancellation, and scope/summary state is released.
 
@@ -659,4 +662,7 @@ scoped-investigation architecture with no hidden fallback to global search.
   summary size, evidence sufficiency, and approximate input-token counts.
 - Existing read-only, cancellation, non-persistence, prompt-editing, and managed
   Ollama guarantees remain intact.
+- The provider-neutral inference seam additionally supports direct OpenAI API calls.
+  API keys are write-only to the browser, encrypted at rest only when the namespace
+  itself is encrypted, and otherwise remain in authenticated server-session memory.
 - Automated suites, startup sanity, diff checks, and human acceptance tests pass.

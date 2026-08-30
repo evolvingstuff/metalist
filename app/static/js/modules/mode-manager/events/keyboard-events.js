@@ -42,9 +42,11 @@ import {
 } from '../services/search-input-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import {
+    captureReferenceOriginScopeForActiveTab,
     isViewingReferenceSource,
     popReferenceNavigationEntryForActiveTab,
     pushReferenceNavigationEntry,
+    replaceActiveReferenceNavigationQuery,
     updateReferenceSourceIndicator,
 } from '../services/reference-source-navigation-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
@@ -3333,6 +3335,7 @@ export async function openReferenceInNewTab(referenceNoteId) {
     return openReferenceQueryInNewTabWithContext(
         referenceNoteId,
         'reference.link_open_tab',
+        false,
     );
 }
 
@@ -3343,11 +3346,26 @@ export async function openReferenceQueryInNewTab(referenceQuery) {
     return openReferenceQueryInNewTabWithContext(
         referenceQuery,
         'reference.collection_open_tab',
+        true,
     );
 }
 
-async function openReferenceQueryInNewTabWithContext(referenceQuery, context) {
+async function openReferenceQueryInNewTabWithContext(
+    referenceQuery,
+    context,
+    replaceActiveReference,
+) {
+    if (typeof replaceActiveReference !== 'boolean') {
+        throw new Error('Reference navigation requires replacement policy');
+    }
+    if (replaceActiveReference && isViewingReferenceSource()) {
+        replaceActiveReferenceNavigationQuery(referenceQuery);
+        await runReferenceSearchInActiveTab(referenceQuery, context);
+        return ModeContext.activeTabId;
+    }
+
     const sourceTabId = ModeContext.activeTabId;
+    const originScope = captureReferenceOriginScopeForActiveTab();
     const newTabId = await duplicateTabContext(sourceTabId);
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Reference navigation expected duplicateTabContext to return a tab id');
@@ -3357,7 +3375,7 @@ async function openReferenceQueryInNewTabWithContext(referenceQuery, context) {
         await switchToTabContext(newTabId, {});
     }
 
-    pushReferenceNavigationEntry(sourceTabId, newTabId, referenceQuery);
+    pushReferenceNavigationEntry(sourceTabId, newTabId, referenceQuery, originScope);
     await runReferenceSearchInActiveTab(referenceQuery, context);
     return newTabId;
 }

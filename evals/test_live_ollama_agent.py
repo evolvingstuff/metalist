@@ -13,8 +13,10 @@ import pytest
 
 from app.services.agent.actions import InvestigationStep
 from app.services.agent.actions import InvestigationStepConstraints
+from app.services.agent.actions import RespondAction
 from app.services.agent.actions import EvidenceSelection
 from app.services.agent.actions import EvidenceSelectionConstraints
+from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import ScopedRouteConstraints
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import WorkingSummary
@@ -226,6 +228,59 @@ def _nested_single_page_snapshot() -> ScopedSearchSnapshot:
     )
 
 
+def _diet_scope_snapshot() -> ScopedSearchSnapshot:
+    descriptor = AgentScopeDescriptor(
+        scope_kind="search",
+        active_tab_id="live-eval-tab",
+        search_query="testosterone",
+        sort_mode="normal",
+        date_filter_active=False,
+        date_filter_metric="",
+        date_filter_start="",
+        date_filter_end="",
+        reference_root_ids=[],
+        label="testosterone",
+    )
+    content_by_id = {
+        _NOTE_ID: "Testosterone activates nitric oxide signaling in blood vessels.",
+        _SECOND_NOTE_ID: "Eating onions may support testosterone levels.",
+        _IRRELEVANT_NOTE_ID: "Farmer's walk exercise may support testosterone.",
+    }
+    notes = {
+        note_id: FrozenScopedNote(
+            note_id=note_id,
+            parent_id="",
+            root_note_id=note_id,
+            content_text=content,
+            explicit_tags_text="testosterone",
+            explicit_tag_terms=("testosterone",),
+            created_at="2026-08-29T00:00:00+00:00",
+            updated_at="2026-08-29T00:00:00+00:00",
+            order_index=index,
+        )
+        for index, (note_id, content) in enumerate(content_by_id.items())
+    }
+    tree_nodes = {
+        note_id: FrozenScopedTreeNode(
+            note_id=note_id,
+            parent_id="",
+            root_note_id=note_id,
+            child_ids=(),
+        )
+        for note_id in content_by_id
+    }
+    return ScopedSearchSnapshot(
+        run_id="live-eval-diet-scope-run",
+        session_key="live-eval-session",
+        descriptor=descriptor,
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=tuple(content_by_id),
+        ordered_note_ids=tuple(content_by_id),
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=MappingProxyType(tree_nodes),
+    )
+
+
 def _first_model_kind(attempt: InferenceAttempt) -> str:
     response = attempt.response
     choices = response["choices"]
@@ -283,6 +338,156 @@ async def _infer_route(
     return route, response.attempts, time.perf_counter() - started_at
 
 
+async def _infer_follow_up_route(
+    *,
+    adapter: OllamaInferenceAdapter,
+    base_url: str,
+    model: str,
+) -> tuple[ScopedRouteEnvelope, list[InferenceAttempt], float]:
+    snapshot = _snapshot(search_query="testosterone")
+    user_message = "nitric oxide is not food"
+    canonical_messages = [
+        {
+            "role": "user",
+            "content": "please summarize the stuff relating to diet",
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "Nitric oxide is one of the dietary items in your notes."
+            ),
+        },
+        {"role": "user", "content": user_message},
+    ]
+    messages = AgentContextBuilder().build_scoped_route_messages(
+        canonical_messages=canonical_messages,
+        prompts=DEFAULT_AGENT_PROMPTS,
+        snapshot=snapshot,
+        evidence_page_count=1,
+    )
+    constraints = ScopedRouteConstraints(
+        explicit_saved_notes_request=request_explicitly_requires_saved_notes(
+            user_message
+        )
+    )
+    started_at = time.perf_counter()
+    with bind_scoped_route_constraints(constraints):
+        response = await adapter.infer_structured(
+            base_url=base_url,
+            model=model,
+            thinking_level="off",
+            messages=messages,
+            response_model=ScopedRouteEnvelope,
+            on_progress=lambda _progress: None,
+        )
+        route = ScopedRouteEnvelope.model_validate_json(response.content)
+    return route, response.attempts, time.perf_counter() - started_at
+
+
+async def _infer_follow_up_response(
+    *,
+    adapter: OllamaInferenceAdapter,
+    base_url: str,
+    model: str,
+) -> tuple[str, float]:
+    canonical_messages = [
+        {
+            "role": "user",
+            "content": "please summarize the stuff relating to diet",
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "1. Nitric Oxide and Testosterone.\n"
+                "2. Testosterone Boosters.\n"
+                "3. Dietary Influences: onions.\n"
+                "4. Fasting."
+            ),
+        },
+        {"role": "user", "content": "nitric oxide is not food"},
+    ]
+    builder = AgentContextBuilder()
+    messages = builder.build_initial_messages(
+        canonical_messages=canonical_messages,
+        prompts=DEFAULT_AGENT_PROMPTS,
+    )
+    final_messages = builder.append_final_request(
+        messages=messages,
+        action=RespondAction(
+            kind="respond",
+            basis="The latest message corrects the preceding answer.",
+        ),
+        prompts=DEFAULT_AGENT_PROMPTS,
+        current_user_request=canonical_messages[-1]["content"],
+    )
+    started_at = time.perf_counter()
+    final_parts: list[str] = []
+    async for event in adapter.stream_text(
+        base_url=base_url,
+        model=model,
+        thinking_level="off",
+        messages=final_messages,
+        max_output_tokens=256,
+        on_request=lambda _request: None,
+    ):
+        if event["type"] == "content_delta":
+            response_text = event["text"]
+            if not isinstance(response_text, str):
+                raise TypeError("Live follow-up content delta must be text")
+            final_parts.append(response_text)
+    return "".join(final_parts), time.perf_counter() - started_at
+
+
+async def _infer_diet_evidence_selection(
+    *,
+    adapter: OllamaInferenceAdapter,
+    base_url: str,
+    model: str,
+) -> tuple[EvidenceSelectionWithoutRationale, float]:
+    snapshot = _diet_scope_snapshot()
+    state = InvestigationState.start(
+        snapshot=snapshot,
+        settings=AgentRetrievalSettings(
+            max_note_characters=2_000,
+            max_page_characters=20_000,
+            max_notes_per_page=50,
+            max_ranked_tags_per_page=50,
+            max_working_summary_characters=8_000,
+        ),
+    )
+    note_page = state.current_note_page()
+    messages = AgentContextBuilder().build_single_page_evidence_selection_messages(
+        canonical_messages=[
+            {
+                "role": "user",
+                "content": "please summarize the stuff relating to diet",
+            }
+        ],
+        prompts=DEFAULT_AGENT_PROMPTS,
+        skill=DEFAULT_AGENT_SKILLS.for_action("evidence_selection"),
+        state=state,
+        note_page=note_page,
+        include_rationale=False,
+    )
+    constraints = EvidenceSelectionConstraints(
+        allowed_note_ids=frozenset(note_page.evidence_note_ids),
+    )
+    started_at = time.perf_counter()
+    with bind_evidence_selection_constraints(constraints):
+        response = await adapter.infer_structured(
+            base_url=base_url,
+            model=model,
+            thinking_level="off",
+            messages=messages,
+            response_model=EvidenceSelectionWithoutRationale,
+            on_progress=lambda _progress: None,
+        )
+        selection = EvidenceSelectionWithoutRationale.model_validate_json(
+            response.content
+        )
+    return selection, time.perf_counter() - started_at
+
+
 @pytest.mark.parametrize(
     ("user_message", "search_query", "expected_kind"),
     (
@@ -329,6 +534,93 @@ def test_live_model_selects_expected_initial_route(
     )
     assert first_kind == expected_kind
     assert route.kind == expected_kind
+
+
+def test_live_model_treats_exact_follow_up_correction_as_conversation(
+    live_ollama: tuple[str, str, OllamaInferenceAdapter],
+) -> None:
+    base_url, model, adapter = live_ollama
+    route, attempts, elapsed_seconds = asyncio.run(
+        _infer_follow_up_route(
+            adapter=adapter,
+            base_url=base_url,
+            model=model,
+        )
+    )
+    first_kind = _first_model_kind(attempts[0])
+    print(
+        json.dumps(
+            {
+                "eval": "follow_up_correction_route",
+                "model": model,
+                "user_message": "nitric oxide is not food",
+                "search_query": "testosterone",
+                "initial_kind": first_kind,
+                "validated_kind": route.kind,
+                "attempts": len(attempts),
+                "elapsed_seconds": round(elapsed_seconds, 3),
+            },
+            sort_keys=True,
+        )
+    )
+    assert first_kind == "respond"
+    assert route.kind == "respond"
+
+    final_text, final_elapsed_seconds = asyncio.run(
+        _infer_follow_up_response(
+            adapter=adapter,
+            base_url=base_url,
+            model=model,
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "eval": "follow_up_correction_response",
+                "model": model,
+                "user_message": "nitric oxide is not food",
+                "final_text": final_text,
+                "elapsed_seconds": round(final_elapsed_seconds, 3),
+            },
+            sort_keys=True,
+        )
+    )
+    folded_final = final_text.casefold()
+    assert "nitric oxide" in folded_final
+    assert (
+        "not food" in folded_final
+        or "not a food" in folded_final
+        or "isn't food" in folded_final
+    )
+    assert "testosterone boosters" not in folded_final
+    assert "onions" not in folded_final
+    assert "fasting" not in folded_final
+
+
+def test_live_model_excludes_broad_scope_neighbors_from_exact_diet_request(
+    live_ollama: tuple[str, str, OllamaInferenceAdapter],
+) -> None:
+    base_url, model, adapter = live_ollama
+    selection, elapsed_seconds = asyncio.run(
+        _infer_diet_evidence_selection(
+            adapter=adapter,
+            base_url=base_url,
+            model=model,
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "eval": "narrow_diet_evidence_selection",
+                "model": model,
+                "user_message": "please summarize the stuff relating to diet",
+                "selected_note_ids": selection.relevant_note_ids,
+                "elapsed_seconds": round(elapsed_seconds, 3),
+            },
+            sort_keys=True,
+        )
+    )
+    assert selection.relevant_note_ids == [_SECOND_NOTE_ID]
 
 
 async def _infer_first_multi_page_investigation_step(
@@ -429,6 +721,7 @@ async def _infer_single_page_final(
         skill=DEFAULT_AGENT_SKILLS.for_action("evidence_selection"),
         state=state,
         note_page=note_page,
+        include_rationale=True,
     )
     constraints = EvidenceSelectionConstraints(
         allowed_note_ids=frozenset(note_page.evidence_note_ids),

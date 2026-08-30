@@ -102,7 +102,7 @@ def test_plaintext_namespace_advances_through_migrations_without_rewriting(tmp_p
 
     assert result.initial_version == 0
     assert result.final_version == CURRENT_DATABASE_VERSION
-    assert result.applied_versions == (1, 2, 3, 4)
+    assert result.applied_versions == (1, 2, 3, 4, 5)
     assert result.rewritten_payload_count == 0
     assert read_database_version(connection) == CURRENT_DATABASE_VERSION
     row = connection.execute(
@@ -214,8 +214,8 @@ def test_database_version_two_adds_namespace_content_migration_ledger(
         encryption_service=None,
     )
 
-    assert CURRENT_DATABASE_VERSION == 4
-    assert result.applied_versions == (1, 2, 3, 4)
+    assert CURRENT_DATABASE_VERSION == 5
+    assert result.applied_versions == (1, 2, 3, 4, 5)
     columns = {
         row[1]
         for row in connection.execute(
@@ -296,7 +296,7 @@ def test_database_version_four_discards_legacy_query_scores(
         encryption_service=service,
     )
 
-    assert result.applied_versions == (3, 4)
+    assert result.applied_versions == (3, 4, 5)
     columns = {
         str(row["name"])
         for row in connection.execute(
@@ -311,6 +311,48 @@ def test_database_version_four_discards_legacy_query_scores(
     }
     row = connection.execute("SELECT * FROM search_interaction_history").fetchone()
     assert row is None
+    connection.close()
+
+
+def test_database_version_five_adds_openai_credential_columns(
+    tmp_path: Path,
+) -> None:
+    connection = sqlite3.connect(tmp_path / "openai-credentials-v4.db")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        """
+        CREATE TABLE app_settings (
+            id INTEGER PRIMARY KEY,
+            encryption_enabled INTEGER NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO app_settings (id, encryption_enabled) VALUES (1, 0)"
+    )
+    connection.execute("PRAGMA user_version = 4")
+
+    result = run_database_migrations(
+        connection=connection,
+        encryption_enabled=False,
+        encryption_service=None,
+    )
+
+    assert result.applied_versions == (5,)
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(app_settings)").fetchall()
+    }
+    assert {
+        "openai_api_key_ciphertext",
+        "openai_api_key_encryption_nonce",
+        "openai_api_key_encryption_tag",
+    } <= columns
+    row = connection.execute("SELECT * FROM app_settings WHERE id = 1").fetchone()
+    assert row is not None
+    assert row["openai_api_key_ciphertext"] is None
+    assert row["openai_api_key_encryption_nonce"] is None
+    assert row["openai_api_key_encryption_tag"] is None
     connection.close()
 
 

@@ -164,13 +164,24 @@ test('chat accepts scoped-investigation lifecycle activities', () => {
 
 test('chat freezes the active scope only when submitting a turn', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const submitMethod = /async _submitMessage\(\) \{[\s\S]*?\n    \}/.exec(controller)?.[0];
     const settingsMethod = /_syncSettingsControls\(\) \{[\s\S]*?\n    \}/.exec(controller)?.[0];
 
     assert.ok(submitMethod);
     assert.ok(settingsMethod);
     assert.match(submitMethod, /const scope = captureActiveAgentScope\(\)/);
-    assert.match(submitMethod, /streamAiChat\(\{[\s\S]*?scope,/);
+    assert.match(controller, /scope_tab_id: scopeTabId/);
+    assert.match(controller, /getActiveReferenceOriginScope\(\)/);
+    assert.match(
+        submitMethod,
+        /const showDiagnostics = this\._showDiagnosticActivities/,
+    );
+    assert.match(
+        submitMethod,
+        /streamAiChat\(\{[\s\S]*?scope,[\s\S]*?showDiagnostics,/,
+    );
+    assert.match(chatApi, /show_diagnostics: showDiagnostics/);
     assert.doesNotMatch(settingsMethod, /captureActiveAgentScope/);
 });
 
@@ -471,7 +482,10 @@ test('streaming keeps drafting available and reset cancels the active Ollama req
     assert.match(controller, /new AbortController\(\)/);
     assert.match(controller, /label: 'Cancelled by user'/);
     assert.match(controller, /assistantMessage\.rendered_content = event\.rendered_content/);
-    assert.match(chatApi, /streamAiChat\(\{ settings, message, scope, onEvent, signal \}\)/);
+    assert.match(
+        chatApi,
+        /streamAiChat\(\{[\s\S]*?showDiagnostics,[\s\S]*?signal,[\s\S]*?\}\)/,
+    );
     assert.match(chatApi, /signal,/);
     assert.doesNotMatch(controller, /this\._elements\.clear\.disabled = isBusy/);
     assert.match(
@@ -540,7 +554,7 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(controller, /model:\s*requireElement\('ai-chat-model', HTMLSelectElement\)/);
     assert.match(controller, /thinkingLevel:\s*requireElement\('ai-chat-thinking-level', HTMLSelectElement\)/);
     assert.match(controller, /elements\.model\.addEventListener\('change', \(\) => void this\._selectModel\(\)\)/);
-    assert.match(controller, /await listOllamaModels\(settings\)/);
+    assert.match(controller, /await listAiModels\(settings\)/);
     assert.doesNotMatch(modal, /id="ai-agent-model"/);
     assert.doesNotMatch(modal, /id="ai-agent-thinking-level"/);
     assert.match(commandController, /'pref\.ai\.thinking_level'/);
@@ -553,6 +567,34 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.doesNotMatch(modal, /id="ai-agent-base-url"/);
     assert.doesNotMatch(chatApi, /base_url:/);
     assert.doesNotMatch(modal, /_saveConnection/);
+    assert.match(modal, /<option value="openai"/);
+    assert.match(modal, /id="ai-agent-openai-api-key" type="password"/);
+    assert.match(modal, /Encrypted namespaces[\s\S]*?persist it encrypted/);
+    assert.match(modal, /unencrypted namespaces keep it[\s\S]*?server session only/);
+    assert.match(modal, /await saveOpenAiCredential\(apiKey\)/);
+    assert.match(chatApi, /export async function loadOpenAiCredentialStatus/);
+    assert.match(chatApi, /export async function clearOpenAiCredential/);
+});
+
+
+test('OpenAI API key storage is independent from provider model settings', () => {
+    const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const renderMethod = modal.slice(
+        modal.indexOf('renderModalContent()'),
+        modal.indexOf('_setupControls()'),
+    );
+    const settingsSaveHandler = modal.slice(
+        modal.indexOf('async _handleSave()'),
+        modal.indexOf('\n}', modal.indexOf('async _handleSave()')),
+    );
+
+    assert.match(modal, /id="ai-agent-openai-save"[^>]*>Save key<\/button>/);
+    assert.match(modal, /async _handleSaveOpenAiKey\(\)/);
+    assert.match(modal, /await saveOpenAiCredential\(apiKey\)/);
+    assert.doesNotMatch(renderMethod, /!state\.openAiCredentialConfigured/);
+    assert.doesNotMatch(renderMethod, /state\.openAiApiKey/);
+    assert.doesNotMatch(renderMethod, /!state\.installedModels\.includes\(state\.model\)/);
+    assert.doesNotMatch(settingsSaveHandler, /saveOpenAiCredential/);
 });
 
 

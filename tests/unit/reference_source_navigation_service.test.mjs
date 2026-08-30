@@ -59,14 +59,24 @@ test('nested reference source entries expose and dismiss one temporary context a
         '../../app/static/js/modules/mode-manager/mode-context.js'
     );
     const {
+        getActiveReferenceOriginScope,
         isViewingReferenceSource,
         getActiveReferenceSourceQuery,
         popReferenceNavigationEntryForActiveTab,
         pushReferenceNavigationEntry,
+        replaceActiveReferenceNavigationQuery,
         updateReferenceSourceIndicator,
     } = await import(
         '../../app/static/js/modules/mode-manager/services/reference-source-navigation-service.js'
     );
+
+    const originScope = {
+        scopeTabId: 'original',
+        searchQuery: 'project',
+        sortMode: 'normal',
+        dateFilter: null,
+        isUntaggedView: false,
+    };
 
     ModeContext.hydrateTabState({
         activeTabId: 'source-1',
@@ -77,9 +87,10 @@ test('nested reference source entries expose and dismiss one temporary context a
         },
         tabOrder: ['original', 'source-1', 'source-2'],
     }, { emitUpdate: false });
-    pushReferenceNavigationEntry('original', 'source-1', 'uuid-1');
+    pushReferenceNavigationEntry('original', 'source-1', 'uuid-1', originScope);
     assert.equal(isViewingReferenceSource(), true);
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-1');
+    assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     assert.equal(indicator.hidden, false);
 
     ModeContext.hydrateTabState({
@@ -91,11 +102,15 @@ test('nested reference source entries expose and dismiss one temporary context a
         },
         tabOrder: ['original', 'source-1', 'source-2'],
     }, { emitUpdate: false });
-    pushReferenceNavigationEntry('source-1', 'source-2', 'uuid-2');
+    pushReferenceNavigationEntry('source-1', 'source-2', 'uuid-2', originScope);
+    assert.deepEqual(getActiveReferenceOriginScope(), originScope);
+    replaceActiveReferenceNavigationQuery('uuid-3');
+    assert.equal(getActiveReferenceSourceQuery(), 'uuid-3');
     assert.deepEqual(popReferenceNavigationEntryForActiveTab(), {
         fromTabId: 'source-1',
         toTabId: 'source-2',
-        referenceQuery: 'uuid-2',
+        referenceQuery: 'uuid-3',
+        originScope,
     });
     assert.equal(indicator.hidden, true);
 
@@ -113,6 +128,7 @@ test('nested reference source entries expose and dismiss one temporary context a
         fromTabId: 'original',
         toTabId: 'source-1',
         referenceQuery: 'uuid-1',
+        originScope,
     });
     assert.equal(indicator.hidden, true);
 

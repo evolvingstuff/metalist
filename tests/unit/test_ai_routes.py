@@ -13,12 +13,14 @@ from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 from app.services.ollama_provider import OllamaProviderError
+from app.services.openai_credentials import OpenAICredentialStatus
 
 
 def _all_notes_scope() -> ai_routes.AgentScopeDescriptor:
     return ai_routes.AgentScopeDescriptor(
         scope_kind="all_notes",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="",
         sort_mode="normal",
         date_filter_active=False,
@@ -119,7 +121,7 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
         turn_id=turn_id,
         action="model_request",
         status="started",
-        label="Waiting for Ollama · attempt 1 of 2",
+        label="Waiting for Ollama",
         approx_input_tokens=1_234,
         output_tokens_received=0,
         duration_ms=12.5,
@@ -146,7 +148,7 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
             "sequence": 1,
             "action": "model_request",
             "status": "started",
-            "label": "Waiting for Ollama · attempt 1 of 2",
+            "label": "Waiting for Ollama",
                     "approx_input_tokens": 1_234,
                     "output_tokens_received": 0,
                     "duration_ms": 12.5,
@@ -181,6 +183,153 @@ def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
         for skill in DEFAULT_AGENT_SKILLS.skills
     ]
     assert http_response.headers["Cache-Control"] == "no-store"
+
+
+def test_openai_model_discovery_does_not_start_ollama() -> None:
+    response = asyncio.run(
+        ai_routes.list_ai_models(
+            payload=ai_routes.AiModelsRequest(provider="openai"),
+            token="auth-token",
+        )
+    )
+
+    assert response.models == [
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+    ]
+
+
+def test_openai_credential_request_masks_key_in_representations() -> None:
+    api_key = "sk-test-0123456789abcdefghijklmnop"
+
+    payload = ai_routes.OpenAICredentialRequest(api_key=api_key)
+
+    assert api_key not in repr(payload)
+    assert api_key not in str(payload)
+    assert payload.api_key.get_secret_value() == api_key
+
+
+def test_openai_credential_route_rejects_invalid_key_without_echoing_it(
+    monkeypatch,
+) -> None:
+    invalid_key = "sk-too-short-secret"
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        ai_routes.put_openai_credential(
+            payload=ai_routes.OpenAICredentialRequest(api_key=invalid_key),
+            response=Response(),
+            token="auth-token",
+        )
+
+    assert error.value.status_code == 422
+    assert invalid_key not in str(error.value.detail)
+
+
+def test_openai_credential_routes_use_authenticated_session(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeCredentialStore:
+        def status(self, *, token, session_key):
+            calls.append(("status", {"token": token, "session_key": session_key}))
+            return OpenAICredentialStatus(configured=False, persistent=False)
+
+        def configure(self, *, token, session_key, api_key):
+            calls.append((
+                "configure",
+                {"token": token, "session_key": session_key, "api_key": api_key},
+            ))
+            return OpenAICredentialStatus(configured=True, persistent=False)
+
+        def clear(self, *, session_key):
+            calls.append(("clear", {"session_key": session_key}))
+            return OpenAICredentialStatus(configured=False, persistent=False)
+
+    monkeypatch.setattr(ai_routes, "openai_credential_store", FakeCredentialStore())
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+    api_key = "sk-test-0123456789abcdefghijklmnop"
+
+    status_response = Response()
+    status = ai_routes.get_openai_credential_status(
+        response=status_response,
+        token="auth-token",
+    )
+    save_response = Response()
+    saved = ai_routes.put_openai_credential(
+        payload=ai_routes.OpenAICredentialRequest(api_key=api_key),
+        response=save_response,
+        token="auth-token",
+    )
+    clear_response = Response()
+    cleared = ai_routes.delete_openai_credential(
+        response=clear_response,
+        token="auth-token",
+    )
+
+    assert status.model_dump() == {"configured": False, "persistent": False}
+    assert saved.model_dump() == {"configured": True, "persistent": False}
+    assert cleared.model_dump() == {"configured": False, "persistent": False}
+    assert calls == [
+        ("status", {"token": "auth-token", "session_key": "session-key"}),
+        (
+            "configure",
+            {
+                "token": "auth-token",
+                "session_key": "session-key",
+                "api_key": api_key,
+            },
+        ),
+        ("clear", {"session_key": "session-key"}),
+    ]
+    assert status_response.headers["Cache-Control"] == "no-store"
+    assert save_response.headers["Cache-Control"] == "no-store"
+    assert clear_response.headers["Cache-Control"] == "no-store"
+
+
+def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
+    monkeypatch,
+) -> None:
+    store = AiChatSessionStore()
+
+    class MissingCredentialStore:
+        def status(self, *, token, session_key):
+            del token, session_key
+            return OpenAICredentialStatus(configured=False, persistent=False)
+
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes, "openai_credential_store", MissingCredentialStore())
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+
+    with pytest.raises(HTTPException, match="OpenAI API key is not configured") as error:
+        ai_routes.stream_ai_chat(
+            payload=ai_routes.AiChatRequest(
+                provider="openai",
+                model="gpt-5.6-sol",
+                thinking_level="medium",
+                show_diagnostics=False,
+                message="Hello",
+                scope=_all_notes_scope(),
+            ),
+            token="auth-token",
+        )
+
+    assert error.value.status_code == 409
+    assert store.snapshot(session_key="session-key") == {"messages": []}
 
 
 def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) -> None:
@@ -516,6 +665,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             skills,
             retrieval_settings,
             frozen_scope,
+            include_evidence_rationale,
         ):
             assert session_key == "session-key"
             assert base_url == "http://127.0.0.1:11435"
@@ -532,6 +682,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert retrieval_settings.max_page_approximate_tokens == 7_000
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
+            assert include_evidence_rationale is True
             yield {
                 "type": "action_status",
                 "action": "planning",
@@ -569,6 +720,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             provider="ollama",
             model="qwen3:8b",
             thinking_level="low",
+            show_diagnostics=True,
             message="Hello",
             scope=_all_notes_scope(),
         ),
@@ -647,6 +799,102 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     ]
 
 
+def test_stream_chat_uses_openai_provider_without_starting_ollama(
+    monkeypatch,
+) -> None:
+    store = AiChatSessionStore()
+    api_key = "sk-test-0123456789abcdefghijklmnop"
+    inference_sentinel = object()
+
+    class ConfiguredCredentialStore:
+        def status(self, *, token, session_key):
+            assert token == "auth-token"
+            assert session_key == "session-key"
+            return OpenAICredentialStatus(configured=True, persistent=False)
+
+        def resolve(self, *, token, session_key):
+            assert token == "auth-token"
+            assert session_key == "session-key"
+            return api_key
+
+    class FakeRuntime:
+        async def stream_scoped(self, **arguments):
+            assert arguments["base_url"] == "https://api.openai.com/v1"
+            assert arguments["selected_model"] == "gpt-5.6-sol"
+            assert arguments["thinking_level"] == "medium"
+            assert arguments["canonical_messages"] == [
+                {"role": "user", "content": "Hello"}
+            ]
+            yield {
+                "type": "content_delta",
+                "text": "Hi from OpenAI",
+                "reference_note_ids": [],
+            }
+            yield {"type": "done", "reference_note_ids": []}
+
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(
+        ai_routes,
+        "openai_credential_store",
+        ConfiguredCredentialStore(),
+    )
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+    def fake_openai_adapter(*, api_key: str):
+        assert api_key == "sk-test-0123456789abcdefghijklmnop"
+        return inference_sentinel
+
+    monkeypatch.setattr(ai_routes, "OpenAIInferenceAdapter", fake_openai_adapter)
+
+    def fake_runtime_factory(*, inference):
+        assert inference is inference_sentinel
+        return FakeRuntime()
+
+    monkeypatch.setattr(ai_routes, "_agent_runtime", fake_runtime_factory)
+
+    response = ai_routes.stream_ai_chat(
+        payload=ai_routes.AiChatRequest(
+            provider="openai",
+            model="gpt-5.6-sol",
+            thinking_level="medium",
+            show_diagnostics=False,
+            message="Hello",
+            scope=_all_notes_scope(),
+        ),
+        token="auth-token",
+    )
+
+    async def read_events() -> list[dict[str, object]]:
+        raw_chunks = [chunk async for chunk in response.body_iterator]
+        return [json.loads(chunk) for chunk in raw_chunks]
+
+    events = asyncio.run(read_events())
+
+    assert _without_activity_token_counts(events[:2]) == [
+        {
+            "type": "action_status",
+            "action": "provider_runtime",
+            "status": "started",
+            "label": "Connecting to OpenAI API",
+        },
+        {
+            "type": "action_status",
+            "action": "provider_runtime",
+            "status": "completed",
+            "label": "OpenAI API ready · 1,050,000-token context",
+        },
+    ]
+    assert events[2]["text"] == "Hi from OpenAI"
+    assert events[3]["content"] == "Hi from OpenAI"
+    snapshot = store.snapshot(session_key="session-key")
+    assert snapshot["messages"][0]["provider"] == "openai"
+    assert snapshot["messages"][1]["provider"] == "openai"
+
+
 def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
     monkeypatch,
 ) -> None:
@@ -670,6 +918,7 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
                 provider="ollama",
                 model="qwen3:8b",
                 thinking_level="low",
+                show_diagnostics=False,
                 message="Hello",
                 scope=_all_notes_scope(),
             ),
@@ -678,6 +927,82 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
 
     assert error.value.status_code == 409
     assert store.snapshot(session_key="session-key")["messages"] == []
+
+
+def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
+    monkeypatch,
+) -> None:
+    store = AiChatSessionStore()
+    captured_freeze_arguments: dict[str, object] = {}
+
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_active_tab_id",
+        lambda: "reference-tab",
+    )
+    queried_tab_ids: list[str] = []
+
+    def get_search_query(*, tab_id: str) -> str:
+        queried_tab_ids.append(tab_id)
+        assert tab_id == "scope-tab"
+        return "testosterone"
+
+    monkeypatch.setattr(ai_routes.tab_state_store, "get_search_query", get_search_query)
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_sort_mode",
+        lambda *, tab_id: "normal" if tab_id == "scope-tab" else "invalid",
+    )
+    monkeypatch.setattr(
+        ai_routes.tab_state_store,
+        "get_date_filter",
+        lambda *, tab_id: None if tab_id == "scope-tab" else {"invalid": "tab"},
+    )
+
+    def freeze(**arguments):
+        captured_freeze_arguments.update(arguments)
+        return SimpleNamespace(
+            descriptor=arguments["descriptor"],
+            session_key=arguments["session_key"],
+            note_count=0,
+            result_tree_count=0,
+        )
+
+    monkeypatch.setattr(ai_routes.scoped_search_snapshot_factory, "freeze", freeze)
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+
+    ai_routes.stream_ai_chat(
+        payload=ai_routes.AiChatRequest(
+            provider="ollama",
+            model="qwen3:8b",
+            thinking_level="low",
+            show_diagnostics=False,
+            message="Follow up",
+            scope=ai_routes.AgentScopeDescriptor(
+                scope_kind="search",
+                active_tab_id="reference-tab",
+                scope_tab_id="scope-tab",
+                search_query="testosterone",
+                sort_mode="normal",
+                date_filter_active=False,
+                date_filter_metric="",
+                date_filter_start="",
+                date_filter_end="",
+                reference_root_ids=[],
+                label="testosterone",
+            ),
+        ),
+        token="auth-token",
+    )
+
+    assert queried_tab_ids == ["scope-tab"]
+    assert captured_freeze_arguments["authoritative_search_query"] == "testosterone"
 
 
 def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> None:
@@ -690,7 +1015,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
                 "type": "action_status",
                 "action": "model_request",
                 "status": "started",
-                "label": "Ollama choosing next action · attempt 1 of 2",
+                "label": "Ollama choosing next action",
                     "approx_input_tokens": 1_400,
                     "output_tokens_received": 0,
                     "duration_ms": 0.0,
@@ -715,6 +1040,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
             provider="ollama",
             model="qwen3:8b",
             thinking_level="low",
+            show_diagnostics=False,
             message="Cancel this request",
             scope=_all_notes_scope(),
         ),
@@ -771,9 +1097,11 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             skills,
             retrieval_settings,
             frozen_scope,
+            include_evidence_rationale,
         ):
             del session_key, base_url, selected_model, thinking_level
             del prompts, skills, retrieval_settings, frozen_scope
+            del include_evidence_rationale
             assert canonical_messages == [
                 {"role": "user", "content": "Summarize testosterone notes"},
                 {"role": "assistant", "content": "Sleep affects testosterone."},
@@ -820,6 +1148,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             provider="ollama",
             model="qwen3:8b",
             thinking_level="low",
+            show_diagnostics=False,
             message="Describe Bayes' theorem briefly",
             scope=_all_notes_scope(),
         ),
@@ -861,10 +1190,11 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             skills,
             retrieval_settings,
             frozen_scope,
+            include_evidence_rationale,
         ):
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings
-            del frozen_scope
+            del frozen_scope, include_evidence_rationale
             raise OllamaProviderError("Ollama generation failed")
             yield
 
@@ -878,6 +1208,7 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             provider="ollama",
             model="qwen3:8b",
             thinking_level="high",
+            show_diagnostics=False,
             message="Hello",
             scope=_all_notes_scope(),
         ),
@@ -917,6 +1248,7 @@ def test_chat_request_rejects_disabled_gpt_oss_thinking() -> None:
             provider="ollama",
             model="gpt-oss:20b",
             thinking_level="off",
+            show_diagnostics=False,
             message="Hello",
             scope=_all_notes_scope(),
         )

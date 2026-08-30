@@ -181,14 +181,13 @@ def test_structured_output_progress_reports_tokens_on_the_active_model_panel() -
     event = AgentRuntime._progress_status_event(
         progress,
         purpose=InferencePurpose.INVESTIGATION_STEP,
+        provider_label="Ollama",
     )
 
     assert event["action"] == "model_request"
     assert event["status"] == "started"
     assert event["output_tokens_received"] == 24
-    assert event["label"] == (
-        "Ollama updating evidence and choosing next step · attempt 1 of 2"
-    )
+    assert event["label"] == "Ollama updating evidence and choosing next step"
 
 
 def _children_in_record_order(
@@ -440,6 +439,7 @@ def test_runtime_rejects_an_undersized_loaded_context_before_inference() -> None
         permission_policy=AgentPermissionPolicy(),
         tool_registry=FakeToolRegistry(),
         trace_store=traces,
+        provider_label="Ollama",
     )
 
     async def collect_until_failure() -> list[dict[str, object]]:
@@ -709,7 +709,7 @@ def test_structured_inference_error_is_concise_and_keeps_attempts() -> None:
     error = StructuredInferenceError(attempts=attempts)
 
     assert str(error) == (
-        "Ollama could not produce a valid structured response after 2 attempts. "
+        "The model could not produce a valid structured response after 2 attempts. "
         "Open Agent Debug for exact request and response details."
     )
     assert error.attempts == attempts
@@ -750,6 +750,7 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         permission_policy=AgentPermissionPolicy(),
         tool_registry=tools,
         trace_store=traces,
+        provider_label="Ollama",
     )
 
     events = _collect_runtime_events(runtime)
@@ -762,23 +763,15 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
     ]
     assert started_labels[0] == "Loading Ollama model and checking context"
     assert started_labels[1] == "Preparing action selection"
-    assert started_labels[2] == "Ollama choosing next action · attempt 1 of 2"
-    assert started_labels[3] == (
-        "Ollama returned next-action choice · validating attempt 1 of 2"
-    )
-    assert started_labels[4] == (
-        "Ollama preparing MetaList search query · attempt 1 of 2"
-    )
-    assert started_labels[5] == (
-        "Ollama returned search-query proposal · validating attempt 1 of 2"
-    )
+    assert started_labels[2] == "Ollama choosing next action"
+    assert started_labels[3] == "Ollama returned next-action choice · validating"
+    assert started_labels[4] == "Ollama preparing MetaList search query"
+    assert started_labels[5] == "Ollama returned search-query proposal · validating"
     assert len(started_labels) == 12
     assert started_labels[6] == 'Searching notes · page 1 · "storage"'
     assert started_labels[7] == "Preparing action selection"
-    assert started_labels[8] == "Ollama choosing next action · attempt 1 of 2"
-    assert started_labels[9] == (
-        "Ollama returned next-action choice · validating attempt 1 of 2"
-    )
+    assert started_labels[8] == "Ollama choosing next action"
+    assert started_labels[9] == "Ollama returned next-action choice · validating"
     assert started_labels[10] == "Writing response"
     assert _without_activity_token_counts(events[-5:]) == [
             {"type": "thinking_delta", "text": "Final reasoning"},
@@ -896,20 +889,14 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         event for event in run["events"] if event["type"] == "OLLAMA_REQUEST"
     ]
     assert len(wire_requests) == 4
-    assert wire_requests[0]["label"] == (
-        "Ollama wire request: action-selection · attempt 1 of 2"
-    )
+    assert wire_requests[0]["label"] == "Ollama wire request: action-selection"
     assert wire_requests[0]["detail"]["body"]["messages"][0]["role"] == "system"
     assert wire_requests[0]["detail"]["body"]["messages"][1] == {
         "role": "user",
         "content": "What did I decide about storage?",
     }
-    assert wire_requests[1]["label"] == (
-        "Ollama wire request: search-query · attempt 1 of 2"
-    )
-    assert wire_requests[-1]["label"] == (
-        "Ollama wire request: final-response · attempt 1 of 2"
-    )
+    assert wire_requests[1]["label"] == "Ollama wire request: search-query"
+    assert wire_requests[-1]["label"] == "Ollama wire request: final-response"
     assert wire_requests[-1]["detail"]["body"]["messages"] == final_context
     assert "SYSTEM_PROMPT" not in event_types
 
@@ -955,6 +942,7 @@ def test_runtime_skips_a_semantically_duplicate_completed_search() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=tools,
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
 
     events = _collect_runtime_events(runtime)
@@ -1032,6 +1020,7 @@ def test_runtime_allows_a_revised_second_search() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=tools,
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
 
     events = _collect_runtime_events(runtime)
@@ -1092,6 +1081,7 @@ def test_runtime_skips_duplicate_query_after_a_distinct_repeat_search_reason() -
         permission_policy=AgentPermissionPolicy(),
         tool_registry=tools,
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
 
     events = _collect_runtime_events(runtime)
@@ -1184,6 +1174,7 @@ def test_runtime_records_instructor_validation_retry_attempts() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=FakeToolRegistry(),
         trace_store=traces,
+        provider_label="Ollama",
     )
 
     events = _collect_runtime_events(runtime)
@@ -1207,12 +1198,30 @@ def test_runtime_records_instructor_validation_retry_attempts() -> None:
             "label": "Structured output invalid (ValidationError) · Instructor will retry",
         }
     ]
+    attempt_events = [
+        event
+        for event in events
+        if event["type"] == "action_status"
+        and event["action"] in {"model_request", "validation"}
+    ]
+    assert [event["label"] for event in attempt_events] == [
+        "Ollama choosing next action",
+        "Ollama returned next-action choice · validating",
+        "Instructor retrying · Ollama choosing next action · attempt 2 of 2",
+        "Ollama returned next-action choice · validating attempt 2 of 2",
+        "Structured action validated · attempt 2 of 2",
+    ]
     wire_requests = [
         event
         for event in traces.snapshot(session_key="session-a")["run"]["events"]
         if event["type"] == "OLLAMA_REQUEST"
     ]
     assert [event["detail"]["attempt"] for event in wire_requests] == [1, 2, 1]
+    assert [event["label"] for event in wire_requests] == [
+        "Ollama wire request: action-selection",
+        "Ollama wire request: action-selection · attempt 2 of 2",
+        "Ollama wire request: final-response",
+    ]
     response_events = [
         event
         for event in traces.snapshot(session_key="session-a")["run"]["events"]
@@ -1296,6 +1305,21 @@ def test_context_builder_uses_packaged_prompt_resources() -> None:
     assert "Every note-derived\nparagraph or list item" in final_request
     assert "[[UUID]]" in final_request
     assert "same evidence object" in final_request
+
+    final_messages = builder.append_final_request(
+        messages=initial_messages,
+        action=RespondAction(
+            kind="respond",
+            basis="The latest message corrects the preceding answer.",
+        ),
+        prompts=DEFAULT_AGENT_PROMPTS,
+        current_user_request="nitric oxide is not food",
+    )
+    final_payload = json.loads(final_messages[-1]["content"].split("\n", 1)[1])
+    assert final_payload["current_user_request"] == "nitric oxide is not food"
+    assert final_payload["reference_catalog"] == []
+    assert final_payload["response_mode"] == "direct_without_note_evidence"
+    assert "acknowledge the correction directly" in final_payload["instruction"]
 
 
 def test_trace_store_always_keeps_latest_run_and_exact_details_default_on() -> None:

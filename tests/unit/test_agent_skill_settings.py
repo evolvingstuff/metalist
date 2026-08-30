@@ -36,6 +36,15 @@ def test_packaged_investigation_skill_explains_scope_and_bounded_navigation() ->
     assert "ranking hint rather than proof of relevance" in normalized_skill
 
 
+def test_packaged_evidence_selection_skill_requires_narrow_request_match() -> None:
+    skill = DEFAULT_AGENT_SKILLS.for_action("evidence_selection")
+
+    normalized_skill = " ".join(skill.content.split())
+    assert "narrowest constraint in the current request" in normalized_skill
+    assert "broad scope topic" in normalized_skill
+    assert "different subtopic or mechanism" in normalized_skill
+
+
 def test_resolve_agent_skill_set_uses_namespace_override() -> None:
     skills = resolve_agent_skill_set(
         preferences={

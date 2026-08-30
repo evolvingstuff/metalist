@@ -173,6 +173,38 @@ def _replace_with_legacy_search_history(database_path: Path) -> None:
         connection.close()
 
 
+def _downgrade_to_version_4_schema(database_path: Path) -> None:
+    connection = sqlite3.connect(database_path)
+    try:
+        for column in (
+            "openai_api_key_ciphertext",
+            "openai_api_key_encryption_nonce",
+            "openai_api_key_encryption_tag",
+        ):
+            connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute("PRAGMA user_version = 4")
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_audit_allows_encrypted_version_4_namespace_before_migration(
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    _downgrade_to_version_4_schema(database_path)
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is True
+    assert report.findings == ()
+
+
 def test_audit_scans_all_namespaces_and_skips_plaintext_namespaces(tmp_path: Path) -> None:
     namespaces_directory = tmp_path / "namespaces"
     encrypted_database = _create_namespace_database(

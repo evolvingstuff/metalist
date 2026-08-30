@@ -43,6 +43,14 @@ test('AI reference collections open a combined OR search in a new tab', async ()
     assert.match(mouseEvents, /openReferenceQueryInNewTab\(referenceQuery\)/);
     assert.match(keyboardEvents, /export async function openReferenceQueryInNewTab/);
     assert.match(keyboardEvents, /runReferenceSearchInActiveTab\(referenceQuery/);
+    assert.match(
+        keyboardEvents,
+        /'reference\.collection_open_tab',\s*true,/,
+    );
+    assert.match(
+        keyboardEvents,
+        /replaceActiveReference && isViewingReferenceSource\(\)/,
+    );
 
     const mouseDownExclusion = mouseEvents.match(
         /function isMouseDownOutsideEditExclusion[\s\S]*?function handleSearchFieldMouseDown/,
@@ -56,4 +64,13 @@ test('AI reference links prefer their exact evidence query over the displayed ro
 
     assert.match(mouseEvents, /closest\('\[data-ref-query\]'\)/);
     assert.match(mouseEvents, /openReferenceQueryInNewTab\(referenceQuery\)/);
+});
+
+test('ordinary note references retain stacked navigation behavior', async () => {
+    const keyboardEvents = await readFile(KEYBOARD_EVENTS_URL, 'utf8');
+
+    assert.match(
+        keyboardEvents,
+        /'reference\.link_open_tab',\s*false,/,
+    );
 });

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
@@ -25,8 +25,14 @@ from app.services.ai_chat_rendering import find_note_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
 from app.services.agent.context import AgentContextBuilder
+from app.services.agent.inference import InferenceAdapter
+from app.services.agent.inference import InferenceProviderError
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.ollama_inference import OllamaInferenceAdapter
+from app.services.agent.openai_inference import OPENAI_API_BASE_URL
+from app.services.agent.openai_inference import OPENAI_MODELS
+from app.services.agent.openai_inference import OpenAIInferenceAdapter
+from app.services.agent.openai_inference import validate_openai_model
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompt_settings import resolve_agent_prompt_set
@@ -49,6 +55,9 @@ from app.services.ollama_provider import OllamaProviderError
 from app.services.ollama_provider import ollama_provider
 from app.services.ollama_provider import resolve_ollama_think_value
 from app.services.ollama_provider import validate_ollama_model
+from app.services.openai_credentials import OpenAICredentialInputError
+from app.services.openai_credentials import openai_credential_store
+from app.services.openai_credentials import validate_openai_api_key
 from app.services.sync import set_clipboard
 from app.services.tab_state import tab_state_store
 from app.services.tokens import token_service
@@ -57,13 +66,22 @@ from app.services.tokens import token_service
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 agent_context_builder = AgentContextBuilder()
-agent_runtime = AgentRuntime(
-    context_builder=agent_context_builder,
-    inference=OllamaInferenceAdapter(provider=ollama_provider),
-    model_policy=SingleModelPolicy(),
-    permission_policy=AgentPermissionPolicy(),
-    tool_registry=read_only_agent_tools,
-    trace_store=agent_trace_store,
+
+
+def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
+    return AgentRuntime(
+        context_builder=agent_context_builder,
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=read_only_agent_tools,
+        trace_store=agent_trace_store,
+        provider_label=inference.provider_label,
+    )
+
+
+agent_runtime = _agent_runtime(
+    inference=OllamaInferenceAdapter(provider=ollama_provider)
 )
 
 
@@ -86,11 +104,22 @@ def _event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
 class AiModelsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["ollama"]
+    provider: Literal["ollama", "openai"]
 
 
 class AiModelsResponse(BaseModel):
     models: list[str]
+
+
+class OpenAICredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: SecretStr
+
+
+class OpenAICredentialStatusResponse(BaseModel):
+    configured: bool
+    persistent: bool
 
 
 class AiSkillDefaultResponse(BaseModel):
@@ -125,16 +154,20 @@ class AiModelPullRequest(BaseModel):
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["ollama"]
+    provider: Literal["ollama", "openai"]
     model: str
     thinking_level: Literal["off", "low", "medium", "high"]
+    show_diagnostics: bool
     message: str = Field(..., max_length=32_000)
     scope: AgentScopeDescriptor
 
     @field_validator("model")
     @classmethod
     def validate_model(cls, value: str) -> str:
-        return validate_ollama_model(value)
+        normalized = value.strip()
+        if normalized == "":
+            raise ValueError("AI model must not be blank")
+        return normalized
 
     @field_validator("message")
     @classmethod
@@ -145,10 +178,14 @@ class AiChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_thinking_level_for_model(self) -> Self:
-        resolve_ollama_think_value(
-            model=self.model,
-            thinking_level=self.thinking_level,
-        )
+        if self.provider == "ollama":
+            validate_ollama_model(self.model)
+            resolve_ollama_think_value(
+                model=self.model,
+                thinking_level=self.thinking_level,
+            )
+        else:
+            validate_openai_model(self.model)
         return self
 
 
@@ -178,7 +215,7 @@ class AiChatMessage(BaseModel):
     rendered_thinking: str
     status: Literal["complete", "streaming", "error"]
     error: str
-    provider: Literal["ollama"]
+    provider: Literal["ollama", "openai"]
     model: str
     activities: list[AiChatActivity]
 
@@ -236,12 +273,78 @@ async def list_ai_models(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> AiModelsResponse:
     del token
+    if payload.provider == "openai":
+        return AiModelsResponse(models=list(OPENAI_MODELS))
     try:
         runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
         models = await ollama_provider.list_models(base_url=runtime_info.base_url)
     except (ManagedOllamaRuntimeError, OllamaProviderError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return AiModelsResponse(models=models)
+
+
+@router.get(
+    "/openai/credential",
+    response_model=OpenAICredentialStatusResponse,
+)
+def get_openai_credential_status(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> OpenAICredentialStatusResponse:
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    status = openai_credential_store.status(token=token, session_key=session_key)
+    return OpenAICredentialStatusResponse(
+        configured=status.configured,
+        persistent=status.persistent,
+    )
+
+
+@router.put(
+    "/openai/credential",
+    response_model=OpenAICredentialStatusResponse,
+)
+@transactional_route
+def put_openai_credential(
+    payload: OpenAICredentialRequest,
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> OpenAICredentialStatusResponse:
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    # lint: allow-PY001 rationale="validate user-supplied secret after Pydantic has masked it"
+    try:
+        api_key = validate_openai_api_key(payload.api_key.get_secret_value())
+    # lint: allow-PY001 rationale="return a concise validation error without echoing the secret"
+    except OpenAICredentialInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    status = openai_credential_store.configure(
+        token=token,
+        session_key=session_key,
+        api_key=api_key,
+    )
+    return OpenAICredentialStatusResponse(
+        configured=status.configured,
+        persistent=status.persistent,
+    )
+
+
+@router.delete(
+    "/openai/credential",
+    response_model=OpenAICredentialStatusResponse,
+)
+@transactional_route
+def delete_openai_credential(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> OpenAICredentialStatusResponse:
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    status = openai_credential_store.clear(session_key=session_key)
+    return OpenAICredentialStatusResponse(
+        configured=status.configured,
+        persistent=status.persistent,
+    )
 
 
 @router.get("/prompts/defaults", response_model=AiPromptDefaultsResponse)
@@ -460,6 +563,21 @@ def stream_ai_chat(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
+    openai_api_key = ""
+    if payload.provider == "openai":
+        credential_status = openai_credential_store.status(
+            token=token,
+            session_key=session_key,
+        )
+        if not credential_status.configured:
+            raise HTTPException(
+                status_code=409,
+                detail="OpenAI API key is not configured",
+            )
+        openai_api_key = openai_credential_store.resolve(
+            token=token,
+            session_key=session_key,
+        )
     preferences = load_client_preferences(token=token)
     prompts = resolve_agent_prompt_set(preferences=preferences)
     skills = resolve_agent_skill_set(preferences=preferences)
@@ -471,13 +589,13 @@ def stream_ai_chat(
             detail="Active MetaList tab changed before Send",
         )
     authoritative_search_query = tab_state_store.get_search_query(
-        tab_id=payload.scope.active_tab_id
+        tab_id=payload.scope.scope_tab_id
     )
     authoritative_sort_mode = tab_state_store.get_sort_mode(
-        tab_id=payload.scope.active_tab_id
+        tab_id=payload.scope.scope_tab_id
     )
     authoritative_date_filter_value = tab_state_store.get_date_filter(
-        tab_id=payload.scope.active_tab_id
+        tab_id=payload.scope.scope_tab_id
     )
     authoritative_date_filter: dict[str, str] = {}
     if authoritative_date_filter_value is not None:
@@ -512,11 +630,25 @@ def stream_ai_chat(
         latest_output_tokens_received = 0
         activity_timer = AiChatActivityTimer()
         try:
+            runtime_action = "provider_runtime"
+            runtime_start_label = "Connecting to OpenAI API"
+            runtime_ready_label = "OpenAI API ready · 1,050,000-token context"
+            runtime_base_url = OPENAI_API_BASE_URL
+            if payload.provider == "ollama":
+                runtime_action = "ollama_runtime"
+                runtime_start_label = (
+                    "Starting MetaList-managed Ollama · 32,768-token context"
+                )
+                runtime = agent_runtime
+            else:
+                runtime = _agent_runtime(
+                    inference=OpenAIInferenceAdapter(api_key=openai_api_key)
+                )
             runtime_started_event = activity_timer.stamp(event={
                 "type": "action_status",
-                "action": "ollama_runtime",
+                "action": runtime_action,
                 "status": "started",
-                "label": "Starting MetaList-managed Ollama · 32,768-token context",
+                "label": runtime_start_label,
                 "approx_input_tokens": latest_approx_input_tokens,
                 "output_tokens_received": 0,
                 "duration_ms": 0.0,
@@ -532,15 +664,20 @@ def stream_ai_chat(
                 duration_ms=runtime_started_event["duration_ms"],
             )
             yield f"{json.dumps(runtime_started_event, separators=(',', ':'))}\n"
-            runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
-            runtime_ready_event = activity_timer.stamp(event={
-                "type": "action_status",
-                "action": "ollama_runtime",
-                "status": "completed",
-                "label": (
+            if payload.provider == "ollama":
+                runtime_info = await asyncio.to_thread(
+                    managed_ollama_runtime.ensure_running
+                )
+                runtime_base_url = runtime_info.base_url
+                runtime_ready_label = (
                     "MetaList-managed Ollama ready · "
                     f"{runtime_info.context_tokens:,}-token context"
-                ),
+                )
+            runtime_ready_event = activity_timer.stamp(event={
+                "type": "action_status",
+                "action": runtime_action,
+                "status": "completed",
+                "label": runtime_ready_label,
                 "approx_input_tokens": latest_approx_input_tokens,
                 "output_tokens_received": 0,
                 "duration_ms": 0.0,
@@ -556,9 +693,9 @@ def stream_ai_chat(
                 duration_ms=runtime_ready_event["duration_ms"],
             )
             yield f"{json.dumps(runtime_ready_event, separators=(',', ':'))}\n"
-            async for event in agent_runtime.stream_scoped(
+            async for event in runtime.stream_scoped(
                 session_key=session_key,
-                base_url=runtime_info.base_url,
+                base_url=runtime_base_url,
                 selected_model=payload.model,
                 thinking_level=payload.thinking_level,
                 canonical_messages=provider_messages,
@@ -566,6 +703,7 @@ def stream_ai_chat(
                 skills=skills,
                 retrieval_settings=retrieval_settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=payload.show_diagnostics,
             ):
                 event_type = event["type"]
                 outgoing_event = event
@@ -684,7 +822,11 @@ def stream_ai_chat(
                     raise RuntimeError(f"Unknown agent stream event type: {event_type}")
                 yield f"{json.dumps(outgoing_event, separators=(',', ':'))}\n"
         # lint: allow-PY001 rationale="stream errors must be delivered after response headers are sent"
-        except (AgentExecutionError, ManagedOllamaRuntimeError, OllamaProviderError) as exc:
+        except (
+            AgentExecutionError,
+            InferenceProviderError,
+            ManagedOllamaRuntimeError,
+        ) as exc:
             error_message = str(exc)
             ai_chat_store.fail_turn(
                 session_key=session_key,

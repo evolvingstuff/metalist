@@ -2,11 +2,14 @@
 
 ## Current Contract
 
-- MetaList owns orchestration; the HTTP route never asks Ollama to search the
-  namespace directly.
-- Every chat request includes a required descriptor of the result view active when
-  Send was pressed. The server checks the active tab/search/sort/date state and
-  resolves the actual members itself.
+- MetaList owns orchestration; the HTTP route never asks an inference provider to
+  search the namespace directly.
+- Every chat request includes both the tab visible when Send was pressed and the
+  tab that owns the investigative scope. Normally they are the same. A temporary
+  Reference source view keeps the visible reference tab but retains the originating
+  search tab as its scope. The server verifies the visible tab, then checks the
+  originating tab's canonical search/sort/date state and resolves the actual members
+  itself.
 - The resolved `ScopedSearchSnapshot` is immutable and session-only. All later
   paging, tag refinement, exact-text refinement, backtracking, and source reopening
   are constrained to that snapshot.
@@ -14,9 +17,9 @@
   contentless structural objects solely to preserve nesting; gray-bar content and
   tags never enter the agent context. `@password` content and tags are excluded
   before pages, facets, summaries, final evidence, or traces.
-- Instructor owns all JSON/Pydantic calls. Direct Ollama streaming is used only for
-  final prose. LiteLLM and remote providers remain deferred behind the inference
-  seam.
+- Instructor owns all JSON/Pydantic calls. Final prose streams through the selected
+  provider's native client. The supported providers are MetaList-managed Ollama and
+  the OpenAI API; LiteLLM is not required by the current inference seam.
 - No create, edit, move, tag, trash, delete, SQL, filesystem, or shell action is
   exposed.
 
@@ -24,12 +27,13 @@
 
 ```text
 POST /api2/ai/chat + required AgentScopeDescriptor
-  → verify active tab and canonical tab state
+  → verify visible tab and originating scope tab's canonical state
   → AiChatSessionStore.start_turn
-  → ManagedOllamaRuntime.ensure_running
+  → resolve selected inference provider
+      → Ollama: ManagedOllamaRuntime.ensure_running + verify active context
+      → OpenAI: resolve the server-side API key for this authenticated session
   → AgentRuntime.stream_scoped
       → freeze ScopedSearchSnapshot (S0)
-      → preload model and verify active context allocation
       → Instructor route: respond | investigate_current_scope
       → respond: stream final prose without note evidence
       → investigate:
@@ -50,12 +54,26 @@ POST /api2/ai/chat + required AgentScopeDescriptor
   → AiChatSessionStore.complete_turn
 ```
 
+OpenAI requests use the selected supported model and reasoning effort, set
+`store: false`, and keep the authorization header/API key out of trace wire bodies.
+In password-protected namespaces the API key is encrypted with the namespace DEK
+and stored in `app_settings`. In plaintext namespaces it is held only in server
+memory under the authenticated session key: a browser refresh retains it, while
+logout, lock/session replacement, or process restart removes it. The raw key is
+never returned to the browser after configuration.
+
 The high-level route sees the canonical conversation, the base system prompt, and
-a content-free `ACTIVE_METALIST_SCOPE` block containing the exact user-driven
-search query, scope kind/label, sort/date state, matching note/tree counts, and the
-computed token-budgeted evidence-page count. It
+a trailing content-free `ROUTE_SELECTION_REQUEST` containing the exact current
+request plus the user-driven search query, scope kind/label, sort/date state,
+matching note/tree counts, and computed token-budgeted evidence-page count. Putting
+the current request beside the routing instruction prevents an older note task from
+being mistaken for the current follow-up. It
 chooses `respond` for ordinary conversation/general knowledge and
 `investigate_current_scope` only when the answer depends on saved-note evidence.
+Corrections, objections, and challenges to the prior answer route to `respond`
+unless they explicitly request fresh note evidence. Direct final-response payloads
+repeat the exact current request, declare an empty reference catalog, and require a
+short correction without adjacent topics or invented note citations.
 Explicit requests to summarize, search, review, or otherwise use the user's saved
 notes are bound into Instructor validation: `respond` is invalid and must retry as
 `investigate_current_scope`. The route context never contains note content and does
@@ -68,6 +86,11 @@ run-dependent rules are both bound into Pydantic validation: unavailable next
 pages, out-of-range facet pages, undisclosed tags/state IDs, and unobserved source
 IDs therefore participate in Instructor's visible retry rather than failing after
 an apparently valid response.
+
+Activity and trace labels omit a redundant counter on the initial structured
+attempt. If validation or the provider fails and Instructor retries, the retry and
+its validation labels explicitly show `attempt 2 of 2`; numeric attempt metadata
+remains present in exact debug payloads for both attempts.
 
 ## Scope and Ordering
 
@@ -82,10 +105,14 @@ an apparently valid response.
 - exact tag-bar text and user tag terms in original order/spelling;
 - locally assigned/inferred searchable tags, hierarchy IDs, and timestamps.
 
-Supported scope kinds are `search`, `all_notes`, `untagged`, and `reference`.
-An empty normal search is explicit `All notes`, not an absent/unbounded scope.
-Reference-source descriptors carry the UUIDs already present in that temporary
-reference query; the server confirms they resolve to the same frozen roots.
+Supported frozen scope kinds are `search`, `all_notes`, and `untagged`; the wire
+model retains `reference` compatibility for older clients. An empty normal search
+is explicit `All notes`, not an absent/unbounded scope. Opening a Reference source
+is navigation over the notes UI, not a new evidence boundary: subsequent chat turns
+continue to capture the originating scope tab until the temporary view is dismissed.
+Clicking another AI response reference replaces the active AI reference query in
+that temporary tab. Following ordinary references from inside notes retains the
+existing stacked navigation behavior.
 
 Membership comes from the same `resolve_search_scope`, date filtering, untagged
 membership, root sorting, `SearchIndex`, and `NoteStore` behavior as `/notes/view`.
@@ -170,9 +197,14 @@ to the model.
 
 When the frozen scope fits on one evidence page, the runtime bypasses
 `WorkingSummary` but does not send the whole candidate page to the prose writer.
-Instructor first returns a required `EvidenceSelection` containing at most 12 exact
-IDs from that page. Dynamic Pydantic constraints reject invented or out-of-page IDs.
-The current user's exact request—not the broader scope query—defines relevance. The
+Instructor first returns a structured selection containing at most 12 exact IDs
+from that page. The eye state is frozen when the user submits the turn: visible
+diagnostics use `EvidenceSelection` with a required concise `reason`, while hidden
+diagnostics use `EvidenceSelectionWithoutRationale`, whose only field is
+`relevant_note_ids`. Dynamic Pydantic constraints reject invented or out-of-page IDs.
+The current user's narrowest constraint—not the broader scope query—defines
+relevance; sharing the scope topic while addressing a different subtopic or
+mechanism is insufficient. The
 runtime rehydrates only the selected frozen records and exposes only those records
 and their ready-to-copy `[[UUID]]` citation tokens to final response generation.
 This isolates relevance judgment in a small, inspectable structured call and makes
@@ -257,7 +289,7 @@ transient working state and do not enter later conversation context.
   separate approximate input-token count.
 - Hidden eye mode still shows one compact live Working indicator without exposing
   refinement/search details.
-- Agent Debug records frozen scope/counts, every exact Ollama request/response and
+- Agent Debug records frozen scope/counts, every exact provider request/response and
   retry, every full summary replacement, action arguments/reason, state transition,
   page/tool payload, source rehydration, timing, error, and final response. Every
   investigation request gets a dedicated evidence-payload event containing the
@@ -266,7 +298,7 @@ transient working state and do not enter later conversation context.
 - Debug is latest-run session memory only. Clear/logout/lock/restart behavior is
   unchanged; nothing is persisted.
 - Stop and Clear Chat abort the active browser/server stream, which cancels pending
-  Instructor/Ollama work and releases run-local state.
+  Instructor/provider work and releases run-local state.
 
 ## Main Files
 
@@ -279,16 +311,18 @@ transient working state and do not enter later conversation context.
 - Settings: `app/services/agent/retrieval_settings.py`
 - Prompts/skills: `app/services/agent/prompts/`, `app/services/agent/skills/`,
   `app/services/agent/skill_settings.py`
-- Inference/debug: `app/services/agent/ollama_inference.py`,
-  `app/services/agent/trace.py`
+- Inference/debug: `app/services/agent/inference.py`,
+  `app/services/agent/ollama_inference.py`,
+  `app/services/agent/openai_inference.py`, `app/services/agent/trace.py`
+- OpenAI credentials: `app/services/openai_credentials.py`
 - Scope UI: `app/static/js/modules/ai-chat/ai-chat-panel-controller.js`
 - Settings/prompt UI: `app/static/js/modules/modals/ai-agent-settings-modal.js`,
   `app/static/js/modules/modals/agent-prompt-editor-modal.js`
 
 ## Deferred Seams
 
-- LiteLLM may wrap `OllamaInferenceAdapter` when multiple providers, routing,
-  fallbacks, or cost accounting justify it.
+- LiteLLM may wrap the provider-neutral inference seam if routing, fallbacks, or
+  cost accounting later justify the dependency.
 - Regex refinement requires a separate safe-engine/time/budget design.
 - Any note mutation requires new closed actions, permissions, confirmation UX, and
   tests; it must not be added by widening this read-only loop.

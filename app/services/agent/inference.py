@@ -74,7 +74,11 @@ class StructuredInferenceProgress:
             raise ValueError("Structured inference output tokens must be non-negative")
 
 
-class StructuredInferenceError(RuntimeError):
+class InferenceProviderError(RuntimeError):
+    """Expected failure while communicating with an external model provider."""
+
+
+class StructuredInferenceError(InferenceProviderError):
     def __init__(self, *, attempts: list[InferenceAttempt]) -> None:
         assert attempts, "Structured inference failure must contain at least one attempt"
         attempt_count = len(attempts)
@@ -83,13 +87,17 @@ class StructuredInferenceError(RuntimeError):
         else:
             attempt_summary = f"{attempt_count} attempts"
         super().__init__(
-            f"Ollama could not produce a valid structured response after {attempt_summary}. "
+            f"The model could not produce a valid structured response after {attempt_summary}. "
             "Open Agent Debug for exact request and response details."
         )
         self.attempts = list(attempts)
 
 
 class InferenceAdapter(Protocol):
+    @property
+    def provider_label(self) -> str:
+        ...
+
     async def inspect_context_window(
         self,
         *,

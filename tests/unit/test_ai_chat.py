@@ -39,7 +39,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         turn_id=first_turn,
         action="model_request",
         status="started",
-        label="Waiting for Ollama · attempt 1 of 2",
+        label="Waiting for Ollama",
         approx_input_tokens=1_234,
         output_tokens_received=0,
         duration_ms=1_250.5,
@@ -61,7 +61,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         {
             "action": "model_request",
             "status": "started",
-            "label": "Waiting for Ollama · attempt 1 of 2",
+            "label": "Waiting for Ollama",
             "approx_input_tokens": 1_234,
             "output_tokens_received": 0,
             "duration_ms": 1_250.5,

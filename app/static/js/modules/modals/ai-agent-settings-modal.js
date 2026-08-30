@@ -1,8 +1,11 @@
 import { BaseModal } from './base-modal.js';
 import {
     AiApiError,
-    listOllamaModels,
+    clearOpenAiCredential,
+    listAiModels,
+    loadOpenAiCredentialStatus,
     pullOllamaModel,
+    saveOpenAiCredential,
 } from '../ai-chat/ai-chat-api.js';
 import {
     getAgentRetrievalSettingsValidationMessage,
@@ -73,6 +76,9 @@ export class AiAgentSettingsModal extends BaseModal {
             maxWorkingSummaryCharacters: settings.maxWorkingSummaryCharacters,
             installedModels: [],
             isLoadingModels: false,
+            isLoadingCredential: false,
+            openAiCredentialConfigured: false,
+            openAiCredentialPersistent: false,
             downloadModel: '',
             isDownloading: false,
             downloadStatus: '',
@@ -101,6 +107,10 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error(`Modal element missing: ${this.modalElementId}`);
         }
         const state = this.getModalState();
+        const isOpenAi = state.provider === 'openai';
+        if (!isOpenAi && state.provider !== 'ollama') {
+            throw new Error(`Unsupported AI provider: ${state.provider}`);
+        }
         const disabledAttribute = state.isDownloading ? 'disabled' : '';
         const progressHiddenAttribute = state.downloadTotal > 0 ? '' : 'hidden';
         const progressMaximum = state.downloadTotal > 0 ? state.downloadTotal : 1;
@@ -113,25 +123,90 @@ export class AiAgentSettingsModal extends BaseModal {
         const saveDisabled = (
             state.isDownloading
             || state.isLoadingModels
-            || !state.installedModels.includes(state.model)
         ) ? 'disabled' : '';
+        const ollamaSelected = isOpenAi ? '' : 'selected';
+        const openAiSelected = isOpenAi ? 'selected' : '';
+        const runtimeMarkup = isOpenAi ? `
+            <div class="ai-agent-managed-runtime" role="status">
+                <span>Connection</span>
+                <strong>OpenAI API</strong>
+                <small>Official API · requests are sent with store disabled</small>
+            </div>
+        ` : `
+            <div class="ai-agent-managed-runtime" role="status">
+                <span>Runtime</span>
+                <strong>MetaList-managed Ollama</strong>
+                <small>Loopback only · 32,768-token context</small>
+            </div>
+        `;
+        const credentialStatus = state.openAiCredentialPersistent
+            ? 'Configured · encrypted in this namespace'
+            : (state.openAiCredentialConfigured
+                ? 'Configured · session only'
+                : 'Not configured');
+        const credentialControlsDisabled = (
+            state.isDownloading || state.isLoadingCredential
+        ) ? 'disabled' : '';
+        const saveCredentialDisabled = (
+            state.isDownloading
+            || state.isLoadingCredential
+        ) ? 'disabled' : '';
+        const providerSpecificMarkup = isOpenAi ? `
+            <section class="ai-agent-model-download" aria-labelledby="ai-agent-openai-title">
+                <h3 id="ai-agent-openai-title">OpenAI API key</h3>
+                <p>
+                    The key is sent only to the MetaList server. Encrypted namespaces
+                    persist it encrypted; unencrypted namespaces keep it for this
+                    server session only.
+                </p>
+                <div class="ai-agent-model-download-row">
+                    <label for="ai-agent-openai-api-key">
+                        <span>API key</span>
+                        <input id="ai-agent-openai-api-key" type="password" value="" placeholder="${escapeHtml(credentialStatus)}" maxlength="512" autocomplete="new-password" ${credentialControlsDisabled}>
+                    </label>
+                    <button type="button" id="ai-agent-openai-save" ${saveCredentialDisabled}>Save key</button>
+                </div>
+                <p class="ai-agent-download-status" role="status">${escapeHtml(credentialStatus)}</p>
+                <button type="button" class="secondary-btn" id="ai-agent-openai-remove" ${state.openAiCredentialConfigured && !state.isLoadingCredential ? '' : 'disabled'}>Remove key</button>
+            </section>
+        ` : `
+            <section class="ai-agent-model-download" aria-labelledby="ai-agent-model-download-title">
+                <h3 id="ai-agent-model-download-title">Download an Ollama model</h3>
+                <p>
+                    Find the exact model and size in the
+                    <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">Ollama model library</a>,
+                    then download it to this Ollama installation.
+                </p>
+                <div class="ai-agent-model-download-row">
+                    <label for="ai-agent-download-model">
+                        <span>Model name</span>
+                        <input id="ai-agent-download-model" type="text" value="${escapeHtml(state.downloadModel)}" placeholder="gemma3:4b" maxlength="200" autocomplete="off" ${disabledAttribute}>
+                    </label>
+                    <button type="button" class="secondary-btn" id="ai-agent-download" ${disabledAttribute}>${state.isDownloading ? 'Downloading…' : 'Download'}</button>
+                </div>
+                <progress
+                    id="ai-agent-download-progress"
+                    max="${progressMaximum}"
+                    value="${state.downloadCompleted}"
+                    ${progressHiddenAttribute}
+                ></progress>
+                <p id="ai-agent-download-status" class="ai-agent-download-status" role="status">${escapeHtml(state.downloadStatus)}</p>
+            </section>
+        `;
         modalElement.innerHTML = `
             <div class="modal-content ai-agent-settings-modal-content">
                 <h2>AI Agent Settings</h2>
                 <div class="ai-agent-settings-controls">
                     <label for="ai-agent-provider">
                         <span>Provider</span>
-                        <select id="ai-agent-provider" disabled>
-                            <option value="ollama" selected>Ollama</option>
+                        <select id="ai-agent-provider" ${disabledAttribute}>
+                            <option value="ollama" ${ollamaSelected}>Ollama</option>
+                            <option value="openai" ${openAiSelected}>OpenAI API</option>
                         </select>
                     </label>
-                    <div class="ai-agent-managed-runtime" role="status">
-                        <span>Runtime</span>
-                        <strong>MetaList-managed Ollama</strong>
-                        <small>Loopback only · 32,768-token context</small>
-                    </div>
+                    ${runtimeMarkup}
                     <label for="ai-agent-installed-model">
-                        <span>Downloaded model</span>
+                        <span>${isOpenAi ? 'OpenAI model' : 'Downloaded model'}</span>
                         <select id="ai-agent-installed-model" ${modelSelectDisabled}>
                             ${installedModelOptions}
                         </select>
@@ -165,28 +240,7 @@ export class AiAgentSettingsModal extends BaseModal {
                         </label>
                     </fieldset>
                 </div>
-                <section class="ai-agent-model-download" aria-labelledby="ai-agent-model-download-title">
-                    <h3 id="ai-agent-model-download-title">Download an Ollama model</h3>
-                    <p>
-                        Find the exact model and size in the
-                        <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">Ollama model library</a>,
-                        then download it to this Ollama installation.
-                    </p>
-                    <div class="ai-agent-model-download-row">
-                        <label for="ai-agent-download-model">
-                            <span>Model name</span>
-                            <input id="ai-agent-download-model" type="text" value="${escapeHtml(state.downloadModel)}" placeholder="gemma3:4b" maxlength="200" autocomplete="off" ${disabledAttribute}>
-                        </label>
-                        <button type="button" class="secondary-btn" id="ai-agent-download" ${disabledAttribute}>${state.isDownloading ? 'Downloading…' : 'Download'}</button>
-                    </div>
-                    <progress
-                        id="ai-agent-download-progress"
-                        max="${progressMaximum}"
-                        value="${state.downloadCompleted}"
-                        ${progressHiddenAttribute}
-                    ></progress>
-                    <p id="ai-agent-download-status" class="ai-agent-download-status" role="status">${escapeHtml(state.downloadStatus)}</p>
-                </section>
+                ${providerSpecificMarkup}
                 <p class="error-message">${escapeHtml(state.error)}</p>
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action ${saveDisabled}>Save</button>
@@ -198,8 +252,12 @@ export class AiAgentSettingsModal extends BaseModal {
     }
 
     _setupControls() {
+        const providerSelect = document.getElementById('ai-agent-provider');
         const installedModelSelect = document.getElementById('ai-agent-installed-model');
         const modelInput = document.getElementById('ai-agent-download-model');
+        const openAiApiKeyInput = document.getElementById('ai-agent-openai-api-key');
+        const openAiSaveButton = document.getElementById('ai-agent-openai-save');
+        const openAiRemoveButton = document.getElementById('ai-agent-openai-remove');
         const maxNoteCharactersInput = document.getElementById(
             'ai-agent-max-note-characters',
         );
@@ -218,8 +276,21 @@ export class AiAgentSettingsModal extends BaseModal {
         const downloadButton = document.getElementById('ai-agent-download');
         const saveButton = document.getElementById('ai-agent-save');
         const cancelButton = document.getElementById('ai-agent-cancel');
-        if (!(modelInput instanceof HTMLInputElement)) {
+        if (!(providerSelect instanceof HTMLSelectElement)) {
+            throw new Error('AI settings provider selector missing');
+        }
+        const state = this.getModalState();
+        if (state.provider === 'ollama' && !(modelInput instanceof HTMLInputElement)) {
             throw new Error('AI settings download model input missing');
+        }
+        if (state.provider === 'openai' && !(openAiApiKeyInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings OpenAI API key input missing');
+        }
+        if (state.provider === 'openai' && !(openAiSaveButton instanceof HTMLButtonElement)) {
+            throw new Error('AI settings OpenAI save button missing');
+        }
+        if (state.provider === 'openai' && !(openAiRemoveButton instanceof HTMLButtonElement)) {
+            throw new Error('AI settings OpenAI remove button missing');
         }
         if (!(maxNoteCharactersInput instanceof HTMLInputElement)) {
             throw new Error('AI settings maximum note characters input missing');
@@ -239,7 +310,7 @@ export class AiAgentSettingsModal extends BaseModal {
         if (!(installedModelSelect instanceof HTMLSelectElement)) {
             throw new Error('AI settings installed model selector missing');
         }
-        if (!(downloadButton instanceof HTMLButtonElement)) {
+        if (state.provider === 'ollama' && !(downloadButton instanceof HTMLButtonElement)) {
             throw new Error('AI settings download button missing');
         }
         if (!(saveButton instanceof HTMLButtonElement)) {
@@ -249,13 +320,40 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error('AI settings cancel button missing');
         }
 
+        providerSelect.onchange = () => {
+            if (!['ollama', 'openai'].includes(providerSelect.value)) {
+                throw new Error(`Unsupported AI provider: ${providerSelect.value}`);
+            }
+            this.updateModalState({
+                provider: providerSelect.value,
+                model: '',
+                installedModels: [],
+                error: '',
+            });
+            this.renderModalContent();
+            void this._loadProviderState();
+        };
         installedModelSelect.onchange = () => {
             this.updateModalState({ model: installedModelSelect.value, error: '' });
             this.renderModalContent();
         };
-        modelInput.oninput = () => {
-            this.updateModalState({ downloadModel: modelInput.value, error: '' });
-        };
+        if (modelInput instanceof HTMLInputElement) {
+            modelInput.oninput = () => {
+                this.updateModalState({ downloadModel: modelInput.value, error: '' });
+            };
+        }
+        if (openAiApiKeyInput instanceof HTMLInputElement) {
+            openAiApiKeyInput.oninput = () => {
+                this.updateModalState({ error: '' });
+                const error = document.querySelector(
+                    '#ai-agent-settings-modal .error-message',
+                );
+                if (!(error instanceof HTMLElement)) {
+                    throw new Error('AI settings error message missing');
+                }
+                error.textContent = '';
+            };
+        }
         maxNoteCharactersInput.oninput = () => {
             this.updateModalState({
                 maxNoteCharacters: Number(maxNoteCharactersInput.value),
@@ -286,18 +384,34 @@ export class AiAgentSettingsModal extends BaseModal {
                 error: '',
             });
         };
-        downloadButton.onclick = () => void this._handleDownload();
+        if (downloadButton instanceof HTMLButtonElement) {
+            downloadButton.onclick = () => void this._handleDownload();
+        }
+        if (openAiRemoveButton instanceof HTMLButtonElement) {
+            openAiRemoveButton.onclick = () => void this._handleRemoveOpenAiKey();
+        }
+        if (openAiSaveButton instanceof HTMLButtonElement) {
+            openAiSaveButton.onclick = () => void this._handleSaveOpenAiKey();
+        }
         saveButton.onclick = () => void this._handleSave();
         cancelButton.onclick = () => this.requestClose();
     }
 
     onOpen() {
-        void this._loadInstalledModels();
+        void this._loadProviderState();
     }
 
     canRequestClose() {
         const state = this.getModalState();
         return state.isDownloading !== true;
+    }
+
+    async _loadProviderState() {
+        const state = this.getModalState();
+        if (state.provider === 'openai') {
+            await this._loadOpenAiCredentialStatus();
+        }
+        await this._loadInstalledModels();
     }
 
     async _loadInstalledModels() {
@@ -308,11 +422,11 @@ export class AiAgentSettingsModal extends BaseModal {
         this.updateModalState({ isLoadingModels: true, error: '' });
         this.renderModalContent();
         try {
-            const payload = await listOllamaModels({
-                provider: 'ollama',
+            const payload = await listAiModels({
+                provider: state.provider,
             });
             if (!payload || !Array.isArray(payload.models)) {
-                throw new Error('Ollama model response missing models');
+                throw new Error('AI model response missing models');
             }
             let model = state.model;
             if (!payload.models.includes(model)) {
@@ -326,6 +440,87 @@ export class AiAgentSettingsModal extends BaseModal {
             this.updateModalState({ installedModels: [], model: '', error: error.message });
         } finally {
             this.updateModalState({ isLoadingModels: false });
+            this.renderModalContent();
+        }
+    }
+
+    async _loadOpenAiCredentialStatus() {
+        const state = this.getModalState();
+        if (state.isLoadingCredential) {
+            return;
+        }
+        this.updateModalState({ isLoadingCredential: true, error: '' });
+        this.renderModalContent();
+        try {
+            const payload = await loadOpenAiCredentialStatus();
+            this._applyOpenAiCredentialStatus(payload);
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this.updateModalState({ error: error.message });
+        } finally {
+            this.updateModalState({ isLoadingCredential: false });
+            this.renderModalContent();
+        }
+    }
+
+    _applyOpenAiCredentialStatus(payload) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            throw new Error('OpenAI credential status must be an object');
+        }
+        if (typeof payload.configured !== 'boolean') {
+            throw new Error('OpenAI credential status configured flag missing');
+        }
+        if (typeof payload.persistent !== 'boolean') {
+            throw new Error('OpenAI credential status persistent flag missing');
+        }
+        if (payload.persistent && !payload.configured) {
+            throw new Error('Persistent OpenAI credential must be configured');
+        }
+        this.updateModalState({
+            openAiCredentialConfigured: payload.configured,
+            openAiCredentialPersistent: payload.persistent,
+        });
+    }
+
+    async _handleSaveOpenAiKey() {
+        const input = document.getElementById('ai-agent-openai-api-key');
+        if (!(input instanceof HTMLInputElement)) {
+            throw new Error('AI settings OpenAI API key input missing');
+        }
+        const apiKey = input.value;
+        if (apiKey.trim() === '') {
+            this.updateModalState({ error: 'Enter an OpenAI API key to save.' });
+            this.renderModalContent();
+            return;
+        }
+        this.updateModalState({ isLoadingCredential: true, error: '' });
+        this.renderModalContent();
+        try {
+            const payload = await saveOpenAiCredential(apiKey);
+            this._applyOpenAiCredentialStatus(payload);
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this.updateModalState({ error: error.message });
+        } finally {
+            this.updateModalState({ isLoadingCredential: false });
+            this.renderModalContent();
+        }
+    }
+
+    async _handleRemoveOpenAiKey() {
+        try {
+            const payload = await clearOpenAiCredential();
+            this._applyOpenAiCredentialStatus(payload);
+            this.renderModalContent();
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this.updateModalState({ error: error.message });
             this.renderModalContent();
         }
     }
@@ -431,7 +626,9 @@ export class AiAgentSettingsModal extends BaseModal {
     async _handleSave() {
         const state = this.getModalState();
         if (!state.installedModels.includes(state.model)) {
-            throw new Error('AI settings require a downloaded model selection');
+            this.updateModalState({ error: 'Select an available model before saving.' });
+            this.renderModalContent();
+            return;
         }
         const retrievalCandidate = {
             maxNoteCharacters: state.maxNoteCharacters,
@@ -451,7 +648,7 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         const retrievalSettings = validateAgentRetrievalSettings(retrievalCandidate);
         await this._saveSettings({
-            provider: 'ollama',
+            provider: state.provider,
             model: state.model,
             ...retrievalSettings,
         });

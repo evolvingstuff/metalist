@@ -146,6 +146,10 @@ def test_installed_default_bootstrap_creates_metalist_directory_tree(
         "ensure_default_tls_pair",
         lambda *, environ: None,
     )
+    monkeypatch.setattr(
+        "app.services.namespace_switcher._find_listening_pids_for_port",
+        lambda *, port: [],
+    )
 
     main_entrypoint._bootstrap_default_namespace_if_empty(environ={})
 

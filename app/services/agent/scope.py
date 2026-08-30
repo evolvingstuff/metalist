@@ -27,6 +27,7 @@ class AgentScopeDescriptor(BaseModel):
 
     scope_kind: Literal["search", "all_notes", "untagged", "reference"]
     active_tab_id: str = Field(..., min_length=1, max_length=128)
+    scope_tab_id: str = Field(..., min_length=1, max_length=128)
     search_query: str = Field(..., max_length=8_000)
     sort_mode: str = Field(..., min_length=1, max_length=64)
     date_filter_active: bool
@@ -36,7 +37,7 @@ class AgentScopeDescriptor(BaseModel):
     reference_root_ids: list[str] = Field(..., max_length=100)
     label: str = Field(..., min_length=1, max_length=512)
 
-    @field_validator("active_tab_id", "label")
+    @field_validator("active_tab_id", "scope_tab_id", "label")
     @classmethod
     def reject_blank_required_text(cls, value: str) -> str:
         if value.strip() == "":

@@ -19,6 +19,9 @@ PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "client.get",
     "client.create_with_completion",
     "client.stream",
+    "client.chat.completions.create",
+    "validate_openai_api_key",
+    "_create_structured_completion",
     "self._inference.infer_structured",
     "json.",
 )
@@ -34,6 +37,9 @@ PY_ALLOWED_EXCEPTION_NAMES = (
     "asyncio.CancelledError",
     "StructuredInferenceError",
     "InstructorRetryException",
+    "APIError",
+    "InferenceProviderError",
+    "OpenAICredentialInputError",
 )
 
 JS_ALLOWED_TRY_CALLEE_NAMES = (
@@ -42,12 +48,16 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "clearAiChatSession",
     "copyAiChatResponse",
     "listOllamaModels",
+    "listAiModels",
     "loadAiDebugSnapshot",
     "loadAiChatSession",
     "loadAgentPromptDefaults",
     "pullOllamaModel",
     "streamAiChat",
     "setAiDebugExactDetails",
+    "loadOpenAiCredentialStatus",
+    "saveOpenAiCredential",
+    "clearOpenAiCredential",
 )
 
 JS_ALLOWED_TRY_CALLEE_PREFIXES = (

@@ -7,6 +7,7 @@ import json
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.actions import WorkingSummary
+from app.services.agent.actions import request_explicitly_requires_saved_notes
 from app.services.agent.actions import request_requires_complete_scope_coverage
 from app.services.agent.investigation import InvestigationNotePage
 from app.services.agent.investigation import InvestigationState
@@ -148,26 +149,38 @@ class AgentContextBuilder:
         descriptor = snapshot.descriptor
         route_scope = {
             "instruction": (
-                "This is the frozen user-driven MetaList view active at Send time. "
-                "Use it as routing context. It contains no note content."
+                "Classify only current_user_request. Earlier messages provide "
+                "context but are not the current task. When "
+                "explicit_saved_notes_request is true, choose "
+                "investigate_current_scope; the active scope has no note content "
+                "and does not make respond valid. A correction, "
+                "objection, or challenge to the previous answer is respond unless "
+                "it explicitly requests fresh saved-note evidence. Do not continue "
+                "the prior task merely because it involved notes. "
+                "active_metalist_scope is routing context and has no note content."
             ),
-            "scope_kind": descriptor.scope_kind,
-            "label": descriptor.label,
-            "search_query": descriptor.search_query,
-            "sort_mode": descriptor.sort_mode,
-            "date_filter": descriptor.normalized_date_filter(),
-            "matching_note_count": snapshot.note_count,
-            "matching_result_tree_count": snapshot.result_tree_count,
-            "evidence_page_count": evidence_page_count,
+            "current_user_request": canonical_messages[-1]["content"],
+            "explicit_saved_notes_request": request_explicitly_requires_saved_notes(
+                canonical_messages[-1]["content"]
+            ),
+            "active_metalist_scope": {
+                "scope_kind": descriptor.scope_kind,
+                "label": descriptor.label,
+                "search_query": descriptor.search_query,
+                "sort_mode": descriptor.sort_mode,
+                "date_filter": descriptor.normalized_date_filter(),
+                "matching_note_count": snapshot.note_count,
+                "matching_result_tree_count": snapshot.result_tree_count,
+                "evidence_page_count": evidence_page_count,
+            },
         }
         return [
-            dict(base[0]),
+            *base,
             {
-                "role": "system",
-                "content": "ACTIVE_METALIST_SCOPE\n"
+                "role": "user",
+                "content": "ROUTE_SELECTION_REQUEST\n"
                 + json.dumps(route_scope, sort_keys=True, separators=(",", ":")),
             },
-            *[dict(message) for message in base[1:]],
         ]
 
     def append_action(
@@ -199,9 +212,25 @@ class AgentContextBuilder:
         messages: list[dict[str, str]],
         action: RespondAction,
         prompts: AgentPromptSet,
+        current_user_request: str,
     ) -> list[dict[str, str]]:
+        if (
+            not isinstance(current_user_request, str)
+            or current_user_request.strip() == ""
+        ):
+            raise ValueError("Final response current_user_request must not be blank")
         with_action = self.append_action(messages=messages, action=action)
-        content = prompts.render_final_response_request(basis=action.basis)
+        payload = {
+            "instruction": prompts.render_final_response_request(basis=action.basis),
+            "current_user_request": current_user_request,
+            "reference_catalog": [],
+            "response_mode": "direct_without_note_evidence",
+        }
+        content = "FINAL_RESPONSE_REQUEST\n" + json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return [*with_action, {"role": "user", "content": content}]
 
     def build_scoped_investigation_messages(
@@ -422,19 +451,35 @@ class AgentContextBuilder:
         skill: AgentSkill,
         state: InvestigationState,
         note_page: InvestigationNotePage,
+        include_rationale: bool,
     ) -> list[dict[str, str]]:
         """Ask for a small exact-ID relevance decision before prose generation."""
         if not isinstance(note_page, InvestigationNotePage):
             raise TypeError("note_page must be InvestigationNotePage")
         if note_page.page != 1 or note_page.total_pages != 1:
             raise ValueError("Evidence selection requires one complete evidence page")
+        if not isinstance(include_rationale, bool):
+            raise TypeError("include_rationale must be bool")
         base = self.build_initial_messages(
             canonical_messages=canonical_messages,
             prompts=prompts,
         )
         with_skill = self.activate_skill(messages=base, skill=skill)
+        response_schema = "EvidenceSelectionWithoutRationale"
+        instruction = (
+            "Apply the active skill and return only relevant_note_ids through "
+            "EvidenceSelectionWithoutRationale. Do not generate a reason or "
+            "rationale field."
+        )
+        if include_rationale:
+            response_schema = "EvidenceSelection"
+            instruction = (
+                "Apply the active skill and return EvidenceSelection, including "
+                "a concise reason for the selected IDs."
+            )
         payload = {
-            "instruction": "Apply the active skill and return EvidenceSelection.",
+            "instruction": instruction,
+            "response_schema": response_schema,
             "current_user_request": canonical_messages[-1]["content"],
             "frozen_scope": {
                 "kind": state.snapshot.descriptor.scope_kind,

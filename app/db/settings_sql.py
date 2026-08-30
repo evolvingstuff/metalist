@@ -67,6 +67,9 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "tag_prefix_settings_encryption_tag": row[
             "tag_prefix_settings_encryption_tag"
         ],
+        "openai_api_key_ciphertext": row["openai_api_key_ciphertext"],
+        "openai_api_key_encryption_nonce": row["openai_api_key_encryption_nonce"],
+        "openai_api_key_encryption_tag": row["openai_api_key_encryption_tag"],
         "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -168,6 +171,9 @@ def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) 
             encrypted_dek = NULL,
             dek_nonce = NULL,
             dek_tag = NULL,
+            openai_api_key_ciphertext = NULL,
+            openai_api_key_encryption_nonce = NULL,
+            openai_api_key_encryption_tag = NULL,
             encryption_enabled = 0,
             encryption_algorithm = NULL,
             updated_at = ?
@@ -176,6 +182,50 @@ def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) 
         (
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
+    )
+
+
+def update_openai_api_key(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    ciphertext: str,
+    nonce: bytes,
+    tag: bytes,
+) -> None:
+    if not isinstance(ciphertext, str) or ciphertext == "":
+        raise TypeError("OpenAI API key ciphertext must be non-empty text")
+    if not isinstance(nonce, bytes) or len(nonce) == 0:
+        raise TypeError("OpenAI API key nonce must be non-empty bytes")
+    if not isinstance(tag, bytes) or len(tag) == 0:
+        raise TypeError("OpenAI API key tag must be non-empty bytes")
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET openai_api_key_ciphertext = ?,
+            openai_api_key_encryption_nonce = ?,
+            openai_api_key_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (ciphertext, nonce, tag, _serialize_datetime(datetime.now(timezone.utc))),
+    )
+
+
+def clear_openai_api_key(
+    connection: GuardedConnection | sqlite3.Connection,
+) -> None:
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET openai_api_key_ciphertext = NULL,
+            openai_api_key_encryption_nonce = NULL,
+            openai_api_key_encryption_tag = NULL,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (_serialize_datetime(datetime.now(timezone.utc)),),
     )
 
 

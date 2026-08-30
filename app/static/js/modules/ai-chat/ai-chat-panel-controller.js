@@ -2,7 +2,7 @@ import {
     AiApiError,
     clearAiChatSession,
     copyAiChatResponse,
-    listOllamaModels,
+    listAiModels,
     loadAiChatSession,
     streamAiChat,
 } from './ai-chat-api.js';
@@ -19,7 +19,7 @@ import {
 } from '../mode-manager/services/mermaid-render-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import {
-    getActiveReferenceSourceQuery,
+    getActiveReferenceOriginScope,
     isViewingReferenceSource,
 } from '../mode-manager/services/reference-source-navigation-service.js';
 import * as Logger from '../mode-manager/mode-logger.js';
@@ -79,47 +79,30 @@ function validateMessage(message) {
 }
 
 
-function extractReferenceNoteIds(referenceQuery) {
-    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
-        throw new Error('extractReferenceNoteIds requires reference query');
-    }
-    const matches = referenceQuery.match(
-        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-    );
-    if (!matches || matches.length === 0) {
-        throw new Error('Reference source query contains no note UUIDs');
-    }
-    const unique = [...new Set(matches.map((noteId) => noteId.toLowerCase()))];
-    if (unique.length !== matches.length) {
-        throw new Error('Reference source query contains duplicate note UUIDs');
-    }
-    return unique;
-}
-
-
 export function captureActiveAgentScope() {
     const activeTabId = ModeContext.activeTabId;
     if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
         throw new Error('Active agent scope requires active tab id');
     }
-    const searchQuery = ModeContext.getExecutedSearchQuery(activeTabId);
+    let scopeTabId = activeTabId;
+    let searchQuery = ModeContext.getExecutedSearchQuery(activeTabId);
     if (typeof searchQuery !== 'string') {
         throw new Error('Active agent scope requires executed search query');
     }
-    const sortMode = ModeContext.activeTabSortMode;
-    const dateFilter = ModeContext.activeTabDateFilter;
+    let sortMode = ModeContext.activeTabSortMode;
+    let dateFilter = ModeContext.activeTabDateFilter;
+    let isUntaggedView = ModeContext.isUntaggedView;
+    if (isViewingReferenceSource()) {
+        const originScope = getActiveReferenceOriginScope();
+        scopeTabId = originScope.scopeTabId;
+        searchQuery = originScope.searchQuery;
+        sortMode = originScope.sortMode;
+        dateFilter = originScope.dateFilter;
+        isUntaggedView = originScope.isUntaggedView;
+    }
     let scopeKind = 'all_notes';
     let label = 'All notes';
-    let referenceRootIds = [];
-    if (isViewingReferenceSource()) {
-        scopeKind = 'reference';
-        label = 'Reference source';
-        const referenceQuery = getActiveReferenceSourceQuery();
-        if (referenceQuery !== searchQuery) {
-            throw new Error('Reference source query differs from executed tab search');
-        }
-        referenceRootIds = extractReferenceNoteIds(referenceQuery);
-    } else if (ModeContext.isUntaggedView) {
+    if (isUntaggedView) {
         if (searchQuery !== '') {
             throw new Error('Untagged scope requires empty executed search');
         }
@@ -142,13 +125,14 @@ export function captureActiveAgentScope() {
     return {
         scope_kind: scopeKind,
         active_tab_id: activeTabId,
+        scope_tab_id: scopeTabId,
         search_query: searchQuery,
         sort_mode: sortMode,
         date_filter_active: dateFilterActive,
         date_filter_metric: dateFilterMetric,
         date_filter_start: dateFilterStart,
         date_filter_end: dateFilterEnd,
-        reference_root_ids: referenceRootIds,
+        reference_root_ids: [],
         label,
     };
 }
@@ -165,6 +149,7 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'respond',
     'cancel',
     'ollama_runtime',
+    'provider_runtime',
     'model_context',
     'scope',
     'investigate_current_scope',
@@ -745,14 +730,14 @@ class AiChatPanelController {
         this._syncComposerControlsDisabled();
         const settings = this._getSettings();
         try {
-            const payload = await listOllamaModels(settings);
+            const payload = await listAiModels(settings);
             if (!payload || !Array.isArray(payload.models)) {
-                throw new Error('Ollama model response missing models');
+                throw new Error('AI model response missing models');
             }
             this._models = payload.models;
             if (this._models.length === 0) {
                 this._appendLocalErrorPanel(
-                    'Ollama is connected, but no models are installed.',
+                    'The selected AI provider has no available models.',
                 );
                 return;
             }
@@ -872,7 +857,7 @@ class AiChatPanelController {
             return;
         }
         if (this._models.length === 0) {
-            this._appendLocalErrorPanel('No installed Ollama models are available.');
+            this._appendLocalErrorPanel('No AI models are available.');
             return;
         }
         const message = this._elements.input.value;
@@ -881,8 +866,9 @@ class AiChatPanelController {
         }
         const settings = this._getSettings();
         const scope = captureActiveAgentScope();
+        const showDiagnostics = this._showDiagnosticActivities;
         if (!this._models.includes(settings.model)) {
-            this._appendLocalErrorPanel('Select an installed Ollama model first.');
+            this._appendLocalErrorPanel('Select an available AI model first.');
             return;
         }
 
@@ -943,6 +929,7 @@ class AiChatPanelController {
                 settings,
                 message,
                 scope,
+                showDiagnostics,
                 signal: abortController.signal,
                 onEvent: (event) => {
                     if (event.type === 'action_status') {

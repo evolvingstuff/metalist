@@ -20,6 +20,7 @@ from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.actions import EvidenceSelection
+from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import InvestigationStep
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
@@ -50,6 +51,7 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
         ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
         EvidenceSelection: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
+        EvidenceSelectionWithoutRationale: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
         InvestigationStep: _INVESTIGATION_MAX_OUTPUT_TOKENS,
     }
     if response_model not in limits:
@@ -515,7 +517,7 @@ async def _create_structured_completion(
     capture: _InstructorTraceCapture,
     response_model: type[BaseModel],
     messages: list[dict[str, str]],
-    think_value: bool | str,
+    request_options: dict[str, object],
 ) -> tuple[BaseModel, object]:
     try:
         return await _run_structured_attempt(
@@ -524,7 +526,7 @@ async def _create_structured_completion(
             response_model=response_model,
             original_messages=messages,
             attempt_messages=messages,
-            think_value=think_value,
+            request_options=request_options,
             attempt_number=1,
         )
     finally:
@@ -538,7 +540,7 @@ async def _run_structured_attempt(
     response_model: type[BaseModel],
     original_messages: list[dict[str, str]],
     attempt_messages: list[dict[str, str]],
-    think_value: bool | str,
+    request_options: dict[str, object],
     attempt_number: int,
 ) -> tuple[BaseModel, object]:
     last_partial: BaseModel | None = None
@@ -548,10 +550,8 @@ async def _run_structured_attempt(
             response_model=response_model,
             messages=attempt_messages,
             max_retries=0,
-            max_tokens=_structured_max_output_tokens(response_model),
             timeout=_STRUCTURED_TIMEOUT_SECONDS,
-            temperature=0,
-            extra_body={"think": think_value},
+            **request_options,
         ):
             last_partial = partial
         if last_partial is None:
@@ -575,7 +575,7 @@ async def _run_structured_attempt(
             response_model=response_model,
             original_messages=original_messages,
             attempt_messages=retry_messages,
-            think_value=think_value,
+            request_options=request_options,
             attempt_number=attempt_number + 1,
         )
     # lint: allow-PY001 rationale="retry one model-produced JSON validation failure through Instructor partial parsing"
@@ -594,7 +594,7 @@ async def _run_structured_attempt(
             response_model=response_model,
             original_messages=original_messages,
             attempt_messages=retry_messages,
-            think_value=think_value,
+            request_options=request_options,
             attempt_number=attempt_number + 1,
         )
 
@@ -639,6 +639,10 @@ def _structured_retry_messages(
 class OllamaInferenceAdapter:
     def __init__(self, *, provider: OllamaProvider) -> None:
         self._provider = provider
+
+    @property
+    def provider_label(self) -> str:
+        return "Ollama"
 
     async def inspect_context_window(
         self,
@@ -691,7 +695,11 @@ class OllamaInferenceAdapter:
             capture=capture,
             response_model=response_model,
             messages=messages,
-            think_value=think_value,
+            request_options={
+                "max_tokens": _structured_max_output_tokens(response_model),
+                "temperature": 0,
+                "extra_body": {"think": think_value},
+            },
         )
         if not isinstance(parsed, response_model):
             raise TypeError("Instructor returned the wrong structured response type")

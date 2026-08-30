@@ -16,6 +16,7 @@ from app.services.agent.actions import AgentRouteAction
 from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.actions import EvidenceSelection
 from app.services.agent.actions import EvidenceSelectionConstraints
+from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import ReadNotesByIdAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.actions import SearchNotesIntent
@@ -39,6 +40,7 @@ from app.services.agent.context import serialize_investigation_note_page
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
+from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
@@ -58,7 +60,6 @@ from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
-from app.services.ollama_provider import OllamaProviderError
 from app.services.search_query import parse_search_query
 
 
@@ -86,6 +87,7 @@ class _RunContext:
     base_url: str
     selected_model: str
     thinking_level: str
+    current_user_request: str
     prompts: AgentPromptSet
     skills: AgentSkillSet
     retrieval_settings: AgentRetrievalSettings
@@ -109,13 +111,17 @@ class AgentRuntime:
         permission_policy: AgentPermissionPolicy,
         tool_registry: ReadOnlyAgentToolRegistry,
         trace_store: AgentTraceStore,
+        provider_label: str,
     ) -> None:
+        if not isinstance(provider_label, str) or provider_label == "":
+            raise ValueError("Agent runtime provider label must be non-empty")
         self._context_builder = context_builder
         self._inference = inference
         self._model_policy = model_policy
         self._permission_policy = permission_policy
         self._tool_registry = tool_registry
         self._trace_store = trace_store
+        self._provider_label = provider_label
 
     async def stream_scoped(
         self,
@@ -129,7 +135,10 @@ class AgentRuntime:
         skills: AgentSkillSet,
         retrieval_settings: AgentRetrievalSettings,
         frozen_scope: ScopedSearchSnapshot,
+        include_evidence_rationale: bool,
     ) -> AsyncIterator[dict[str, object]]:
+        if not isinstance(include_evidence_rationale, bool):
+            raise TypeError("include_evidence_rationale must be bool")
         run, initial_messages = self._start_run(
             session_key=session_key,
             base_url=base_url,
@@ -147,6 +156,7 @@ class AgentRuntime:
                 canonical_messages=canonical_messages,
                 initial_messages=initial_messages,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=include_evidence_rationale,
             ):
                 yield event
         # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
@@ -173,6 +183,7 @@ class AgentRuntime:
         canonical_messages: list[dict[str, str]],
         initial_messages: list[dict[str, str]],
         frozen_scope: ScopedSearchSnapshot,
+        include_evidence_rationale: bool,
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(frozen_scope, ScopedSearchSnapshot):
             raise TypeError("frozen_scope must be ScopedSearchSnapshot")
@@ -225,6 +236,7 @@ class AgentRuntime:
             self._select_scoped_route(
                 run=run,
                 messages=route_messages,
+                user_message=canonical_messages[-1]["content"],
                 on_progress=lambda progress: self._publish_inference_progress(
                     run=run,
                     progress_queue=route_progress,
@@ -240,6 +252,7 @@ class AgentRuntime:
             yield self._progress_status_event(
                 progress,
                 purpose=InferencePurpose.ACTION_SELECTION,
+                provider_label=self._provider_label,
             )
         route = await route_task
         route_tokens = estimate_input_tokens(route_messages)
@@ -307,6 +320,7 @@ class AgentRuntime:
                     skill=selection_skill,
                     state=state,
                     note_page=note_page,
+                    include_rationale=include_evidence_rationale,
                 )
             )
             selection_tokens = estimate_input_tokens(selection_messages)
@@ -322,6 +336,7 @@ class AgentRuntime:
                     run=run,
                     messages=selection_messages,
                     allowed_note_ids=frozenset(note_page.evidence_note_ids),
+                    include_rationale=include_evidence_rationale,
                     on_progress=lambda progress: self._publish_inference_progress(
                         run=run,
                         progress_queue=progress_queue,
@@ -337,6 +352,7 @@ class AgentRuntime:
                 yield self._progress_status_event(
                     progress,
                     purpose=InferencePurpose.EVIDENCE_SELECTION,
+                    provider_label=self._provider_label,
                 )
             selection = await selection_task
             verified_sources: tuple[dict[str, object], ...] = ()
@@ -365,9 +381,10 @@ class AgentRuntime:
             yield self._status_event(
                 "evidence_selection",
                 "completed",
-                (
-                    f"Selected {selected_count} directly relevant {selected_noun} · "
-                    f"{self._compact_status_reason(selection.reason)}"
+                self._evidence_selection_status_label(
+                    selection=selection,
+                    selected_count=selected_count,
+                    selected_noun=selected_noun,
                 ),
                 approx_input_tokens=selection_tokens,
             )
@@ -443,6 +460,7 @@ class AgentRuntime:
                 yield self._progress_status_event(
                     progress,
                     purpose=InferencePurpose.INVESTIGATION_STEP,
+                    provider_label=self._provider_label,
                 )
             step = await step_task
             validate_working_summary_for_observed_sources(
@@ -634,7 +652,7 @@ class AgentRuntime:
         yield self._status_event(
             "model_context",
             "started",
-            "Loading Ollama model and checking context",
+            self._model_context_check_label(),
             approx_input_tokens=input_tokens,
         )
         context_window = await self._inference.inspect_context_window(
@@ -650,7 +668,7 @@ class AgentRuntime:
         yield self._status_event(
             "model_context",
             "completed",
-            f"Ollama context ready · {context_window.loaded_tokens:,} tokens",
+            f"{self._provider_label} context ready · {context_window.loaded_tokens:,} tokens",
             approx_input_tokens=input_tokens,
         )
 
@@ -724,6 +742,7 @@ class AgentRuntime:
             base_url=base_url,
             selected_model=selected_model,
             thinking_level=thinking_level,
+            current_user_request=canonical_messages[-1]["content"],
             prompts=prompts,
             skills=skills,
             retrieval_settings=retrieval_settings,
@@ -740,7 +759,7 @@ class AgentRuntime:
         yield self._status_event(
             "model_context",
             "started",
-            "Loading Ollama model and checking context",
+            self._model_context_check_label(),
             approx_input_tokens=current_input_tokens,
         )
         context_window = await self._inference.inspect_context_window(
@@ -753,7 +772,7 @@ class AgentRuntime:
                 "model_context",
                 "completed",
                 (
-                    "Ollama context too small · "
+                    f"{self._provider_label} context too small · "
                     f"{context_window.loaded_tokens:,} loaded · "
                     f"{context_window.required_tokens:,} required"
                 ),
@@ -770,7 +789,7 @@ class AgentRuntime:
         yield self._status_event(
             "model_context",
             "completed",
-            f"Ollama context ready · {context_window.loaded_tokens:,} tokens",
+            f"{self._provider_label} context ready · {context_window.loaded_tokens:,} tokens",
             approx_input_tokens=current_input_tokens,
         )
         current_messages = messages
@@ -806,6 +825,7 @@ class AgentRuntime:
                 yield self._progress_status_event(
                     progress,
                     purpose=InferencePurpose.ACTION_SELECTION,
+                    provider_label=self._provider_label,
                 )
             route_action, current_messages = await route_task
             if (
@@ -886,6 +906,7 @@ class AgentRuntime:
                     yield self._progress_status_event(
                         progress,
                         purpose=InferencePurpose.SEARCH_QUERY,
+                        provider_label=self._provider_label,
                     )
                 action = await search_action_task
             else:
@@ -999,13 +1020,15 @@ class AgentRuntime:
         *,
         run: _RunContext,
         messages: list[dict[str, str]],
+        user_message: str,
         on_progress: Callable[[StructuredInferenceProgress], None],
     ) -> ScopedRouteEnvelope:
         model = self._model_policy.for_stage(
             purpose=InferencePurpose.ACTION_SELECTION,
             selected_model=run.selected_model,
         )
-        user_message = messages[-1]["content"]
+        if not isinstance(user_message, str) or user_message.strip() == "":
+            raise ValueError("Scoped route user_message must not be blank")
         constraints = ScopedRouteConstraints(
             explicit_saved_notes_request=request_explicitly_requires_saved_notes(
                 user_message
@@ -1087,8 +1110,11 @@ class AgentRuntime:
         run: _RunContext,
         messages: list[dict[str, str]],
         allowed_note_ids: frozenset[str],
+        include_rationale: bool,
         on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> EvidenceSelection:
+    ) -> EvidenceSelection | EvidenceSelectionWithoutRationale:
+        if not isinstance(include_rationale, bool):
+            raise TypeError("include_rationale must be bool")
         model = self._model_policy.for_stage(
             purpose=InferencePurpose.EVIDENCE_SELECTION,
             selected_model=run.selected_model,
@@ -1096,16 +1122,21 @@ class AgentRuntime:
         constraints = EvidenceSelectionConstraints(
             allowed_note_ids=allowed_note_ids,
         )
+        response_model: type[EvidenceSelection] | type[
+            EvidenceSelectionWithoutRationale
+        ] = EvidenceSelectionWithoutRationale
+        if include_rationale:
+            response_model = EvidenceSelection
         with bind_evidence_selection_constraints(constraints):
             response = await self._request_structured_inference(
                 run=run,
                 model=model,
                 messages=messages,
-                response_model=EvidenceSelection,
+                response_model=response_model,
                 purpose=InferencePurpose.EVIDENCE_SELECTION,
                 on_progress=on_progress,
             )
-            selection = EvidenceSelection.model_validate_json(response.content)
+            selection = response_model.model_validate_json(response.content)
         self._record_structured_attempts(
             run=run,
             attempts=response.attempts,
@@ -1113,6 +1144,21 @@ class AgentRuntime:
             purpose=InferencePurpose.EVIDENCE_SELECTION,
         )
         return selection
+
+    @staticmethod
+    def _evidence_selection_status_label(
+        *,
+        selection: EvidenceSelection | EvidenceSelectionWithoutRationale,
+        selected_count: int,
+        selected_noun: str,
+    ) -> str:
+        label = f"Selected {selected_count} directly relevant {selected_noun}"
+        if isinstance(selection, EvidenceSelection):
+            return (
+                f"{label} · "
+                f"{AgentRuntime._compact_status_reason(selection.reason)}"
+            )
+        return label
 
     async def _prepare_search_action(
         self,
@@ -1189,7 +1235,7 @@ class AgentRuntime:
             if attempt_count != 1:
                 attempt_label = "attempts"
             raise AgentExecutionError(
-                f"Ollama could not produce a valid {response_label} after "
+                f"The model could not produce a valid {response_label} after "
                 f"{attempt_count} {attempt_label}. Open Agent Debug for exact request "
                 "and response details."
             ) from exc
@@ -1243,7 +1289,11 @@ class AgentRuntime:
         progress: StructuredInferenceProgress,
         purpose: InferencePurpose,
     ) -> None:
-        event = self._progress_status_event(progress, purpose=purpose)
+        event = self._progress_status_event(
+            progress,
+            purpose=purpose,
+            provider_label=self._provider_label,
+        )
         if progress.phase == "output_progress":
             return
         if progress.phase == "attempt_started":
@@ -1301,7 +1351,7 @@ class AgentRuntime:
             session_key=run.session_key,
             run_id=run.run_id,
             event_type="MODEL_CONTEXT",
-            label="Ollama model context",
+            label=f"{self._provider_label} model context",
             detail={
                 "model": context_window.model,
                 "maximum_tokens": context_window.maximum_tokens,
@@ -1436,6 +1486,7 @@ class AgentRuntime:
             messages=messages,
             action=action,
             prompts=run.prompts,
+            current_user_request=run.current_user_request,
         )
         async for event in self._stream_prebuilt_final_response(
             run=run,
@@ -1469,7 +1520,7 @@ class AgentRuntime:
         last_reported_output_tokens = 0
         for attempt in (1, 2):
             state = _FinalStreamState(thinking="", content="", usage={}, did_finish=False)
-            # lint: allow-PY001 rationale="retry a failed external Ollama stream only before output"
+            # lint: allow-PY001 rationale="retry a failed external model stream only before output"
             try:
                 async for event in self._inference.stream_text(
                     base_url=run.base_url,
@@ -1508,7 +1559,8 @@ class AgentRuntime:
                         else:
                             yield event
                 break
-            except OllamaProviderError:
+            # lint: allow-PY001 rationale="retry one external model-provider failure only before output"
+            except InferenceProviderError:
                 has_partial_output = any(
                     (state.thinking != "", state.content != "")
                 )
@@ -1518,7 +1570,7 @@ class AgentRuntime:
                     "respond",
                     "started",
                     (
-                        "Ollama rejected the response before output · "
+                        f"{self._provider_label} rejected the response before output · "
                         "retrying attempt 2 of 2"
                     ),
                     approx_input_tokens=final_input_tokens,
@@ -1584,7 +1636,7 @@ class AgentRuntime:
             run_id=run.run_id,
             event_type="EVIDENCE_PAYLOAD",
             label=(
-                f"Evidence payload sent to Ollama · page {note_page.page} "
+                f"Evidence payload sent to {self._provider_label} · page {note_page.page} "
                 f"of {note_page.total_pages}"
             ),
             detail={
@@ -1753,7 +1805,7 @@ class AgentRuntime:
         if not state.did_finish:
             raise AgentExecutionError("Final response stream ended before completion")
         if state.content == "":
-            raise AgentExecutionError("Ollama returned an empty final response")
+            raise AgentExecutionError("The model returned an empty final response")
 
     def _record_final_response(
         self,
@@ -1795,13 +1847,17 @@ class AgentRuntime:
         max_attempts: int,
         wire_request: dict[str, object],
     ) -> None:
+        attempt_suffix = self._attempt_label_suffix(
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
         self._trace_store.append_event(
             session_key=run.session_key,
             run_id=run.run_id,
             event_type="OLLAMA_REQUEST",
             label=(
-                f"Ollama wire request: {purpose.value} · "
-                f"attempt {attempt} of {max_attempts}"
+                f"{self._provider_label} wire request: {purpose.value}"
+                f"{attempt_suffix}"
             ),
             detail={
                 "purpose": purpose.value,
@@ -1915,24 +1971,37 @@ class AgentRuntime:
         progress: StructuredInferenceProgress,
         *,
         purpose: InferencePurpose,
+        provider_label: str,
     ) -> dict[str, object]:
+        if not isinstance(provider_label, str) or provider_label == "":
+            raise ValueError("Structured inference provider label must be non-empty")
         if not isinstance(purpose, InferencePurpose):
             raise TypeError("Structured inference purpose is invalid")
         if progress.attempt < 1 or progress.attempt > progress.max_attempts:
             raise ValueError("Structured inference progress attempt is invalid")
-        attempt_label = f"attempt {progress.attempt} of {progress.max_attempts}"
+        attempt_suffix = AgentRuntime._attempt_label_suffix(
+            attempt=progress.attempt,
+            max_attempts=progress.max_attempts,
+        )
+        attempt_text = attempt_suffix.removeprefix(" · ")
         approx_input_tokens = AgentRuntime._wire_request_input_tokens(
             progress.wire_request
         )
         if progress.phase == "attempt_started":
-            operation_label = "Ollama choosing next action"
+            operation_label = f"{provider_label} choosing next action"
             if purpose == InferencePurpose.SEARCH_QUERY:
-                operation_label = "Ollama preparing MetaList search query"
+                operation_label = (
+                    f"{provider_label} preparing MetaList search query"
+                )
             elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                operation_label = "Ollama selecting directly relevant evidence"
+                operation_label = (
+                    f"{provider_label} selecting directly relevant evidence"
+                )
             elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                operation_label = "Ollama updating evidence and choosing next step"
-            label = f"{operation_label} · {attempt_label}"
+                operation_label = (
+                    f"{provider_label} updating evidence and choosing next step"
+                )
+            label = f"{operation_label}{attempt_suffix}"
             if progress.attempt > 1:
                 label = f"Instructor retrying · {label}"
             return AgentRuntime._output_status_event(
@@ -1944,33 +2013,48 @@ class AgentRuntime:
                 duration_ms=progress.duration_ms,
             )
         if progress.phase == "output_progress":
-            operation_label = "Ollama choosing next action"
+            operation_label = f"{provider_label} choosing next action"
             if purpose == InferencePurpose.SEARCH_QUERY:
-                operation_label = "Ollama preparing MetaList search query"
+                operation_label = (
+                    f"{provider_label} preparing MetaList search query"
+                )
             elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                operation_label = "Ollama selecting directly relevant evidence"
+                operation_label = (
+                    f"{provider_label} selecting directly relevant evidence"
+                )
             elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                operation_label = "Ollama updating evidence and choosing next step"
+                operation_label = (
+                    f"{provider_label} updating evidence and choosing next step"
+                )
             return AgentRuntime._output_status_event(
                 "model_request",
                 "started",
-                f"{operation_label} · {attempt_label}",
+                f"{operation_label}{attempt_suffix}",
                 approx_input_tokens=approx_input_tokens,
                 output_tokens_received=progress.output_tokens_received,
                 duration_ms=progress.duration_ms,
             )
         if progress.phase == "response_received":
-            response_label = "Ollama returned next-action choice"
+            response_label = f"{provider_label} returned next-action choice"
             if purpose == InferencePurpose.SEARCH_QUERY:
-                response_label = "Ollama returned search-query proposal"
+                response_label = (
+                    f"{provider_label} returned search-query proposal"
+                )
             elif purpose == InferencePurpose.EVIDENCE_SELECTION:
-                response_label = "Ollama returned evidence selection"
+                response_label = (
+                    f"{provider_label} returned evidence selection"
+                )
             elif purpose == InferencePurpose.INVESTIGATION_STEP:
-                response_label = "Ollama returned investigation-step proposal"
+                response_label = (
+                    f"{provider_label} returned investigation-step proposal"
+                )
             return AgentRuntime._output_status_event(
                 "validation",
                 "started",
-                f"{response_label} · validating {attempt_label}",
+                (
+                    f"{response_label} · validating"
+                    f"{' ' + attempt_text if attempt_text else ''}"
+                ),
                 approx_input_tokens=approx_input_tokens,
                 output_tokens_received=progress.output_tokens_received,
                 duration_ms=progress.duration_ms,
@@ -2004,12 +2088,33 @@ class AgentRuntime:
             return AgentRuntime._output_status_event(
                 "validation",
                 "completed",
-                f"{output_label} · {attempt_label}",
+                f"{output_label}{attempt_suffix}",
                 approx_input_tokens=approx_input_tokens,
                 output_tokens_received=progress.output_tokens_received,
                 duration_ms=progress.duration_ms,
             )
         raise ValueError(f"Unsupported structured inference phase: {progress.phase}")
+
+    @staticmethod
+    def _attempt_label_suffix(*, attempt: int, max_attempts: int) -> str:
+        if (
+            not isinstance(attempt, int)
+            or isinstance(attempt, bool)
+            or not isinstance(max_attempts, int)
+            or isinstance(max_attempts, bool)
+            or attempt < 1
+            or max_attempts < 1
+            or attempt > max_attempts
+        ):
+            raise ValueError("Attempt label requires a valid attempt range")
+        if attempt == 1:
+            return ""
+        return f" · attempt {attempt} of {max_attempts}"
+
+    def _model_context_check_label(self) -> str:
+        if self._provider_label == "Ollama":
+            return "Loading Ollama model and checking context"
+        return f"Checking {self._provider_label} model context"
 
     @staticmethod
     def _wire_request_input_tokens(wire_request: dict[str, object]) -> int:

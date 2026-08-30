@@ -32,6 +32,7 @@ def _descriptor() -> AgentScopeDescriptor:
     return AgentScopeDescriptor(
         scope_kind="all_notes",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="",
         sort_mode="normal",
         date_filter_active=False,
@@ -305,6 +306,7 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=traces,
+        provider_label="Ollama",
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -330,6 +332,7 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=False,
             )
         ]
 
@@ -420,6 +423,7 @@ def test_short_23_note_single_page_final_stays_under_8000_estimated_tokens() -> 
     descriptor = AgentScopeDescriptor(
         scope_kind="search",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="testosterone",
         sort_mode="normal",
         date_filter_active=False,
@@ -510,6 +514,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
     descriptor = AgentScopeDescriptor(
         scope_kind="search",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="testosterone",
         sort_mode="normal",
         date_filter_active=False,
@@ -538,6 +543,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -560,6 +566,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=False,
             )
         ]
 
@@ -567,16 +574,37 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
 
     route_context = json.dumps(inference.structured_requests[0])
     final_context = json.dumps(inference.final_messages)
-    assert "ACTIVE_METALIST_SCOPE" in route_context
+    assert "ROUTE_SELECTION_REQUEST" in route_context
     assert 'testosterone' in route_context
     assert 'evidence_page_count' in route_context
+    route_request = json.loads(
+        inference.structured_requests[0][-1]["content"].split("\n", 1)[1]
+    )
+    assert route_request["current_user_request"] == "hey are you there?"
+    assert route_request["explicit_saved_notes_request"] is False
     assert "PRIVATE_TESTOSTERONE_NOTE" not in route_context
     assert "PRIVATE_TESTOSTERONE_NOTE" not in final_context
     assert 'testosterone' not in final_context
     assert events[-1] == {"type": "done", "reference_note_ids": []}
 
 
-def test_exact_saved_notes_request_routes_into_note_evidence() -> None:
+@pytest.mark.parametrize(
+    ("include_evidence_rationale", "selection_payload"),
+    (
+        (
+            True,
+            {
+                "relevant_note_ids": ["note-a"],
+                "reason": "Only note-a directly answers the exact exercise question.",
+            },
+        ),
+        (False, {"relevant_note_ids": ["note-a"]}),
+    ),
+)
+def test_exact_saved_notes_request_routes_into_note_evidence(
+    include_evidence_rationale: bool,
+    selection_payload: dict[str, object],
+) -> None:
     inference = _FakeInference()
     inference.outputs = [
         json.dumps(
@@ -585,16 +613,12 @@ def test_exact_saved_notes_request_routes_into_note_evidence() -> None:
                 "reason": "The user explicitly asked to summarize their notes.",
             }
         ),
-        json.dumps(
-            {
-                "relevant_note_ids": ["note-a"],
-                "reason": "Only note-a directly answers the exact exercise question.",
-            }
-        ),
+        json.dumps(selection_payload),
     ]
     descriptor = AgentScopeDescriptor(
         scope_kind="search",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="testosterone",
         sort_mode="normal",
         date_filter_active=False,
@@ -634,6 +658,7 @@ def test_exact_saved_notes_request_routes_into_note_evidence() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -664,6 +689,7 @@ def test_exact_saved_notes_request_routes_into_note_evidence() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=include_evidence_rationale,
             )
         ]
 
@@ -671,16 +697,36 @@ def test_exact_saved_notes_request_routes_into_note_evidence() -> None:
 
     route_context = json.dumps(inference.structured_requests[0])
     final_context = json.dumps(inference.final_messages)
-    assert "ACTIVE_METALIST_SCOPE" in route_context
+    assert "ROUTE_SELECTION_REQUEST" in route_context
     assert "testosterone" in route_context
+    route_request = json.loads(
+        inference.structured_requests[0][-1]["content"].split("\n", 1)[1]
+    )
+    assert route_request["explicit_saved_notes_request"] is True
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" not in route_context
     selection_context = json.dumps(inference.structured_requests[1])
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" in selection_context
     assert "PRIVATE_UNRELATED_ONIONS_NOTE" in selection_context
+    if include_evidence_rationale:
+        assert "including a concise reason" in selection_context
+    else:
+        assert "EvidenceSelectionWithoutRationale" in selection_context
+        assert "Do not generate a reason" in selection_context
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" in final_context
     assert "PRIVATE_UNRELATED_ONIONS_NOTE" not in final_context
     assert "verified_authoritative_sources" in final_context
     assert len(inference.structured_requests) == 2
+    selection_activity = next(
+        event
+        for event in events
+        if event["type"] == "action_status"
+        and event["action"] == "evidence_selection"
+        and event["status"] == "completed"
+    )
+    if include_evidence_rationale:
+        assert "Only note-a directly answers" in selection_activity["label"]
+    else:
+        assert selection_activity["label"] == "Selected 1 directly relevant note"
     assert events[-1] == {"type": "done", "reference_note_ids": ["note-a"]}
 
 
@@ -702,6 +748,7 @@ def test_scoped_runtime_retries_final_response_only_before_output() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -724,6 +771,7 @@ def test_scoped_runtime_retries_final_response_only_before_output() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=False,
             )
         ]
 
@@ -771,6 +819,7 @@ def test_scoped_runtime_does_not_retry_after_partial_final_output() -> None:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
+        provider_label="Ollama",
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -793,6 +842,7 @@ def test_scoped_runtime_does_not_retry_after_partial_final_output() -> None:
                 skills=DEFAULT_AGENT_SKILLS,
                 retrieval_settings=settings,
                 frozen_scope=frozen_scope,
+                include_evidence_rationale=False,
             )
         ]
 

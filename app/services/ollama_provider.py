@@ -11,6 +11,8 @@ from urllib.parse import urlunsplit
 
 import httpx
 
+from app.services.agent.inference import InferenceProviderError
+
 
 _CONNECT_TIMEOUT_SECONDS = 5.0
 _READ_TIMEOUT_SECONDS = 300.0
@@ -19,7 +21,7 @@ _ALLOWED_THINKING_LEVELS = frozenset({"off", "low", "medium", "high"})
 _MAX_ERROR_DETAIL_CHARACTERS = 2_000
 
 
-class OllamaProviderError(RuntimeError):
+class OllamaProviderError(InferenceProviderError):
     """An expected Ollama connection or protocol failure."""
 
 

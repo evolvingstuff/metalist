@@ -216,6 +216,31 @@ def _migration_3_to_4(
     return deleted_count
 
 
+def _migration_4_to_5(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    columns = _table_columns(connection, table="app_settings")
+    additions = (
+        ("openai_api_key_ciphertext", "TEXT"),
+        ("openai_api_key_encryption_nonce", "BLOB"),
+        ("openai_api_key_encryption_tag", "BLOB"),
+    )
+    existing_additions = {column for column, _sql_type in additions} & columns
+    if existing_additions == {column for column, _sql_type in additions}:
+        return 0
+    if existing_additions:
+        raise RuntimeError(
+            "Database migration 4→5 found a partial OpenAI credential schema: "
+            f"{sorted(existing_additions)}"
+        )
+    for column, sql_type in additions:
+        connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    return 0
+
+
 _MIGRATIONS: dict[
     int,
     Callable[..., int],
@@ -224,6 +249,7 @@ _MIGRATIONS: dict[
     1: _migration_1_to_2,
     2: _migration_2_to_3,
     3: _migration_3_to_4,
+    4: _migration_4_to_5,
 }
 
 

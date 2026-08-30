@@ -9,6 +9,7 @@ from app.services.agent.actions import InvestigationStep
 from app.services.agent.actions import InvestigationStepConstraints
 from app.services.agent.actions import EvidenceSelection
 from app.services.agent.actions import EvidenceSelectionConstraints
+from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import ScopedRouteConstraints
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import WorkingEvidence
@@ -345,3 +346,23 @@ def test_evidence_selection_accepts_empty_selection() -> None:
         )
 
     assert selection.relevant_note_ids == []
+
+
+def test_evidence_selection_without_rationale_rejects_reason_field() -> None:
+    constraints = EvidenceSelectionConstraints(
+        allowed_note_ids=frozenset({"note-a"}),
+    )
+
+    with bind_evidence_selection_constraints(constraints):
+        selection = EvidenceSelectionWithoutRationale.model_validate(
+            {"relevant_note_ids": []}
+        )
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            EvidenceSelectionWithoutRationale.model_validate(
+                {
+                    "relevant_note_ids": [],
+                    "reason": "This field is forbidden when diagnostics are hidden.",
+                }
+            )
+
+    assert selection.model_dump() == {"relevant_note_ids": []}

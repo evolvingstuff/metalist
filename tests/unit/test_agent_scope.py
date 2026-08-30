@@ -96,6 +96,7 @@ def _descriptor() -> AgentScopeDescriptor:
     return AgentScopeDescriptor(
         scope_kind="search",
         active_tab_id="tab-1",
+        scope_tab_id="tab-1",
         search_query="useful-tag",
         sort_mode="normal",
         date_filter_active=False,
@@ -110,6 +111,14 @@ def _descriptor() -> AgentScopeDescriptor:
 def test_scope_descriptor_requires_all_flat_fields() -> None:
     payload = _descriptor().model_dump()
     del payload["active_tab_id"]
+
+    with pytest.raises(ValidationError):
+        AgentScopeDescriptor.model_validate(payload)
+
+
+def test_scope_descriptor_requires_originating_scope_tab() -> None:
+    payload = _descriptor().model_dump()
+    del payload["scope_tab_id"]
 
     with pytest.raises(ValidationError):
         AgentScopeDescriptor.model_validate(payload)

@@ -38,6 +38,7 @@ from app.services.agent.skill_settings import SUPERSEDED_AGENT_SKILL_PREFERENCE_
 from app.services.agent.skill_settings import validate_agent_skill_content
 from app.services.ollama_provider import normalize_ollama_base_url
 from app.services.ollama_provider import validate_ollama_model
+from app.services.agent.openai_inference import validate_openai_model
 
 
 _ALLOWED_CLIENT_PREFERENCES = {
@@ -61,9 +62,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
-    "pref.ai.provider": {"ollama"},
+    "pref.ai.provider": {"ollama", "openai"},
     "pref.ai.ollama_base_url": "ollama_base_url",
     "pref.ai.ollama_model": "ollama_model",
+    "pref.ai.openai_model": "openai_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "agent_max_note_characters",
@@ -199,6 +201,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             value = normalize_ollama_base_url(value)
         elif allowed_values == "ollama_model":
             value = validate_ollama_model(value)
+        elif allowed_values == "openai_model":
+            value = validate_openai_model(value)
         elif allowed_values == "ai_chat_width":
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":

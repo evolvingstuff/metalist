@@ -115,9 +115,9 @@ export async function copyAiChatResponse({ messageId, clientId }) {
 }
 
 
-export async function listOllamaModels(settings) {
+export async function listAiModels(settings) {
     if (!settings || typeof settings !== 'object') {
-        throw new Error('listOllamaModels requires settings object');
+        throw new Error('listAiModels requires settings object');
     }
     const response = await fetchAi(CONFIG.API.AI.MODELS, {
         method: 'POST',
@@ -126,7 +126,38 @@ export async function listOllamaModels(settings) {
             provider: settings.provider,
         }),
     });
-    return await readJsonResponse(response, 'Failed to list Ollama models');
+    return await readJsonResponse(response, 'Failed to list AI models');
+}
+
+
+export async function loadOpenAiCredentialStatus() {
+    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to load OpenAI credential status');
+}
+
+
+export async function saveOpenAiCredential(apiKey) {
+    if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+        throw new Error('saveOpenAiCredential requires API key');
+    }
+    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
+        method: 'PUT',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    return await readJsonResponse(response, 'Failed to save OpenAI API key');
+}
+
+
+export async function clearOpenAiCredential() {
+    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
+        method: 'DELETE',
+        headers: buildSessionHeaders(false),
+    });
+    return await readJsonResponse(response, 'Failed to remove OpenAI API key');
 }
 
 
@@ -229,7 +260,14 @@ export async function pullOllamaModel({ settings, model, onEvent }) {
 }
 
 
-export async function streamAiChat({ settings, message, scope, onEvent, signal }) {
+export async function streamAiChat({
+    settings,
+    message,
+    scope,
+    showDiagnostics,
+    onEvent,
+    signal,
+}) {
     if (!settings || typeof settings !== 'object') {
         throw new Error('streamAiChat requires settings object');
     }
@@ -238,6 +276,9 @@ export async function streamAiChat({ settings, message, scope, onEvent, signal }
     }
     if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
         throw new Error('streamAiChat requires scope object');
+    }
+    if (typeof showDiagnostics !== 'boolean') {
+        throw new Error('streamAiChat requires boolean showDiagnostics');
     }
     if (typeof onEvent !== 'function') {
         throw new Error('streamAiChat requires onEvent');
@@ -253,13 +294,14 @@ export async function streamAiChat({ settings, message, scope, onEvent, signal }
             provider: settings.provider,
             model: settings.model,
             thinking_level: thinkingLevel,
+            show_diagnostics: showDiagnostics,
             message,
             scope,
         }),
         signal,
     });
     if (!response.ok) {
-        await readJsonResponse(response, 'Failed to start Ollama chat');
+        await readJsonResponse(response, 'Failed to start AI chat');
     }
     if (!(response.body instanceof ReadableStream)) {
         throw new Error('AI chat response is missing readable stream');

@@ -223,6 +223,15 @@ _OPAQUE_SEARCH_HISTORY_COLUMNS = frozenset(
 )
 
 
+_OPENAI_CREDENTIAL_COLUMNS = frozenset(
+    {
+        "openai_api_key_ciphertext",
+        "openai_api_key_encryption_nonce",
+        "openai_api_key_encryption_tag",
+    }
+)
+
+
 _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
     "notes": frozenset(
         {
@@ -243,6 +252,7 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "command_palette_usage_json", "command_palette_usage_encryption_nonce",
             "command_palette_usage_encryption_tag", "tag_prefix_settings_json",
             "tag_prefix_settings_encryption_nonce", "tag_prefix_settings_encryption_tag",
+            *_OPENAI_CREDENTIAL_COLUMNS,
             "session_timeout_minutes", "created_at", "updated_at",
         }
     ),
@@ -331,6 +341,11 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
         "tag_prefix_settings_encryption_tag", "text", is_nullable=True,
     ),
     _PayloadSpec(
+        "app_settings", "openai_api_key_ciphertext",
+        "openai_api_key_encryption_nonce", "openai_api_key_encryption_tag",
+        "text", is_nullable=True,
+    ),
+    _PayloadSpec(
         "ontology_rules", "rule_text", "rule_encryption_nonce", "rule_encryption_tag", "text"
     ),
     _PayloadSpec("tab_state", "state_json", "state_encryption_nonce", "state_encryption_tag", "text"),
@@ -387,6 +402,7 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
     1: frozenset(),
     2: frozenset(),
     3: frozenset(),
+    4: frozenset(),
 }
 
 
@@ -403,6 +419,28 @@ def _migration_deferred_plaintext_fields(
     raise RuntimeError(
         f"No encryption-audit migration classification for database version {database_version}"
     )
+
+
+def _main_schema_for_database_version(
+    *,
+    expected_schema: dict[str, frozenset[str]],
+    database_version: int,
+    actual_app_settings_columns: frozenset[str],
+) -> dict[str, frozenset[str]]:
+    if database_version < 0 or database_version > CURRENT_DATABASE_VERSION:
+        raise ValueError("database_version is outside the supported audit range")
+    if database_version >= 5 or not _OPENAI_CREDENTIAL_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        return expected_schema
+    app_settings_columns = expected_schema["app_settings"]
+    if not _OPENAI_CREDENTIAL_COLUMNS.issubset(app_settings_columns):
+        raise RuntimeError("Current audit schema is missing OpenAI credential columns")
+    return {
+        **expected_schema,
+        "app_settings": app_settings_columns - _OPENAI_CREDENTIAL_COLUMNS,
+    }
+
 
 def _connect_read_only(database_path: Path) -> sqlite3.Connection:
     uri = f"{database_path.resolve().as_uri()}?mode=ro"
@@ -773,6 +811,9 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         is_encrypted = _encryption_enabled(main_connection)
         database_version = _database_version(main_connection)
         main_table_names = _table_names(main_connection)
+        app_settings_columns = frozenset(
+            _column_names(main_connection, table="app_settings")
+        )
         search_history_columns = frozenset()
         if "search_interaction_history" in main_table_names:
             search_history_columns = frozenset(
@@ -822,6 +863,11 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
             expected_main_schema = _MAIN_SCHEMA
         else:
             expected_main_schema = _OPAQUE_MAIN_SCHEMA
+    expected_main_schema = _main_schema_for_database_version(
+        expected_schema=expected_main_schema,
+        database_version=database_version,
+        actual_app_settings_columns=app_settings_columns,
+    )
     _audit_database(
         database_path=database_path,
         expected_schema=expected_main_schema,

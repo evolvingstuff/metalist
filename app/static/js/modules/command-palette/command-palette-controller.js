@@ -671,9 +671,17 @@ class CommandPaletteController {
         const retrievalSettings = readAgentRetrievalSettings(
             (key) => this._preferences.getRaw(key),
         );
+        const provider = this._getSelect(
+            'pref.ai.provider',
+            ['ollama', 'openai'],
+            'ollama',
+        );
+        const modelPreferenceKey = provider === 'openai'
+            ? 'pref.ai.openai_model'
+            : 'pref.ai.ollama_model';
         return {
-            provider: this._getSelect('pref.ai.provider', ['ollama'], 'ollama'),
-            model: this._preferences.getRaw('pref.ai.ollama_model') ?? '',
+            provider,
+            model: this._preferences.getRaw(modelPreferenceKey) ?? '',
             thinkingLevel: this._getSelect(
                 'pref.ai.thinking_level',
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
@@ -749,16 +757,19 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiSettings requires settings object');
         }
-        if (settings.provider !== 'ollama') {
+        if (!['ollama', 'openai'].includes(settings.provider)) {
             throw new Error('Unsupported AI provider');
         }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
         const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
+        const modelPreferenceKey = settings.provider === 'openai'
+            ? 'pref.ai.openai_model'
+            : 'pref.ai.ollama_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            'pref.ai.ollama_model': settings.model.trim(),
+            [modelPreferenceKey]: settings.model.trim(),
             'pref.ai.thinking_level': thinkingLevel,
         });
         document.dispatchEvent(new CustomEvent(
@@ -775,16 +786,19 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
         }
-        if (settings.provider !== 'ollama') {
+        if (!['ollama', 'openai'].includes(settings.provider)) {
             throw new Error('Unsupported AI provider');
         }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI connection settings require model');
         }
         const retrievalSettings = validateAgentRetrievalSettings(settings);
+        const modelPreferenceKey = settings.provider === 'openai'
+            ? 'pref.ai.openai_model'
+            : 'pref.ai.ollama_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            'pref.ai.ollama_model': settings.model.trim(),
+            [modelPreferenceKey]: settings.model.trim(),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
                 retrievalSettings.maxNoteCharacters,
             ),

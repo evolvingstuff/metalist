@@ -31,3 +31,8 @@ introduce citation tokens with labels such as `Note ID`, `Note IDs`, `Source`, o
 text, a footnote, a source list, or a References heading. End after the answer
 itself. When the catalog is empty, do not add citations. Do not mention this control
 message.
+
+With empty `reference_catalog`, answer a correction/challenge in at most two
+sentences: acknowledge the correction directly, address the disputed point, then
+stop. Do not repeat prior answer or mention adjacent topics, notes, citations, or
+UUIDs.

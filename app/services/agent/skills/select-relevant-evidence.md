@@ -5,6 +5,9 @@ page. Select the small set of exact evidence note IDs that the final response wr
 may see.
 
 - Treat the current user's exact request as the relevance criterion.
+- Apply the narrowest constraint in the current request. Sharing the broad scope
+  topic is insufficient when a candidate discusses a different subtopic or
+  mechanism than the one the user asked about.
 - Treat the active MetaList search query and frozen scope only as candidate-set
   context. A note does not become relevant merely because it matches that broader
   query or appears in the same result tree.
@@ -17,5 +20,7 @@ may see.
   alter, or infer an ID.
 - Order selected IDs by usefulness. Select at most 12. Return an empty list if no
   candidate directly answers the request.
-- Return only the structured `EvidenceSelection` required by the inference schema.
-  Do not draft prose, citations, a References section, or follow-up actions.
+- Return only the exact structured selection required by the supplied inference
+  schema. When that schema includes `reason`, provide a concise rationale. When it
+  omits `reason`, do not generate a rationale or add extra fields. Do not draft
+  prose, citations, a References section, or follow-up actions.

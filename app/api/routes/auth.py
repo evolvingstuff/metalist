@@ -86,6 +86,7 @@ from app.services.client_state_service import load_client_preferences
 from app.services.client_state_service import load_client_state
 from app.services.client_state_service import save_client_preferences
 from app.services.client_state_service import save_command_palette_usage
+from app.services.openai_credentials import openai_credential_store
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -520,6 +521,7 @@ def login(
 
     ai_chat_store.reset()
     agent_trace_store.reset()
+    openai_credential_store.reset()
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
     set_auth_cookie(request=request, response=response, token=token)
     login_rate_limiter.record_success(rate_limit_key)
@@ -539,6 +541,7 @@ def logout(
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
+    openai_credential_store.clear_session(session_key=session_key)
     token_service.revoke_token(token)
     if not purge_decrypted_runtime_state():
         clear_all_locks()
@@ -619,6 +622,7 @@ def create_passwordless_session(
 
     ai_chat_store.reset()
     agent_trace_store.reset()
+    openai_credential_store.reset()
     token = token_service.create_token(_client_info(request), tab_id, dek=None)
     set_auth_cookie(request=request, response=response, token=token)
     clear_all_locks()
@@ -1062,6 +1066,7 @@ def create_password(
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
     agent_trace_store.reset()
+    openai_credential_store.reset()
     clear_all_locks()
     return {"message": message}
 
@@ -1088,6 +1093,7 @@ def change_password(
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
     agent_trace_store.reset()
+    openai_credential_store.reset()
     clear_all_locks()
     return {"message": message}
 
@@ -1106,6 +1112,7 @@ def remove_password(
     token_service.revoke_all_tokens()
     ai_chat_store.reset()
     agent_trace_store.reset()
+    openai_credential_store.reset()
     clear_all_locks()
     clear_encryption_key()
     deactivate_authenticated_logging()

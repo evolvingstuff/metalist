@@ -2,6 +2,49 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
 const referenceNavigationStack = [];
 
+function copyDateFilter(dateFilter) {
+    if (dateFilter === null) {
+        return null;
+    }
+    if (!dateFilter || typeof dateFilter !== 'object' || Array.isArray(dateFilter)) {
+        throw new Error('Reference origin dateFilter must be an object or null');
+    }
+    for (const key of ['metric', 'startDate', 'endDate']) {
+        if (typeof dateFilter[key] !== 'string' || dateFilter[key].length === 0) {
+            throw new Error(`Reference origin dateFilter missing ${key}`);
+        }
+    }
+    return {
+        metric: dateFilter.metric,
+        startDate: dateFilter.startDate,
+        endDate: dateFilter.endDate,
+    };
+}
+
+function copyOriginScope(originScope) {
+    if (!originScope || typeof originScope !== 'object' || Array.isArray(originScope)) {
+        throw new Error('Reference navigation requires originScope');
+    }
+    for (const key of ['scopeTabId', 'sortMode']) {
+        if (typeof originScope[key] !== 'string' || originScope[key].length === 0) {
+            throw new Error(`Reference origin scope missing ${key}`);
+        }
+    }
+    if (typeof originScope.searchQuery !== 'string') {
+        throw new Error('Reference origin scope missing searchQuery');
+    }
+    if (typeof originScope.isUntaggedView !== 'boolean') {
+        throw new Error('Reference origin scope missing isUntaggedView');
+    }
+    return {
+        scopeTabId: originScope.scopeTabId,
+        searchQuery: originScope.searchQuery,
+        sortMode: originScope.sortMode,
+        dateFilter: copyDateFilter(originScope.dateFilter),
+        isUntaggedView: originScope.isUntaggedView,
+    };
+}
+
 function pruneReferenceNavigationStackToExistingTabs() {
     const tabOrder = ModeContext.tabOrder;
     if (!Array.isArray(tabOrder)) {
@@ -57,6 +100,32 @@ export function getActiveReferenceSourceQuery() {
     return entry.referenceQuery;
 }
 
+export function getActiveReferenceOriginScope() {
+    pruneReferenceNavigationStackToExistingTabs();
+    const entryIndex = findReferenceNavigationEntryIndexForActiveTab();
+    if (entryIndex === -1) {
+        throw new Error('Active tab is not a reference source');
+    }
+    return copyOriginScope(referenceNavigationStack[entryIndex].originScope);
+}
+
+export function captureReferenceOriginScopeForActiveTab() {
+    if (isViewingReferenceSource()) {
+        return getActiveReferenceOriginScope();
+    }
+    const scopeTabId = ModeContext.activeTabId;
+    if (typeof scopeTabId !== 'string' || scopeTabId.length === 0) {
+        throw new Error('Reference origin requires active tab id');
+    }
+    return copyOriginScope({
+        scopeTabId,
+        searchQuery: ModeContext.getExecutedSearchQuery(scopeTabId),
+        sortMode: ModeContext.getTabSortMode(scopeTabId),
+        dateFilter: ModeContext.getTabDateFilter(scopeTabId),
+        isUntaggedView: ModeContext.isUntaggedView,
+    });
+}
+
 export function updateReferenceSourceIndicator() {
     const indicator = document.getElementById('reference-source-indicator');
     if (!(indicator instanceof HTMLElement)) {
@@ -65,7 +134,12 @@ export function updateReferenceSourceIndicator() {
     indicator.hidden = !isViewingReferenceSource();
 }
 
-export function pushReferenceNavigationEntry(fromTabId, toTabId, referenceQuery) {
+export function pushReferenceNavigationEntry(
+    fromTabId,
+    toTabId,
+    referenceQuery,
+    originScope,
+) {
     if (typeof fromTabId !== 'string' || fromTabId.length === 0) {
         throw new Error('pushReferenceNavigationEntry requires fromTabId');
     }
@@ -75,7 +149,29 @@ export function pushReferenceNavigationEntry(fromTabId, toTabId, referenceQuery)
     if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
         throw new Error('pushReferenceNavigationEntry requires referenceQuery');
     }
-    referenceNavigationStack.push({ fromTabId, toTabId, referenceQuery });
+    referenceNavigationStack.push({
+        fromTabId,
+        toTabId,
+        referenceQuery,
+        originScope: copyOriginScope(originScope),
+    });
+    updateReferenceSourceIndicator();
+}
+
+export function replaceActiveReferenceNavigationQuery(referenceQuery) {
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('replaceActiveReferenceNavigationQuery requires referenceQuery');
+    }
+    pruneReferenceNavigationStackToExistingTabs();
+    const entryIndex = findReferenceNavigationEntryIndexForActiveTab();
+    if (entryIndex === -1) {
+        throw new Error('Cannot replace reference query outside reference source mode');
+    }
+    const entry = referenceNavigationStack[entryIndex];
+    referenceNavigationStack[entryIndex] = {
+        ...entry,
+        referenceQuery,
+    };
     updateReferenceSourceIndicator();
 }
 

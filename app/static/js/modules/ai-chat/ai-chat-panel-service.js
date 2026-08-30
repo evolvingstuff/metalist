@@ -56,7 +56,6 @@ export function collapseCompletedActivityPairs(activities) {
             : undefined;
         const currentAttempt = /attempt \d+ of \d+/.exec(activity.label)?.[0];
         const advancesSameModelAttempt = previous
-            && previousAttempt !== undefined
             && previousAttempt === currentAttempt
             && ['model_request', 'validation'].includes(previous.action)
             && ['model_request', 'validation'].includes(activity.action);

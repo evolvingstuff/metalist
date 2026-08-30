@@ -535,13 +535,12 @@ class WorkingSummary(_OllamaCompatibleSchemaModel):
         )
 
 
-class EvidenceSelection(_OllamaCompatibleSchemaModel):
-    """Exact evidence IDs to expose to one-page final-response generation."""
+class _EvidenceSelectionBase(_OllamaCompatibleSchemaModel):
+    """Validated evidence IDs shared by both selection response modes."""
 
     model_config = ConfigDict(extra="forbid")
 
     relevant_note_ids: list[str] = Field(..., max_length=12)
-    reason: str = Field(..., min_length=1, max_length=2_000)
 
     @field_validator("relevant_note_ids")
     @classmethod
@@ -556,6 +555,16 @@ class EvidenceSelection(_OllamaCompatibleSchemaModel):
         ):
             raise ValueError("Relevant evidence ids must come from the current page")
         return self
+
+
+class EvidenceSelection(_EvidenceSelectionBase):
+    """Development evidence selection with a required model rationale."""
+
+    reason: str = Field(..., min_length=1, max_length=2_000)
+
+
+class EvidenceSelectionWithoutRationale(_EvidenceSelectionBase):
+    """Compact evidence selection containing only exact relevant note IDs."""
 
 
 class InvestigationStep(_OllamaCompatibleSchemaModel):

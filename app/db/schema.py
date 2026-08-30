@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     tag_prefix_settings_json TEXT,
     tag_prefix_settings_encryption_nonce BLOB,
     tag_prefix_settings_encryption_tag BLOB,
+    openai_api_key_ciphertext TEXT,
+    openai_api_key_encryption_nonce BLOB,
+    openai_api_key_encryption_tag BLOB,
     session_timeout_minutes INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -234,6 +237,9 @@ def initialize_schema(connection: Connection) -> None:
             "tag_prefix_settings_json": "TEXT",
             "tag_prefix_settings_encryption_nonce": "BLOB",
             "tag_prefix_settings_encryption_tag": "BLOB",
+            "openai_api_key_ciphertext": "TEXT",
+            "openai_api_key_encryption_nonce": "BLOB",
+            "openai_api_key_encryption_tag": "BLOB",
             "session_timeout_minutes": "INTEGER",
         },
     )
