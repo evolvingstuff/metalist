@@ -5014,8 +5014,8 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 
 
 .controls .search-controls {
-    --search-input-width: clamp(140px, calc(100% - 160px), 500px);
-    --search-input-half-width: clamp(70px, calc(50% - 80px), 250px);
+    --search-input-width: clamp(140px, calc(100% - 184px), 500px);
+    --search-input-half-width: clamp(70px, calc(50% - 92px), 250px);
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -5276,24 +5276,28 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     right: 6px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
     font-size: 13px;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.9);
     text-align: right;
-    width: 64px;
+    width: 116px;
     line-height: 1;
     user-select: none;
     pointer-events: none;
 }
 
-body:not(.pref-show-search-results-count) .controls .search-results-count {
-    display: none;
+.controls .search-results-token-count {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.68);
 }
 
-@container search-shell (max-width: 440px) {
-    .controls .search-results-count {
-        display: none;
-    }
+body:not(.pref-show-search-results-count) .controls .search-results-count {
+    display: none;
 }
 
 .controls .view-indicators {

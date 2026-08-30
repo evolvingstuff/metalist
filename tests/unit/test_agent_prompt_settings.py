@@ -29,7 +29,7 @@ def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
     )
     assert "An uncited note-derived claim is invalid" in normalized_final_prompt
     assert "[[UUID]]" in normalized_final_prompt
-    assert "same evidence object" in normalized_final_prompt
+    assert "same tree object" in normalized_final_prompt
     assert "candidate evidence set" in normalized_final_prompt
     assert "current question" in normalized_final_prompt
     assert "32 highest-rated notes" in normalized_final_prompt

@@ -11,6 +11,9 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
 from loguru import logger
 
+from app.services.agent.retrieval_settings import DEFAULT_MAX_NOTE_CHARACTERS
+from app.services.agent.root_tree_token_cache import estimate_result_root_tree_tokens
+from app.services.content_formatting import extract_note_text_for_agent
 from app.services.content_formatting import find_list_style
 from app.services.date_filtering import build_activity_buckets
 from app.services.date_filtering import normalize_date_filter
@@ -31,6 +34,7 @@ from app.services.root_sorting import build_root_sort_buckets
 from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
+from app.services.search_index import extract_ordered_tags_for_search
 from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query
 from app.services.sync import get_all_locks
@@ -639,18 +643,51 @@ def build_view_state(
             raise RuntimeError("active search scope missing matched_note_ids")
     else:
         matched_note_ids = set()
+        pending_note_ids = list(reversed(ordered_root_ids))
+        while pending_note_ids:
+            note_id = pending_note_ids.pop()
+            if note_id in matched_note_ids:
+                raise RuntimeError(
+                    f"Note hierarchy repeats note id while counting result tokens: {note_id}"
+                )
+            matched_note_ids.add(note_id)
+            child_ids = traversal_cache.get_children(note_id)
+            pending_note_ids.extend(reversed(child_ids))
 
     if normalized_date_filter is not None:
         filter_active = True
         if search_scope.search_active:
             date_matched_candidates = matched_note_ids
         else:
-            date_matched_candidates = set(note_store.list_note_ids())
+            date_matched_candidates = matched_note_ids
         allowed_note_ids, filtered_root_ids_ordered, filtered_root_count_total = _filter_scope_by_date(
             date_filter=normalized_date_filter,
             matched_note_ids=date_matched_candidates,
             ordered_root_ids=ordered_root_ids,
         )
+        matched_note_ids = {
+            note_id
+            for note_id in date_matched_candidates
+            if note_store.has_note(note_id)
+            and note_matches_date_filter(
+                note_store.get_note(note_id),
+                normalized_date_filter,
+            )
+        }
+
+    if filter_active:
+        if filtered_root_ids_ordered is None:
+            raise RuntimeError("Filtered result token estimate requires ordered roots")
+        result_token_root_ids = filtered_root_ids_ordered
+    else:
+        result_token_root_ids = ordered_root_ids
+    result_approximate_token_count = estimate_result_root_tree_tokens(
+        note_ids=matched_note_ids,
+        ordered_root_ids=result_token_root_ids,
+        get_note=traversal_cache.get_note,
+        get_children=traversal_cache.get_children,
+        max_note_characters=DEFAULT_MAX_NOTE_CHARACTERS,
+    )
 
     # Determine root window
     if client_known_note_ids is None:
@@ -828,6 +865,7 @@ def build_view_state(
         "dateFilter": normalized_date_filter,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": filtered_root_count_total,
+        "resultApproximateTokenCount": result_approximate_token_count,
         "rootSortBuckets": build_root_sort_buckets(
             visible_root_ids,
             normalized_sort_mode,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from datetime import datetime, timezone
 import re
 import sqlite3
 from typing import Dict, List, Optional
@@ -23,6 +24,8 @@ class _Note:
     is_collapsed: bool
     content: str
     tags: str
+    created_at: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    updated_at: datetime = datetime(2026, 1, 2, tzinfo=timezone.utc)
 
 
 class _FakeNoteStore:

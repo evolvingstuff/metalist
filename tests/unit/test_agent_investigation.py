@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 from types import MappingProxyType
 
 import pytest
 
+import app.services.agent.investigation as investigation_module
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import AgentScopeDescriptor
 from app.services.agent.scope import FrozenScopedNote
 from app.services.agent.scope import FrozenScopedTreeNode
 from app.services.agent.scope import ScopedSearchSnapshot
+from app.services.tag_ontology import TagOntology
 
 
 def _note(
@@ -140,6 +143,94 @@ def _many_root_snapshot(*, count: int) -> ScopedSearchSnapshot:
     )
 
 
+def _tagged_search_tree_snapshot() -> ScopedSearchSnapshot:
+    descriptor = AgentScopeDescriptor(
+        scope_kind="search",
+        active_tab_id="tab-1",
+        scope_tab_id="tab-1",
+        search_query="ML3 -journal",
+        sort_mode="normal",
+        date_filter_active=False,
+        date_filter_metric="",
+        date_filter_start="",
+        date_filter_end="",
+        reference_root_ids=[],
+        label="ML3 -journal",
+    )
+    notes = {
+        "root-a": _note(
+            "root-a", "root-a", "first root", ("ML3", "@heading"), 0,
+        ),
+        "child-a": _note(
+            "child-a", "root-a", "matching child", ("feature",), 1,
+        ),
+        "sibling-a": _note(
+            "sibling-a", "root-a", "unrelated sibling", ("branch-b",), 2,
+        ),
+        "grandchild-a": _note(
+            "grandchild-a", "root-a", "matching descendant", (), 3,
+        ),
+        "root-b": _note("root-b", "root-b", "second root", ("ML3",), 4),
+        "child-b": _note("child-b", "root-b", "other child", (), 5),
+    }
+    return ScopedSearchSnapshot(
+        run_id="run-search",
+        session_key="session-1",
+        descriptor=descriptor,
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=("root-a", "root-b"),
+        ordered_note_ids=(
+            "root-a",
+            "child-a",
+            "grandchild-a",
+            "sibling-a",
+            "root-b",
+            "child-b",
+        ),
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=MappingProxyType(
+            {
+                "root-a": FrozenScopedTreeNode(
+                    note_id="root-a",
+                    parent_id="",
+                    root_note_id="root-a",
+                    child_ids=("child-a", "sibling-a"),
+                ),
+                "child-a": FrozenScopedTreeNode(
+                    note_id="child-a",
+                    parent_id="root-a",
+                    root_note_id="root-a",
+                    child_ids=("grandchild-a",),
+                ),
+                "grandchild-a": FrozenScopedTreeNode(
+                    note_id="grandchild-a",
+                    parent_id="child-a",
+                    root_note_id="root-a",
+                    child_ids=(),
+                ),
+                "sibling-a": FrozenScopedTreeNode(
+                    note_id="sibling-a",
+                    parent_id="root-a",
+                    root_note_id="root-a",
+                    child_ids=(),
+                ),
+                "root-b": FrozenScopedTreeNode(
+                    note_id="root-b",
+                    parent_id="",
+                    root_note_id="root-b",
+                    child_ids=("child-b",),
+                ),
+                "child-b": FrozenScopedTreeNode(
+                    note_id="child-b",
+                    parent_id="root-b",
+                    root_note_id="root-b",
+                    child_ids=(),
+                ),
+            }
+        ),
+    )
+
+
 def test_facets_count_unique_notes_and_result_trees_over_full_subset() -> None:
     state = InvestigationState.start(snapshot=_snapshot(), settings=_settings())
 
@@ -151,6 +242,274 @@ def test_facets_count_unique_notes_and_result_trees_over_full_subset() -> None:
     ]
     assert facets.total_facets == 4
     assert facets.total_pages == 2
+
+
+def test_facets_communicate_ontology_synonyms() -> None:
+    ontology = TagOntology(
+        implication_out_edges={},
+        implication_closure={},
+        implied_by_closure={},
+        scc_members_by_tag={
+            "foo": frozenset({"foo", "alternate-foo"}),
+        },
+        matcher_rules=(),
+    )
+    state = InvestigationState.start_with_ontology(
+        snapshot=_snapshot(),
+        settings=_settings(),
+        ontology=ontology,
+    )
+
+    facets = state.current_facet_page()
+    foo = next(facet for facet in facets.facets if facet.tag == "foo")
+
+    assert foo.synonyms == ("alternate-foo",)
+
+
+def test_narrowing_merges_and_caches_ontology_synonyms_across_case_variant_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ontology = TagOntology(
+        implication_out_edges={},
+        implication_closure={},
+        implied_by_closure={},
+        scc_members_by_tag={
+            "FOO": frozenset({"FOO", "upper-synonym"}),
+            "foo": frozenset({"foo", "lower-synonym"}),
+        },
+        matcher_rules=(),
+    )
+    state = InvestigationState.start_with_ontology(
+        snapshot=_snapshot(),
+        settings=_settings(),
+        ontology=ontology,
+    )
+    focus_call_count = 0
+    original_focus_view = TagOntology.focus_view
+
+    def counted_focus_view(
+        self: TagOntology,
+        *,
+        tag: str,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+        nonlocal focus_call_count
+        focus_call_count += 1
+        return original_focus_view(self, tag=tag)
+
+    monkeypatch.setattr(TagOntology, "focus_view", counted_focus_view)
+
+    facets = state.current_narrowing_facet_page()
+    foo = next(facet for facet in facets.facets if facet.tag == "foo")
+
+    assert foo.synonyms == ("lower-synonym", "upper-synonym")
+    assert focus_call_count == 2
+
+
+def test_narrowing_facet_matching_scales_with_unique_tags_not_note_tag_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    note_ids = tuple(f"note-{index}" for index in range(100))
+    notes = {
+        note_id: _note(
+            note_id,
+            note_id,
+            f"evidence {index}",
+            (f"tag-{index % 10}",),
+            index,
+        )
+        for index, note_id in enumerate(note_ids)
+    }
+    snapshot = ScopedSearchSnapshot(
+        run_id="run-repeated-tags",
+        session_key="session-1",
+        descriptor=_snapshot().descriptor,
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=note_ids,
+        ordered_note_ids=note_ids,
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=MappingProxyType(
+            {
+                note_id: FrozenScopedTreeNode(
+                    note_id=note_id,
+                    parent_id="",
+                    root_note_id=note_id,
+                    child_ids=(),
+                )
+                for note_id in note_ids
+            }
+        ),
+    )
+    state = InvestigationState.start(snapshot=snapshot, settings=_settings())
+    match_call_count = 0
+    original_match = investigation_module.tag_term_matches_prefix
+
+    def counted_match(*, term: str, prefix: str) -> bool:
+        nonlocal match_call_count
+        match_call_count += 1
+        return original_match(term=term, prefix=prefix)
+
+    monkeypatch.setattr(
+        investigation_module,
+        "tag_term_matches_prefix",
+        counted_match,
+    )
+
+    facets = state.current_narrowing_facet_page()
+
+    assert facets.total_facets == 10
+    assert match_call_count <= 100
+
+
+def test_cumulative_tag_narrowing_rejects_zero_and_keeps_best_nonempty() -> None:
+    state = InvestigationState.start(snapshot=_snapshot(), settings=_settings())
+    state.current_facet_page()
+    state.current_note_page()
+
+    result = state.narrow_by_ordered_tags(
+        ordered_tags=["foo", "rare-tag", "baz"],
+        target_approximate_tokens=1,
+    )
+
+    assert [attempt.tags for attempt in result.attempts] == [
+        ("foo",),
+        ("foo", "rare-tag"),
+        ("foo", "rare-tag", "baz"),
+    ]
+    assert result.attempts[-1].rejected_zero_results is True
+    assert result.selected_tags == ("foo", "rare-tag")
+    assert result.did_narrow is True
+    assert state.current_note_ids == ("a", "a-child")
+    assert set(state.current_note_ids).issubset(_snapshot().ordered_note_ids)
+
+
+def test_cumulative_tag_narrowing_prefers_first_subset_at_or_below_target() -> None:
+    measuring_state = InvestigationState.start(
+        snapshot=_snapshot(),
+        settings=_settings(),
+    )
+    measuring_state.current_facet_page()
+    measuring_state.current_note_page()
+    measured = measuring_state.narrow_by_ordered_tags(
+        ordered_tags=["foo", "rare-tag"],
+        target_approximate_tokens=1,
+    )
+    first_attempt_tokens = measured.attempts[0].approximate_token_count
+    second_attempt_tokens = measured.attempts[1].approximate_token_count
+    assert second_attempt_tokens < first_attempt_tokens - 1
+
+    state = InvestigationState.start(snapshot=_snapshot(), settings=_settings())
+    state.current_facet_page()
+    state.current_note_page()
+    result = state.narrow_by_ordered_tags(
+        ordered_tags=["foo", "rare-tag"],
+        target_approximate_tokens=first_attempt_tokens - 1,
+    )
+
+    assert result.attempts[0].approximate_token_count > (
+        result.target_approximate_token_count
+    )
+    assert result.attempts[1].approximate_token_count <= (
+        result.target_approximate_token_count
+    )
+    assert result.selected_tags == ("foo", "rare-tag")
+    assert result.selected.approximate_token_count == second_attempt_tokens
+
+
+def test_cumulative_tag_narrowing_measures_later_prefixes_after_reaching_target() -> None:
+    measuring_state = InvestigationState.start(
+        snapshot=_snapshot(),
+        settings=_settings(),
+    )
+    measuring_state.current_facet_page()
+    measuring_state.current_note_page()
+    measured = measuring_state.narrow_by_ordered_tags(
+        ordered_tags=["foo", "rare-tag"],
+        target_approximate_tokens=1,
+    )
+    second_attempt_tokens = measured.attempts[1].approximate_token_count
+
+    state = InvestigationState.start(snapshot=_snapshot(), settings=_settings())
+    state.current_facet_page()
+    state.current_note_page()
+    result = state.narrow_by_ordered_tags(
+        ordered_tags=["foo", "rare-tag", "baz"],
+        target_approximate_tokens=second_attempt_tokens,
+    )
+
+    assert len(result.attempts) == 3
+    assert result.attempts[2].rejected_zero_results is True
+    assert result.selected_tags == ("foo", "rare-tag")
+
+
+def test_narrowing_candidates_exclude_tags_required_by_user_search() -> None:
+    state = InvestigationState.start(
+        snapshot=_tagged_search_tree_snapshot(),
+        settings=_settings(),
+    )
+
+    facets = state.current_narrowing_facet_page()
+
+    assert [facet.tag for facet in facets.facets] == ["feature", "branch-b"]
+    assert all(not facet.tag.startswith("@") for facet in facets.facets)
+    feature = next(facet for facet in facets.facets if facet.tag == "feature")
+    assert feature.note_count == 2
+    assert feature.result_tree_count == 1
+    assert state.required_scope_tags == frozenset({"ml3"})
+
+
+def test_narrowing_rejects_required_user_scope_tag_even_if_note_page_discloses_it() -> None:
+    state = InvestigationState.start(
+        snapshot=_tagged_search_tree_snapshot(),
+        settings=_settings(),
+    )
+    state.current_note_page()
+
+    with pytest.raises(ValueError, match="already required"):
+        state.narrow_by_ordered_tags(
+            ordered_tags=["ML3"],
+            target_approximate_tokens=1,
+        )
+
+
+def test_tag_narrowing_retains_matching_descendants_and_structural_ancestors() -> None:
+    snapshot = _tagged_search_tree_snapshot()
+    state = InvestigationState.start(snapshot=snapshot, settings=_settings())
+    state.current_narrowing_facet_page()
+
+    result = state.narrow_by_ordered_tags(
+        ordered_tags=["feature"],
+        target_approximate_tokens=1,
+    )
+
+    assert result.selected_tags == ("feature",)
+    assert state.current_note_ids == ("child-a", "grandchild-a")
+    page = state.current_note_page()
+    assert page.result_trees[0]["note_id"] == "root-a"
+    assert "content_text" not in page.result_trees[0]
+    assert [child["note_id"] for child in page.result_trees[0]["children"]] == [
+        "child-a"
+    ]
+    assert page.result_trees[0]["children"][0]["children"][0]["note_id"] == (
+        "grandchild-a"
+    )
+    assert "sibling-a" not in json.dumps(page.result_trees)
+
+
+def test_cumulative_sibling_tags_reject_root_with_no_matching_inheritance_path() -> None:
+    state = InvestigationState.start(
+        snapshot=_tagged_search_tree_snapshot(),
+        settings=_settings(),
+    )
+    state.current_narrowing_facet_page()
+
+    result = state.narrow_by_ordered_tags(
+        ordered_tags=["feature", "branch-b"],
+        target_approximate_tokens=1,
+    )
+
+    assert result.attempts[0].rejected_zero_results is False
+    assert result.attempts[1].rejected_zero_results is True
+    assert result.selected_tags == ("feature",)
 
 
 def test_note_page_is_root_ordered_and_discloses_exact_tags() -> None:
@@ -409,3 +768,28 @@ def test_note_pages_pack_complete_root_trees_by_approximate_token_budget() -> No
     assert second.returned_approximate_token_count <= 500
     assert "tags" not in first.result_trees[0]
     assert "tags" not in second.result_trees[0]
+
+
+def test_retained_root_prefix_uses_token_budget_not_result_tree_cap() -> None:
+    snapshot = _many_root_snapshot(count=5)
+    state = InvestigationState.start(
+        snapshot=snapshot,
+        settings=AgentRetrievalSettings(
+            max_note_characters=500,
+            max_page_characters=5_000,
+            max_notes_per_page=1,
+            max_page_approximate_tokens=500,
+            max_ranked_tags_per_page=2,
+            max_working_summary_characters=8_000,
+        ),
+    )
+
+    retention = state.retain_root_prefix_within_token_budget()
+    page = state.current_scope_as_single_page()
+
+    assert retention.retained_root_ids == snapshot.ordered_root_ids
+    assert retention.dropped_root_ids == ()
+    assert retention.retained.approximate_token_count <= 500
+    assert state.current_note_ids == snapshot.ordered_note_ids
+    assert page.result_tree_ids == snapshot.ordered_root_ids
+    assert page.total_pages == 1

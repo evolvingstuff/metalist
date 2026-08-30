@@ -514,7 +514,7 @@ class CommandPaletteController {
 
         const showSearchResultsCount = this._getBoolean(
             'pref.show_search_results_count',
-            false,
+            true,
         );
         document.body.classList.toggle(
             'pref-show-search-results-count',
@@ -805,9 +805,11 @@ class CommandPaletteController {
         }
         const ollamaRetrievalSettings = validateAgentRetrievalSettings(
             settings.ollamaRetrievalSettings,
+            'ollama',
         );
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
+            'openai',
         );
         const modelPreferenceKey = settings.provider === 'openai'
             ? 'pref.ai.openai_model'
@@ -833,6 +835,9 @@ class CommandPaletteController {
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
                 ollamaRetrievalSettings.maxWorkingSummaryCharacters,
             ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens]: String(
+                ollamaRetrievalSettings.idealNarrowedScopeApproximateTokens,
+            ),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
                 openAiRetrievalSettings.maxNoteCharacters,
             ),
@@ -850,6 +855,9 @@ class CommandPaletteController {
             ),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
                 openAiRetrievalSettings.maxWorkingSummaryCharacters,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens]: String(
+                openAiRetrievalSettings.idealNarrowedScopeApproximateTokens,
             ),
         });
         document.dispatchEvent(new CustomEvent(

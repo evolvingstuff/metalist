@@ -67,3 +67,25 @@ def estimate_input_tokens(value: object) -> int:
         sort_keys=True,
     )
     return estimate_text_tokens(serialized_value)
+
+
+def estimate_message_tokens(messages: list[dict[str, str]]) -> int:
+    """Estimate decoded chat messages without counting HTTP JSON escaping."""
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("Message token estimation requires a non-empty message list")
+    estimate = 3
+    for message in messages:
+        if not isinstance(message, dict):
+            raise TypeError("Each estimated message must be an object")
+        if set(message) != {"role", "content"}:
+            raise ValueError("Estimated messages require exactly role and content")
+        role = message["role"]
+        content = message["content"]
+        if not isinstance(role, str) or role == "":
+            raise ValueError("Estimated message role must be non-empty text")
+        if not isinstance(content, str):
+            raise TypeError("Estimated message content must be text")
+        estimate += 3
+        estimate += estimate_text_tokens(role)
+        estimate += estimate_text_tokens(content)
+    return estimate

@@ -22,6 +22,7 @@ from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.actions import EvidenceSelection
 from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import InvestigationStep
+from app.services.agent.actions import NarrowContextPlan
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.inference import InferenceAttempt
@@ -53,6 +54,7 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
         EvidenceSelection: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
         EvidenceSelectionWithoutRationale: _EVIDENCE_SELECTION_MAX_OUTPUT_TOKENS,
         InvestigationStep: _INVESTIGATION_MAX_OUTPUT_TOKENS,
+        NarrowContextPlan: _ROUTE_MAX_OUTPUT_TOKENS,
     }
     if response_model not in limits:
         raise RuntimeError(

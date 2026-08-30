@@ -38,6 +38,7 @@ from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.tools import ToolPermission
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
 from app.services.agent.tools import ToolSpec
+from app.services.tag_ontology import TagOntology
 from app.services.agent.trace import AgentTraceStore
 
 
@@ -441,6 +442,7 @@ def test_runtime_rejects_an_undersized_loaded_context_before_inference() -> None
         tool_registry=FakeToolRegistry(),
         trace_store=traces,
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     async def collect_until_failure() -> list[dict[str, object]]:
@@ -752,6 +754,7 @@ def test_runtime_executes_read_only_loop_streams_status_and_traces_exact_context
         tool_registry=tools,
         trace_store=traces,
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     events = _collect_runtime_events(runtime)
@@ -944,6 +947,7 @@ def test_runtime_skips_a_semantically_duplicate_completed_search() -> None:
         tool_registry=tools,
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     events = _collect_runtime_events(runtime)
@@ -1022,6 +1026,7 @@ def test_runtime_allows_a_revised_second_search() -> None:
         tool_registry=tools,
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     events = _collect_runtime_events(runtime)
@@ -1083,6 +1088,7 @@ def test_runtime_skips_duplicate_query_after_a_distinct_repeat_search_reason() -
         tool_registry=tools,
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     events = _collect_runtime_events(runtime)
@@ -1176,6 +1182,7 @@ def test_runtime_records_instructor_validation_retry_attempts() -> None:
         tool_registry=FakeToolRegistry(),
         trace_store=traces,
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
 
     events = _collect_runtime_events(runtime)
@@ -1303,9 +1310,9 @@ def test_context_builder_uses_packaged_prompt_resources() -> None:
         "FINAL_RESPONSE_REQUEST\nStructured basis: No retrieval was needed.\n"
     )
     assert "citations are mandatory" in final_request
-    assert "Every note-derived\nparagraph or list item" in final_request
+    assert "Every note-derived paragraph or list item" in final_request
     assert "[[UUID]]" in final_request
-    assert "same evidence object" in final_request
+    assert "same tree object" in final_request
 
     final_messages = builder.append_final_request(
         messages=initial_messages,

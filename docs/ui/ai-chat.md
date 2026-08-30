@@ -101,14 +101,22 @@ not left to prompt compliance.
   prioritization hint rather than relevance proof.
 - Evidence pages greedily pack complete result trees, in canonical order, to an
   approximate serialized-input-token target. Ollama defaults to 5,000 tokens and
-  OpenAI defaults to 24,000; each provider has an independent configuration in AI
-  Agent Settings, with a range of 500–24,000. Page 1 may therefore contain many
-  more roots than page 2 when page 2's roots are longer.
+  is configurable from 500–24,000. OpenAI defaults to 250,000 and is configurable
+  from 500–250,000. The providers have independent settings. Page 1 may therefore
+  contain many more roots than page 2 when page 2's roots are longer.
 - A separate hard cap allows at most 50 result trees per evidence page by default
   (configurable from 1–100). Whichever limit is reached first starts the next page.
 - A root tree is never divided between pages. An individually oversized tree gets
   a page of its own and its note content is reduced toward the target without
   dropping hierarchy metadata.
+- Current overflow experiment: when an investigated scope has more than one page,
+  MetaList ignores the result-tree-count cap and retains the longest ordered prefix
+  of complete root trees within the provider's evidence-page token budget. It drops
+  trailing root trees from that run-local evidence subset and sends the retained
+  nested page directly to the model. The model payload carries exact
+  included/omitted note and result-tree counts. Eye mode shows those counts, omitted
+  trailing roots, and retained tokens. The older tag-narrowing and rolling
+  multi-page path remains in the code as a separate internal mode.
 - Each matching note returns at most 2,000 content characters by default (range
   500–10,000). This is a separate per-note guard, not the page-size mechanism.
 - The estimate covers compact serialized JSON, including content, UUIDs, tags,
@@ -132,9 +140,11 @@ not left to prompt compliance.
   final-answer candidates. The writer cites only the supporting subset it actually
   uses. The serialized ratings default to 8,000 characters (range 2,000–32,000).
 
-The five active limits are namespace-scoped controls in `AI Agent Settings…`:
+The six active limits are namespace-scoped controls in `AI Agent Settings…`:
 per-note characters, approximate evidence-page tokens, result trees per evidence
-page, ranked facets per page, and working-summary characters.
+page, ranked facets per page, working-summary characters, and the automatic
+narrowing target. The narrowing target defaults to 10,000 for Ollama and 500,000
+for OpenAI.
 
 ## Configuration and Managed Ollama
 

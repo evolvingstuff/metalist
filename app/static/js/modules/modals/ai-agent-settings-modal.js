@@ -50,8 +50,8 @@ function renderInstalledModelOptions(state) {
 }
 
 
-function retrievalStateFields(settings) {
-    const validated = validateAgentRetrievalSettings(settings);
+function retrievalStateFields(settings, provider) {
+    const validated = validateAgentRetrievalSettings(settings, provider);
     return {
         maxNoteCharacters: validated.maxNoteCharacters,
         maxPageCharacters: validated.maxPageCharacters,
@@ -59,6 +59,9 @@ function retrievalStateFields(settings) {
         maxPageApproximateTokens: validated.maxPageApproximateTokens,
         maxRankedTagsPerPage: validated.maxRankedTagsPerPage,
         maxWorkingSummaryCharacters: validated.maxWorkingSummaryCharacters,
+        idealNarrowedScopeApproximateTokens: (
+            validated.idealNarrowedScopeApproximateTokens
+        ),
     };
 }
 
@@ -97,11 +100,13 @@ export class AiAgentSettingsModal extends BaseModal {
             model: settings.model,
             ollamaRetrievalSettings: retrievalStateFields(
                 settings.ollamaRetrievalSettings,
+                'ollama',
             ),
             openAiRetrievalSettings: retrievalStateFields(
                 settings.openAiRetrievalSettings,
+                'openai',
             ),
-            ...retrievalStateFields(retrievalSettings),
+            ...retrievalStateFields(retrievalSettings, settings.provider),
             installedModels: [],
             isLoadingModels: false,
             isLoadingCredential: false,
@@ -140,6 +145,8 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error(`Unsupported AI provider: ${state.provider}`);
         }
         const disabledAttribute = state.isDownloading ? 'disabled' : '';
+        const maximumPageApproximateTokens = isOpenAi ? 250000 : 24000;
+        const maximumNarrowedScopeApproximateTokens = isOpenAi ? 500000 : 200000;
         const progressHiddenAttribute = state.downloadTotal > 0 ? '' : 'hidden';
         const progressMaximum = state.downloadTotal > 0 ? state.downloadTotal : 1;
         const installedModelOptions = renderInstalledModelOptions(state);
@@ -252,7 +259,11 @@ export class AiAgentSettingsModal extends BaseModal {
                         </label>
                         <label for="ai-agent-max-page-approximate-tokens">
                             <span>Approximate input tokens per evidence page</span>
-                            <input id="ai-agent-max-page-approximate-tokens" type="number" min="500" max="24000" step="100" value="${state.maxPageApproximateTokens}" ${disabledAttribute}>
+                            <input id="ai-agent-max-page-approximate-tokens" type="number" min="500" max="${maximumPageApproximateTokens}" step="100" value="${state.maxPageApproximateTokens}" ${disabledAttribute}>
+                        </label>
+                        <label for="ai-agent-ideal-narrowed-scope-approximate-tokens">
+                            <span>Ideal narrowed-scope approximate tokens</span>
+                            <input id="ai-agent-ideal-narrowed-scope-approximate-tokens" type="number" min="1000" max="${maximumNarrowedScopeApproximateTokens}" step="1000" value="${state.idealNarrowedScopeApproximateTokens}" ${disabledAttribute}>
                         </label>
                         <label for="ai-agent-max-notes-per-page">
                             <span>Maximum result trees per evidence page</span>
@@ -295,6 +306,9 @@ export class AiAgentSettingsModal extends BaseModal {
         const maxNotesPerPageInput = document.getElementById(
             'ai-agent-max-notes-per-page',
         );
+        const idealNarrowedScopeApproximateTokensInput = document.getElementById(
+            'ai-agent-ideal-narrowed-scope-approximate-tokens',
+        );
         const maxRankedTagsPerPageInput = document.getElementById(
             'ai-agent-max-ranked-tags-per-page',
         );
@@ -329,6 +343,9 @@ export class AiAgentSettingsModal extends BaseModal {
         if (!(maxNotesPerPageInput instanceof HTMLInputElement)) {
             throw new Error('AI settings maximum result trees input missing');
         }
+        if (!(idealNarrowedScopeApproximateTokensInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings ideal narrowed-scope tokens input missing');
+        }
         if (!(maxRankedTagsPerPageInput instanceof HTMLInputElement)) {
             throw new Error('AI settings maximum ranked tags input missing');
         }
@@ -360,7 +377,7 @@ export class AiAgentSettingsModal extends BaseModal {
                 model: '',
                 installedModels: [],
                 error: '',
-                ...retrievalStateFields(nextRetrievalSettings),
+                ...retrievalStateFields(nextRetrievalSettings, providerSelect.value),
             });
             this.renderModalContent();
             void this._loadProviderState();
@@ -396,6 +413,12 @@ export class AiAgentSettingsModal extends BaseModal {
             this._updateRetrievalSetting(
                 'maxPageApproximateTokens',
                 Number(maxPageApproximateTokensInput.value),
+            );
+        };
+        idealNarrowedScopeApproximateTokensInput.oninput = () => {
+            this._updateRetrievalSetting(
+                'idealNarrowedScopeApproximateTokens',
+                Number(idealNarrowedScopeApproximateTokensInput.value),
             );
         };
         maxNotesPerPageInput.oninput = () => {
@@ -683,6 +706,7 @@ export class AiAgentSettingsModal extends BaseModal {
             const providerSettings = state[retrievalSettingsKey(provider)];
             const validationMessage = getAgentRetrievalSettingsValidationMessage(
                 providerSettings,
+                provider,
             );
             if (validationMessage !== '') {
                 this.updateModalState({
@@ -697,9 +721,11 @@ export class AiAgentSettingsModal extends BaseModal {
             model: state.model,
             ollamaRetrievalSettings: validateAgentRetrievalSettings(
                 state.ollamaRetrievalSettings,
+                'ollama',
             ),
             openAiRetrievalSettings: validateAgentRetrievalSettings(
                 state.openAiRetrievalSettings,
+                'openai',
             ),
         });
         this.close();

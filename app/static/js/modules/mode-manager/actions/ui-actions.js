@@ -166,7 +166,26 @@ function updateSearchResultsCount(snapshot, tabId) {
     const hasUntaggedView = snapshot.isUntaggedView === true;
     const isSearching = searchQuery.trim().length > 0;
     const total = isSearching || hasDateFilter || hasUntaggedView ? searchRootCountTotal : rootCountTotal;
-    el.textContent = `${total}`;
+    const resultApproximateTokenCount = snapshot.resultApproximateTokenCount;
+    if (
+        !Number.isInteger(resultApproximateTokenCount)
+        || resultApproximateTokenCount < 0
+    ) {
+        throw new Error(
+            'snapshot.resultApproximateTokenCount must be a non-negative integer',
+        );
+    }
+    const rootLabel = total === 1 ? 'root' : 'roots';
+    el.replaceChildren();
+    const rootCount = document.createElement('span');
+    rootCount.className = 'search-results-root-count';
+    rootCount.textContent = `${total.toLocaleString('en-US')} ${rootLabel}`;
+    const tokenCount = document.createElement('span');
+    tokenCount.className = 'search-results-token-count';
+    tokenCount.textContent = (
+        `≈ ${resultApproximateTokenCount.toLocaleString('en-US')} tokens`
+    );
+    el.append(rootCount, tokenCount);
 }
 
 export async function actionRefreshAndMaybeSelect(options) {

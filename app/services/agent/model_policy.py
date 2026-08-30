@@ -10,6 +10,7 @@ class InferencePurpose(str, Enum):
     SEARCH_QUERY = "search-query"
     EVIDENCE_SELECTION = "evidence-selection"
     INVESTIGATION_STEP = "investigation-step"
+    CONTEXT_NARROWING = "context-narrowing"
     FINAL_RESPONSE = "final-response"
 
 

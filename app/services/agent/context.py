@@ -12,6 +12,7 @@ from app.services.agent.actions import request_requires_complete_scope_coverage
 from app.services.agent.investigation import InvestigationNotePage
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import TagFacetPage
+from app.services.agent.investigation import InvestigationScopeSize
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.skill_settings import AgentSkill
@@ -34,42 +35,6 @@ def _reference_catalog(note_ids: tuple[str, ...]) -> list[dict[str, str]]:
         }
         for note_id in note_ids
     ]
-
-
-def _attach_exact_citation_tokens(
-    *,
-    result_tree: dict[str, object],
-    allowed_note_ids: frozenset[str],
-) -> dict[str, object]:
-    note_id = result_tree["note_id"]
-    if not isinstance(note_id, str) or note_id == "":
-        raise RuntimeError("Evidence tree note_id must be non-empty")
-    annotated = dict(result_tree)
-    if "is_evidence" in result_tree and result_tree["is_evidence"] is False:
-        if note_id in allowed_note_ids:
-            raise RuntimeError("Structural evidence node unexpectedly appears in catalog")
-    else:
-        if note_id not in allowed_note_ids:
-            raise RuntimeError("Content-bearing evidence node is absent from catalog")
-        annotated["citation_token"] = _exact_citation_token(note_id)
-    if "children" not in result_tree:
-        return annotated
-    raw_children = result_tree["children"]
-    if not isinstance(raw_children, list):
-        raise RuntimeError("Evidence tree children must be a list")
-    if raw_children:
-        annotated_children: list[dict[str, object]] = []
-        for child in raw_children:
-            if not isinstance(child, dict):
-                raise RuntimeError("Evidence tree child must be an object")
-            annotated_children.append(
-                _attach_exact_citation_tokens(
-                    result_tree=child,
-                    allowed_note_ids=allowed_note_ids,
-                )
-            )
-        annotated["children"] = annotated_children
-    return annotated
 
 
 def serialize_investigation_note_page(
@@ -324,6 +289,76 @@ class AgentContextBuilder:
             },
         ]
 
+    def build_narrow_context_messages(
+        self,
+        *,
+        canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
+        skill: AgentSkill,
+        state: InvestigationState,
+        facet_page: TagFacetPage,
+        original_size: InvestigationScopeSize,
+        target_approximate_tokens: int,
+    ) -> list[dict[str, str]]:
+        if target_approximate_tokens < 1:
+            raise ValueError("Narrowing target must be positive")
+        base = self.build_initial_messages(
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+        )
+        with_skill = self.activate_skill(messages=base, skill=skill)
+        snapshot = state.snapshot
+        suggested_proposed_tags = min(3, len(facet_page.facets))
+        if suggested_proposed_tags < 1:
+            raise RuntimeError("Narrow-context prompt requires eligible tag facets")
+        payload = {
+            "instruction": (
+                "Return ordered_tags using the NarrowContextPlan schema. The tags "
+                "are tested cumulatively as AND constraints. Use only exact tag "
+                "values from tag_facets. Synonyms explain meaning but are not "
+                "additional allowed output values. Tags already required by the "
+                "immutable user search and @-prefixed formatting tags are excluded "
+                "from tag_facets. When useful, aim for suggested_proposed_tags "
+                "ordered candidates rather than stopping after one; this is "
+                "guidance, not a schema requirement."
+            ),
+            "current_user_request": canonical_messages[-1]["content"],
+            "immutable_frozen_scope": {
+                "kind": snapshot.descriptor.scope_kind,
+                "label": snapshot.descriptor.label,
+                "search_query": snapshot.descriptor.search_query,
+                "note_count": original_size.note_count,
+                "result_tree_count": original_size.result_tree_count,
+                "approximate_tokens": original_size.approximate_token_count,
+            },
+            "target_approximate_tokens": target_approximate_tokens,
+            "suggested_proposed_tags": suggested_proposed_tags,
+            "already_required_scope_tags": sorted(state.required_scope_tags),
+            "tag_facets": [
+                {
+                    "tag": facet.tag,
+                    "synonyms": list(facet.synonyms),
+                    "matching_notes": facet.note_count,
+                    "matching_result_trees": facet.result_tree_count,
+                }
+                for facet in facet_page.facets
+            ],
+            "facet_coverage": {
+                "page": facet_page.page,
+                "total_pages": facet_page.total_pages,
+                "presented_tags": len(facet_page.facets),
+                "total_tags": facet_page.total_facets,
+            },
+        }
+        return [
+            *with_skill,
+            {
+                "role": "user",
+                "content": "NARROW_CONTEXT_REQUEST\n"
+                + json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            },
+        ]
+
     def build_scoped_final_messages(
         self,
         *,
@@ -385,33 +420,26 @@ class AgentContextBuilder:
         note_page: InvestigationNotePage,
         basis: str,
     ) -> tuple[list[dict[str, str]], tuple[str, ...]]:
-        """Send one complete frozen evidence page directly to final generation."""
+        """Send one bounded evidence page directly to final generation."""
         if not isinstance(note_page, InvestigationNotePage):
             raise TypeError("note_page must be InvestigationNotePage")
         if note_page.total_pages != 1 or note_page.page != 1:
-            raise ValueError("Single-page final context requires the complete first page")
+            raise ValueError("Single-page final context requires the first bounded page")
         if not isinstance(basis, str) or basis.strip() == "":
             raise ValueError("Single-page final basis must be non-empty")
         reference_note_ids = note_page.evidence_note_ids
-        allowed_note_ids = frozenset(reference_note_ids)
-        cited_result_trees = [
-            {
-                "root_note_id": root_note_id,
-                "result_tree": _attach_exact_citation_tokens(
-                    result_tree=result_tree,
-                    allowed_note_ids=allowed_note_ids,
-                ),
-            }
-            for root_note_id, result_tree in zip(
-                note_page.result_tree_ids,
-                note_page.result_trees,
-                strict=True,
-            )
-        ]
         base = self.build_initial_messages(
             canonical_messages=canonical_messages,
             prompts=prompts,
         )
+        included_note_count = note_page.matching_note_count
+        included_result_tree_count = note_page.matching_result_tree_count
+        omitted_note_count = state.snapshot.note_count - included_note_count
+        omitted_result_tree_count = (
+            state.snapshot.result_tree_count - included_result_tree_count
+        )
+        if omitted_note_count < 0 or omitted_result_tree_count < 0:
+            raise RuntimeError("Provided evidence counts exceed the frozen scope")
         final_payload = {
             "instruction": prompts.render_final_response_request(basis=basis),
             "frozen_scope": {
@@ -422,17 +450,26 @@ class AgentContextBuilder:
                 "result_tree_count": state.snapshot.result_tree_count,
                 "evidence_page_count": 1,
             },
+            "evidence_coverage": {
+                "included_note_count": included_note_count,
+                "omitted_note_count": omitted_note_count,
+                "included_result_tree_count": included_result_tree_count,
+                "omitted_result_tree_count": omitted_result_tree_count,
+            },
             "instruction_for_evidence": (
-                "This is the complete frozen evidence scope, already grouped into "
-                "ordered root-note trees. The current user's exact request defines "
+                f"The supplied evidence is {basis}, already grouped into ordered "
+                f"root-note trees. It includes {included_note_count} notes in "
+                f"{included_result_tree_count} result trees and omits "
+                f"{omitted_note_count} notes in {omitted_result_tree_count} result "
+                "trees from the frozen scope. The current user's exact request defines "
                 "relevance; this page is candidate evidence, not a checklist. Omit "
                 "nodes that do not directly answer the request even if they share the "
-                "scope topic. Copy citation_token from the same evidence object whose "
-                "content_text supports the claim. Do not infer a citation from tree "
-                "position or merely cite the enclosing root."
+                "scope topic. Cite supporting claims as [[note_id]], copying note_id "
+                "from the same evidence object whose content_text supports the claim. "
+                "Do not infer a citation from tree position or merely cite the "
+                "enclosing root."
             ),
-            "reference_catalog": _reference_catalog(reference_note_ids),
-            "verified_authoritative_result_trees": cited_result_trees,
+            "authoritative_result_trees": list(note_page.result_trees),
         }
         return (
             [

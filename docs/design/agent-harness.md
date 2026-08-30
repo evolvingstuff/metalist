@@ -152,7 +152,8 @@ to the model.
 
 - Pages greedily pack complete top-level result trees in frozen MetaList order to
   a provider-specific approximate serialized-input-token target (Ollama default
-  5,000; OpenAI default 24,000; each independently configurable 500–24,000),
+  5,000, configurable 500–24,000; OpenAI default 250,000, configurable
+  500–250,000),
   with a separate provider-specific hard cap of 50 result trees by default
   (configurable 1–100). Tree counts therefore vary by page, and whichever bound is
   reached first starts the next page.
@@ -166,6 +167,9 @@ to the model.
 - All retrieval limits are stored independently for Ollama and OpenAI. Selecting a
   provider resolves only that provider's settings; changing OpenAI page sizing can
   never alter the Ollama configuration, or vice versa.
+- Persisted values equal to the former OpenAI defaults (24,000 page tokens and
+  48,000 narrowing tokens) resolve to the new 250,000/500,000 defaults; all other
+  custom values remain unchanged.
 - Page cost includes the compact serialized JSON—not merely `content_text`—so IDs,
   tags, timestamps, hierarchy, keys, and punctuation consume the same budget.
 - `token_estimation.py` provides one deterministic provider-neutral estimate for
@@ -176,14 +180,98 @@ to the model.
 ### Tag facets
 
 - Facets are computed across the entire current subset, never only the note page.
-- Effective searchable tags follow normal MetaList inheritance/ontology/prefix
-  semantics. Exact per-note tags remain separately visible.
+- Facets enumerate directly assigned raw tags. Ontology-equivalent spellings are
+  attached as explicit synonym metadata (for example `ML3 = MetaList`) so the
+  model can understand meaning without receiving inherited or implied tags.
 - Each facet reports unique matching-note and matching-result-tree counts.
 - Case-equivalent terms collapse deterministically.
 - Ordering is descending note count, descending tree count, then tag text.
 - Facet pages default to 50 tags and are configurable from 1–200.
 - A tag refinement may reference only a term already disclosed by a facet or page
   note. Syntax uses existing MetaList tag grammar; no regex action exists.
+
+### Current one-page overflow experiment
+
+The active overflow strategy is deliberately simple for evaluation. After the
+route selects `investigate_current_scope`, MetaList walks the deterministic root
+order and retains the longest complete-root prefix whose serialized evidence cost
+does not exceed the provider's evidence-page token target. This experiment ignores
+the separate result-tree-count cap, so OpenAI can approach its 250,000-token page
+target instead of stopping after 50 roots. It removes all later root trees from the
+run-local subset, never splits a root tree, never changes root order, and never
+escapes the frozen user scope. The retained raw nested page then goes directly to
+final generation. The final prompt states that later roots were intentionally
+omitted, supplies exact included/omitted note and result-tree counts, and forbids
+claiming exhaustive scope coverage.
+
+Developer-eye activity reports original versus retained note/tree counts, the
+number of trailing trees omitted, and the retained serialized-token estimate.
+Agent Debug stores the exact retained and omitted root UUID lists in session-only
+trace state.
+
+The tag-narrowing and rolling multi-page implementation below remains intact as a
+separate internal overflow mode so this experiment can be reversed without
+reconstructing that machinery.
+
+### Legacy multipage automatic context narrowing (retained)
+
+After route selection chooses `investigate_current_scope`, MetaList estimates the
+full serialized-token cost of the frozen subset before exposing a raw evidence
+page. If that cost exceeds the provider-specific ideal narrowed-scope target, the
+`narrow_context_v1` skill receives the exact current request, immutable user search
+boundary, ranked raw-tag facets with effective inherited-match note/tree counts,
+and synonym relationships. Tags already positively required by every OR branch
+of the user search are reported as existing constraints and excluded from the
+candidate facets, so the model cannot propose a redundant constraint such as
+`ML3` for an `ML3 -journal` scope. Formatting/meta tags beginning with `@` are
+also excluded because they do not express semantic evidence relevance. Ontology
+keys differing only by case contribute a merged synonym set because MetaList tag
+matching is case-insensitive; this never expands the plan's legal output values,
+which remain the exact raw tags listed in the frozen-context facets. Per-run
+case-folded ontology equivalence lookups are cached, so facet construction does
+not rescan the entire ontology for every candidate-tag/note comparison. Facet
+counts are aggregated once per unique inherited raw tag instead of rescanning
+every note for every candidate. Full-scope sizing and facet construction run
+outside the async server loop while a live automatic-narrowing status remains
+visible and cancellation-responsive.
+Defaults are 10,000 approximate tokens for Ollama and 500,000 for OpenAI—two
+default evidence pages for each provider. Ollama is configurable from
+1,000–200,000; OpenAI is configurable from 1,000–500,000.
+
+The model returns only an ordered list of disclosed raw tags. The prompt asks it
+to aim for up to three candidates, capped by the eligible semantic-tag count, so
+MetaList can measure useful alternatives instead of receiving an unnecessarily
+short plan. This is guidance rather than schema enforcement: a one-tag plan is
+always valid. MetaList tests the
+prefixes cumulatively as AND constraints (`tag-a`, then `tag-a tag-b`, and so on)
+inside the current frozen subset. It measures every proposed prefix until one
+produces zero results, rejects that zero-result prefix, and selects the first
+non-empty candidate at or below the
+configured token target. Because cumulative AND prefixes can only shrink, that
+candidate is the closest one below the target. If every proposed prefix remains
+above target, MetaList retains the smallest non-empty result reached. Only the
+selected candidate becomes a new investigation state, and every state remains a
+server-asserted subset of `S0`; model output can therefore never broaden the user
+search.
+
+Narrowing uses normal raw-tag inheritance paths. If `A` contains sibling children
+`B` and `C`, and `C` contains `D`, requiring a tag on `C` retains evidence `C` and
+`D`, renders structural ancestor `A`, and removes unrelated sibling `B`. Requiring
+tags found only on sibling branches `B` and `C` yields zero because no single
+note-to-ancestor path satisfies both constraints. Narrowing never drops a
+matching note's descendants or structural ancestors.
+
+The first experiment intentionally uses raw tags only. A future facet source may
+add clearly distinguished LLM-assigned "ghost tags" for broader coverage. A
+separate future soft-ranking phase may award root-note trees points for matching
+suggested phrases without excluding trees that lack those phrases; neither
+extension may escape `S0`.
+
+Developer-eye activity shows the original and target sizes, the complete ordered
+tag list proposed by the model, every tested cumulative prefix with resulting
+note/tree/token counts, rejected zero-result prefixes, and the selected final
+expression. Agent Debug retains the exact model request and response plus the
+complete programmatic evaluation table as copyable session-only trace data.
 
 ### Action set
 
@@ -199,13 +287,15 @@ to the model.
 
 ## Bounded Working Context
 
-When the frozen scope fits on one evidence page, the runtime bypasses
+When the active run-local scope fits on one evidence page, the runtime bypasses
 `WorkingSummary` and sends that complete raw page of recursively nested result
 trees directly to final prose generation. Every evidence object carries its own
 ready-to-copy `[[UUID]]` citation token, and every evidence ID on the page is an
 allowlisted candidate citation. The final writer must apply the current user's
 exact request as the relevance constraint and omit unrelated candidate nodes; the
-server still validates every emitted citation against the frozen page.
+server still validates every emitted citation against the frozen page. Under the
+current overflow experiment, this same direct path receives the retained leading
+root-tree prefix and is explicitly told that it is not exhaustive.
 
 For multi-page investigation, each decision receives the raw current page without
 the accumulated ratings from earlier pages. It returns only applicable current-page

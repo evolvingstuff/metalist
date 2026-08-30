@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.agent.evidence_serialization import EvidenceNoteTokenSource
+from app.services.agent.evidence_serialization import EvidenceTreeTokenSource
+from app.services.agent.evidence_serialization import estimate_cached_root_tree_tokens
+from app.services.agent.evidence_serialization import serialize_evidence_note_payload
+from app.services.agent.evidence_serialization import serialize_evidence_result_trees
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import FrozenScopedNote
 from app.services.agent.scope import ScopedSearchSnapshot
@@ -11,6 +16,7 @@ from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.search_query import SearchClause
 from app.services.search_query import parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
+from app.services.tag_ontology import TagOntology
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +24,7 @@ class TagFacet:
     tag: str
     note_count: int
     result_tree_count: int
+    synonyms: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +50,42 @@ class InvestigationNotePage:
 
 
 @dataclass(frozen=True, slots=True)
+class InvestigationScopeSize:
+    note_count: int
+    result_tree_count: int
+    approximate_token_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class RootPrefixRetention:
+    original: InvestigationScopeSize
+    retained: InvestigationScopeSize
+    retained_root_ids: tuple[str, ...]
+    dropped_root_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NarrowingAttempt:
+    tags: tuple[str, ...]
+    expression: str
+    note_count: int
+    result_tree_count: int
+    approximate_token_count: int
+    rejected_zero_results: bool
+
+
+@dataclass(frozen=True, slots=True)
+class NarrowingResult:
+    target_approximate_token_count: int
+    original: InvestigationScopeSize
+    attempts: tuple[NarrowingAttempt, ...]
+    selected_tags: tuple[str, ...]
+    selected_expression: str
+    selected: InvestigationScopeSize
+    did_narrow: bool
+
+
+@dataclass(frozen=True, slots=True)
 class _SubsetState:
     state_id: str
     note_ids: tuple[str, ...]
@@ -57,9 +100,13 @@ class InvestigationState:
         *,
         snapshot: ScopedSearchSnapshot,
         settings: AgentRetrievalSettings,
+        ontology: TagOntology,
     ) -> None:
+        if not isinstance(ontology, TagOntology):
+            raise TypeError("ontology must be TagOntology")
         self._snapshot = snapshot
         self._settings = settings
+        self._ontology = ontology
         initial = _SubsetState(
             state_id="scope-0",
             note_ids=snapshot.ordered_note_ids,
@@ -73,6 +120,11 @@ class InvestigationState:
         self._facet_page = 1
         self._observed_source_ids: set[str] = set()
         self._disclosed_tags: set[str] = set()
+        self._equivalent_tags_by_folded_tag: dict[str, frozenset[str]] = {}
+        self._inherited_explicit_tag_terms_by_note_id: dict[str, tuple[str, ...]] = {}
+        self._matching_note_ids_by_state_and_folded_tag: dict[
+            tuple[str, str], frozenset[str]
+        ] = {}
         self._next_state_number = 1
         self._assert_subset(initial.note_ids)
 
@@ -87,7 +139,27 @@ class InvestigationState:
             raise TypeError("InvestigationState requires ScopedSearchSnapshot")
         if not isinstance(settings, AgentRetrievalSettings):
             raise TypeError("InvestigationState requires AgentRetrievalSettings")
-        return cls(snapshot=snapshot, settings=settings)
+        return cls(
+            snapshot=snapshot,
+            settings=settings,
+            ontology=TagOntology.empty(),
+        )
+
+    @classmethod
+    def start_with_ontology(
+        cls,
+        *,
+        snapshot: ScopedSearchSnapshot,
+        settings: AgentRetrievalSettings,
+        ontology: TagOntology,
+    ) -> InvestigationState:
+        if not isinstance(snapshot, ScopedSearchSnapshot):
+            raise TypeError("InvestigationState requires ScopedSearchSnapshot")
+        if not isinstance(settings, AgentRetrievalSettings):
+            raise TypeError("InvestigationState requires AgentRetrievalSettings")
+        if not isinstance(ontology, TagOntology):
+            raise TypeError("InvestigationState requires TagOntology")
+        return cls(snapshot=snapshot, settings=settings, ontology=ontology)
 
     @property
     def snapshot(self) -> ScopedSearchSnapshot:
@@ -114,8 +186,172 @@ class InvestigationState:
         return tuple(self._state_history)
 
     @property
+    def required_scope_tags(self) -> frozenset[str]:
+        if self._snapshot.descriptor.scope_kind not in {"search", "reference"}:
+            return frozenset()
+        parsed = parse_search_query(self._snapshot.descriptor.search_query)
+        required_by_clause = [
+            {tag.casefold() for tag in clause.required_tags}
+            for clause in parsed.clauses
+        ]
+        if not required_by_clause:
+            raise RuntimeError("Parsed scope query contains no clauses")
+        required_in_every_clause = set(required_by_clause[0])
+        for clause_tags in required_by_clause[1:]:
+            required_in_every_clause.intersection_update(clause_tags)
+        equivalents: set[str] = set()
+        for tag in required_in_every_clause:
+            equivalents.update(self._folded_equivalent_tags(tag))
+        return frozenset(equivalents)
+
+    @property
     def total_note_pages(self) -> int:
         return len(self._current_root_pages())
+
+    def current_scope_size(self) -> InvestigationScopeSize:
+        root_ids = self._current_root_ids()
+        return self._scope_size(
+            note_ids=self._current_state.note_ids,
+            root_ids=root_ids,
+        )
+
+    def retain_root_prefix_within_token_budget(self) -> RootPrefixRetention:
+        original_root_ids = tuple(self._current_root_ids())
+        retained_root_id_list: list[str] = []
+        retained_token_count = 0
+        for root_id in original_root_ids:
+            root_note_ids = self._note_ids_for_roots((root_id,))
+            root_token_count = self._full_root_page_token_cost(
+                root_id=root_id,
+                note_ids=root_note_ids,
+            )
+            if (
+                retained_root_id_list
+                and retained_token_count + root_token_count
+                > self._settings.max_page_approximate_tokens
+            ):
+                break
+            retained_root_id_list.append(root_id)
+            retained_token_count += root_token_count
+        retained_root_ids = tuple(retained_root_id_list)
+        retained_root_id_set = set(retained_root_ids)
+        retained_note_ids = tuple(
+            note_id
+            for note_id in self._current_state.note_ids
+            if self._snapshot.notes_by_id[note_id].root_note_id
+            in retained_root_id_set
+        )
+        original = self.current_scope_size()
+        retained = self._scope_size(
+            note_ids=retained_note_ids,
+            root_ids=list(retained_root_ids),
+        )
+        dropped_root_ids = original_root_ids[len(retained_root_ids) :]
+        if dropped_root_ids:
+            self._push_subset(
+                note_ids=retained_note_ids,
+                refinement_label="token-bounded leading root prefix",
+            )
+        return RootPrefixRetention(
+            original=original,
+            retained=retained,
+            retained_root_ids=retained_root_ids,
+            dropped_root_ids=dropped_root_ids,
+        )
+
+    def narrow_by_ordered_tags(
+        self,
+        *,
+        ordered_tags: list[str],
+        target_approximate_tokens: int,
+    ) -> NarrowingResult:
+        if not isinstance(ordered_tags, list):
+            raise TypeError("ordered_tags must be a list")
+        if any(not isinstance(tag, str) or tag.strip() == "" for tag in ordered_tags):
+            raise ValueError("Narrowing tags must be non-empty strings")
+        normalized_tags = [tag.strip() for tag in ordered_tags]
+        folded_tags = [tag.casefold() for tag in normalized_tags]
+        if len(set(folded_tags)) != len(folded_tags):
+            raise ValueError("Narrowing tags must be unique")
+        if not set(folded_tags).issubset(self._disclosed_tags):
+            raise ValueError("Narrowing tags must have been disclosed")
+        redundant_scope_tags = set(folded_tags).intersection(
+            self.required_scope_tags
+        )
+        if redundant_scope_tags:
+            raise ValueError(
+                "Narrowing tags already required by the frozen user search: "
+                + ", ".join(sorted(redundant_scope_tags))
+            )
+        if target_approximate_tokens < 1:
+            raise ValueError("Narrowing target must be positive")
+        original = self.current_scope_size()
+        attempts: list[NarrowingAttempt] = []
+        best_tags: tuple[str, ...] = ()
+        best_ids = self._current_state.note_ids
+        best_size = original
+        found_candidate_at_or_below_target = False
+        for tag_index in range(len(normalized_tags)):
+            prefix = tuple(normalized_tags[: tag_index + 1])
+            prefix_folded = tuple(tag.casefold() for tag in prefix)
+            refined_ids = tuple(
+                note_id
+                for note_id in self._current_state.note_ids
+                if all(
+                    self._note_matches_effective_tag(
+                        note_id=note_id,
+                        required_tag=required,
+                    )
+                    for required in prefix_folded
+                )
+            )
+            expression = " ".join(prefix)
+            if not refined_ids:
+                attempts.append(
+                    NarrowingAttempt(
+                        tags=prefix,
+                        expression=expression,
+                        note_count=0,
+                        result_tree_count=0,
+                        approximate_token_count=0,
+                        rejected_zero_results=True,
+                    )
+                )
+                break
+            root_ids = self._root_ids_for_note_ids(refined_ids)
+            size = self._scope_size(note_ids=refined_ids, root_ids=root_ids)
+            attempts.append(
+                NarrowingAttempt(
+                    tags=prefix,
+                    expression=expression,
+                    note_count=size.note_count,
+                    result_tree_count=size.result_tree_count,
+                    approximate_token_count=size.approximate_token_count,
+                    rejected_zero_results=False,
+                )
+            )
+            if not found_candidate_at_or_below_target:
+                best_tags = prefix
+                best_ids = refined_ids
+                best_size = size
+                if size.approximate_token_count <= target_approximate_tokens:
+                    found_candidate_at_or_below_target = True
+        did_narrow = best_tags != () and best_ids != self._current_state.note_ids
+        selected_expression = " ".join(best_tags)
+        if did_narrow:
+            self._push_subset(
+                note_ids=best_ids,
+                refinement_label=selected_expression,
+            )
+        return NarrowingResult(
+            target_approximate_token_count=target_approximate_tokens,
+            original=original,
+            attempts=tuple(attempts),
+            selected_tags=best_tags,
+            selected_expression=selected_expression,
+            selected=best_size,
+            did_narrow=did_narrow,
+        )
 
     def current_note_page(self) -> InvestigationNotePage:
         root_ids = self._current_root_ids()
@@ -124,6 +360,32 @@ class InvestigationState:
         if self._note_page > total_pages:
             raise RuntimeError("Current note page exceeds total pages")
         page_root_ids = root_pages[self._note_page - 1]
+        return self._build_note_page(
+            page=self._note_page,
+            total_pages=total_pages,
+            matching_root_ids=root_ids,
+            page_root_ids=page_root_ids,
+        )
+
+    def current_scope_as_single_page(self) -> InvestigationNotePage:
+        if self._note_page != 1:
+            raise RuntimeError("Single-page scope serialization requires page 1")
+        root_ids = self._current_root_ids()
+        return self._build_note_page(
+            page=1,
+            total_pages=1,
+            matching_root_ids=root_ids,
+            page_root_ids=tuple(root_ids),
+        )
+
+    def _build_note_page(
+        self,
+        *,
+        page: int,
+        total_pages: int,
+        matching_root_ids: list[str],
+        page_root_ids: tuple[str, ...],
+    ) -> InvestigationNotePage:
         page_root_id_set = set(page_root_ids)
         page_note_ids = [
             note_id
@@ -143,10 +405,10 @@ class InvestigationState:
         approximate_tokens = estimate_input_tokens(result_trees)
         return InvestigationNotePage(
             state_id=self._current_state.state_id,
-            page=self._note_page,
+            page=page,
             total_pages=total_pages,
             matching_note_count=len(self._current_state.note_ids),
-            matching_result_tree_count=len(root_ids),
+            matching_result_tree_count=len(matching_root_ids),
             evidence_note_ids=tuple(page_note_ids),
             result_tree_ids=page_root_ids,
             result_trees=result_trees,
@@ -156,6 +418,20 @@ class InvestigationState:
 
     def current_facet_page(self) -> TagFacetPage:
         ranked = self._ranked_facets()
+        return self._facet_page_from_ranked(ranked=ranked)
+
+    def current_narrowing_facet_page(self) -> TagFacetPage:
+        if self._facet_page != 1:
+            raise RuntimeError("Automatic narrowing requires the first facet page")
+        ranked = [
+            facet
+            for facet in self._ranked_narrowing_facets()
+            if not facet.tag.startswith("@")
+            and facet.tag.casefold() not in self.required_scope_tags
+        ]
+        return self._facet_page_from_ranked(ranked=ranked)
+
+    def _facet_page_from_ranked(self, *, ranked: list[TagFacet]) -> TagFacetPage:
         total_pages = self._total_pages(
             item_count=len(ranked),
             page_size=self._settings.max_ranked_tags_per_page,
@@ -339,6 +615,40 @@ class InvestigationState:
             if root_id in roots_with_matches
         ]
 
+    def _root_ids_for_note_ids(self, note_ids: tuple[str, ...]) -> list[str]:
+        roots_with_matches = {
+            self._snapshot.notes_by_id[note_id].root_note_id
+            for note_id in note_ids
+        }
+        return [
+            root_id
+            for root_id in self._snapshot.ordered_root_ids
+            if root_id in roots_with_matches
+        ]
+
+    def _scope_size(
+        self,
+        *,
+        note_ids: tuple[str, ...],
+        root_ids: list[str],
+    ) -> InvestigationScopeSize:
+        token_count = sum(
+            self._full_root_page_token_cost(
+                root_id=root_id,
+                note_ids=[
+                    note_id
+                    for note_id in note_ids
+                    if self._snapshot.notes_by_id[note_id].root_note_id == root_id
+                ],
+            )
+            for root_id in root_ids
+        )
+        return InvestigationScopeSize(
+            note_count=len(note_ids),
+            result_tree_count=len(root_ids),
+            approximate_token_count=token_count,
+        )
+
     def _ranked_facets(self) -> list[TagFacet]:
         notes_by_folded_tag: dict[str, set[str]] = {}
         roots_by_folded_tag: dict[str, set[str]] = {}
@@ -359,6 +669,7 @@ class InvestigationState:
                 tag=sorted(spellings_by_folded_tag[folded], key=lambda value: (value.casefold(), value))[0],
                 note_count=len(note_ids),
                 result_tree_count=len(roots_by_folded_tag[folded]),
+                synonyms=self._synonyms_for_tag(folded),
             )
             for folded, note_ids in notes_by_folded_tag.items()
         ]
@@ -371,6 +682,153 @@ class InvestigationState:
             )
         )
         return facets
+
+    def _ranked_narrowing_facets(self) -> list[TagFacet]:
+        spellings_by_folded_tag: dict[str, set[str]] = {}
+        for note_id in self._current_state.note_ids:
+            note = self._snapshot.notes_by_id[note_id]
+            for tag in note.explicit_tag_terms:
+                folded = tag.casefold()
+                if folded not in spellings_by_folded_tag:
+                    spellings_by_folded_tag[folded] = set()
+                spellings_by_folded_tag[folded].add(tag)
+        equivalents_by_folded_tag = {
+            folded: self._folded_equivalent_tags(folded)
+            for folded in spellings_by_folded_tag
+        }
+        matching_candidates_by_explicit_term: dict[str, frozenset[str]] = {}
+        matching_note_ids_by_folded_tag = {
+            folded: set() for folded in spellings_by_folded_tag
+        }
+        matching_root_ids_by_folded_tag = {
+            folded: set() for folded in spellings_by_folded_tag
+        }
+        for note_id in self._current_state.note_ids:
+            matched_folded_tags: set[str] = set()
+            for explicit_term in self._inherited_explicit_tag_terms(note_id=note_id):
+                normalized_term = explicit_term.casefold()
+                if normalized_term not in matching_candidates_by_explicit_term:
+                    matching_candidates_by_explicit_term[normalized_term] = frozenset(
+                        folded
+                        for folded, equivalents in equivalents_by_folded_tag.items()
+                        if any(
+                            tag_term_matches_prefix(
+                                term=explicit_term,
+                                prefix=equivalent,
+                            )
+                            for equivalent in equivalents
+                        )
+                    )
+                matched_folded_tags.update(
+                    matching_candidates_by_explicit_term[normalized_term]
+                )
+            root_note_id = self._snapshot.notes_by_id[note_id].root_note_id
+            for matched_folded_tag in matched_folded_tags:
+                matching_note_ids_by_folded_tag[matched_folded_tag].add(note_id)
+                matching_root_ids_by_folded_tag[matched_folded_tag].add(root_note_id)
+        facets: list[TagFacet] = []
+        for folded, spellings in spellings_by_folded_tag.items():
+            matching_note_ids = matching_note_ids_by_folded_tag[folded]
+            matching_root_ids = matching_root_ids_by_folded_tag[folded]
+            self._matching_note_ids_by_state_and_folded_tag[
+                (self._current_state.state_id, folded)
+            ] = frozenset(matching_note_ids)
+            facets.append(
+                TagFacet(
+                    tag=sorted(
+                        spellings,
+                        key=lambda value: (value.casefold(), value),
+                    )[0],
+                    note_count=len(matching_note_ids),
+                    result_tree_count=len(matching_root_ids),
+                    synonyms=self._synonyms_for_tag(folded),
+                )
+            )
+        facets.sort(
+            key=lambda facet: (
+                -facet.note_count,
+                -facet.result_tree_count,
+                facet.tag.casefold(),
+                facet.tag,
+            )
+        )
+        return facets
+
+    def _note_matches_effective_tag(
+        self,
+        *,
+        note_id: str,
+        required_tag: str,
+    ) -> bool:
+        folded_required_tag = required_tag.casefold()
+        cache_key = (self._current_state.state_id, folded_required_tag)
+        if cache_key in self._matching_note_ids_by_state_and_folded_tag:
+            return note_id in self._matching_note_ids_by_state_and_folded_tag[cache_key]
+        equivalents = self._folded_equivalent_tags(folded_required_tag)
+        return any(
+            tag_term_matches_prefix(term=term, prefix=equivalent)
+            for term in self._inherited_explicit_tag_terms(note_id=note_id)
+            for equivalent in equivalents
+        )
+
+    def _inherited_explicit_tag_terms(self, *, note_id: str) -> tuple[str, ...]:
+        if note_id in self._inherited_explicit_tag_terms_by_note_id:
+            return self._inherited_explicit_tag_terms_by_note_id[note_id]
+        inherited_terms: list[str] = []
+        seen_folded_terms: set[str] = set()
+        current_id = note_id
+        visited: set[str] = set()
+        while current_id != "":
+            if current_id in visited:
+                raise RuntimeError(f"Hierarchy cycle detected at {current_id}")
+            visited.add(current_id)
+            if current_id in self._snapshot.notes_by_id:
+                note = self._snapshot.notes_by_id[current_id]
+                for term in note.explicit_tag_terms:
+                    folded_term = term.casefold()
+                    if folded_term in seen_folded_terms:
+                        continue
+                    seen_folded_terms.add(folded_term)
+                    inherited_terms.append(term)
+            node = self._snapshot.tree_nodes_by_id[current_id]
+            current_id = node.parent_id
+        frozen_terms = tuple(inherited_terms)
+        self._inherited_explicit_tag_terms_by_note_id[note_id] = frozen_terms
+        return frozen_terms
+
+    def _synonyms_for_tag(self, folded_tag: str) -> tuple[str, ...]:
+        equivalents = self._equivalent_tags(folded_tag)
+        return tuple(
+            sorted(
+                (tag for tag in equivalents if tag.casefold() != folded_tag),
+                key=lambda value: (value.casefold(), value),
+            )
+        )
+
+    def _folded_equivalent_tags(self, folded_tag: str) -> frozenset[str]:
+        return frozenset(tag.casefold() for tag in self._equivalent_tags(folded_tag))
+
+    def _equivalent_tags(self, folded_tag: str) -> frozenset[str]:
+        if folded_tag in self._equivalent_tags_by_folded_tag:
+            return self._equivalent_tags_by_folded_tag[folded_tag]
+        matching_keys = [
+            tag
+            for tag in self._ontology.scc_members_by_tag
+            if tag.casefold() == folded_tag
+        ]
+        if not matching_keys:
+            equivalents = frozenset({folded_tag})
+            self._equivalent_tags_by_folded_tag[folded_tag] = equivalents
+            return equivalents
+        equivalents: set[str] = set()
+        for matching_key in matching_keys:
+            _left, equals, _right = self._ontology.focus_view(tag=matching_key)
+            equivalents.update(equals)
+        if not equivalents:
+            raise RuntimeError("Ontology equivalence lookup returned no tags")
+        frozen_equivalents = frozenset(equivalents)
+        self._equivalent_tags_by_folded_tag[folded_tag] = frozen_equivalents
+        return frozen_equivalents
 
     @staticmethod
     def _note_matches_tag_expression(
@@ -478,19 +936,36 @@ class InvestigationState:
         root_id: str,
         note_ids: list[str],
     ) -> int:
-        capacities = [
-            min(
-                len(self._snapshot.notes_by_id[note_id].content_text),
-                self._settings.max_note_characters,
+        evidence_notes = tuple(
+            EvidenceNoteTokenSource(
+                note_id=note_id,
+                content_text=self._snapshot.notes_by_id[note_id].content_text,
+                explicit_tag_terms=(
+                    self._snapshot.notes_by_id[note_id].explicit_tag_terms
+                ),
+                created_at=self._snapshot.notes_by_id[note_id].created_at,
+                updated_at=self._snapshot.notes_by_id[note_id].updated_at,
+                character_limit=min(
+                    len(self._snapshot.notes_by_id[note_id].content_text),
+                    self._settings.max_note_characters,
+                ),
             )
             for note_id in note_ids
-        ]
-        trees, _returned_characters = self._serialize_page(
-            root_ids=(root_id,),
-            note_ids=note_ids,
-            character_limits=capacities,
         )
-        return estimate_input_tokens(trees)
+        structure_nodes = tuple(
+            EvidenceTreeTokenSource(
+                note_id=note_id,
+                parent_id=node.parent_id,
+                child_ids=node.child_ids,
+            )
+            for note_id, node in self._snapshot.tree_nodes_by_id.items()
+            if node.root_note_id == root_id
+        )
+        return estimate_cached_root_tree_tokens(
+            root_id=root_id,
+            evidence_notes=evidence_notes,
+            structure_nodes=structure_nodes,
+        )
 
     def _serialize_token_bounded_page(
         self,
@@ -546,8 +1021,14 @@ class InvestigationState:
         if len(note_ids) != len(character_limits):
             raise RuntimeError("Note ids and character limits must align")
         serialized_notes = tuple(
-            self._serialize_page_note(
-                self._snapshot.notes_by_id[note_id],
+            serialize_evidence_note_payload(
+                note_id=self._snapshot.notes_by_id[note_id].note_id,
+                content_text=self._snapshot.notes_by_id[note_id].content_text,
+                explicit_tag_terms=(
+                    self._snapshot.notes_by_id[note_id].explicit_tag_terms
+                ),
+                created_at=self._snapshot.notes_by_id[note_id].created_at,
+                updated_at=self._snapshot.notes_by_id[note_id].updated_at,
                 character_limit=character_limits[index],
             )
             for index, note_id in enumerate(note_ids)
@@ -563,41 +1044,19 @@ class InvestigationState:
             self._required_str(note, "note_id"): note
             for note in serialized_notes
         }
-        evidence_note_ids = set(note_ids)
-        included_structure_ids = self._structure_ids_for_evidence(
-            evidence_note_ids=evidence_note_ids,
-        )
-        result_trees = tuple(
-            self._serialize_result_tree(
-                note_id=root_id,
-                evidence_note_ids=evidence_note_ids,
-                included_structure_ids=included_structure_ids,
-                serialized_evidence_by_id=serialized_by_id,
-            )
-            for root_id in root_ids
+        result_trees = serialize_evidence_result_trees(
+            root_ids=root_ids,
+            evidence_payloads_by_id=serialized_by_id,
+            parent_id_by_id={
+                note_id: node.parent_id
+                for note_id, node in self._snapshot.tree_nodes_by_id.items()
+            },
+            child_ids_by_id={
+                note_id: node.child_ids
+                for note_id, node in self._snapshot.tree_nodes_by_id.items()
+            },
         )
         return result_trees, returned_character_count
-
-    @staticmethod
-    def _serialize_page_note(
-        note: FrozenScopedNote,
-        *,
-        character_limit: int,
-    ) -> dict[str, object]:
-        if character_limit < 0:
-            raise ValueError("Note character limit must not be negative")
-        returned_text = note.content_text[:character_limit]
-        payload: dict[str, object] = {
-            "note_id": note.note_id,
-            "content_text": returned_text,
-            "created_at": note.created_at,
-            "updated_at": note.updated_at,
-        }
-        if note.explicit_tag_terms:
-            payload["tags"] = list(note.explicit_tag_terms)
-        if len(returned_text) < len(note.content_text):
-            payload["truncated_from_character_count"] = len(note.content_text)
-        return payload
 
     def _note_ids_for_roots(self, root_ids: tuple[str, ...]) -> list[str]:
         root_id_set = set(root_ids)
@@ -630,49 +1089,6 @@ class InvestigationState:
         if note.explicit_tag_terms:
             payload["tags"] = list(note.explicit_tag_terms)
         return payload
-
-    def _serialize_result_tree(
-        self,
-        *,
-        note_id: str,
-        evidence_note_ids: set[str],
-        included_structure_ids: set[str],
-        serialized_evidence_by_id: dict[str, dict[str, object]],
-    ) -> dict[str, object]:
-        node = self._snapshot.tree_nodes_by_id[note_id]
-        child_payloads = [
-            self._serialize_result_tree(
-                note_id=child_id,
-                evidence_note_ids=evidence_note_ids,
-                included_structure_ids=included_structure_ids,
-                serialized_evidence_by_id=serialized_evidence_by_id,
-            )
-            for child_id in node.child_ids
-            if child_id in included_structure_ids
-        ]
-        if note_id not in evidence_note_ids:
-            return {
-                "note_id": node.note_id,
-                "is_evidence": False,
-                "children": child_payloads,
-            }
-        payload = dict(serialized_evidence_by_id[note_id])
-        if child_payloads:
-            payload["children"] = child_payloads
-        return payload
-
-    def _structure_ids_for_evidence(
-        self,
-        *,
-        evidence_note_ids: set[str],
-    ) -> set[str]:
-        included_ids = set(evidence_note_ids)
-        for evidence_note_id in evidence_note_ids:
-            current_id = evidence_note_id
-            while self._snapshot.tree_nodes_by_id[current_id].parent_id != "":
-                current_id = self._snapshot.tree_nodes_by_id[current_id].parent_id
-                included_ids.add(current_id)
-        return included_ids
 
     @staticmethod
     def _required_int(payload: dict[str, object], key: str) -> int:

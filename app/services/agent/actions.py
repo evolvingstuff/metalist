@@ -71,6 +71,17 @@ class EvidenceSelectionConstraints:
             raise ValueError("allowed_note_ids must contain non-empty strings")
 
 
+@dataclass(frozen=True, slots=True)
+class NarrowContextConstraints:
+    allowed_tags: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.allowed_tags, frozenset):
+            raise TypeError("allowed_tags must be a frozenset")
+        if any(not isinstance(tag, str) or tag == "" for tag in self.allowed_tags):
+            raise ValueError("allowed_tags must contain non-empty strings")
+
+
 _INVESTIGATION_STEP_CONSTRAINTS: ContextVar[
     InvestigationStepConstraints | None
 ] = ContextVar("investigation_step_constraints", default=None)
@@ -81,6 +92,9 @@ _SCOPED_ROUTE_CONSTRAINTS: ContextVar[ScopedRouteConstraints | None] = ContextVa
 _EVIDENCE_SELECTION_CONSTRAINTS: ContextVar[
     EvidenceSelectionConstraints | None
 ] = ContextVar("evidence_selection_constraints", default=None)
+_NARROW_CONTEXT_CONSTRAINTS: ContextVar[
+    NarrowContextConstraints | None
+] = ContextVar("narrow_context_constraints", default=None)
 
 _EXPLICIT_SAVED_NOTES_PATTERNS = (
     re.compile(r"\b(?:my|our)\s+(?:saved\s+)?notes?\b", re.IGNORECASE),
@@ -167,6 +181,19 @@ def bind_evidence_selection_constraints(
         yield
     finally:
         _EVIDENCE_SELECTION_CONSTRAINTS.reset(token)
+
+
+@contextmanager
+def bind_narrow_context_constraints(
+    constraints: NarrowContextConstraints,
+) -> Iterator[None]:
+    if not isinstance(constraints, NarrowContextConstraints):
+        raise TypeError("constraints must be NarrowContextConstraints")
+    token = _NARROW_CONTEXT_CONSTRAINTS.set(constraints)
+    try:
+        yield
+    finally:
+        _NARROW_CONTEXT_CONSTRAINTS.reset(token)
 
 
 def _validate_agent_search_query(value: str) -> str:
@@ -581,6 +608,30 @@ class EvidenceSelectionWithoutRationale(_EvidenceSelectionBase):
     """Compact evidence selection containing only exact relevant note IDs."""
 
 
+class NarrowContextPlan(BaseModel):
+    """Ordered exact raw tags proposed for cumulative scope narrowing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ordered_tags: list[str] = Field(..., max_length=12)
+
+    @field_validator("ordered_tags")
+    @classmethod
+    def validate_ordered_tags(cls, values: list[str]) -> list[str]:
+        if any(not isinstance(value, str) or value.strip() == "" for value in values):
+            raise ValueError("Narrowing tags must be non-empty strings")
+        normalized = [value.strip() for value in values]
+        folded = [value.casefold() for value in normalized]
+        if len(set(folded)) != len(folded):
+            raise ValueError("Narrowing tags must be unique")
+        constraints = _NARROW_CONTEXT_CONSTRAINTS.get()
+        if constraints is not None and not set(folded).issubset(
+            constraints.allowed_tags
+        ):
+            raise ValueError("Narrowing plan contains an undisclosed tag")
+        return normalized
+
+
 class InvestigationStep(_OllamaCompatibleSchemaModel):
     """Flat Ollama wire schema for summary replacement plus one next action."""
 
@@ -721,6 +772,11 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
         self,
         constraints: InvestigationStepConstraints,
     ) -> None:
+        for source_id in self.working_summary.referenced_source_ids():
+            if source_id not in constraints.observed_source_ids:
+                raise ValueError(
+                    f"Working summary cites unobserved source {source_id}"
+                )
         if self.action_kind == "page_next" and not constraints.has_next_note_page:
             raise ValueError("Current subset has no next note page")
         if self.action_kind == "inspect_tag_facets":

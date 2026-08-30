@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
+from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
 
 
@@ -100,6 +101,24 @@ def test_ai_chat_renderer_hides_partial_bracketed_citation_during_streaming() ->
     assert NOTE_ID not in rendered
     assert "Instructor + LiteLLM" not in rendered
     assert 'class="ai-chat-note-mention"' not in rendered
+    assert 'class="ai-chat-citation-marker"' not in rendered
+    assert 'class="ai-chat-references"' not in rendered
+
+
+def test_ai_chat_streaming_renderer_withholds_all_reference_ui_until_done() -> None:
+    rendered = render_ai_chat_streaming_markdown_to_html(
+        (
+            "1. Supported finding. "
+            f"[[{NOTE_ID}]]\n\n"
+            f"- **Source:** [Saved note](https://example.com) [[{NOTE_ID}]]"
+        ),
+        allowed_note_ids=(NOTE_ID,),
+    )
+
+    assert "Supported finding." in rendered
+    assert NOTE_ID not in rendered
+    assert "Saved note" not in rendered
+    assert "example.com" not in rendered
     assert 'class="ai-chat-citation-marker"' not in rendered
     assert 'class="ai-chat-references"' not in rendered
 

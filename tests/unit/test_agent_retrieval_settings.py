@@ -15,6 +15,8 @@ from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TO
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
 
 
@@ -28,14 +30,16 @@ def test_agent_retrieval_settings_use_bounded_defaults() -> None:
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens == 5_000
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_ranked_tags_per_page == 50
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_working_summary_characters == 8_000
+    assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.ideal_narrowed_scope_approximate_tokens == 10_000
     assert resolve_agent_retrieval_settings(
         preferences={},
         provider="openai",
     ) == DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
     assert (
         DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens
-        == 24_000
+        == 250_000
     )
+    assert DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.ideal_narrowed_scope_approximate_tokens == 500_000
 
 
 def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
@@ -48,6 +52,7 @@ def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
             MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "7000",
             MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "25",
             MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "12000",
+            IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "18000",
         }
     )
 
@@ -58,6 +63,7 @@ def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
         max_page_approximate_tokens=7_000,
         max_ranked_tags_per_page=25,
         max_working_summary_characters=12_000,
+        ideal_narrowed_scope_approximate_tokens=18_000,
     )
 
 
@@ -70,6 +76,7 @@ def test_agent_retrieval_settings_keep_provider_preferences_independent() -> Non
         OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "20000",
         OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "125",
         OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "24000",
+        OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "52000",
     }
 
     ollama = resolve_agent_retrieval_settings(
@@ -90,7 +97,21 @@ def test_agent_retrieval_settings_keep_provider_preferences_independent() -> Non
         max_page_approximate_tokens=20_000,
         max_ranked_tags_per_page=125,
         max_working_summary_characters=24_000,
+        ideal_narrowed_scope_approximate_tokens=52_000,
     )
+
+
+def test_agent_retrieval_settings_migrate_former_openai_defaults() -> None:
+    settings = resolve_agent_retrieval_settings(
+        provider="openai",
+        preferences={
+            OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "24000",
+            OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "48000",
+        },
+    )
+
+    assert settings.max_page_approximate_tokens == 250_000
+    assert settings.ideal_narrowed_scope_approximate_tokens == 500_000
 
 
 def test_agent_retrieval_settings_reject_unknown_provider() -> None:
@@ -113,7 +134,7 @@ def test_agent_retrieval_settings_reject_unknown_provider() -> None:
         (2_000, 20_000, 0, 5_000),
         (2_000, 20_000, 101, 5_000),
         (2_000, 20_000, 50, 499),
-        (2_000, 20_000, 50, 24_001),
+        (2_000, 20_000, 50, 250_001),
     ],
 )
 def test_agent_retrieval_settings_reject_out_of_range_values(

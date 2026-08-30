@@ -128,8 +128,10 @@ test('AI agent settings expose bounded note retrieval controls', () => {
     assert.match(settingsModal, /min="500" max="10000"/);
     assert.doesNotMatch(settingsModal, /id="ai-agent-max-page-characters"/);
     assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
-    assert.match(settingsModal, /min="500" max="24000"/);
+    assert.match(settingsModal, /isOpenAi \? 250000 : 24000/);
+    assert.match(settingsModal, /isOpenAi \? 500000 : 200000/);
     assert.match(settingsModal, /id="ai-agent-max-notes-per-page"/);
+    assert.match(settingsModal, /id="ai-agent-ideal-narrowed-scope-approximate-tokens"/);
     assert.match(settingsModal, /Maximum result trees per evidence page/);
     assert.match(settingsModal, /id="ai-agent-max-ranked-tags-per-page"/);
     assert.match(settingsModal, /id="ai-agent-max-working-summary-characters"/);
@@ -156,6 +158,10 @@ test('chat accepts scoped-investigation lifecycle activities', () => {
         'investigation_facets',
         'investigation_refinement',
         'investigation_sources',
+        'evidence_root_prefix',
+        'context_narrowing',
+        'context_narrowing_plan',
+        'context_narrowing_test',
     ]) {
         assert.match(controller, new RegExp(`'${action}'`));
     }
@@ -502,6 +508,24 @@ test('streaming keeps drafting available and reset cancels the active Ollama req
     assert.doesNotMatch(template, /id="ai-chat-status"/);
     assert.doesNotMatch(controller, /_setStatus|ai-chat-status/);
     assert.match(controller, /_appendLocalErrorPanel\(error\.message\)/);
+});
+
+
+test('completion keeps references below the viewport instead of auto-scrolling into them', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+
+    assert.match(
+        controller,
+        /event\.type !== 'done'[\s\S]*?this\._render\(\{ shouldScrollToBottom \}\)/,
+    );
+    assert.match(
+        controller,
+        /querySelector\('\.ai-chat-references'\)[\s\S]*?referenceTop[\s\S]*?clientHeight/,
+    );
+    assert.doesNotMatch(
+        controller,
+        /_render\(\)[\s\S]*?messages\.scrollTop = this\._elements\.messages\.scrollHeight/,
+    );
 });
 
 

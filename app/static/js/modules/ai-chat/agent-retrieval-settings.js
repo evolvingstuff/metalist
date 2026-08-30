@@ -5,6 +5,9 @@ export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxPageApproximateTokens: 'pref.ai.retrieval.max_page_approximate_tokens',
     maxRankedTagsPerPage: 'pref.ai.retrieval.max_ranked_tags_per_page',
     maxWorkingSummaryCharacters: 'pref.ai.retrieval.max_working_summary_characters',
+    idealNarrowedScopeApproximateTokens: (
+        'pref.ai.retrieval.ideal_narrowed_scope_approximate_tokens'
+    ),
 });
 
 export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
@@ -16,6 +19,9 @@ export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxWorkingSummaryCharacters: (
         'pref.ai.openai.retrieval.max_working_summary_characters'
     ),
+    idealNarrowedScopeApproximateTokens: (
+        'pref.ai.openai.retrieval.ideal_narrowed_scope_approximate_tokens'
+    ),
 });
 
 export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
@@ -25,12 +31,17 @@ export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     maxPageApproximateTokens: 5000,
     maxRankedTagsPerPage: 50,
     maxWorkingSummaryCharacters: 8000,
+    idealNarrowedScopeApproximateTokens: 10000,
 });
 
 export const DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     ...DEFAULT_AGENT_RETRIEVAL_SETTINGS,
-    maxPageApproximateTokens: 24000,
+    maxPageApproximateTokens: 250000,
+    idealNarrowedScopeApproximateTokens: 500000,
 });
+
+const LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24000;
+const LEGACY_DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 48000;
 
 const AGENT_RETRIEVAL_LIMITS = Object.freeze({
     minimumNoteCharacters: 500,
@@ -40,22 +51,29 @@ const AGENT_RETRIEVAL_LIMITS = Object.freeze({
     minimumNotesPerPage: 1,
     maximumNotesPerPage: 100,
     minimumPageApproximateTokens: 500,
-    maximumPageApproximateTokens: 24000,
+    maximumOllamaPageApproximateTokens: 24000,
+    maximumOpenAiPageApproximateTokens: 250000,
     minimumRankedTagsPerPage: 1,
     maximumRankedTagsPerPage: 200,
     minimumWorkingSummaryCharacters: 2000,
     maximumWorkingSummaryCharacters: 32000,
+    minimumIdealNarrowedScopeApproximateTokens: 1000,
+    maximumOllamaIdealNarrowedScopeApproximateTokens: 200000,
+    maximumOpenAiIdealNarrowedScopeApproximateTokens: 500000,
 });
 
 
 export class AgentRetrievalSettingsValidationError extends Error {}
 
 
-export function validateAgentRetrievalSettings(settings) {
+export function validateAgentRetrievalSettings(settings, provider) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         throw new TypeError('Agent retrieval settings must be an object');
     }
-    const validationMessage = getAgentRetrievalSettingsValidationMessage(settings);
+    const validationMessage = getAgentRetrievalSettingsValidationMessage(
+        settings,
+        provider,
+    );
     if (validationMessage !== '') {
         throw new AgentRetrievalSettingsValidationError(validationMessage);
     }
@@ -65,6 +83,9 @@ export function validateAgentRetrievalSettings(settings) {
     const maxPageApproximateTokens = settings.maxPageApproximateTokens;
     const maxRankedTagsPerPage = settings.maxRankedTagsPerPage;
     const maxWorkingSummaryCharacters = settings.maxWorkingSummaryCharacters;
+    const idealNarrowedScopeApproximateTokens = (
+        settings.idealNarrowedScopeApproximateTokens
+    );
     return {
         maxNoteCharacters,
         maxPageCharacters,
@@ -72,14 +93,16 @@ export function validateAgentRetrievalSettings(settings) {
         maxPageApproximateTokens,
         maxRankedTagsPerPage,
         maxWorkingSummaryCharacters,
+        idealNarrowedScopeApproximateTokens,
     };
 }
 
 
-export function getAgentRetrievalSettingsValidationMessage(settings) {
+export function getAgentRetrievalSettingsValidationMessage(settings, provider) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         throw new TypeError('Agent retrieval settings must be an object');
     }
+    const providerLimits = retrievalLimitsForProvider(provider);
     const noteCharacterError = integerRangeError(
         settings.maxNoteCharacters,
         'Maximum note characters',
@@ -111,7 +134,7 @@ export function getAgentRetrievalSettingsValidationMessage(settings) {
         settings.maxPageApproximateTokens,
         'Approximate input tokens per evidence page',
         AGENT_RETRIEVAL_LIMITS.minimumPageApproximateTokens,
-        AGENT_RETRIEVAL_LIMITS.maximumPageApproximateTokens,
+        providerLimits.maximumPageApproximateTokens,
     );
     if (pageTokenError !== '') {
         return pageTokenError;
@@ -125,11 +148,20 @@ export function getAgentRetrievalSettingsValidationMessage(settings) {
     if (facetPageError !== '') {
         return facetPageError;
     }
-    return integerRangeError(
+    const summaryError = integerRangeError(
         settings.maxWorkingSummaryCharacters,
         'Maximum working-summary characters',
         AGENT_RETRIEVAL_LIMITS.minimumWorkingSummaryCharacters,
         AGENT_RETRIEVAL_LIMITS.maximumWorkingSummaryCharacters,
+    );
+    if (summaryError !== '') {
+        return summaryError;
+    }
+    return integerRangeError(
+        settings.idealNarrowedScopeApproximateTokens,
+        'Ideal narrowed-scope approximate tokens',
+        AGENT_RETRIEVAL_LIMITS.minimumIdealNarrowedScopeApproximateTokens,
+        providerLimits.maximumIdealNarrowedScopeApproximateTokens,
     );
 }
 
@@ -139,6 +171,22 @@ export function readAgentRetrievalSettings(getPreference, provider) {
         throw new Error('readAgentRetrievalSettings requires getPreference');
     }
     const { preferenceKeys, defaults } = providerRetrievalConfiguration(provider);
+    const rawMaxPageApproximateTokens = getPreference(
+        preferenceKeys.maxPageApproximateTokens,
+    );
+    const rawIdealNarrowedScopeApproximateTokens = getPreference(
+        preferenceKeys.idealNarrowedScopeApproximateTokens,
+    );
+    const maxPageApproximateTokens = parseStoredInteger(
+        rawMaxPageApproximateTokens,
+        defaults.maxPageApproximateTokens,
+        'Stored approximate input tokens per evidence page',
+    );
+    const idealNarrowedScopeApproximateTokens = parseStoredInteger(
+        rawIdealNarrowedScopeApproximateTokens,
+        defaults.idealNarrowedScopeApproximateTokens,
+        'Stored ideal narrowed-scope approximate tokens',
+    );
     return validateAgentRetrievalSettings({
         maxNoteCharacters: parseStoredInteger(
             getPreference(preferenceKeys.maxNoteCharacters),
@@ -155,10 +203,9 @@ export function readAgentRetrievalSettings(getPreference, provider) {
             defaults.maxNotesPerPage,
             'Stored maximum result trees per page',
         ),
-        maxPageApproximateTokens: parseStoredInteger(
-            getPreference(preferenceKeys.maxPageApproximateTokens),
-            defaults.maxPageApproximateTokens,
-            'Stored approximate input tokens per evidence page',
+        maxPageApproximateTokens: migrateLegacyOpenAiPageTokens(
+            maxPageApproximateTokens,
+            provider,
         ),
         maxRankedTagsPerPage: parseStoredInteger(
             getPreference(preferenceKeys.maxRankedTagsPerPage),
@@ -170,7 +217,61 @@ export function readAgentRetrievalSettings(getPreference, provider) {
             defaults.maxWorkingSummaryCharacters,
             'Stored maximum working-summary characters',
         ),
-    });
+        idealNarrowedScopeApproximateTokens: migrateLegacyOpenAiNarrowingTokens(
+            idealNarrowedScopeApproximateTokens,
+            provider,
+        ),
+    }, provider);
+}
+
+
+function migrateLegacyOpenAiPageTokens(value, provider) {
+    if (
+        provider === 'openai'
+        && value === LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS
+    ) {
+        return DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens;
+    }
+    return value;
+}
+
+
+function migrateLegacyOpenAiNarrowingTokens(value, provider) {
+    if (
+        provider === 'openai'
+        && value === LEGACY_DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+    ) {
+        return (
+            DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
+                .idealNarrowedScopeApproximateTokens
+        );
+    }
+    return value;
+}
+
+
+function retrievalLimitsForProvider(provider) {
+    if (provider === 'ollama') {
+        return {
+            maximumPageApproximateTokens: (
+                AGENT_RETRIEVAL_LIMITS.maximumOllamaPageApproximateTokens
+            ),
+            maximumIdealNarrowedScopeApproximateTokens: (
+                AGENT_RETRIEVAL_LIMITS.maximumOllamaIdealNarrowedScopeApproximateTokens
+            ),
+        };
+    }
+    if (provider === 'openai') {
+        return {
+            maximumPageApproximateTokens: (
+                AGENT_RETRIEVAL_LIMITS.maximumOpenAiPageApproximateTokens
+            ),
+            maximumIdealNarrowedScopeApproximateTokens: (
+                AGENT_RETRIEVAL_LIMITS.maximumOpenAiIdealNarrowedScopeApproximateTokens
+            ),
+        };
+    }
+    throw new Error(`Unsupported agent retrieval provider: ${provider}`);
 }
 
 

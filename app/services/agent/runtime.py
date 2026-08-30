@@ -24,10 +24,13 @@ from app.services.agent.actions import SearchNotesAction
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.actions import InvestigationStep
 from app.services.agent.actions import InvestigationStepConstraints
+from app.services.agent.actions import NarrowContextConstraints
+from app.services.agent.actions import NarrowContextPlan
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import ScopedRouteConstraints
 from app.services.agent.actions import WorkingSummary
 from app.services.agent.actions import bind_investigation_step_constraints
+from app.services.agent.actions import bind_narrow_context_constraints
 from app.services.agent.actions import bind_evidence_selection_constraints
 from app.services.agent.actions import bind_scoped_route_constraints
 from app.services.agent.actions import parse_agent_route_json
@@ -47,6 +50,7 @@ from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.investigation import InvestigationNotePage
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import TagFacetPage
+from app.services.agent.investigation import NarrowingResult
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
@@ -58,13 +62,17 @@ from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.tools import ReadOnlyAgentToolRegistry
 from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.token_estimation import estimate_input_tokens
+from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
 from app.services.search_query import parse_search_query
+from app.services.tag_ontology import TagOntology
 
 
 _MAX_ACTION_STEPS = 8
 _MAX_INVESTIGATION_STEPS = 16
+_SCOPED_EVIDENCE_OVERFLOW_MODE = "retain_first_page_root_prefix"
+_LEGACY_MULTIPAGE_OVERFLOW_MODE = "multipage_summary"
 _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
     "Ollama": 1_024,
     "OpenAI": 8_192,
@@ -121,6 +129,7 @@ class AgentRuntime:
         tool_registry: ReadOnlyAgentToolRegistry,
         trace_store: AgentTraceStore,
         provider_label: str,
+        ontology_provider: Callable[[], TagOntology],
     ) -> None:
         if not isinstance(provider_label, str) or provider_label == "":
             raise ValueError("Agent runtime provider label must be non-empty")
@@ -131,6 +140,7 @@ class AgentRuntime:
         self._tool_registry = tool_registry
         self._trace_store = trace_store
         self._provider_label = provider_label
+        self._ontology_provider = ontology_provider
 
     async def stream_scoped(
         self,
@@ -193,11 +203,12 @@ class AgentRuntime:
             raise TypeError("frozen_scope must be ScopedSearchSnapshot")
         if frozen_scope.session_key != run.session_key:
             raise RuntimeError("Frozen scope belongs to another session")
-        initial_tokens = estimate_input_tokens(initial_messages)
+        initial_tokens = estimate_message_tokens(initial_messages)
         snapshot = frozen_scope
-        state = InvestigationState.start(
+        state = InvestigationState.start_with_ontology(
             snapshot=snapshot,
             settings=run.retrieval_settings,
+            ontology=self._ontology_provider(),
         )
         scope_page_count = state.total_note_pages
         scope_label = (
@@ -259,7 +270,7 @@ class AgentRuntime:
                 provider_label=self._provider_label,
             )
         route = await route_task
-        route_tokens = estimate_input_tokens(route_messages)
+        route_tokens = estimate_message_tokens(route_messages)
         yield self._status_event(
             route.kind,
             "completed",
@@ -286,15 +297,261 @@ class AgentRuntime:
             f"Activated skill · {skill.title}",
             approx_input_tokens=route_tokens,
         )
-        note_page = state.current_note_page()
+        single_page_basis = "the complete one-page frozen evidence scope"
+        single_page_ready_label = "Complete evidence scope ready"
+        single_page_trace_label = "Complete one-page authoritative evidence scope"
+        original_scope_size = await asyncio.to_thread(state.current_scope_size)
+        narrowing_target = (
+            run.retrieval_settings.ideal_narrowed_scope_approximate_tokens
+        )
+        if _SCOPED_EVIDENCE_OVERFLOW_MODE == "retain_first_page_root_prefix":
+            if (
+                original_scope_size.approximate_token_count
+                > run.retrieval_settings.max_page_approximate_tokens
+            ):
+                retention = await asyncio.to_thread(
+                    state.retain_root_prefix_within_token_budget
+                )
+                dropped_root_count = len(retention.dropped_root_ids)
+                self._trace_store.append_event(
+                    session_key=run.session_key,
+                    run_id=run.run_id,
+                    event_type="EVIDENCE_ROOT_PREFIX_RETAINED",
+                    label="Retained leading root trees within one-page token budget",
+                    detail={
+                        "original": {
+                            "note_count": retention.original.note_count,
+                            "result_tree_count": retention.original.result_tree_count,
+                            "approximate_token_count": (
+                                retention.original.approximate_token_count
+                            ),
+                        },
+                        "retained": {
+                            "note_count": retention.retained.note_count,
+                            "result_tree_count": retention.retained.result_tree_count,
+                            "approximate_token_count": (
+                                retention.retained.approximate_token_count
+                            ),
+                        },
+                        "target_approximate_token_count": (
+                            run.retrieval_settings.max_page_approximate_tokens
+                        ),
+                        "retained_root_ids": list(retention.retained_root_ids),
+                        "dropped_root_ids": list(retention.dropped_root_ids),
+                    },
+                    duration_ms=0.0,
+                )
+                yield self._status_event(
+                    "evidence_root_prefix",
+                    "completed",
+                    (
+                        "Retained token-bounded root prefix · "
+                        f"{retention.retained.result_tree_count} of "
+                        f"{retention.original.result_tree_count} result trees · "
+                        f"{retention.retained.note_count} of "
+                        f"{retention.original.note_count} notes · dropped "
+                        f"{dropped_root_count} trailing result trees · "
+                        f"≈ {retention.retained.approximate_token_count:,} of "
+                        f"{run.retrieval_settings.max_page_approximate_tokens:,} "
+                        "target tokens"
+                    ),
+                    approx_input_tokens=route_tokens,
+                )
+                single_page_basis = (
+                    "the leading root-tree prefix retained by the current one-page "
+                    "overflow experiment; later frozen-scope roots were deliberately "
+                    "omitted, so do not claim exhaustive scope coverage"
+                )
+                single_page_ready_label = "Retained leading evidence prefix ready"
+                single_page_trace_label = (
+                    "Experimental retained leading root-tree evidence prefix"
+                )
+            scope_requires_narrowing = False
+        elif _SCOPED_EVIDENCE_OVERFLOW_MODE == _LEGACY_MULTIPAGE_OVERFLOW_MODE:
+            yield self._status_event(
+                "context_narrowing",
+                "started",
+                (
+                    "Evaluating automatic narrowing · "
+                    f"{state.total_note_pages} evidence pages"
+                ),
+                approx_input_tokens=route_tokens,
+            )
+            scope_requires_narrowing = (
+                original_scope_size.approximate_token_count > narrowing_target
+            )
+        else:
+            raise RuntimeError(
+                "Unknown scoped evidence overflow mode: "
+                f"{_SCOPED_EVIDENCE_OVERFLOW_MODE}"
+            )
+        narrowing_facet_page = None
+        if scope_requires_narrowing:
+            yield self._status_event(
+                "context_narrowing",
+                "started",
+                (
+                    "Automatic narrowing required · original scope "
+                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
+                    f"target ≈ {narrowing_target:,} tokens · calculating eligible "
+                    "context tags"
+                ),
+                approx_input_tokens=route_tokens,
+            )
+            narrowing_facet_page = await asyncio.to_thread(
+                state.current_narrowing_facet_page
+            )
+        if (
+            scope_requires_narrowing
+            and narrowing_facet_page is not None
+            and narrowing_facet_page.facets
+        ):
+            narrow_skill = run.skills.for_action("narrow_context")
+            self._record_skill_activation(run=run, skill=narrow_skill)
+            yield self._status_event(
+                "skill",
+                "completed",
+                f"Activated skill · {narrow_skill.title}",
+                approx_input_tokens=route_tokens,
+            )
+            narrow_messages = self._context_builder.build_narrow_context_messages(
+                canonical_messages=canonical_messages,
+                prompts=run.prompts,
+                skill=narrow_skill,
+                state=state,
+                facet_page=narrowing_facet_page,
+                original_size=original_scope_size,
+                target_approximate_tokens=narrowing_target,
+            )
+            narrow_tokens = estimate_message_tokens(narrow_messages)
+            yield self._status_event(
+                "context_narrowing",
+                "started",
+                (
+                    "Planning cumulative tag narrowing · original scope "
+                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
+                    f"target ≈ {narrowing_target:,} tokens"
+                ),
+                approx_input_tokens=narrow_tokens,
+            )
+            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
+            narrow_task = asyncio.create_task(
+                self._select_narrow_context_plan(
+                    run=run,
+                    messages=narrow_messages,
+                    allowed_tags=frozenset(
+                        facet.tag.casefold()
+                        for facet in narrowing_facet_page.facets
+                    ),
+                    on_progress=lambda progress: self._publish_inference_progress(
+                        run=run,
+                        progress_queue=progress_queue,
+                        progress=progress,
+                        purpose=InferencePurpose.CONTEXT_NARROWING,
+                    ),
+                )
+            )
+            async for progress in self._stream_progress_until_complete(
+                progress_queue=progress_queue,
+                action_task=narrow_task,
+            ):
+                yield self._progress_status_event(
+                    progress,
+                    purpose=InferencePurpose.CONTEXT_NARROWING,
+                    provider_label=self._provider_label,
+                )
+            narrow_plan = await narrow_task
+            proposed_tags_label = "AI proposed cumulative tags · none"
+            if narrow_plan.ordered_tags:
+                proposed_tags_label = (
+                    "AI proposed cumulative tags · "
+                    + " → ".join(narrow_plan.ordered_tags)
+                )
+            yield self._status_event(
+                "context_narrowing_plan",
+                "completed",
+                proposed_tags_label,
+                approx_input_tokens=narrow_tokens,
+            )
+            narrowing_result = state.narrow_by_ordered_tags(
+                ordered_tags=narrow_plan.ordered_tags,
+                target_approximate_tokens=narrowing_target,
+            )
+            self._record_context_narrowing(
+                run=run,
+                plan=narrow_plan,
+                result=narrowing_result,
+            )
+            proposed_tag_count = len(narrow_plan.ordered_tags)
+            for attempt_index, attempt in enumerate(
+                narrowing_result.attempts,
+                start=1,
+            ):
+                attempt_label = (
+                    f"Tested cumulative prefix {attempt_index} of "
+                    f"{proposed_tag_count} · {attempt.expression} · "
+                    f"{attempt.note_count} notes in {attempt.result_tree_count} "
+                    f"result trees · ≈ {attempt.approximate_token_count:,} tokens"
+                )
+                if attempt.rejected_zero_results:
+                    attempt_label = (
+                        f"Rejected zero-result prefix {attempt_index} of "
+                        f"{proposed_tag_count} · {attempt.expression}"
+                    )
+                yield self._status_event(
+                    "context_narrowing_test",
+                    "completed",
+                    attempt_label,
+                    approx_input_tokens=narrow_tokens,
+                )
+            selected_label = "No useful non-empty tag narrowing · retained original scope"
+            if narrowing_result.did_narrow:
+                selected_label = (
+                    f"Narrowed scope · {narrowing_result.selected_expression} · "
+                    f"{narrowing_result.selected.note_count} notes in "
+                    f"{narrowing_result.selected.result_tree_count} result trees · "
+                    f"≈ {narrowing_result.selected.approximate_token_count:,} tokens"
+                )
+            yield self._status_event(
+                "context_narrowing",
+                "completed",
+                selected_label,
+                approx_input_tokens=narrow_tokens,
+            )
+        elif scope_requires_narrowing:
+            yield self._status_event(
+                "context_narrowing",
+                "completed",
+                (
+                    "No additional tag constraints available · retained original "
+                    f"scope at ≈ {original_scope_size.approximate_token_count:,} "
+                    "tokens"
+                ),
+                approx_input_tokens=route_tokens,
+            )
+        elif _SCOPED_EVIDENCE_OVERFLOW_MODE == _LEGACY_MULTIPAGE_OVERFLOW_MODE:
+            yield self._status_event(
+                "context_narrowing",
+                "completed",
+                (
+                    "Automatic narrowing not required · original scope "
+                    f"≈ {original_scope_size.approximate_token_count:,} tokens · "
+                    f"target ≈ {narrowing_target:,} tokens"
+                ),
+                approx_input_tokens=route_tokens,
+            )
         facet_page = state.current_facet_page()
+        if _SCOPED_EVIDENCE_OVERFLOW_MODE == "retain_first_page_root_prefix":
+            note_page = state.current_scope_as_single_page()
+        else:
+            note_page = state.current_note_page()
         working_summary = WorkingSummary(ranked_notes=[])
         reopened_sources: tuple[dict[str, object], ...] = ()
         yield self._status_event(
             "investigation_page",
             "completed",
             self._note_page_status_label(note_page),
-            approx_input_tokens=route_tokens,
+            approx_input_tokens=note_page.returned_approximate_token_count,
         )
         if note_page.total_pages == 1:
             self._record_evidence_payload(
@@ -309,15 +566,15 @@ class AgentRuntime:
                     prompts=run.prompts,
                     state=state,
                     note_page=note_page,
-                    basis="the complete one-page frozen evidence scope",
+                    basis=single_page_basis,
                 )
             )
-            final_tokens = estimate_input_tokens(final_messages)
+            final_tokens = estimate_message_tokens(final_messages)
             self._trace_store.append_event(
                 session_key=run.session_key,
                 run_id=run.run_id,
                 event_type="FINAL_EVIDENCE",
-                label="Complete one-page authoritative evidence scope",
+                label=single_page_trace_label,
                 detail={
                     "source_ids": list(reference_note_ids),
                     "result_tree_ids": list(note_page.result_tree_ids),
@@ -328,7 +585,7 @@ class AgentRuntime:
                 "investigation_sources",
                 "completed",
                 (
-                    "Complete evidence scope ready · generating response from "
+                    f"{single_page_ready_label} · generating response from "
                     f"{len(note_page.evidence_note_ids)} notes in "
                     f"{len(note_page.result_tree_ids)} result trees"
                 ),
@@ -358,7 +615,7 @@ class AgentRuntime:
                 reopened_sources=reopened_sources,
             )
             reopened_sources = ()
-            step_tokens = estimate_input_tokens(step_messages)
+            step_tokens = estimate_message_tokens(step_messages)
             yield self._status_event(
                 "investigation_step",
                 "started",
@@ -589,7 +846,7 @@ class AgentRuntime:
         run: _RunContext,
         messages: list[dict[str, str]],
     ) -> AsyncIterator[dict[str, object]]:
-        input_tokens = estimate_input_tokens(messages)
+        input_tokens = estimate_message_tokens(messages)
         yield self._status_event(
             "model_context",
             "started",
@@ -696,7 +953,7 @@ class AgentRuntime:
         run: _RunContext,
         messages: list[dict[str, str]],
     ) -> AsyncIterator[dict[str, object]]:
-        current_input_tokens = estimate_input_tokens(messages)
+        current_input_tokens = estimate_message_tokens(messages)
         yield self._status_event(
             "model_context",
             "started",
@@ -739,7 +996,7 @@ class AgentRuntime:
         completed_search_requests: set[_SearchRequestKey] = set()
         completed_search_query_texts: set[str] = set()
         for _ in range(_MAX_ACTION_STEPS):
-            current_input_tokens = estimate_input_tokens(current_messages)
+            current_input_tokens = estimate_message_tokens(current_messages)
             yield self._status_event(
                 "planning",
                 "started",
@@ -823,7 +1080,7 @@ class AgentRuntime:
                     "skill",
                     "completed",
                     f"Activated skill · {skill.title}",
-                    approx_input_tokens=estimate_input_tokens(skill_messages),
+                    approx_input_tokens=estimate_message_tokens(skill_messages),
                 )
                 skill_progress_queue: asyncio.Queue[StructuredInferenceProgress] = (
                     asyncio.Queue()
@@ -917,7 +1174,7 @@ class AgentRuntime:
                 action.kind,
                 "completed",
                 completed_status_label,
-                approx_input_tokens=estimate_input_tokens(current_messages),
+                approx_input_tokens=estimate_message_tokens(current_messages),
             )
             if isinstance(action, SearchNotesAction):
                 completed_search_requests.add(self._search_request_key(action))
@@ -1045,6 +1302,39 @@ class AgentRuntime:
         )
         return step
 
+    async def _select_narrow_context_plan(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+        allowed_tags: frozenset[str],
+        on_progress: Callable[[StructuredInferenceProgress], None],
+    ) -> NarrowContextPlan:
+        model = self._model_policy.for_stage(
+            purpose=InferencePurpose.CONTEXT_NARROWING,
+            selected_model=run.selected_model,
+        )
+        if not allowed_tags:
+            raise RuntimeError("Context narrowing requires eligible tags")
+        constraints = NarrowContextConstraints(allowed_tags=allowed_tags)
+        with bind_narrow_context_constraints(constraints):
+            response = await self._request_structured_inference(
+                run=run,
+                model=model,
+                messages=messages,
+                response_model=NarrowContextPlan,
+                purpose=InferencePurpose.CONTEXT_NARROWING,
+                on_progress=on_progress,
+            )
+            plan = NarrowContextPlan.model_validate_json(response.content)
+        self._record_structured_attempts(
+            run=run,
+            attempts=response.attempts,
+            parsed=plan.model_dump(mode="json"),
+            purpose=InferencePurpose.CONTEXT_NARROWING,
+        )
+        return plan
+
     async def _select_single_page_evidence(
         self,
         *,
@@ -1171,6 +1461,8 @@ class AgentRuntime:
                 response_label = "evidence selection"
             elif purpose == InferencePurpose.INVESTIGATION_STEP:
                 response_label = "investigation step"
+            elif purpose == InferencePurpose.CONTEXT_NARROWING:
+                response_label = "context-narrowing plan"
             attempt_count = len(exc.attempts)
             attempt_label = "attempt"
             if attempt_count != 1:
@@ -1449,7 +1741,7 @@ class AgentRuntime:
             purpose=InferencePurpose.FINAL_RESPONSE,
             selected_model=run.selected_model,
         )
-        final_input_tokens = estimate_input_tokens(final_messages)
+        final_input_tokens = estimate_message_tokens(final_messages)
         yield self._status_event(
             "respond",
             "started",
@@ -1593,6 +1885,7 @@ class AgentRuntime:
                     "facets": [
                         {
                             "tag": facet.tag,
+                            "synonyms": list(facet.synonyms),
                             "matching_notes": facet.note_count,
                             "matching_result_trees": facet.result_tree_count,
                         }
@@ -1600,6 +1893,57 @@ class AgentRuntime:
                     ],
                 },
                 "reopened_sources": list(reopened_sources),
+            },
+            duration_ms=0.0,
+        )
+
+    def _record_context_narrowing(
+        self,
+        *,
+        run: _RunContext,
+        plan: NarrowContextPlan,
+        result: NarrowingResult,
+    ) -> None:
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="CONTEXT_NARROWING",
+            label="Cumulative tag narrowing evaluation",
+            detail={
+                "plan": plan.model_dump(mode="json"),
+                "target_approximate_tokens": (
+                    result.target_approximate_token_count
+                ),
+                "original": {
+                    "note_count": result.original.note_count,
+                    "result_tree_count": result.original.result_tree_count,
+                    "approximate_tokens": (
+                        result.original.approximate_token_count
+                    ),
+                },
+                "attempts": [
+                    {
+                        "tags": list(attempt.tags),
+                        "expression": attempt.expression,
+                        "note_count": attempt.note_count,
+                        "result_tree_count": attempt.result_tree_count,
+                        "approximate_tokens": attempt.approximate_token_count,
+                        "rejected_zero_results": (
+                            attempt.rejected_zero_results
+                        ),
+                    }
+                    for attempt in result.attempts
+                ],
+                "selected_tags": list(result.selected_tags),
+                "selected_expression": result.selected_expression,
+                "selected": {
+                    "note_count": result.selected.note_count,
+                    "result_tree_count": result.selected.result_tree_count,
+                    "approximate_tokens": (
+                        result.selected.approximate_token_count
+                    ),
+                },
+                "did_narrow": result.did_narrow,
             },
             duration_ms=0.0,
         )
@@ -1655,9 +1999,7 @@ class AgentRuntime:
         return (
             f"Evidence page ready · page {note_page.page} of {note_page.total_pages} · "
             f"{note_page.matching_note_count} notes in "
-            f"{note_page.matching_result_tree_count} result trees · "
-            f"≈ {note_page.returned_approximate_token_count:,} evidence tokens · "
-            f"{note_page.returned_character_count:,} content chars"
+            f"{note_page.matching_result_tree_count} result trees"
         )
 
     @staticmethod
@@ -1946,6 +2288,8 @@ class AgentRuntime:
                 operation_label = (
                     f"{provider_label} updating evidence and choosing next step"
                 )
+            elif purpose == InferencePurpose.CONTEXT_NARROWING:
+                operation_label = f"{provider_label} planning tag narrowing"
             label = f"{operation_label}{attempt_suffix}"
             if progress.attempt > 1:
                 label = f"Instructor retrying · {label}"
@@ -1971,6 +2315,8 @@ class AgentRuntime:
                 operation_label = (
                     f"{provider_label} updating evidence and choosing next step"
                 )
+            elif purpose == InferencePurpose.CONTEXT_NARROWING:
+                operation_label = f"{provider_label} planning tag narrowing"
             return AgentRuntime._output_status_event(
                 "model_request",
                 "started",
@@ -1993,6 +2339,8 @@ class AgentRuntime:
                 response_label = (
                     f"{provider_label} returned investigation-step proposal"
                 )
+            elif purpose == InferencePurpose.CONTEXT_NARROWING:
+                response_label = f"{provider_label} returned tag-narrowing plan"
             return AgentRuntime._output_status_event(
                 "validation",
                 "started",
@@ -2030,6 +2378,8 @@ class AgentRuntime:
                 output_label = "Structured evidence selection validated"
             elif purpose == InferencePurpose.INVESTIGATION_STEP:
                 output_label = "Structured investigation step validated"
+            elif purpose == InferencePurpose.CONTEXT_NARROWING:
+                output_label = "Structured tag-narrowing plan validated"
             return AgentRuntime._output_status_event(
                 "validation",
                 "completed",
@@ -2068,7 +2418,15 @@ class AgentRuntime:
         body = wire_request["body"]
         if not isinstance(body, dict):
             raise TypeError("Structured inference wire request body must be an object")
-        return estimate_input_tokens(body)
+        messages = body["messages"]
+        if not isinstance(messages, list):
+            raise TypeError("Structured inference wire messages must be a list")
+        request_without_messages = {
+            key: value for key, value in body.items() if key != "messages"
+        }
+        return estimate_message_tokens(messages) + estimate_input_tokens(
+            request_without_messages
+        )
 
     @staticmethod
     def _selected_action_status_event(

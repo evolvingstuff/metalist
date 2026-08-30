@@ -19,6 +19,7 @@ test('agent retrieval settings use bounded defaults', () => {
         maxPageApproximateTokens: 5000,
         maxRankedTagsPerPage: 50,
         maxWorkingSummaryCharacters: 8000,
+        idealNarrowedScopeApproximateTokens: 10000,
     });
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNoteCharacters, 2000);
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageCharacters, 20000);
@@ -26,11 +27,13 @@ test('agent retrieval settings use bounded defaults', () => {
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens, 5000);
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxRankedTagsPerPage, 50);
     assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxWorkingSummaryCharacters, 8000);
+    assert.equal(DEFAULT_AGENT_RETRIEVAL_SETTINGS.idealNarrowedScopeApproximateTokens, 10000);
     assert.deepEqual(
         readAgentRetrievalSettings(() => null, 'openai'),
         DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
     );
-    assert.equal(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens, 24000);
+    assert.equal(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens, 250000);
+    assert.equal(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.idealNarrowedScopeApproximateTokens, 500000);
 });
 
 
@@ -42,6 +45,7 @@ test('agent retrieval settings read namespace preference values', () => {
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '7000'],
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage, '25'],
         [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters, '12000'],
+        [AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens, '18000'],
     ]);
 
     assert.deepEqual(readAgentRetrievalSettings(
@@ -54,6 +58,7 @@ test('agent retrieval settings read namespace preference values', () => {
         maxPageApproximateTokens: 7000,
         maxRankedTagsPerPage: 25,
         maxWorkingSummaryCharacters: 12000,
+        idealNarrowedScopeApproximateTokens: 18000,
     });
 });
 
@@ -67,6 +72,7 @@ test('agent retrieval settings keep provider preferences independent', () => {
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '20000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage, '125'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters, '24000'],
+        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens, '52000'],
     ]);
 
     assert.equal(
@@ -86,7 +92,24 @@ test('agent retrieval settings keep provider preferences independent', () => {
         maxPageApproximateTokens: 20000,
         maxRankedTagsPerPage: 125,
         maxWorkingSummaryCharacters: 24000,
+        idealNarrowedScopeApproximateTokens: 52000,
     });
+});
+
+
+test('agent retrieval settings migrate former OpenAI defaults', () => {
+    const preferences = new Map([
+        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '24000'],
+        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens, '48000'],
+    ]);
+
+    const settings = readAgentRetrievalSettings(
+        (key) => preferences.get(key) ?? null,
+        'openai',
+    );
+
+    assert.equal(settings.maxPageApproximateTokens, 250000);
+    assert.equal(settings.idealNarrowedScopeApproximateTokens, 500000);
 });
 
 
@@ -99,7 +122,8 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 5000,
             maxRankedTagsPerPage: 50,
             maxWorkingSummaryCharacters: 8000,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /500 to 10000/,
     );
     assert.throws(
@@ -110,7 +134,8 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 5000,
             maxRankedTagsPerPage: 50,
             maxWorkingSummaryCharacters: 8000,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /1 to 100/,
     );
     assert.throws(
@@ -121,7 +146,8 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 5000,
             maxRankedTagsPerPage: 50,
             maxWorkingSummaryCharacters: 8000,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /5000 to 100000/,
     );
     assert.throws(
@@ -132,7 +158,8 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 5000,
             maxRankedTagsPerPage: 201,
             maxWorkingSummaryCharacters: 8000,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /1 to 200/,
     );
     assert.throws(
@@ -143,7 +170,8 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 5000,
             maxRankedTagsPerPage: 50,
             maxWorkingSummaryCharacters: 1999,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /2000 to 32000/,
     );
     assert.throws(
@@ -154,7 +182,29 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
             maxPageApproximateTokens: 24001,
             maxRankedTagsPerPage: 50,
             maxWorkingSummaryCharacters: 8000,
-        }),
+            idealNarrowedScopeApproximateTokens: 10000,
+        }, 'ollama'),
         /500 to 24000/,
     );
+    assert.throws(
+        () => validateAgentRetrievalSettings({
+            maxNoteCharacters: 2000,
+            maxPageCharacters: 20000,
+            maxNotesPerPage: 50,
+            maxPageApproximateTokens: 5000,
+            maxRankedTagsPerPage: 50,
+            maxWorkingSummaryCharacters: 8000,
+            idealNarrowedScopeApproximateTokens: 999,
+        }, 'ollama'),
+        /1000 to 200000/,
+    );
+    assert.deepEqual(validateAgentRetrievalSettings({
+        maxNoteCharacters: 2000,
+        maxPageCharacters: 20000,
+        maxNotesPerPage: 50,
+        maxPageApproximateTokens: 250000,
+        maxRankedTagsPerPage: 50,
+        maxWorkingSummaryCharacters: 8000,
+        idealNarrowedScopeApproximateTokens: 500000,
+    }, 'openai'), DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS);
 });

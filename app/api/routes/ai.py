@@ -23,6 +23,7 @@ from app.services.ai_chat import AiChatActivityTimer
 from app.services.ai_chat import ai_chat_store
 from app.services.ai_chat_rendering import find_note_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
+from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAdapter
@@ -58,6 +59,7 @@ from app.services.ollama_provider import validate_ollama_model
 from app.services.openai_credentials import OpenAICredentialInputError
 from app.services.openai_credentials import openai_credential_store
 from app.services.openai_credentials import validate_openai_api_key
+from app.services.ontology_rules_store import get_ontology
 from app.services.sync import set_clipboard
 from app.services.tab_state import tab_state_store
 from app.services.tokens import token_service
@@ -77,6 +79,7 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
         tool_registry=read_only_agent_tools,
         trace_store=agent_trace_store,
         provider_label=inference.provider_label,
+        ontology_provider=get_ontology,
     )
 
 
@@ -741,9 +744,8 @@ def stream_ai_chat(
                     accumulated_content += event["text"]
                     outgoing_event = {
                         **event,
-                        "rendered_text": render_ai_chat_markdown_to_html(
+                        "rendered_text": render_ai_chat_streaming_markdown_to_html(
                             accumulated_content,
-                            notes=note_store,
                             allowed_note_ids=reference_note_ids,
                         ),
                     }

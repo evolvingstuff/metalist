@@ -6,6 +6,12 @@ Implemented; automated regression checks pass and the feature is awaiting human
 UI/Ollama validation. This plan replaced the production agent-wide MetaList search
 loop with the user-bounded, iterative investigation loop described below.
 
+Current evaluation override: oversized scopes ignore the result-tree-count cap,
+retain the longest ordered complete-root prefix within one provider token-page
+budget, omit trailing roots, and use the direct raw-page answer path. The
+tag-narrowing and rolling multi-page loop remains implemented as an internal
+alternate mode rather than being removed.
+
 ## Outcome
 
 When the user asks a question, MetaList can investigate only the note-result scope

@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from app.services.agent.actions import InvestigationStep
 from app.services.agent.actions import InvestigationStepConstraints
+from app.services.agent.actions import NarrowContextConstraints
+from app.services.agent.actions import NarrowContextPlan
 from app.services.agent.actions import EvidenceSelection
 from app.services.agent.actions import EvidenceSelectionConstraints
 from app.services.agent.actions import EvidenceSelectionWithoutRationale
@@ -15,6 +17,7 @@ from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import RankedNote
 from app.services.agent.actions import WorkingSummary
 from app.services.agent.actions import bind_investigation_step_constraints
+from app.services.agent.actions import bind_narrow_context_constraints
 from app.services.agent.actions import bind_evidence_selection_constraints
 from app.services.agent.actions import bind_scoped_route_constraints
 from app.services.agent.actions import request_explicitly_requires_saved_notes
@@ -26,6 +29,34 @@ def _summary() -> WorkingSummary:
     return WorkingSummary(
         ranked_notes=[RankedNote(note_id="note-a", importance=90)],
     )
+
+
+def test_narrow_context_plan_requires_unique_disclosed_exact_tags() -> None:
+    constraints = NarrowContextConstraints(
+        allowed_tags=frozenset({"foo", "bar"}),
+    )
+    with bind_narrow_context_constraints(constraints):
+        plan = NarrowContextPlan.model_validate(
+            {"ordered_tags": ["foo", "bar"]}
+        )
+        assert plan.ordered_tags == ["foo", "bar"]
+        with pytest.raises(ValidationError, match="undisclosed"):
+            NarrowContextPlan.model_validate({"ordered_tags": ["baz"]})
+        with pytest.raises(ValidationError, match="unique"):
+            NarrowContextPlan.model_validate({"ordered_tags": ["foo", "FOO"]})
+        one_tag_plan = NarrowContextPlan.model_validate({"ordered_tags": ["foo"]})
+        assert one_tag_plan.ordered_tags == ["foo"]
+
+
+def test_narrow_context_plan_allows_one_tag_when_only_one_is_eligible() -> None:
+    constraints = NarrowContextConstraints(
+        allowed_tags=frozenset({"foo"}),
+    )
+
+    with bind_narrow_context_constraints(constraints):
+        plan = NarrowContextPlan.model_validate({"ordered_tags": ["foo"]})
+
+    assert plan.ordered_tags == ["foo"]
 
 
 def test_exact_saved_notes_request_cannot_validate_as_respond() -> None:
@@ -280,6 +311,26 @@ def test_investigation_step_dynamic_constraints_reject_invalid_runtime_choice() 
 
     with bind_investigation_step_constraints(constraints):
         with pytest.raises(ValidationError, match="no next note page"):
+            InvestigationStep.model_validate(payload)
+
+
+def test_investigation_step_dynamic_constraints_reject_unobserved_summary_id() -> None:
+    constraints = InvestigationStepConstraints(
+        has_next_note_page=False,
+        requires_complete_scope_coverage=False,
+        current_facet_page=1,
+        total_facet_pages=1,
+        disclosed_tags=frozenset({"foo"}),
+        disclosed_state_ids=frozenset({"scope-0"}),
+        observed_source_ids=frozenset({"note-a"}),
+    )
+    payload = _payload()
+    payload["working_summary"] = {
+        "ranked_notes": [{"note_id": "fabricated-note-id", "importance": 90}]
+    }
+
+    with bind_investigation_step_constraints(constraints):
+        with pytest.raises(ValidationError, match="unobserved source"):
             InvestigationStep.model_validate(payload)
 
 

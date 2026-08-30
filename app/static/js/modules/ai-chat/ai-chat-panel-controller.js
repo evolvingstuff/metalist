@@ -159,6 +159,10 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'investigation_facets',
     'investigation_refinement',
     'investigation_sources',
+    'evidence_root_prefix',
+    'context_narrowing',
+    'context_narrowing_plan',
+    'context_narrowing_test',
 ]);
 
 
@@ -328,7 +332,7 @@ class AiChatPanelController {
         if (document.body.classList.contains('pref-show-ai-chat')) {
             await this._loadModels();
         }
-        await this._loadSession();
+        await this._loadSession({ shouldScrollToBottom: true });
     }
 
     _bindEvents() {
@@ -439,7 +443,7 @@ class AiChatPanelController {
         await this._saveDiagnosticsVisible(nextVisibility);
         this._showDiagnosticActivities = nextVisibility;
         this._syncDiagnosticActivityToggle();
-        this._render();
+        this._render({ shouldScrollToBottom: true });
     }
 
     _handlePointerMove(event) {
@@ -798,7 +802,10 @@ class AiChatPanelController {
         this._elements.input.focus();
     }
 
-    async _loadSession() {
+    async _loadSession({ shouldScrollToBottom }) {
+        if (typeof shouldScrollToBottom !== 'boolean') {
+            throw new Error('_loadSession requires boolean scroll behavior');
+        }
         try {
             const payload = await loadAiChatSession();
             if (!payload || !Array.isArray(payload.messages)) {
@@ -806,7 +813,7 @@ class AiChatPanelController {
             }
             this._expandedThinkingMessageIds.clear();
             this._messages = payload.messages.map(validateMessage);
-            this._render();
+            this._render({ shouldScrollToBottom });
             await queueMermaidDiagramRendering(this._elements.messages);
         } catch (error) {
             if (!(error instanceof AiApiError)) {
@@ -822,7 +829,7 @@ class AiChatPanelController {
             return;
         }
         this._isClearingSession = true;
-        this._render();
+        this._render({ shouldScrollToBottom: true });
         try {
             if (this._isBusy) {
                 const activeRequestCompletion = this._activeChatCompletion;
@@ -844,7 +851,7 @@ class AiChatPanelController {
         }
         this._expandedThinkingMessageIds.clear();
         this._messages = [];
-        this._render();
+        this._render({ shouldScrollToBottom: true });
         await AgentDebugView.refreshIfOpen();
         this._elements.input.focus();
     }
@@ -921,7 +928,7 @@ class AiChatPanelController {
         this._elements.input.value = '';
         this._setBusy(true);
         this._startThinkingFeedback();
-        this._render();
+        this._render({ shouldScrollToBottom: true });
 
         let wasCancelled = false;
         try {
@@ -966,7 +973,8 @@ class AiChatPanelController {
                     } else {
                         throw new Error(`Unknown AI chat event: ${event.type}`);
                     }
-                    this._render();
+                    const shouldScrollToBottom = event.type !== 'done';
+                    this._render({ shouldScrollToBottom });
                 },
             });
         } catch (error) {
@@ -980,11 +988,11 @@ class AiChatPanelController {
                 });
                 assistantMessage.status = 'error';
                 assistantMessage.error = 'Cancelled by user';
-                this._render();
+                this._render({ shouldScrollToBottom: true });
             } else if (error instanceof AiApiError) {
                 assistantMessage.status = 'error';
                 assistantMessage.error = error.message;
-                this._render();
+                this._render({ shouldScrollToBottom: true });
             } else {
                 throw error;
             }
@@ -1002,7 +1010,7 @@ class AiChatPanelController {
             resolveActiveChatCompletion();
         }
         if (!wasCancelled) {
-            await this._loadSession();
+            await this._loadSession({ shouldScrollToBottom: false });
         }
         this._elements.input.focus();
     }
@@ -1025,7 +1033,7 @@ class AiChatPanelController {
         this._activeChatAbortController.abort();
         this._elements.send.textContent = 'Stopping…';
         this._elements.send.disabled = true;
-        this._render();
+        this._render({ shouldScrollToBottom: true });
     }
 
     _setBusy(isBusy) {
@@ -1118,10 +1126,14 @@ class AiChatPanelController {
             model: settings.model,
             activities: [],
         });
-        this._render();
+        this._render({ shouldScrollToBottom: true });
     }
 
-    _render() {
+    _render({ shouldScrollToBottom }) {
+        if (typeof shouldScrollToBottom !== 'boolean') {
+            throw new Error('_render requires boolean scroll behavior');
+        }
+        const previousScrollTop = this._elements.messages.scrollTop;
         this._elements.messages.replaceChildren();
         for (const message of this._messages) {
             validateMessage(message);
@@ -1233,7 +1245,34 @@ class AiChatPanelController {
         this._elements.clear.disabled = (
             this._messages.length === 0 || this._isClearingSession
         );
-        this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+        if (shouldScrollToBottom) {
+            this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+            return;
+        }
+        this._elements.messages.scrollTop = previousScrollTop;
+        this._positionReferencesBelowViewport();
+    }
+
+    _positionReferencesBelowViewport() {
+        const lastMessage = this._elements.messages.lastElementChild;
+        if (!(lastMessage instanceof HTMLElement)) {
+            return;
+        }
+        const references = lastMessage.querySelector('.ai-chat-references');
+        if (!(references instanceof HTMLElement)) {
+            return;
+        }
+        const messagesBounds = this._elements.messages.getBoundingClientRect();
+        const referencesBounds = references.getBoundingClientRect();
+        const referenceTop = (
+            referencesBounds.top
+            - messagesBounds.top
+            + this._elements.messages.scrollTop
+        );
+        this._elements.messages.scrollTop = Math.max(
+            0,
+            Math.ceil(referenceTop - this._elements.messages.clientHeight),
+        );
     }
 
     _renderScopeChip(message) {

@@ -6,12 +6,12 @@ not its broader scope label or search query, defines relevance. Candidates may b
 the 32 highest-rated notes from a larger investigation; use and cite only the
 supporting subset. Omit unrelated and unused candidates. Do not substitute general knowledge.
 
-With a non-empty `reference_catalog`, citations are mandatory.
-Every note-derived
-paragraph or list item must cite its claims. An uncited note-derived claim is invalid. Copy the exact
-`citation_token` from the same evidence object whose `content_text` supports the claim;
-for nested evidence cite the exact
-content-bearing child, not merely its root. For example:
+With `authoritative_result_trees` or a non-empty `reference_catalog`, citations are mandatory.
+Every note-derived paragraph or list item must cite its claims. An uncited
+note-derived claim is invalid. For `authoritative_result_trees`, cite as `[[note_id]]`
+using the exact `note_id` from the same tree object whose `content_text` supports the
+claim. For a `reference_catalog`, copy its exact `citation_token`. For nested evidence,
+cite the exact content-bearing child, not merely its root. For example:
 
 1. **First finding:** The directly supported claim.[[UUID]]
 2. **Second finding:** Another claim supported by two notes.[[UUID]][[UUID]]
@@ -25,7 +25,7 @@ Write `Supported claim.[[UUID]]`, never
 list, or footnote; MetaList validates tokens and builds numbered references. With
 an empty catalog, add no citations. Do not mention this control message.
 
-With empty `reference_catalog`, answer a correction/challenge in at most two
-sentences: acknowledge the correction directly, address the disputed point, then
-stop. Do not repeat prior answer or mention adjacent topics, notes, citations, or
-UUIDs.
+With neither `authoritative_result_trees` nor a non-empty `reference_catalog`, answer
+a correction/challenge in at most two sentences: acknowledge the correction directly,
+address the disputed point, then stop. Do not repeat prior answer or mention adjacent
+topics, notes, citations, or UUIDs.

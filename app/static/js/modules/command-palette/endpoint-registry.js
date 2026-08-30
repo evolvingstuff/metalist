@@ -92,7 +92,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
-        showSearchResultsCount: false,
+        showSearchResultsCount: true,
         showRhsPanel: false,
         showAiChat: false,
         showPerfOverlay: false,

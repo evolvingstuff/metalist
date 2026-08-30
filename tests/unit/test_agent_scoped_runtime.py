@@ -6,6 +6,7 @@ from types import MappingProxyType
 
 import pytest
 
+import app.services.agent.runtime as runtime_module
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
@@ -25,7 +26,9 @@ from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.token_estimation import estimate_input_tokens
+from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.ollama_provider import OllamaProviderError
+from app.services.tag_ontology import TagOntology
 
 
 def _descriptor() -> AgentScopeDescriptor:
@@ -257,7 +260,319 @@ class _PartialFailureFinalInference(_RetryFinalInference):
         raise OllamaProviderError("Ollama stream failed after output")
 
 
-def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() -> None:
+class _NarrowingInference(_FakeInference):
+    def __init__(self) -> None:
+        super().__init__()
+        self.outputs = [
+            json.dumps(
+                {
+                    "kind": "investigate_current_scope",
+                    "reason": "The request depends on saved-note evidence.",
+                }
+            ),
+            json.dumps(
+                {"ordered_tags": ["keep", "discard-b", "discard-c"]}
+            ),
+        ]
+
+    async def stream_text(self, **arguments):
+        self.final_messages = arguments["messages"]
+        arguments["on_request"](
+            {
+                "method": "POST",
+                "url": f'{arguments["base_url"]}/api/chat',
+                "body": {
+                    "model": arguments["model"],
+                    "messages": arguments["messages"],
+                },
+            }
+        )
+        yield {"type": "content_delta", "text": "Kept evidence. [[note-a]]"}
+        yield {"type": "done"}
+
+
+def _tagged_frozen_note(
+    *,
+    note_id: str,
+    content: str,
+    tag: str,
+    index: int,
+) -> FrozenScopedNote:
+    return FrozenScopedNote(
+        note_id=note_id,
+        parent_id="",
+        root_note_id=note_id,
+        content_text=content,
+        explicit_tags_text=tag,
+        explicit_tag_terms=(tag,),
+        created_at="2026-08-29T00:00:00+00:00",
+        updated_at="2026-08-29T00:00:00+00:00",
+        order_index=index,
+    )
+
+
+def test_oversized_scope_is_narrowed_by_cumulative_tags_before_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime_module,
+        "_SCOPED_EVIDENCE_OVERFLOW_MODE",
+        runtime_module._LEGACY_MULTIPAGE_OVERFLOW_MODE,
+    )
+    inference = _NarrowingInference()
+    notes = {
+        "note-a": _tagged_frozen_note(
+            note_id="note-a",
+            content="KEEP_UNIQUE " + ("alpha " * 300),
+            tag="keep",
+            index=0,
+        ),
+        "note-b": _tagged_frozen_note(
+            note_id="note-b",
+            content="DROP_B_UNIQUE " + ("beta " * 300),
+            tag="discard-b",
+            index=1,
+        ),
+        "note-c": _tagged_frozen_note(
+            note_id="note-c",
+            content="DROP_C_UNIQUE " + ("gamma " * 300),
+            tag="discard-c",
+            index=2,
+        ),
+        "note-d": _tagged_frozen_note(
+            note_id="note-d",
+            content="DROP_D_UNIQUE " + ("delta " * 300),
+            tag="discard-d",
+            index=3,
+        ),
+    }
+    frozen_scope = ScopedSearchSnapshot(
+        run_id="scope-capture",
+        session_key="session-1",
+        descriptor=_descriptor(),
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=tuple(notes),
+        ordered_note_ids=tuple(notes),
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=_root_tree_nodes(*notes),
+    )
+    traces = AgentTraceStore()
+    case_variant_ontology = TagOntology(
+        implication_out_edges={},
+        implication_closure={},
+        implied_by_closure={},
+        scc_members_by_tag={
+            "KEEP": frozenset({"KEEP", "retain"}),
+            "keep": frozenset({"keep", "preserve"}),
+        },
+        matcher_rules=(),
+    )
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=_UnusedTools(),
+        trace_store=traces,
+        provider_label="Ollama",
+        ontology_provider=lambda: case_variant_ontology,
+    )
+    settings = AgentRetrievalSettings(
+        max_note_characters=2_000,
+        max_page_characters=20_000,
+        max_notes_per_page=50,
+        max_page_approximate_tokens=5_000,
+        max_ranked_tags_per_page=50,
+        max_working_summary_characters=8_000,
+        ideal_narrowed_scope_approximate_tokens=1_000,
+    )
+
+    async def collect() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in runtime.stream_scoped(
+                session_key="session-1",
+                base_url="http://127.0.0.1:11435",
+                selected_model="qwen2.5:7b-instruct",
+                thinking_level="off",
+                canonical_messages=[
+                    {"role": "user", "content": "Summarize my saved notes."}
+                ],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=settings,
+                frozen_scope=frozen_scope,
+            )
+        ]
+
+    events = asyncio.run(collect())
+
+    final_context = json.dumps(inference.final_messages)
+    assert "KEEP_UNIQUE" in final_context
+    assert "DROP_B_UNIQUE" not in final_context
+    assert "DROP_C_UNIQUE" not in final_context
+    assert "DROP_D_UNIQUE" not in final_context
+    assert any(
+        event["type"] == "action_status"
+        and event["action"] == "context_narrowing"
+        and event["status"] == "started"
+        and event["label"].startswith("Automatic narrowing required")
+        for event in events
+    )
+    completed_activities = [
+        event
+        for event in events
+        if event["type"] == "action_status"
+        and event["status"] == "completed"
+    ]
+    assert any(
+        event["action"] == "context_narrowing_plan"
+        and event["label"]
+        == "AI proposed cumulative tags · keep → discard-b → discard-c"
+        for event in completed_activities
+    )
+    assert any(
+        event["action"] == "context_narrowing_test"
+        and "Tested cumulative prefix 1 of 3 · keep" in event["label"]
+        for event in completed_activities
+    )
+    assert any(
+        event["action"] == "context_narrowing_test"
+        and "Rejected zero-result prefix 2 of 3 · keep discard-b"
+        in event["label"]
+        for event in completed_activities
+    )
+    assert any(
+        event["action"] == "context_narrowing"
+        and "Narrowed scope · keep" in event["label"]
+        for event in completed_activities
+    )
+    trace = traces.snapshot(session_key="session-1")
+    trace_events = trace["run"]["events"]
+    narrowing_event = next(
+        event for event in trace_events if event["type"] == "CONTEXT_NARROWING"
+    )
+    assert narrowing_event["detail"]["selected_tags"] == ["keep"]
+    assert narrowing_event["detail"]["did_narrow"] is True
+
+
+def test_required_user_scope_tag_is_not_reapplied_as_narrowing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime_module,
+        "_SCOPED_EVIDENCE_OVERFLOW_MODE",
+        runtime_module._LEGACY_MULTIPAGE_OVERFLOW_MODE,
+    )
+    inference = _FakeInference()
+    inference.outputs = [
+        json.dumps(
+            {
+                "kind": "investigate_current_scope",
+                "reason": "The request depends on saved-note evidence.",
+            }
+        )
+    ]
+    descriptor = AgentScopeDescriptor(
+        scope_kind="search",
+        active_tab_id="tab-1",
+        scope_tab_id="tab-1",
+        search_query="ML3 -journal",
+        sort_mode="normal",
+        date_filter_active=False,
+        date_filter_metric="",
+        date_filter_start="",
+        date_filter_end="",
+        reference_root_ids=[],
+        label="ML3 -journal",
+    )
+    notes = {
+        f"note-{index}": _tagged_frozen_note(
+            note_id=f"note-{index}",
+            content=f"REQUIRED_SCOPE_{index} " + ("evidence " * 300),
+            tag="ML3",
+            index=index,
+        )
+        for index in range(4)
+    }
+    frozen_scope = ScopedSearchSnapshot(
+        run_id="scope-capture",
+        session_key="session-1",
+        descriptor=descriptor,
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=tuple(notes),
+        ordered_note_ids=tuple(notes),
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=_root_tree_nodes(*notes),
+    )
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=_UnusedTools(),
+        trace_store=AgentTraceStore(),
+        provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
+    )
+    settings = AgentRetrievalSettings(
+        max_note_characters=2_000,
+        max_page_characters=20_000,
+        max_notes_per_page=50,
+        max_page_approximate_tokens=5_000,
+        max_ranked_tags_per_page=50,
+        max_working_summary_characters=8_000,
+        ideal_narrowed_scope_approximate_tokens=1_000,
+    )
+
+    async def collect() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in runtime.stream_scoped(
+                session_key="session-1",
+                base_url="http://127.0.0.1:11435",
+                selected_model="qwen2.5:7b-instruct",
+                thinking_level="off",
+                canonical_messages=[
+                    {"role": "user", "content": "Summarize my saved notes."}
+                ],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=settings,
+                frozen_scope=frozen_scope,
+            )
+        ]
+
+    events = asyncio.run(collect())
+
+    assert len(inference.structured_requests) == 1
+    final_context = json.dumps(inference.final_messages)
+    for index in range(4):
+        assert f"REQUIRED_SCOPE_{index}" in final_context
+    assert not any(
+        event["type"] == "action_status"
+        and event["action"] in {
+            "context_narrowing_plan",
+            "context_narrowing_test",
+        }
+        for event in events
+    )
+    assert any(
+        event["type"] == "action_status"
+        and event["action"] == "context_narrowing"
+        and "No additional tag constraints available" in event["label"]
+        for event in events
+    )
+
+
+def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime_module,
+        "_SCOPED_EVIDENCE_OVERFLOW_MODE",
+        runtime_module._LEGACY_MULTIPAGE_OVERFLOW_MODE,
+    )
     inference = _FakeInference()
     scope_factory = _FakeScopeFactory()
     frozen_scope = scope_factory.freeze(
@@ -296,6 +611,7 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
         tool_registry=_UnusedTools(),
         trace_store=traces,
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -357,6 +673,126 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
     assert evidence_events[1]["detail"]["note_page"]["result_trees"][0][
         "content_text"
     ].startswith("RAW_BETA_UNIQUE")
+
+
+def test_scoped_runtime_retains_only_leading_root_trees_that_fit_one_page() -> None:
+    inference = _NarrowingInference()
+    note_ids = ("note-a", "note-b", "note-c", "note-d")
+    frozen_scope = ScopedSearchSnapshot(
+        run_id="scope-capture",
+        session_key="session-1",
+        descriptor=_descriptor(),
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=note_ids,
+        ordered_note_ids=note_ids,
+        notes_by_id=MappingProxyType(
+            {
+                note_id: _frozen_note(
+                    note_id,
+                    f"UNIQUE_{note_id.upper()} " + ("x" * 500),
+                    index,
+                )
+                for index, note_id in enumerate(note_ids)
+            }
+        ),
+        tree_nodes_by_id=_root_tree_nodes(*note_ids),
+    )
+    traces = AgentTraceStore()
+    runtime = AgentRuntime(
+        context_builder=AgentContextBuilder(),
+        inference=inference,
+        model_policy=SingleModelPolicy(),
+        permission_policy=AgentPermissionPolicy(),
+        tool_registry=_UnusedTools(),
+        trace_store=traces,
+        provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
+    )
+    settings = AgentRetrievalSettings(
+        max_note_characters=500,
+        max_page_characters=5_000,
+        max_notes_per_page=1,
+        max_page_approximate_tokens=500,
+        max_ranked_tags_per_page=10,
+        max_working_summary_characters=8_000,
+    )
+
+    async def collect() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in runtime.stream_scoped(
+                session_key="session-1",
+                base_url="http://127.0.0.1:11435",
+                selected_model="qwen3:8b",
+                thinking_level="off",
+                canonical_messages=[
+                    {"role": "user", "content": "Synthesize my visible notes"}
+                ],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=settings,
+                frozen_scope=frozen_scope,
+            )
+        ]
+
+    events = asyncio.run(collect())
+
+    final_request = json.dumps(inference.final_messages)
+    final_payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
+    coverage = final_payload["evidence_coverage"]
+    included_root_count = coverage["included_result_tree_count"]
+    assert 1 < included_root_count < len(note_ids)
+    assert coverage["omitted_result_tree_count"] == len(note_ids) - included_root_count
+    assert coverage["included_note_count"] == included_root_count
+    assert coverage["omitted_note_count"] == len(note_ids) - included_root_count
+    for note_id in note_ids[:included_root_count]:
+        assert f"UNIQUE_{note_id.upper()}" in final_request
+    for note_id in note_ids[included_root_count:]:
+        assert f"UNIQUE_{note_id.upper()}" not in final_request
+    assert "leading root-tree prefix retained" in final_request
+    assert "do not claim exhaustive scope coverage" in final_request
+    assert f"includes {included_root_count} notes" in (
+        final_payload["instruction_for_evidence"]
+    )
+    assert f"omits {len(note_ids) - included_root_count} notes" in (
+        final_payload["instruction_for_evidence"]
+    )
+    assert len(inference.structured_requests) == 1
+    assert any(
+        event["type"] == "action_status"
+        and event["action"] == "evidence_root_prefix"
+        and "Retained token-bounded root prefix" in event["label"]
+        and f"{included_root_count} of {len(note_ids)} result trees" in event["label"]
+        for event in events
+    )
+    evidence_page_event = next(
+        event
+        for event in events
+        if event["type"] == "action_status"
+        and event["action"] == "investigation_page"
+    )
+    assert "evidence tokens" not in evidence_page_event["label"]
+    assert "content chars" not in evidence_page_event["label"]
+    assert evidence_page_event["approx_input_tokens"] == estimate_input_tokens(
+        final_payload["authoritative_result_trees"]
+    )
+    assert not any(
+        event["type"] == "action_status"
+        and event["action"].startswith("context_narrowing")
+        for event in events
+    )
+    trace_events = traces.snapshot(session_key="session-1")["run"]["events"]
+    retention_event = next(
+        event
+        for event in trace_events
+        if event["type"] == "EVIDENCE_ROOT_PREFIX_RETAINED"
+    )
+    assert retention_event["detail"]["retained_root_ids"] == list(
+        note_ids[:included_root_count]
+    )
+    assert retention_event["detail"]["dropped_root_ids"] == list(
+        note_ids[included_root_count:]
+    )
 
 
 def test_short_23_note_single_page_final_stays_under_8000_estimated_tokens() -> None:
@@ -462,32 +898,16 @@ def test_short_23_note_single_page_final_stays_under_8000_estimated_tokens() -> 
     assert "current user's exact request defines relevance" in (
         final_payload["instruction_for_evidence"]
     )
-    assert final_payload["reference_catalog"] == [
-        {"note_id": note_id, "citation_token": f"[[{note_id}]]"}
-        for note_id in note_ids
-    ]
-
-    def assert_adjacent_citation_tokens(node: dict[str, object]) -> None:
-        note_id = node["note_id"]
-        assert isinstance(note_id, str)
-        if "is_evidence" in node and node["is_evidence"] is False:
-            assert "citation_token" not in node
-        else:
-            assert node["citation_token"] == f"[[{note_id}]]"
-        if "children" not in node:
-            return
-        children = node["children"]
-        assert isinstance(children, list)
-        for child in children:
-            assert isinstance(child, dict)
-            assert_adjacent_citation_tokens(child)
-
-    for numbered_tree in final_payload["verified_authoritative_result_trees"]:
-        assert isinstance(numbered_tree, dict)
-        result_tree = numbered_tree["result_tree"]
-        assert isinstance(result_tree, dict)
-        assert_adjacent_citation_tokens(result_tree)
-    assert estimate_input_tokens(messages) <= 8_000
+    assert "reference_catalog" not in final_payload
+    assert "verified_authoritative_result_trees" not in final_payload
+    assert final_payload["authoritative_result_trees"] == list(
+        note_page.result_trees
+    )
+    serialized_final_payload = json.dumps(final_payload, sort_keys=True)
+    for note_id in note_ids:
+        assert serialized_final_payload.count(note_id) == 1
+        assert f"[[{note_id}]]" not in serialized_final_payload
+    assert estimate_message_tokens(messages) <= 8_000
 
 
 def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
@@ -533,6 +953,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -630,6 +1051,7 @@ def test_exact_saved_notes_request_routes_into_raw_single_page_evidence() -> Non
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -676,7 +1098,12 @@ def test_exact_saved_notes_request_routes_into_raw_single_page_evidence() -> Non
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" not in route_context
     assert "PRIVATE_EXERCISE_AND_MUSCLE_NOTE" in final_context
     assert "PRIVATE_UNRELATED_ONIONS_NOTE" in final_context
-    assert "verified_authoritative_result_trees" in final_context
+    assert "authoritative_result_trees" in final_context
+    assert "verified_authoritative_result_trees" not in final_context
+    final_payload = json.loads(
+        inference.final_messages[-1]["content"].split("\n", 1)[1]
+    )
+    assert "reference_catalog" not in final_payload
     assert len(inference.structured_requests) == 1
     assert not any(
         event["type"] == "action_status"
@@ -708,6 +1135,7 @@ def test_scoped_runtime_retries_final_response_only_before_output() -> None:
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,
@@ -778,6 +1206,7 @@ def test_scoped_runtime_does_not_retry_after_partial_final_output() -> None:
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
         provider_label="Ollama",
+        ontology_provider=TagOntology.empty,
     )
     settings = AgentRetrievalSettings(
         max_note_characters=500,

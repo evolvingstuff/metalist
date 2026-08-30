@@ -18,6 +18,8 @@ import logging
 from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
+from app.services.agent.retrieval_settings import DEFAULT_MAX_NOTE_CHARACTERS
+from app.services.agent.root_tree_token_cache import warm_all_root_tree_token_costs
 from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content, get_cached_tags, get_cached_text
 from app.services.file_registry import file_registry
@@ -397,6 +399,20 @@ class NoteStore:
         if timing_enabled:
             print(
                 f"[startup] search index rebuild in {time.perf_counter() - index_start:.2f}s"
+            )
+
+        token_cache_start = time.perf_counter()
+        warm_all_root_tree_token_costs(
+            note_ids=set(note_map),
+            ordered_root_ids=self.get_children(None),
+            get_note=self.get_note,
+            get_children=self.get_children,
+            max_note_characters=DEFAULT_MAX_NOTE_CHARACTERS,
+        )
+        if timing_enabled:
+            print(
+                "[startup] agent root-tree token cache warmed in "
+                f"{time.perf_counter() - token_cache_start:.2f}s"
             )
 
         if not ontology.matcher_rules:

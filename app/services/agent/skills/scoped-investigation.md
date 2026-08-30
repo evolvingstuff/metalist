@@ -80,8 +80,10 @@ merely to reduce a result count. Refine only when it helps answer the question.
 If a refinement hides useful evidence, backtrack instead of trying to escape the
 frozen scope.
 
-Rate the current page independently; never invent IDs or include an ID outside the
-current page. Emit the action fields before `working_summary` and close the complete
+Rate the current page independently. Copy every selected `note_id` byte-for-byte
+from one current-page node; never reconstruct, splice, shorten, or invent an ID,
+and never include an ID outside the current page. Emit the action fields before
+`working_summary` and close the complete
 JSON object well before the output limit. `answer` triggers automatic candidate
 rehydration. The final response may use and cite any subset of those candidates; it
 must not cite an expanded note unless that note actually supports a claim in the

@@ -94,6 +94,31 @@ def render_ai_chat_markdown_to_html(
     return f"{body_html}{_render_references_section(reference_groups, context=context)}"
 
 
+def render_ai_chat_streaming_markdown_to_html(
+    markdown_text: str,
+    *,
+    allowed_note_ids: tuple[str, ...],
+) -> str:
+    """Render partial response prose without exposing citation UI before completion."""
+    _validate_allowed_note_ids(allowed_note_ids)
+    visible_markdown = _hide_incomplete_bracketed_citation_suffix(markdown_text)
+    canonical_markdown = _canonicalize_numbered_note_citations(
+        markdown_text=visible_markdown,
+        allowed_note_ids=allowed_note_ids,
+    )
+    normalized_markdown = _normalize_generated_response_structure(canonical_markdown)
+
+    def remove_reference_tokens(text: str) -> str:
+        without_note_ids = _NOTE_CITATION_RE.sub("", text)
+        return _NUMBERED_NOTE_CITATION_RE.sub("", without_note_ids)
+
+    reference_free_markdown = _transform_markdown_outside_fences(
+        markdown_text=normalized_markdown,
+        transform=remove_reference_tokens,
+    )
+    return render_markdown_to_html(reference_free_markdown)
+
+
 def _reject_file_reference(file_id: str) -> object:
     raise RuntimeError(f"AI note citation unexpectedly resolved as file {file_id}")
 

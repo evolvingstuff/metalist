@@ -18,6 +18,9 @@ MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY = (
 MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY = (
     "pref.ai.retrieval.max_working_summary_characters"
 )
+IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
+    "pref.ai.retrieval.ideal_narrowed_scope_approximate_tokens"
+)
 OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY = (
     "pref.ai.openai.retrieval.max_note_characters"
 )
@@ -36,6 +39,9 @@ OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY = (
 OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY = (
     "pref.ai.openai.retrieval.max_working_summary_characters"
 )
+OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.ideal_narrowed_scope_approximate_tokens"
+)
 
 DEFAULT_MAX_NOTE_CHARACTERS = 2_000
 DEFAULT_MAX_PAGE_CHARACTERS = 20_000
@@ -43,7 +49,11 @@ DEFAULT_MAX_NOTES_PER_PAGE = 50
 DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS = 5_000
 DEFAULT_MAX_RANKED_TAGS_PER_PAGE = 50
 DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS = 8_000
-DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
+DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 250_000
+DEFAULT_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 10_000
+DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 500_000
+LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
+LEGACY_DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 48_000
 MIN_MAX_NOTE_CHARACTERS = 500
 MAX_MAX_NOTE_CHARACTERS = 10_000
 MIN_MAX_PAGE_CHARACTERS = 5_000
@@ -51,11 +61,17 @@ MAX_MAX_PAGE_CHARACTERS = 100_000
 MIN_MAX_NOTES_PER_PAGE = 1
 MAX_MAX_NOTES_PER_PAGE = 100
 MIN_MAX_PAGE_APPROXIMATE_TOKENS = 500
-MAX_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
+MAX_MAX_PAGE_APPROXIMATE_TOKENS = 250_000
+MAX_OLLAMA_PAGE_APPROXIMATE_TOKENS = 24_000
+MAX_OPENAI_PAGE_APPROXIMATE_TOKENS = 250_000
 MIN_MAX_RANKED_TAGS_PER_PAGE = 1
 MAX_MAX_RANKED_TAGS_PER_PAGE = 200
 MIN_MAX_WORKING_SUMMARY_CHARACTERS = 2_000
 MAX_MAX_WORKING_SUMMARY_CHARACTERS = 32_000
+MIN_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 1_000
+MAX_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 500_000
+MAX_OLLAMA_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 200_000
+MAX_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS = 500_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +82,9 @@ class AgentRetrievalSettings:
     max_page_approximate_tokens: int = DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS
     max_ranked_tags_per_page: int = DEFAULT_MAX_RANKED_TAGS_PER_PAGE
     max_working_summary_characters: int = DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS
+    ideal_narrowed_scope_approximate_tokens: int = (
+        DEFAULT_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+    )
 
     def __post_init__(self) -> None:
         _validate_integer_range(
@@ -104,6 +123,12 @@ class AgentRetrievalSettings:
             minimum=MIN_MAX_WORKING_SUMMARY_CHARACTERS,
             maximum=MAX_MAX_WORKING_SUMMARY_CHARACTERS,
         )
+        _validate_integer_range(
+            value=self.ideal_narrowed_scope_approximate_tokens,
+            label="Agent ideal narrowed-scope approximate tokens",
+            minimum=MIN_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
+            maximum=MAX_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
+        )
 
 
 def validate_max_note_characters_preference(value: str) -> str:
@@ -138,7 +163,16 @@ def validate_max_page_approximate_tokens_preference(value: str) -> str:
         value=value,
         label="Agent approximate tokens per evidence page preference",
         minimum=MIN_MAX_PAGE_APPROXIMATE_TOKENS,
-        maximum=MAX_MAX_PAGE_APPROXIMATE_TOKENS,
+        maximum=MAX_OLLAMA_PAGE_APPROXIMATE_TOKENS,
+    )
+
+
+def validate_openai_max_page_approximate_tokens_preference(value: str) -> str:
+    return _validate_integer_preference(
+        value=value,
+        label="OpenAI approximate tokens per evidence page preference",
+        minimum=MIN_MAX_PAGE_APPROXIMATE_TOKENS,
+        maximum=MAX_OPENAI_PAGE_APPROXIMATE_TOKENS,
     )
 
 
@@ -157,6 +191,28 @@ def validate_max_working_summary_characters_preference(value: str) -> str:
         label="Agent maximum working-summary characters preference",
         minimum=MIN_MAX_WORKING_SUMMARY_CHARACTERS,
         maximum=MAX_MAX_WORKING_SUMMARY_CHARACTERS,
+    )
+
+
+def validate_ideal_narrowed_scope_approximate_tokens_preference(
+    value: str,
+) -> str:
+    return _validate_integer_preference(
+        value=value,
+        label="Agent ideal narrowed-scope approximate tokens preference",
+        minimum=MIN_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
+        maximum=MAX_OLLAMA_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
+    )
+
+
+def validate_openai_ideal_narrowed_scope_approximate_tokens_preference(
+    value: str,
+) -> str:
+    return _validate_integer_preference(
+        value=value,
+        label="OpenAI ideal narrowed-scope approximate tokens preference",
+        minimum=MIN_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
+        maximum=MAX_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS,
     )
 
 
@@ -193,6 +249,23 @@ def resolve_agent_retrieval_settings(
         preference_keys["max_working_summary_characters"],
         str(defaults.max_working_summary_characters),
     )
+    raw_ideal_narrowed_scope_approximate_tokens = preferences.get(
+        preference_keys["ideal_narrowed_scope_approximate_tokens"],
+        str(defaults.ideal_narrowed_scope_approximate_tokens),
+    )
+    if provider == "openai":
+        if raw_max_page_approximate_tokens == str(
+            LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS
+        ):
+            raw_max_page_approximate_tokens = str(
+                DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS
+            )
+        if raw_ideal_narrowed_scope_approximate_tokens == str(
+            LEGACY_DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+        ):
+            raw_ideal_narrowed_scope_approximate_tokens = str(
+                DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+            )
     validated_max_note_characters = validate_max_note_characters_preference(
         raw_max_note_characters
     )
@@ -202,10 +275,19 @@ def resolve_agent_retrieval_settings(
     validated_max_page_characters = validate_max_page_characters_preference(
         raw_max_page_characters
     )
-    validated_max_page_approximate_tokens = (
-        validate_max_page_approximate_tokens_preference(
-            raw_max_page_approximate_tokens
+    page_token_validator = validate_max_page_approximate_tokens_preference
+    narrowed_scope_validator = (
+        validate_ideal_narrowed_scope_approximate_tokens_preference
+    )
+    if provider == "openai":
+        page_token_validator = (
+            validate_openai_max_page_approximate_tokens_preference
         )
+        narrowed_scope_validator = (
+            validate_openai_ideal_narrowed_scope_approximate_tokens_preference
+        )
+    validated_max_page_approximate_tokens = page_token_validator(
+        raw_max_page_approximate_tokens
     )
     validated_max_ranked_tags_per_page = (
         validate_max_ranked_tags_per_page_preference(
@@ -217,6 +299,9 @@ def resolve_agent_retrieval_settings(
             raw_max_working_summary_characters
         )
     )
+    validated_ideal_narrowed_scope_approximate_tokens = narrowed_scope_validator(
+        raw_ideal_narrowed_scope_approximate_tokens
+    )
     return AgentRetrievalSettings(
         max_note_characters=int(validated_max_note_characters),
         max_page_characters=int(validated_max_page_characters),
@@ -227,6 +312,9 @@ def resolve_agent_retrieval_settings(
         max_ranked_tags_per_page=int(validated_max_ranked_tags_per_page),
         max_working_summary_characters=int(
             validated_max_working_summary_characters
+        ),
+        ideal_narrowed_scope_approximate_tokens=int(
+            validated_ideal_narrowed_scope_approximate_tokens
         ),
     )
 
@@ -274,6 +362,9 @@ DEFAULT_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
     max_page_approximate_tokens=DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS,
     max_ranked_tags_per_page=DEFAULT_MAX_RANKED_TAGS_PER_PAGE,
     max_working_summary_characters=DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS,
+    ideal_narrowed_scope_approximate_tokens=(
+        DEFAULT_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+    ),
 )
 
 DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
@@ -283,6 +374,9 @@ DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
     max_page_approximate_tokens=DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
     max_ranked_tags_per_page=DEFAULT_MAX_RANKED_TAGS_PER_PAGE,
     max_working_summary_characters=DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS,
+    ideal_narrowed_scope_approximate_tokens=(
+        DEFAULT_OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS
+    ),
 )
 
 
@@ -304,6 +398,9 @@ def _preference_keys_for_provider(
             "max_working_summary_characters": (
                 MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
             ),
+            "ideal_narrowed_scope_approximate_tokens": (
+                IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+            ),
         }
     if provider == "openai":
         return {
@@ -318,6 +415,9 @@ def _preference_keys_for_provider(
             ),
             "max_working_summary_characters": (
                 OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+            ),
+            "ideal_narrowed_scope_approximate_tokens": (
+                OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY
             ),
         }
     raise ValueError(f"Unsupported agent retrieval provider: {provider}")

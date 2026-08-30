@@ -41,10 +41,18 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
         /\.controls \.search-results-count\s*\{[\s\S]*right: 6px;/,
     );
     assert.match(
-        cssSource,
-        /\.controls \.search-controls\s*\{[\s\S]*--search-input-width:\s*clamp\(140px, calc\(100% - 160px\), 500px\);/,
+        templateSource,
+        /search-results-root-count">0 roots<\/span>[\s\S]*search-results-token-count">≈ 0 tokens<\/span>/,
     );
     assert.match(
+        cssSource,
+        /\.controls \.search-results-count\s*\{[\s\S]*flex-direction: column;[\s\S]*align-items: flex-end;/,
+    );
+    assert.match(
+        cssSource,
+        /\.controls \.search-controls\s*\{[\s\S]*--search-input-width:\s*clamp\(140px, calc\(100% - 184px\), 500px\);[\s\S]*--search-input-half-width:\s*clamp\(70px, calc\(50% - 92px\), 250px\);/,
+    );
+    assert.doesNotMatch(
         cssSource,
         /@container search-shell \(max-width: 440px\)\s*\{[\s\S]*?\.controls \.search-results-count\s*\{[\s\S]*?display:\s*none;/,
     );
@@ -54,7 +62,7 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
     );
     assert.match(
         commandPaletteControllerSource,
-        /'pref\.show_search_results_count',[\s\S]*?false,[\s\S]*?'pref-show-search-results-count'/,
+        /'pref\.show_search_results_count',[\s\S]*?true,[\s\S]*?'pref-show-search-results-count'/,
     );
     assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: #000000;/);
     assert.match(

@@ -185,7 +185,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show tabs');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
-        'Show search result count',
+        'Hide search result count',
     );
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Show calendar view');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Show performance overlay');
@@ -193,7 +193,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     storedPreferences.set('pref.show_backlinks', 'false');
     storedPreferences.set('pref.show_note_tags', 'true');
     storedPreferences.set('pref.show_tab_ui', 'true');
-    storedPreferences.set('pref.show_search_results_count', 'true');
+    storedPreferences.set('pref.show_search_results_count', 'false');
     storedPreferences.set('pref.show_rhs_panel', 'true');
     storedPreferences.set('pref.show_perf_overlay', 'true');
     storedPreferences.set('pref.animated_transitions', 'false');
@@ -203,7 +203,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide tabs');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
-        'Hide search result count',
+        'Show search result count',
     );
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Hide calendar view');
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Hide performance overlay');

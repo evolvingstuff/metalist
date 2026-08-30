@@ -18,6 +18,7 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
         metadata={
             "rootCountTotal": 1,
             "searchRootCountTotal": 1,
+            "resultApproximateTokenCount": 20,
             "rootSortBuckets": [],
         },
         hash_by_id={"root-a": "new-hash"},
@@ -54,6 +55,7 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
 
     assert captured["anchor_root_id"] is None
     assert result["snapshot"]["structure"] == [{"id": "root-a", "parentId": None, "hash": "new-hash"}]
+    assert result["snapshot"]["resultApproximateTokenCount"] == 20
 
 
 def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatch) -> None:
@@ -69,6 +71,7 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
         metadata={
             "rootCountTotal": 2,
             "searchRootCountTotal": 2,
+            "resultApproximateTokenCount": 40,
             "rootSortBuckets": [],
         },
         hash_by_id={"root-a": "new-hash", "deep-root": "deep-hash"},
@@ -112,3 +115,4 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
 
     assert captured["anchor_root_id"] == "deep-root"
     assert result["snapshot"]["diffOps"] == []
+    assert result["snapshot"]["resultApproximateTokenCount"] == 40
