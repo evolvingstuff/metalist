@@ -58,8 +58,11 @@ class InvestigationScopeSize:
 
 @dataclass(frozen=True, slots=True)
 class RootPrefixRetention:
-    original: InvestigationScopeSize
-    retained: InvestigationScopeSize
+    original_note_count: int
+    original_result_tree_count: int
+    retained_note_count: int
+    retained_result_tree_count: int
+    retained_approximate_token_count: int
     retained_root_ids: tuple[str, ...]
     dropped_root_ids: tuple[str, ...]
 
@@ -217,17 +220,22 @@ class InvestigationState:
 
     def retain_root_prefix_within_token_budget(self) -> RootPrefixRetention:
         original_root_ids = tuple(self._current_root_ids())
+        original_note_count = len(self._current_state.note_ids)
+        note_ids_by_root_id: dict[str, list[str]] = {
+            root_id: [] for root_id in original_root_ids
+        }
+        for note_id in self._current_state.note_ids:
+            root_id = self._snapshot.notes_by_id[note_id].root_note_id
+            note_ids_by_root_id[root_id].append(note_id)
         retained_root_id_list: list[str] = []
         retained_token_count = 0
         for root_id in original_root_ids:
-            root_note_ids = self._note_ids_for_roots((root_id,))
             root_token_count = self._full_root_page_token_cost(
                 root_id=root_id,
-                note_ids=root_note_ids,
+                note_ids=note_ids_by_root_id[root_id],
             )
             if (
-                retained_root_id_list
-                and retained_token_count + root_token_count
+                retained_token_count + root_token_count
                 > self._settings.max_page_approximate_tokens
             ):
                 break
@@ -241,11 +249,6 @@ class InvestigationState:
             if self._snapshot.notes_by_id[note_id].root_note_id
             in retained_root_id_set
         )
-        original = self.current_scope_size()
-        retained = self._scope_size(
-            note_ids=retained_note_ids,
-            root_ids=list(retained_root_ids),
-        )
         dropped_root_ids = original_root_ids[len(retained_root_ids) :]
         if dropped_root_ids:
             self._push_subset(
@@ -253,8 +256,11 @@ class InvestigationState:
                 refinement_label="token-bounded leading root prefix",
             )
         return RootPrefixRetention(
-            original=original,
-            retained=retained,
+            original_note_count=original_note_count,
+            original_result_tree_count=len(original_root_ids),
+            retained_note_count=len(retained_note_ids),
+            retained_result_tree_count=len(retained_root_ids),
+            retained_approximate_token_count=retained_token_count,
             retained_root_ids=retained_root_ids,
             dropped_root_ids=dropped_root_ids,
         )
@@ -392,7 +398,11 @@ class InvestigationState:
             for note_id in self._current_state.note_ids
             if self._snapshot.notes_by_id[note_id].root_note_id in page_root_id_set
         ]
-        result_trees, returned_character_count = self._serialize_token_bounded_page(
+        (
+            result_trees,
+            returned_character_count,
+            approximate_tokens,
+        ) = self._serialize_token_bounded_page(
             root_ids=page_root_ids,
             note_ids=page_note_ids,
         )
@@ -402,7 +412,6 @@ class InvestigationState:
             self._disclosed_tags.update(
                 tag.casefold() for tag in note.explicit_tag_terms
             )
-        approximate_tokens = estimate_input_tokens(result_trees)
         return InvestigationNotePage(
             state_id=self._current_state.state_id,
             page=page,
@@ -972,16 +981,26 @@ class InvestigationState:
         *,
         root_ids: tuple[str, ...],
         note_ids: list[str],
-    ) -> tuple[tuple[dict[str, object], ...], int]:
-        maximum_content_characters = sum(
+    ) -> tuple[tuple[dict[str, object], ...], int, int]:
+        full_character_limits = [
             min(
                 len(self._snapshot.notes_by_id[note_id].content_text),
                 self._settings.max_note_characters,
             )
             for note_id in note_ids
+        ]
+        maximum_content_characters = sum(full_character_limits)
+        full_trees, full_returned_characters = self._serialize_page(
+            root_ids=root_ids,
+            note_ids=note_ids,
+            character_limits=full_character_limits,
         )
+        full_token_cost = estimate_input_tokens(full_trees)
+        if full_token_cost <= self._settings.max_page_approximate_tokens:
+            return full_trees, full_returned_characters, full_token_cost
+
         lower = 0
-        upper = maximum_content_characters
+        upper = maximum_content_characters - 1
         best_trees, best_returned_characters = self._serialize_page(
             root_ids=root_ids,
             note_ids=note_ids,
@@ -989,7 +1008,8 @@ class InvestigationState:
         )
         minimum_cost = estimate_input_tokens(best_trees)
         if minimum_cost > self._settings.max_page_approximate_tokens:
-            return best_trees, best_returned_characters
+            return best_trees, best_returned_characters, minimum_cost
+        best_token_cost = minimum_cost
 
         while lower <= upper:
             candidate = (lower + upper) // 2
@@ -1006,10 +1026,11 @@ class InvestigationState:
             if token_cost <= self._settings.max_page_approximate_tokens:
                 best_trees = trees
                 best_returned_characters = returned_characters
+                best_token_cost = token_cost
                 lower = candidate + 1
             else:
                 upper = candidate - 1
-        return best_trees, best_returned_characters
+        return best_trees, best_returned_characters, best_token_cost
 
     def _serialize_page(
         self,

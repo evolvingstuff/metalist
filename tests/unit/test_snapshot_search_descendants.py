@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.snapshot import build_view_state
 
@@ -150,17 +149,7 @@ def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyP
         is_untagged_view=False,
     )
 
-    assert state.metadata["resultApproximateTokenCount"] == estimate_input_tokens(
-        (
-            {
-                "note_id": "r1",
-                "content_text": "r1",
-                "created_at": notes["r1"].created_at.isoformat(),
-                "updated_at": notes["r1"].updated_at.isoformat(),
-                "tags": ["asdf"],
-            },
-        )
-    )
+    assert "resultApproximateTokenCount" not in state.metadata
 
     assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
     assert not state.payloads["r1"]["flags"]["searchRedacted"]

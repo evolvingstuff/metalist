@@ -210,11 +210,9 @@ class AgentRuntime:
             settings=run.retrieval_settings,
             ontology=self._ontology_provider(),
         )
-        scope_page_count = state.total_note_pages
         scope_label = (
             f"Scope ready · {snapshot.descriptor.label} · {snapshot.note_count} "
-            f"notes in {snapshot.result_tree_count} result trees · "
-            f"{scope_page_count} evidence pages"
+            f"notes in {snapshot.result_tree_count} result trees"
         )
         self._trace_store.append_event(
             session_key=run.session_key,
@@ -225,7 +223,6 @@ class AgentRuntime:
                 "descriptor": snapshot.descriptor.model_dump(mode="json"),
                 "note_count": snapshot.note_count,
                 "result_tree_count": snapshot.result_tree_count,
-                "evidence_page_count": scope_page_count,
                 "ordered_note_ids": list(snapshot.ordered_note_ids),
                 "ordered_root_ids": list(snapshot.ordered_root_ids),
             },
@@ -244,7 +241,6 @@ class AgentRuntime:
             canonical_messages=canonical_messages,
             prompts=run.prompts,
             snapshot=snapshot,
-            evidence_page_count=scope_page_count,
         )
         route_progress: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
         route_task = asyncio.create_task(
@@ -300,19 +296,18 @@ class AgentRuntime:
         single_page_basis = "the complete one-page frozen evidence scope"
         single_page_ready_label = "Complete evidence scope ready"
         single_page_trace_label = "Complete one-page authoritative evidence scope"
-        original_scope_size = await asyncio.to_thread(state.current_scope_size)
         narrowing_target = (
             run.retrieval_settings.ideal_narrowed_scope_approximate_tokens
         )
         if _SCOPED_EVIDENCE_OVERFLOW_MODE == "retain_first_page_root_prefix":
-            if (
-                original_scope_size.approximate_token_count
-                > run.retrieval_settings.max_page_approximate_tokens
-            ):
-                retention = await asyncio.to_thread(
-                    state.retain_root_prefix_within_token_budget
-                )
+            retention = await asyncio.to_thread(
+                state.retain_root_prefix_within_token_budget
+            )
+            if retention.dropped_root_ids:
                 dropped_root_count = len(retention.dropped_root_ids)
+                dropped_note_count = (
+                    retention.original_note_count - retention.retained_note_count
+                )
                 self._trace_store.append_event(
                     session_key=run.session_key,
                     run_id=run.run_id,
@@ -320,17 +315,14 @@ class AgentRuntime:
                     label="Retained leading root trees within one-page token budget",
                     detail={
                         "original": {
-                            "note_count": retention.original.note_count,
-                            "result_tree_count": retention.original.result_tree_count,
-                            "approximate_token_count": (
-                                retention.original.approximate_token_count
-                            ),
+                            "note_count": retention.original_note_count,
+                            "result_tree_count": retention.original_result_tree_count,
                         },
                         "retained": {
-                            "note_count": retention.retained.note_count,
-                            "result_tree_count": retention.retained.result_tree_count,
+                            "note_count": retention.retained_note_count,
+                            "result_tree_count": retention.retained_result_tree_count,
                             "approximate_token_count": (
-                                retention.retained.approximate_token_count
+                                retention.retained_approximate_token_count
                             ),
                         },
                         "target_approximate_token_count": (
@@ -346,12 +338,13 @@ class AgentRuntime:
                     "completed",
                     (
                         "Retained token-bounded root prefix · "
-                        f"{retention.retained.result_tree_count} of "
-                        f"{retention.original.result_tree_count} result trees · "
-                        f"{retention.retained.note_count} of "
-                        f"{retention.original.note_count} notes · dropped "
-                        f"{dropped_root_count} trailing result trees · "
-                        f"≈ {retention.retained.approximate_token_count:,} of "
+                        f"{retention.retained_result_tree_count} of "
+                        f"{retention.original_result_tree_count} result trees · "
+                        f"{retention.retained_note_count} of "
+                        f"{retention.original_note_count} notes · omitted "
+                        f"{dropped_root_count} trailing result trees and "
+                        f"{dropped_note_count} notes · "
+                        f"≈ {retention.retained_approximate_token_count:,} of "
                         f"{run.retrieval_settings.max_page_approximate_tokens:,} "
                         "target tokens"
                     ),
@@ -368,6 +361,7 @@ class AgentRuntime:
                 )
             scope_requires_narrowing = False
         elif _SCOPED_EVIDENCE_OVERFLOW_MODE == _LEGACY_MULTIPAGE_OVERFLOW_MODE:
+            original_scope_size = await asyncio.to_thread(state.current_scope_size)
             yield self._status_event(
                 "context_narrowing",
                 "started",

@@ -96,17 +96,10 @@ class AgentContextBuilder:
         canonical_messages: list[dict[str, str]],
         prompts: AgentPromptSet,
         snapshot: ScopedSearchSnapshot,
-        evidence_page_count: int,
     ) -> list[dict[str, str]]:
         """Expose active-view context for routing without exposing note evidence."""
         if not isinstance(snapshot, ScopedSearchSnapshot):
             raise TypeError("snapshot must be ScopedSearchSnapshot")
-        if (
-            not isinstance(evidence_page_count, int)
-            or isinstance(evidence_page_count, bool)
-            or evidence_page_count < 1
-        ):
-            raise ValueError("evidence_page_count must be a positive integer")
         base = self.build_initial_messages(
             canonical_messages=canonical_messages,
             prompts=prompts,
@@ -136,7 +129,6 @@ class AgentContextBuilder:
                 "date_filter": descriptor.normalized_date_filter(),
                 "matching_note_count": snapshot.note_count,
                 "matching_result_tree_count": snapshot.result_tree_count,
-                "evidence_page_count": evidence_page_count,
             },
         }
         return [

@@ -4,7 +4,7 @@ from app.services.agent.evidence_serialization import estimate_cached_root_tree_
 from app.services.agent.token_estimation import estimate_input_tokens
 
 
-def test_root_tree_token_cache_counts_nested_payload_and_metadata() -> None:
+def test_lazy_root_tree_token_estimate_counts_nested_payload_and_metadata() -> None:
     root = EvidenceNoteTokenSource(
         note_id="root",
         content_text="Root content",

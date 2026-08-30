@@ -910,7 +910,17 @@ def test_short_23_note_single_page_final_stays_under_8000_estimated_tokens() -> 
     assert estimate_message_tokens(messages) <= 8_000
 
 
-def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
+def test_scoped_runtime_respond_route_never_counts_frozen_note_tokens(
+    monkeypatch,
+) -> None:
+    def reject_root_token_count(*args, **kwargs) -> int:
+        raise AssertionError("respond route must not count frozen note tokens")
+
+    monkeypatch.setattr(
+        InvestigationState,
+        "_full_root_page_token_cost",
+        reject_root_token_count,
+    )
     inference = _FakeInference()
     inference.outputs = [
         json.dumps(
@@ -985,7 +995,7 @@ def test_scoped_runtime_respond_route_never_sends_frozen_note_content() -> None:
     final_context = json.dumps(inference.final_messages)
     assert "ROUTE_SELECTION_REQUEST" in route_context
     assert 'testosterone' in route_context
-    assert 'evidence_page_count' in route_context
+    assert 'evidence_page_count' not in route_context
     route_request = json.loads(
         inference.structured_requests[0][-1]["content"].split("\n", 1)[1]
     )

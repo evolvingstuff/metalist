@@ -39,14 +39,16 @@ switches, or reference navigation do not change the running request.
 The assistant turn shows a persistent scope chip such as:
 
 ```text
-Scope · project-foo · 834 notes in 217 result trees · 9 evidence pages
+Scope · project-foo · 834 notes in 217 result trees
 ```
 
 An empty search is explicitly `Scope · All notes`. The chip remains visible when
 developer diagnostics are hidden.
 
-The same total is supplied to the route-selection model before note content is
-loaded; every evidence panel reports `page N of M` thereafter.
+The same note/tree counts are supplied to the route-selection model before note
+content is loaded. Evidence sizing is deferred until the selected action actually
+needs saved-note content; evidence panels then report the retained page and its
+approximate token count.
 
 Only true matching nodes become evidence. Ancestors needed to make the result tree
 readable appear only as contentless structural objects. Gray/redacted and protected

@@ -65,7 +65,8 @@ never returned to the browser after configuration.
 The high-level route sees the canonical conversation, the base system prompt, and
 a trailing content-free `ROUTE_SELECTION_REQUEST` containing the exact current
 request plus the user-driven search query, scope kind/label, sort/date state,
-matching note/tree counts, and computed token-budgeted evidence-page count. Putting
+and matching note/tree counts. It does not size or serialize note evidence merely
+to choose a route. Putting
 the current request beside the routing instruction prevents an older note task from
 being mistaken for the current follow-up. It
 chooses `respond` for ordinary conversation/general knowledge and
@@ -204,8 +205,15 @@ final generation. The final prompt states that later roots were intentionally
 omitted, supplies exact included/omitted note and result-tree counts, and forbids
 claiming exhaustive scope coverage.
 
+This sizing is lazy. Startup, normal note interaction, view snapshots, the search
+header, and content-free route selection do not tokenize result trees. Only an
+`investigate_current_scope` run enters the prefix walk. Root costs are evaluated in
+order, and the walk stops immediately after the first root that would overflow the
+page; no later roots are tokenized. The retained roots reuse the lazy serialized
+root-cost cache when the final bounded page is built.
+
 Developer-eye activity reports original versus retained note/tree counts, the
-number of trailing trees omitted, and the retained serialized-token estimate.
+number of trailing trees and notes omitted, and the retained serialized-token estimate.
 Agent Debug stores the exact retained and omitted root UUID lists in session-only
 trace state.
 
@@ -371,7 +379,7 @@ transient working state and do not enter later conversation context.
 
 - A persistent scope chip remains visible on the assistant turn even when the
   developer eye toggle is off: for example,
-  `Scope · project-foo · 834 notes in 217 result trees · 9 evidence pages`.
+  `Scope · project-foo · 834 notes in 217 result trees`.
 - Eye mode retains in-place lifecycle panels for scope freezing, model calls,
   evidence pages, direct one-page generation, summary/action selection,
   refinements, facets, source reopening, and final writing. Each panel carries a

@@ -770,7 +770,9 @@ def test_note_pages_pack_complete_root_trees_by_approximate_token_budget() -> No
     assert "tags" not in second.result_trees[0]
 
 
-def test_retained_root_prefix_uses_token_budget_not_result_tree_cap() -> None:
+def test_retained_root_prefix_uses_token_budget_not_result_tree_cap(
+    monkeypatch,
+) -> None:
     snapshot = _many_root_snapshot(count=5)
     state = InvestigationState.start(
         snapshot=snapshot,
@@ -785,11 +787,90 @@ def test_retained_root_prefix_uses_token_budget_not_result_tree_cap() -> None:
     )
 
     retention = state.retain_root_prefix_within_token_budget()
+    real_estimate_input_tokens = investigation_module.estimate_input_tokens
+    token_estimate_calls = 0
+
+    def counted_estimate_input_tokens(value: object) -> int:
+        nonlocal token_estimate_calls
+        token_estimate_calls += 1
+        return real_estimate_input_tokens(value)
+
+    monkeypatch.setattr(
+        investigation_module,
+        "estimate_input_tokens",
+        counted_estimate_input_tokens,
+    )
     page = state.current_scope_as_single_page()
 
     assert retention.retained_root_ids == snapshot.ordered_root_ids
     assert retention.dropped_root_ids == ()
-    assert retention.retained.approximate_token_count <= 500
+    assert retention.retained_approximate_token_count <= 500
     assert state.current_note_ids == snapshot.ordered_note_ids
     assert page.result_tree_ids == snapshot.ordered_root_ids
     assert page.total_pages == 1
+    assert token_estimate_calls == 1
+
+
+def test_retained_root_prefix_stops_counting_after_first_root_over_budget(
+    monkeypatch,
+) -> None:
+    snapshot = _many_root_snapshot(count=5)
+    state = InvestigationState.start(
+        snapshot=snapshot,
+        settings=AgentRetrievalSettings(
+            max_note_characters=500,
+            max_page_characters=5_000,
+            max_notes_per_page=50,
+            max_page_approximate_tokens=500,
+            max_ranked_tags_per_page=2,
+            max_working_summary_characters=8_000,
+        ),
+    )
+    visited_root_ids: list[str] = []
+
+    def fixed_root_cost(*, root_id: str, note_ids: list[str]) -> int:
+        assert note_ids
+        visited_root_ids.append(root_id)
+        return 200
+
+    monkeypatch.setattr(state, "_full_root_page_token_cost", fixed_root_cost)
+
+    retention = state.retain_root_prefix_within_token_budget()
+
+    assert retention.retained_root_ids == snapshot.ordered_root_ids[:2]
+    assert retention.dropped_root_ids == snapshot.ordered_root_ids[2:]
+    assert retention.retained_approximate_token_count == 400
+    assert visited_root_ids == list(snapshot.ordered_root_ids[:3])
+
+
+def test_retained_root_prefix_omits_an_oversized_first_root_and_everything_after(
+    monkeypatch,
+) -> None:
+    snapshot = _many_root_snapshot(count=3)
+    state = InvestigationState.start(
+        snapshot=snapshot,
+        settings=AgentRetrievalSettings(
+            max_note_characters=500,
+            max_page_characters=5_000,
+            max_notes_per_page=50,
+            max_page_approximate_tokens=500,
+            max_ranked_tags_per_page=2,
+            max_working_summary_characters=8_000,
+        ),
+    )
+    visited_root_ids: list[str] = []
+
+    def oversized_root_cost(*, root_id: str, note_ids: list[str]) -> int:
+        assert note_ids
+        visited_root_ids.append(root_id)
+        return 501
+
+    monkeypatch.setattr(state, "_full_root_page_token_cost", oversized_root_cost)
+
+    retention = state.retain_root_prefix_within_token_budget()
+
+    assert retention.retained_root_ids == ()
+    assert retention.dropped_root_ids == snapshot.ordered_root_ids
+    assert retention.retained_note_count == 0
+    assert state.current_note_ids == ()
+    assert visited_root_ids == [snapshot.ordered_root_ids[0]]

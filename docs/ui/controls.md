@@ -63,15 +63,10 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - The search field keeps a muted search icon inside the input before and during typing; hovering the field shows a `Search` tooltip.
 - Pressing `Enter` while focused in the search input creates a new **root** note.
 - Pressing `Esc` while focused in the search input blurs the field and dismisses search suggestions, without clearing the current query or search results.
-- The right side of the black search header shows the result's root-note count above
-  its approximate agent-visible token count. The estimate covers the complete
-  serialized evidence trees: matching content, raw tags, UUIDs, timestamps,
-  structural ancestors, hierarchy, JSON keys, and punctuation. Protected/redacted
-  content remains excluded. Root-tree costs are cached independently, so a note
-  edit invalidates the cost of its root tree without forcing unchanged trees to be
-  recounted. The value remains an estimate rather than an exact provider tokenizer
-  count. The existing `Show/Hide search result count` preference controls both
-  lines together.
+- The right side of the black search header shows only the result's root-note count.
+  MetaList does not tokenize search results during startup, ordinary interaction,
+  or snapshot refresh merely to populate this UI. The existing `Show/Hide search
+  result count` preference controls the count.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
 - Sort modes do not change canonical insertion behavior. New roots are still inserted into the manual root order first, then rendered in the active sort order.

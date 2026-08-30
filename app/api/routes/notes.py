@@ -259,9 +259,6 @@ def view_diff(payload: dict):
     root_ids = list(state.children_by_parent.get(None, []))
     root_count_total = state.metadata["rootCountTotal"]
     search_root_count_total = state.metadata["searchRootCountTotal"]
-    result_approximate_token_count = state.metadata[
-        "resultApproximateTokenCount"
-    ]
 
     client_note_ids = set(client_hashes.keys())
     current_note_ids = set(state.hash_by_id.keys())
@@ -314,7 +311,6 @@ def view_diff(payload: dict):
                 "dateFilter": date_filter,
                 "rootCountTotal": root_count_total,
                 "searchRootCountTotal": search_root_count_total,
-                "resultApproximateTokenCount": result_approximate_token_count,
                 "rootSortBuckets": state.metadata["rootSortBuckets"],
                 "editingNoteId": normalized_editing_note_id,
             }
@@ -334,7 +330,6 @@ def view_diff(payload: dict):
             "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
-            "resultApproximateTokenCount": result_approximate_token_count,
             "rootSortBuckets": state.metadata["rootSortBuckets"],
             "editingNoteId": normalized_editing_note_id,
         }
@@ -361,7 +356,6 @@ def view_diff(payload: dict):
             "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
-            "resultApproximateTokenCount": result_approximate_token_count,
             "rootSortBuckets": state.metadata["rootSortBuckets"],
             "editingNoteId": normalized_editing_note_id,
         }
@@ -393,7 +387,6 @@ def view_diff(payload: dict):
         "dateFilter": date_filter,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
-        "resultApproximateTokenCount": result_approximate_token_count,
         "rootSortBuckets": state.metadata["rootSortBuckets"],
         "editingNoteId": normalized_editing_note_id,
     }

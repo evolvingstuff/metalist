@@ -5290,12 +5290,6 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     pointer-events: none;
 }
 
-.controls .search-results-token-count {
-    font-size: 10px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.68);
-}
-
 body:not(.pref-show-search-results-count) .controls .search-results-count {
     display: none;
 }
