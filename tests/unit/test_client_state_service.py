@@ -163,6 +163,7 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.skill.scoped_investigation_v3": "Old inherited-tag investigation skill",
         "pref.ai.skill.scoped_investigation_v4": "Custom nested investigation skill",
         "pref.ai.skill.scoped_investigation_v5": "Custom compact investigation skill",
+        "pref.ai.skill.scoped_investigation_v6": "Custom ranked investigation skill",
         "pref.ai.skill.search_notes": "Custom search skill",
         "pref.ai.chat_width": "640",
         "pref.ai.composer_height": "180",

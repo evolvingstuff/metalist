@@ -32,6 +32,8 @@ def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
     assert "same evidence object" in normalized_final_prompt
     assert "candidate evidence set" in normalized_final_prompt
     assert "current question" in normalized_final_prompt
+    assert "32 highest-rated notes" in normalized_final_prompt
+    assert "use and cite only the supporting subset" in normalized_final_prompt
     assert "Do not introduce citation tokens with labels" in normalized_final_prompt
     assert "exact citation token" in DEFAULT_AGENT_PROMPTS.system_prompt
     assert "root-deduplicated reference links" in normalized_system_prompt

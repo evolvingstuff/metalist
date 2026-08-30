@@ -126,8 +126,11 @@ not left to prompt compliance.
   matching-result-tree counts. Default facet page size is 50 tags (range 1–200).
 - Facets and agent tag refinements use directly assigned raw tags only. They do not
   use inherited, implied, or ontology-expanded tags.
-- The replacement working summary defaults to 8,000 characters (range
-  2,000–32,000) and must retain observed-source provenance.
+- Multi-page ratings contain only current-page note IDs plus 1–100 importance
+  scores. Earlier ratings are withheld from each new page-scoring call, then merged
+  programmatically; the best 64 are retained and the top 32 are expanded as
+  final-answer candidates. The writer cites only the supporting subset it actually
+  uses. The serialized ratings default to 8,000 characters (range 2,000–32,000).
 
 The five active limits are namespace-scoped controls in `AI Agent Settings…`:
 per-note characters, approximate evidence-page tokens, result trees per evidence
@@ -152,9 +155,9 @@ page, ranked facets per page, and working-summary characters.
 Open `Agent prompts…` to inspect/override packaged prompt Markdown and registered
 skills. Skills are collapsed with a disclosure arrow and trigger label. Overrides
 are encrypted namespace preferences where applicable and affect the next run.
-`Restore packaged defaults` removes all overrides. If the old Search-skill override
-exists, the editor shows an explicit incompatible-contract notice; it is preserved
-but never applied until Save or Restore removes it.
+`Restore packaged defaults` removes all overrides. If an older scoped-skill or
+Search-skill override exists, the editor shows an explicit incompatible-contract
+notice; it is preserved but never applied until Save or Restore removes it.
 
 ## Panel and Cancellation
 

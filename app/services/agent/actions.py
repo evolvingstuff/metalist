@@ -483,55 +483,69 @@ class _OllamaCompatibleSchemaModel(BaseModel):
         return compatible_schema
 
 
-class WorkingEvidence(_OllamaCompatibleSchemaModel):
+class RankedNote(_OllamaCompatibleSchemaModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim: str = Field(..., min_length=1, max_length=2_000)
-    source_ids: list[str] = Field(..., min_length=1, max_length=4)
+    note_id: str = Field(..., min_length=1)
+    importance: int = Field(..., ge=1, le=100)
 
-    @field_validator("claim")
+    @field_validator("note_id")
     @classmethod
-    def reject_blank_claim(cls, value: str) -> str:
+    def reject_blank_note_id(cls, value: str) -> str:
         if value.strip() == "":
-            raise ValueError("Working evidence claim must not be blank")
-        return value
-
-    @field_validator("source_ids")
-    @classmethod
-    def validate_source_ids(cls, values: list[str]) -> list[str]:
-        return _validate_unique_nonempty_ids(values, label="Working evidence source ids")
+            raise ValueError("Ranked note id must not be blank")
+        return value.strip()
 
 
 class WorkingSummary(_OllamaCompatibleSchemaModel):
     model_config = ConfigDict(extra="forbid")
 
-    answer_relevant_facts: list[WorkingEvidence] = Field(..., max_length=4)
-    possible_conclusions: list[WorkingEvidence] = Field(..., max_length=2)
-    contradictions_or_uncertainties: list[WorkingEvidence] = Field(..., max_length=2)
-    unresolved_questions: list[str] = Field(..., max_length=4)
-    useful_search_terms_or_tags: list[str] = Field(..., max_length=6)
+    ranked_notes: list[RankedNote] = Field(..., max_length=64)
 
-    @field_validator("unresolved_questions", "useful_search_terms_or_tags")
+    @field_validator("ranked_notes")
     @classmethod
-    def validate_text_list(cls, values: list[str]) -> list[str]:
-        if any(not isinstance(value, str) or value.strip() == "" for value in values):
-            raise ValueError("Working-summary text entries must be non-empty strings")
-        if any(len(value) > 2_000 for value in values):
-            raise ValueError("Working-summary text entries must not exceed 2000 characters")
-        if len(set(values)) != len(values):
-            raise ValueError("Working-summary text entries must be unique")
-        return values
+    def validate_ranked_notes(cls, values: list[RankedNote]) -> list[RankedNote]:
+        note_ids = [ranked_note.note_id for ranked_note in values]
+        if len(set(note_ids)) != len(note_ids):
+            raise ValueError("Working-summary note ids must be unique")
+        return sorted(values, key=lambda ranked_note: -ranked_note.importance)
 
     def referenced_source_ids(self) -> frozenset[str]:
-        return frozenset(
-            source_id
-            for collection in (
-                self.answer_relevant_facts,
-                self.possible_conclusions,
-                self.contradictions_or_uncertainties,
-            )
-            for evidence in collection
-            for source_id in evidence.source_ids
+        return frozenset(ranked_note.note_id for ranked_note in self.ranked_notes)
+
+    def merged_with(
+        self,
+        *,
+        page_summary: "WorkingSummary",
+        maximum: int,
+    ) -> "WorkingSummary":
+        if not isinstance(page_summary, WorkingSummary):
+            raise TypeError("page_summary must be WorkingSummary")
+        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
+            raise ValueError("Working-summary merge maximum must be positive")
+        importance_by_note_id = {
+            ranked_note.note_id: ranked_note.importance
+            for ranked_note in self.ranked_notes
+        }
+        for ranked_note in page_summary.ranked_notes:
+            if ranked_note.note_id not in importance_by_note_id:
+                importance_by_note_id[ranked_note.note_id] = ranked_note.importance
+                continue
+            existing_importance = importance_by_note_id[ranked_note.note_id]
+            if ranked_note.importance > existing_importance:
+                importance_by_note_id[ranked_note.note_id] = ranked_note.importance
+        merged = [
+            RankedNote(note_id=note_id, importance=importance)
+            for note_id, importance in importance_by_note_id.items()
+        ]
+        merged.sort(key=lambda ranked_note: -ranked_note.importance)
+        return WorkingSummary(ranked_notes=merged[:maximum])
+
+    def top_source_ids(self, *, maximum: int) -> tuple[str, ...]:
+        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
+            raise ValueError("Working-summary source maximum must be positive")
+        return tuple(
+            ranked_note.note_id for ranked_note in self.ranked_notes[:maximum]
         )
 
 
@@ -607,15 +621,7 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
         max_length=12,
         description="Used only for reopen_sources; emit an empty array otherwise.",
     )
-    answer_source_ids: list[str] = Field(
-        ...,
-        max_length=32,
-        description=(
-            "Used only for answer; include at most 32 observed authoritative "
-            "sources and emit an empty array otherwise."
-        ),
-    )
-    reason: str = Field(..., min_length=1, max_length=2_000)
+    reason: str = Field(..., min_length=1, max_length=512)
     evidence_sufficiency: Literal[
         "insufficient",
         "sufficient",
@@ -634,7 +640,6 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             "facet_page",
             "backtrack_state_id",
             "source_ids",
-            "answer_source_ids",
         }
         if not action_fields.issubset(value):
             return value
@@ -645,7 +650,7 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             "inspect_tag_facets": "facet_page",
             "backtrack": "backtrack_state_id",
             "reopen_sources": "source_ids",
-            "answer": "answer_source_ids",
+            "answer": "",
         }
         action_kind = value["action_kind"]
         if not isinstance(action_kind, str):
@@ -657,7 +662,7 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
         for field_name in action_fields:
             if field_name == active_field:
                 continue
-            if field_name in {"source_ids", "answer_source_ids"}:
+            if field_name == "source_ids":
                 normalized[field_name] = []
             elif field_name == "facet_page":
                 normalized[field_name] = 0
@@ -672,7 +677,7 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             raise ValueError("Investigation action reason must not be blank")
         return value
 
-    @field_validator("source_ids", "answer_source_ids")
+    @field_validator("source_ids")
     @classmethod
     def validate_step_source_ids(cls, values: list[str]) -> list[str]:
         return _validate_unique_nonempty_ids(values, label="Investigation source ids")
@@ -698,7 +703,7 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
                 or len(self.source_ids) != 0
             ):
                 raise ValueError(
-                    "answer requires only answer_source_ids; set tag_expression, "
+                    "answer requires empty action arguments; set tag_expression, "
                     "exact_text, and backtrack_state_id to empty strings, facet_page "
                     "to 0, and source_ids to an empty array"
                 )
@@ -730,10 +735,6 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             if not set(self.source_ids).issubset(constraints.observed_source_ids):
                 raise ValueError("Sources must have been previously observed")
         if self.action_kind == "answer":
-            if not set(self.answer_source_ids).issubset(
-                constraints.observed_source_ids
-            ):
-                raise ValueError("Answer sources must have been previously observed")
             if (
                 constraints.requires_complete_scope_coverage
                 and constraints.has_next_note_page
@@ -770,7 +771,6 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             "facet_page",
             "backtrack_state_id",
             "source_ids",
-            "answer_source_ids",
         }
         if active_field not in allowed_fields:
             raise ValueError("Unknown active investigation argument field")
@@ -780,7 +780,6 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
             "facet_page": self.facet_page != 0,
             "backtrack_state_id": self.backtrack_state_id != "",
             "source_ids": len(self.source_ids) != 0,
-            "answer_source_ids": len(self.answer_source_ids) != 0,
         }
         expected = {
             field_name: field_name == active_field

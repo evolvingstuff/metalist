@@ -106,13 +106,9 @@ class _FakeInference:
             json.dumps(
                 {
                     "working_summary": {
-                        "answer_relevant_facts": [
-                            {"claim": "Alpha fact", "source_ids": ["note-a"]}
-                        ],
-                        "possible_conclusions": [],
-                        "contradictions_or_uncertainties": [],
-                        "unresolved_questions": ["Inspect the next page"],
-                        "useful_search_terms_or_tags": ["foo"],
+                        "ranked_notes": [
+                            {"note_id": "note-a", "importance": 88}
+                        ]
                     },
                     "action_kind": "page_next",
                     "tag_expression": "",
@@ -120,7 +116,6 @@ class _FakeInference:
                     "facet_page": 0,
                     "backtrack_state_id": "",
                     "source_ids": [],
-                    "answer_source_ids": [],
                     "reason": "The scope has another ordered page.",
                     "evidence_sufficiency": "insufficient",
                 }
@@ -128,14 +123,9 @@ class _FakeInference:
             json.dumps(
                 {
                     "working_summary": {
-                        "answer_relevant_facts": [
-                            {"claim": "Alpha fact", "source_ids": ["note-a"]},
-                            {"claim": "Beta fact", "source_ids": ["note-b"]},
-                        ],
-                        "possible_conclusions": [],
-                        "contradictions_or_uncertainties": [],
-                        "unresolved_questions": [],
-                        "useful_search_terms_or_tags": ["foo"],
+                        "ranked_notes": [
+                            {"note_id": "note-b", "importance": 92}
+                        ]
                     },
                     "action_kind": "answer",
                     "tag_expression": "",
@@ -143,7 +133,6 @@ class _FakeInference:
                     "facet_page": 0,
                     "backtrack_state_id": "",
                     "source_ids": [],
-                    "answer_source_ids": ["note-a", "note-b"],
                     "reason": "Both ordered pages now provide sufficient evidence.",
                     "evidence_sufficiency": "sufficient",
                 }
@@ -349,12 +338,13 @@ def test_scoped_runtime_replaces_old_raw_pages_and_rehydrates_final_sources() ->
     assert "RAW_ALPHA_UNIQUE" in first_step
     assert "RAW_ALPHA_UNIQUE" not in second_step
     assert "RAW_BETA_UNIQUE" in second_step
-    assert "Alpha fact" in second_step
+    assert '"importance":88' not in second_step
+    assert '"ranked_notes"' not in second_step
     assert "RAW_ALPHA_UNIQUE" in final_request
     assert "RAW_BETA_UNIQUE" in final_request
     assert events[-1] == {
         "type": "done",
-        "reference_note_ids": ["note-a", "note-b"],
+        "reference_note_ids": ["note-b", "note-a"],
     }
     trace_events = traces.snapshot(session_key="session-1")["run"]["events"]
     evidence_events = [

@@ -194,8 +194,8 @@ to the model.
 - `inspect_tag_facets`: inspect another deterministic facet page.
 - `backtrack`: restore a disclosed earlier subset.
 - `reopen_sources`: rehydrate 1–12 previously observed frozen records.
-- `answer`: declare sufficient evidence and select up to 32 observed source IDs for
-  authoritative final rehydration.
+- `answer`: declare sufficient evidence. MetaList then rehydrates the 32
+  highest-rated accumulated note IDs as final-answer candidates.
 
 ## Bounded Working Context
 
@@ -207,14 +207,14 @@ allowlisted candidate citation. The final writer must apply the current user's
 exact request as the relevance constraint and omit unrelated candidate nodes; the
 server still validates every emitted citation against the frozen page.
 
-For multi-page investigation, each decision receives the raw current page plus the
-latest bounded summary. `WorkingSummary` is a complete replacement value on every
-step. It contains source-backed facts, tentative conclusions,
-contradictions/uncertainties,
-unresolved questions, and useful terms/tags. Each evidence entry carries its exact
-source IDs; the runtime derives the deduplicated reference set from those structured
-entries. Every evidence ID must be observed, and the serialized summary defaults to an
-8,000-character budget configurable from 2,000–32,000.
+For multi-page investigation, each decision receives the raw current page without
+the accumulated ratings from earlier pages. It returns only applicable current-page
+note IDs and an integer importance score from 1–100. This prevents scores for a new
+page from being anchored by earlier ratings. MetaList merges pages
+programmatically, deduplicates IDs using their highest score, sorts them by score,
+and retains the best 64. Every rated ID must occur on the current page, and the
+serialized ratings default to an 8,000-character budget configurable from
+2,000–32,000.
 
 `AgentContextBuilder.build_scoped_investigation_messages` reconstructs each call
 from:
@@ -223,12 +223,12 @@ from:
 - active scoped-investigation skill;
 - frozen scope metadata;
 - current state/disclosed IDs and terms;
-- current summary;
 - current facet page;
 - current note page or reopened sources.
 
-Prior raw pages, earlier summary versions, and abandoned tool transcripts are not
-appended. Agent Debug still records each exact wire request at the time it occurs.
+Prior raw pages, accumulated ratings, earlier summary versions, and abandoned tool
+transcripts are not appended. Agent Debug still records each exact wire request at
+the time it occurs.
 Every generation has a response-type ceiling: 512 tokens for routes, 2,048 for
 multi-page investigation steps, and 1,024 for legacy search-query preparation.
 Final prose is provider-specific: 1,024 tokens for Ollama and 8,192 for OpenAI.
@@ -240,9 +240,11 @@ streaming provides schema-aware parsing while live activity reports an approxima
 output-token count. These limits prevent malformed or repetitive output from
 generating without a practical bound.
 
-On `answer`, `build_scoped_final_messages` receives the latest summary and newly
-serialized frozen source records selected by the model. Final note claims must be
-grounded in those authoritative records rather than the lossy summary. The runtime
+On `answer`, `build_scoped_final_messages` receives the accumulated rankings and
+newly serialized frozen source records for the 32 highest-rated candidates. Final
+note claims must be grounded in those authoritative records rather than the lossy
+rankings. The final writer may use and cite any supporting subset of the 32; unused
+candidates must not become citations or References entries. The runtime
 places an exact `[[UUID]]` token beside each evidence source. The model must copy the
 token from the same object whose content supports the claim; the final-response
 prompt requires at least one direct token in every note-derived paragraph or list
@@ -268,7 +270,7 @@ transient working state and do not enter later conversation context.
 - Namespace prompt/skill overrides are frozen at run start and editable through
   `Agent prompts…`.
 - The nested scoped skill uses versioned key
-  `pref.ai.skill.scoped_investigation_v5`. Saved verbose-payload v4,
+  `pref.ai.skill.scoped_investigation_v6`. Saved prose-summary v5, verbose-payload v4,
   inherited-tag v3, flat-page
   `pref.ai.skill.scoped_investigation_v2`, and legacy
   `pref.ai.skill.search_notes` overrides are preserved but never applied. The

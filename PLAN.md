@@ -201,30 +201,25 @@ Backtracking restores a disclosed prior state, never a state outside `S0`.
 
 ### `WorkingSummary`
 
-A bounded structured replacement value, not an append-only transcript:
-
-- `answer_relevant_facts`: claim plus supporting source IDs;
-- `possible_conclusions`: tentative claim plus supporting source IDs;
-- `contradictions_or_uncertainties`: issue plus relevant source IDs;
-- `unresolved_questions`;
-- `useful_search_terms_or_tags`;
-- `source_references`: unique observed IDs still material to the investigation.
-
-Validation must enforce per-item text bounds, list bounds, total serialized size,
-deduplicated source IDs, and observed-source provenance. The model may add, revise,
-merge, weaken, or remove entries on every step.
+A bounded ranked source set rather than a prose summary. Each entry has only an
+exact current-page `note_id` and a 1–100 `importance` score for the user's request.
+Each page is rated without exposure to earlier page scores. MetaList validates
+current-page provenance, merges and deduplicates ratings programmatically, keeps
+the highest score for repeated IDs, sorts descending, and retains the best 64.
+On `answer`, the top 32 are expanded as candidate evidence; the final writer may
+use and cite any supporting subset and must not cite unused candidates.
 
 ### `InvestigationStep`
 
 One Instructor-validated model response updates working memory and chooses exactly
 one next action:
 
-- complete replacement `working_summary`;
+- current-page `working_summary` ratings;
 - `action_kind`;
 - required flat action-argument placeholders compatible with Ollama JSON Schema;
 - compact reason;
 - explicit evidence-sufficiency assessment;
-- answer-source IDs when `action_kind == answer`.
+- no separate answer-source list; `answer` uses the accumulated top 32.
 
 Summary update and action choice happen in one structured call. Do not add a
 separate summarization inference call per page.
@@ -268,8 +263,8 @@ separate summarization inference call per page.
 
 - Returns to a disclosed prior refinement state, including the original `S0`.
 - Restores that state's counts, page position policy, and tag facets.
-- Preserves the working summary, which the next structured step may revise if the
-  abandoned refinement produced misleading conclusions.
+- Preserves already merged note ratings; subsequent pages are still scored without
+  seeing those prior ratings.
 
 ### `reopen_sources`
 
@@ -280,9 +275,11 @@ separate summarization inference call per page.
 
 ### `answer`
 
-- Requires an explicit sufficiency reason and a bounded, deduplicated set of
-  observed answer-source IDs.
-- Automatically rehydrates those sources into the final synthesis context.
+- Requires an explicit sufficiency reason.
+- Automatically rehydrates the 32 highest-rated accumulated note IDs as candidate
+  sources in the final synthesis context.
+- Does not require the final writer to use or cite all 32; only notes actually
+  supporting emitted claims become citations and References entries.
 - May answer with explicit uncertainty; unresolved questions do not mechanically
   prohibit answering when the requested evidence burden is otherwise met.
 

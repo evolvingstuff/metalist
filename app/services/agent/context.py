@@ -242,7 +242,6 @@ class AgentContextBuilder:
         state: InvestigationState,
         note_page: InvestigationNotePage,
         facet_page: TagFacetPage,
-        working_summary: WorkingSummary,
         reopened_sources: tuple[dict[str, object], ...],
     ) -> list[dict[str, str]]:
         """Rebuild one bounded step context; previous raw pages never enter it."""
@@ -273,9 +272,14 @@ class AgentContextBuilder:
             available_actions.append("backtrack")
         runtime_payload = {
             "instruction": (
-                "Replace working_summary and choose exactly one next action using "
-                "the required InvestigationStep schema. Current note content is "
-                "answerable evidence, not an ID-only preview."
+                "Score only applicable evidence notes from the current note_page, "
+                "then choose exactly one next action using the required "
+                "InvestigationStep schema. working_summary must contain only "
+                "note_id and importance (1-100) entries from this page. Omit notes "
+                "that do not help answer the current request. MetaList will merge "
+                "these scores with earlier pages after this response; earlier scores "
+                "are intentionally undisclosed so this page is rated independently. "
+                "Current note content is answerable evidence, not an ID-only preview."
             ),
             "frozen_scope": {
                 "kind": snapshot.descriptor.scope_kind,
@@ -295,7 +299,6 @@ class AgentContextBuilder:
             "coverage_requirement": (
                 "complete" if requires_complete_scope_coverage else "question-dependent"
             ),
-            "working_summary": working_summary.model_dump(mode="json"),
             "tag_facets": {
                 "page": facet_page.page,
                 "total_pages": facet_page.total_pages,

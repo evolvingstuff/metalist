@@ -12,7 +12,7 @@ from app.services.agent.actions import EvidenceSelectionConstraints
 from app.services.agent.actions import EvidenceSelectionWithoutRationale
 from app.services.agent.actions import ScopedRouteConstraints
 from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import WorkingEvidence
+from app.services.agent.actions import RankedNote
 from app.services.agent.actions import WorkingSummary
 from app.services.agent.actions import bind_investigation_step_constraints
 from app.services.agent.actions import bind_evidence_selection_constraints
@@ -24,13 +24,7 @@ from app.services.agent.actions import validate_working_summary_for_observed_sou
 
 def _summary() -> WorkingSummary:
     return WorkingSummary(
-        answer_relevant_facts=[
-            WorkingEvidence(claim="The note says lorem ipsum.", source_ids=["note-a"])
-        ],
-        possible_conclusions=[],
-        contradictions_or_uncertainties=[],
-        unresolved_questions=[],
-        useful_search_terms_or_tags=["foo"],
+        ranked_notes=[RankedNote(note_id="note-a", importance=90)],
     )
 
 
@@ -80,7 +74,6 @@ def _payload() -> dict[str, object]:
         "facet_page": 0,
         "backtrack_state_id": "",
         "source_ids": [],
-        "answer_source_ids": ["note-a"],
         "reason": "The observed source directly answers the question.",
         "evidence_sufficiency": "sufficient",
     }
@@ -101,7 +94,6 @@ def test_investigation_step_normalizes_model_noise_in_inactive_action_fields() -
             "action_kind": "inspect_tag_facets",
             "tag_expression": "irrelevant-model-noise",
             "facet_page": 2,
-            "answer_source_ids": ["irrelevant-source"],
             "evidence_sufficiency": "insufficient",
         }
     )
@@ -110,7 +102,6 @@ def test_investigation_step_normalizes_model_noise_in_inactive_action_fields() -
 
     assert step.facet_page == 2
     assert step.tag_expression == ""
-    assert step.answer_source_ids == []
 
 
 def test_investigation_step_wire_schema_omits_ollama_incompatible_max_length() -> None:
@@ -119,20 +110,16 @@ def test_investigation_step_wire_schema_omits_ollama_incompatible_max_length() -
     assert '"maxLength"' not in serialized_schema
 
 
-def test_working_summary_schema_derives_references_from_structured_evidence() -> None:
+def test_working_summary_contains_only_ranked_note_ids() -> None:
     properties = WorkingSummary.model_json_schema()["properties"]
 
-    assert "source_references" not in properties
+    assert set(properties) == {"ranked_notes"}
 
 
 def test_working_summary_schema_programmatically_bounds_rolling_output() -> None:
     properties = WorkingSummary.model_json_schema()["properties"]
 
-    assert properties["answer_relevant_facts"]["maxItems"] == 4
-    assert properties["possible_conclusions"]["maxItems"] == 2
-    assert properties["contradictions_or_uncertainties"]["maxItems"] == 2
-    assert properties["unresolved_questions"]["maxItems"] == 4
-    assert properties["useful_search_terms_or_tags"]["maxItems"] == 6
+    assert properties["ranked_notes"]["maxItems"] == 64
 
 
 def test_investigation_wire_schema_places_action_before_working_summary() -> None:
@@ -142,12 +129,68 @@ def test_investigation_wire_schema_places_action_before_working_summary() -> Non
     assert property_names[-1] == "working_summary"
 
 
-def test_working_evidence_accepts_at_most_four_direct_sources() -> None:
-    with pytest.raises(ValidationError, match="at most 4 items"):
-        WorkingEvidence(
-            claim="A broad claim must not carry an indiscriminate source dump.",
-            source_ids=[f"note-{index}" for index in range(5)],
+@pytest.mark.parametrize("importance", (0, 101))
+def test_ranked_note_importance_is_bounded(importance: int) -> None:
+    with pytest.raises(ValidationError):
+        RankedNote(note_id="note-a", importance=importance)
+
+
+def test_working_summary_sorts_by_importance_and_rejects_duplicate_ids() -> None:
+    summary = WorkingSummary(
+        ranked_notes=[
+            RankedNote(note_id="note-low", importance=10),
+            RankedNote(note_id="note-high", importance=95),
+        ]
+    )
+
+    assert [ranked.note_id for ranked in summary.ranked_notes] == [
+        "note-high",
+        "note-low",
+    ]
+    with pytest.raises(ValidationError, match="must be unique"):
+        WorkingSummary(
+            ranked_notes=[
+                RankedNote(note_id="note-a", importance=90),
+                RankedNote(note_id="note-a", importance=80),
+            ]
         )
+
+
+def test_working_summary_selects_highest_scored_32_notes() -> None:
+    summary = WorkingSummary(
+        ranked_notes=[
+            RankedNote(note_id=f"note-{index}", importance=index)
+            for index in range(1, 65)
+        ]
+    )
+
+    selected = summary.top_source_ids(maximum=32)
+
+    assert len(selected) == 32
+    assert selected[0] == "note-64"
+    assert selected[-1] == "note-33"
+
+
+def test_working_summary_merges_pages_and_retains_highest_scored_64_notes() -> None:
+    first_page = WorkingSummary(
+        ranked_notes=[
+            RankedNote(note_id=f"first-{index}", importance=index)
+            for index in range(1, 41)
+        ]
+    )
+    second_page = WorkingSummary(
+        ranked_notes=[
+            RankedNote(note_id=f"second-{index}", importance=index + 40)
+            for index in range(1, 41)
+        ]
+    )
+
+    merged = first_page.merged_with(page_summary=second_page, maximum=64)
+
+    assert len(merged.ranked_notes) == 64
+    assert merged.ranked_notes[0].note_id == "second-40"
+    assert merged.ranked_notes[-1].importance == 17
+    assert "first-16" not in merged.referenced_source_ids()
 
 
 def test_investigation_step_schema_explains_inactive_action_sentinels() -> None:
@@ -159,33 +202,18 @@ def test_investigation_step_schema_explains_inactive_action_sentinels() -> None:
     )
 
 
-def test_investigation_step_allows_32_final_answer_sources() -> None:
+def test_investigation_step_has_no_redundant_answer_source_ids() -> None:
     properties = InvestigationStep.model_json_schema()["properties"]
 
     assert properties["source_ids"]["maxItems"] == 12
-    assert properties["answer_source_ids"]["maxItems"] == 32
-
-    payload = _payload()
-    payload["answer_source_ids"] = [f"note-{index}" for index in range(32)]
-
-    step = InvestigationStep.model_validate(payload)
-
-    assert len(step.answer_source_ids) == 32
-
-
-def test_investigation_step_rejects_33_final_answer_sources() -> None:
-    payload = _payload()
-    payload["answer_source_ids"] = [f"note-{index}" for index in range(33)]
-
-    with pytest.raises(ValidationError, match="at most 32 items"):
-        InvestigationStep.model_validate(payload)
+    assert "answer_source_ids" not in properties
 
 
 def test_investigation_step_still_validates_string_length_off_wire() -> None:
     payload = _payload()
-    payload["reason"] = "x" * 2_001
+    payload["reason"] = "x" * 513
 
-    with pytest.raises(ValidationError, match="at most 2000 characters"):
+    with pytest.raises(ValidationError, match="at most 512 characters"):
         InvestigationStep.model_validate(payload)
 
 
@@ -217,8 +245,11 @@ def test_working_summary_rejects_unobserved_source_provenance() -> None:
 
 
 def test_working_summary_enforces_total_serialized_budget() -> None:
-    summary = _summary().model_copy(
-        update={"unresolved_questions": ["x" * 2_000]}
+    summary = WorkingSummary(
+        ranked_notes=[
+            RankedNote(note_id=f"long-note-id-{index}-" + ("x" * 40), importance=50)
+            for index in range(40)
+        ]
     )
     serialized_size = len(json.dumps(summary.model_dump(), separators=(",", ":")))
     assert serialized_size > 1_000
@@ -244,7 +275,6 @@ def test_investigation_step_dynamic_constraints_reject_invalid_runtime_choice() 
     payload = _payload()
     payload.update({
         "action_kind": "page_next",
-        "answer_source_ids": [],
         "evidence_sufficiency": "insufficient",
     })
 
@@ -267,7 +297,6 @@ def test_investigation_step_dynamic_constraints_accept_disclosed_tag_refinement(
     payload.update({
         "action_kind": "refine_tags",
         "tag_expression": "foo -bar",
-        "answer_source_ids": [],
         "evidence_sufficiency": "insufficient",
     })
 
@@ -292,7 +321,6 @@ def test_investigation_step_dynamic_constraints_reject_current_facet_page() -> N
         {
             "action_kind": "inspect_tag_facets",
             "facet_page": 1,
-            "answer_source_ids": [],
             "evidence_sufficiency": "insufficient",
         }
     )

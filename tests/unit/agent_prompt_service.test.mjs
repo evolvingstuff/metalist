@@ -16,12 +16,13 @@ const VALID_PROMPTS = Object.freeze({
 });
 
 const VALID_SKILL = Object.freeze({
-    skillId: 'scoped_investigation_v5',
+    skillId: 'scoped_investigation_v6',
     title: 'Investigate current scope',
     description: 'Investigate only the frozen MetaList scope.',
     triggerAction: 'investigate_current_scope',
-    preferenceKey: 'pref.ai.skill.scoped_investigation_v5',
+    preferenceKey: 'pref.ai.skill.scoped_investigation_v6',
     supersededPreferenceKeys: [
+        'pref.ai.skill.scoped_investigation_v5',
         'pref.ai.skill.scoped_investigation_v4',
         'pref.ai.skill.scoped_investigation_v3',
         'pref.ai.skill.scoped_investigation_v2',

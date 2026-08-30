@@ -288,13 +288,7 @@ class AgentRuntime:
         )
         note_page = state.current_note_page()
         facet_page = state.current_facet_page()
-        working_summary = WorkingSummary(
-            answer_relevant_facts=[],
-            possible_conclusions=[],
-            contradictions_or_uncertainties=[],
-            unresolved_questions=[],
-            useful_search_terms_or_tags=[],
-        )
+        working_summary = WorkingSummary(ranked_notes=[])
         reopened_sources: tuple[dict[str, object], ...] = ()
         yield self._status_event(
             "investigation_page",
@@ -361,7 +355,6 @@ class AgentRuntime:
                 state=state,
                 note_page=note_page,
                 facet_page=facet_page,
-                working_summary=working_summary,
                 reopened_sources=reopened_sources,
             )
             reopened_sources = ()
@@ -405,10 +398,13 @@ class AgentRuntime:
             step = await step_task
             validate_working_summary_for_observed_sources(
                 summary=step.working_summary,
-                observed_source_ids=state.observed_source_ids,
+                observed_source_ids=frozenset(note_page.evidence_note_ids),
                 maximum_characters=run.retrieval_settings.max_working_summary_characters,
             )
-            working_summary = step.working_summary
+            working_summary = working_summary.merged_with(
+                page_summary=step.working_summary,
+                maximum=64,
+            )
             summary_characters = len(
                 working_summary.model_dump_json(exclude_none=False)
             )
@@ -416,6 +412,7 @@ class AgentRuntime:
                 run=run,
                 state=state,
                 step=step,
+                working_summary=working_summary,
                 summary_characters=summary_characters,
             )
             yield self._status_event(
@@ -423,26 +420,30 @@ class AgentRuntime:
                 "completed",
                 (
                     f"Selected step · {step.action_kind.replace('_', ' ')} · "
-                    f"{summary_characters:,} summary chars · "
+                    f"rated {len(step.working_summary.ranked_notes)} page notes · "
+                    f"retained {len(working_summary.ranked_notes)} ranked notes · "
                     f"{self._compact_status_reason(step.reason)}"
                 ),
                 approx_input_tokens=step_tokens,
             )
             if step.action_kind == "answer":
-                if not set(step.answer_source_ids).issubset(state.observed_source_ids):
-                    raise AgentExecutionError("Answer selected unobserved source ids")
+                answer_source_ids = list(
+                    working_summary.top_source_ids(maximum=32)
+                )
+                if not set(answer_source_ids).issubset(state.observed_source_ids):
+                    raise AgentExecutionError("Ranked summary contains unobserved sources")
                 verified_sources: tuple[dict[str, object], ...] = ()
-                if step.answer_source_ids:
+                if answer_source_ids:
                     yield self._status_event(
                         "investigation_sources",
                         "started",
                         (
-                            f"Verifying {len(step.answer_source_ids)} answer sources"
+                            f"Verifying {len(answer_source_ids)} answer candidates"
                         ),
                         approx_input_tokens=step_tokens,
                     )
                     verified_sources = state.rehydrate_answer_sources(
-                        note_ids=step.answer_source_ids
+                        note_ids=answer_source_ids
                     )
                     self._trace_store.append_event(
                         session_key=run.session_key,
@@ -450,7 +451,7 @@ class AgentRuntime:
                         event_type="FINAL_EVIDENCE",
                         label="Rehydrated authoritative answer sources",
                         detail={
-                            "source_ids": list(step.answer_source_ids),
+                            "source_ids": answer_source_ids,
                             "sources": list(verified_sources),
                         },
                         duration_ms=0.0,
@@ -459,7 +460,7 @@ class AgentRuntime:
                         "investigation_sources",
                         "completed",
                         (
-                            f"Verified {len(verified_sources)} answer sources"
+                            f"Verified {len(verified_sources)} answer candidates"
                         ),
                         approx_input_tokens=step_tokens,
                     )
@@ -1545,6 +1546,7 @@ class AgentRuntime:
         run: _RunContext,
         state: InvestigationState,
         step: InvestigationStep,
+        working_summary: WorkingSummary,
         summary_characters: int,
     ) -> None:
         if summary_characters < 1:
@@ -1557,6 +1559,7 @@ class AgentRuntime:
             detail={
                 "state_id": state.current_state_id,
                 "action": step.model_dump(mode="json"),
+                "merged_working_summary": working_summary.model_dump(mode="json"),
                 "summary_characters": summary_characters,
                 "observed_source_ids": sorted(state.observed_source_ids),
             },

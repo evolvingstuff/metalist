@@ -2,6 +2,7 @@ import pytest
 
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY
+from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY
 from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY
 from app.services.agent.skill_settings import LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY
 from app.services.agent.skill_settings import LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY
@@ -25,7 +26,9 @@ def test_packaged_investigation_skill_explains_scope_and_bounded_navigation() ->
     assert "directly assigned raw `tags`" in normalized_skill
     assert "untagged note omits the `tags` field" in normalized_skill
     assert "Do not infer additional, inherited, or ontology-implied tags" in normalized_skill
-    assert "complete replacement working summary" in normalized_skill
+    assert "current-page ratings" in normalized_skill
+    assert "does not receive the accumulated summary" in normalized_skill
+    assert "any subset of those candidates" in normalized_skill
     assert "Pydantic AI" not in skill.content
     assert "`foo OR bar baz`" in skill.content
     assert "lorem ipsum" in skill.content
@@ -45,7 +48,7 @@ def test_one_page_evidence_selection_skill_is_no_longer_active() -> None:
 
 
 def test_old_evidence_selection_override_is_explicitly_incompatible() -> None:
-    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v5"):
+    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v6"):
         resolve_agent_skill_set(
             preferences={
                 LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY: (
@@ -69,7 +72,7 @@ def test_resolve_agent_skill_set_uses_namespace_override() -> None:
 
 
 def test_legacy_search_skill_override_is_explicitly_incompatible() -> None:
-    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v5"):
+    with pytest.raises(ValueError, match="incompatible with the nested scoped investigation v6"):
         resolve_agent_skill_set(
             preferences={
                 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY: "Old instructions"
@@ -78,7 +81,7 @@ def test_legacy_search_skill_override_is_explicitly_incompatible() -> None:
 
 
 def test_flat_v2_investigation_override_is_explicitly_incompatible() -> None:
-    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+    with pytest.raises(ValueError, match="nested scoped investigation v6"):
         resolve_agent_skill_set(
             preferences={
                 LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY: (
@@ -89,7 +92,7 @@ def test_flat_v2_investigation_override_is_explicitly_incompatible() -> None:
 
 
 def test_inherited_tag_v3_override_is_explicitly_incompatible() -> None:
-    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+    with pytest.raises(ValueError, match="nested scoped investigation v6"):
         resolve_agent_skill_set(
             preferences={
                 LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY: (
@@ -100,11 +103,22 @@ def test_inherited_tag_v3_override_is_explicitly_incompatible() -> None:
 
 
 def test_verbose_v4_investigation_override_is_explicitly_incompatible() -> None:
-    with pytest.raises(ValueError, match="nested scoped investigation v5"):
+    with pytest.raises(ValueError, match="nested scoped investigation v6"):
         resolve_agent_skill_set(
             preferences={
                 LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY: (
                     "Old verbose note-payload instructions"
+                )
+            }
+        )
+
+
+def test_ranked_v5_investigation_override_is_explicitly_incompatible() -> None:
+    with pytest.raises(ValueError, match="nested scoped investigation v6"):
+        resolve_agent_skill_set(
+            preferences={
+                LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY: (
+                    "Old prose-summary investigation instructions"
                 )
             }
         )

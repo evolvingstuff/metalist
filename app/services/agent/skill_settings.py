@@ -8,12 +8,15 @@ from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
 from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL
 
 
-SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v5"
+SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v6"
 SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v5"
+    "pref.ai.skill.scoped_investigation_v6"
 )
 LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
     "pref.ai.skill.select_relevant_evidence_v1"
+)
+LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY = (
+    "pref.ai.skill.scoped_investigation_v5"
 )
 LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY = (
     "pref.ai.skill.scoped_investigation_v4"
@@ -30,6 +33,7 @@ AGENT_SKILL_PREFERENCE_KEYS = (
 )
 SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
     LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
+    LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY,
     LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY,
@@ -113,7 +117,7 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             skill_id=SCOPED_INVESTIGATION_SKILL_ID,
             title="Investigate current scope",
             description=(
-                "Pages, refines, summarizes, and verifies evidence only inside the "
+                "Pages, refines, ranks, and verifies evidence only inside the "
                 "frozen active MetaList result scope."
             ),
             trigger_action="investigate_current_scope",
@@ -135,7 +139,7 @@ def resolve_agent_skill_set(*, preferences: dict[str, str]) -> AgentSkillSet:
     ):
         raise ValueError(
             "Saved skill override is incompatible with the nested scoped "
-            "investigation v5 action contract. Open AI Agent Settings to review "
+            "investigation v6 action contract. Open AI Agent Settings to review "
             "and restore the new default."
         )
     resolved_skills: list[AgentSkill] = []
