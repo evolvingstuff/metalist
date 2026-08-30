@@ -52,6 +52,32 @@ test('chat panel markup has a resizer, transcript, thinking region, and composer
 });
 
 
+test('OpenAI chat shows a process-local resettable live cost estimate', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
+
+    assert.match(template, /id="ai-chat-openai-cost"[\s\S]*?hidden/);
+    assert.match(template, /id="ai-chat-openai-cost-amount">\$0\.00/);
+    assert.match(template, /id="ai-chat-openai-cost-reset"/);
+    assert.match(template, /New input/);
+    assert.match(template, /Cached input/);
+    assert.match(template, /Cache writes/);
+    assert.match(template, /Output/);
+    assert.match(chatApi, /export async function loadOpenAiCostSnapshot/);
+    assert.match(chatApi, /export async function resetOpenAiCostSnapshot/);
+    assert.match(controller, /settings\.provider === 'openai'/);
+    assert.match(controller, /event\.status === 'completed'/);
+    assert.match(controller, /formatOpenAiCostUsd/);
+    assert.match(controller, /snapshot\.uncached_input_tokens\.toLocaleString\(\)/);
+    assert.match(controller, /snapshot\.cached_input_tokens\.toLocaleString\(\)/);
+    assert.match(controller, /snapshot\.cache_write_tokens\.toLocaleString\(\)/);
+    assert.match(controller, /snapshot\.output_tokens\.toLocaleString\(\)/);
+    assert.match(css, /\.ai-chat-openai-cost/);
+});
+
+
 test('agent debugger retains the latest trace and toggles exact detail visibility', () => {
     const template = readFileSync(TEMPLATE_URL, 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
@@ -128,7 +154,7 @@ test('AI agent settings expose bounded note retrieval controls', () => {
     assert.match(settingsModal, /min="500" max="10000"/);
     assert.doesNotMatch(settingsModal, /id="ai-agent-max-page-characters"/);
     assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
-    assert.match(settingsModal, /isOpenAi \? 250000 : 24000/);
+    assert.match(settingsModal, /isOpenAi \? 500000 : 24000/);
     assert.match(settingsModal, /isOpenAi \? 500000 : 200000/);
     assert.match(settingsModal, /id="ai-agent-max-notes-per-page"/);
     assert.match(settingsModal, /id="ai-agent-ideal-narrowed-scope-approximate-tokens"/);

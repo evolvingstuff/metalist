@@ -194,6 +194,24 @@ export async function clearOpenAiCredential() {
 }
 
 
+export async function loadOpenAiCostSnapshot() {
+    const response = await fetchAi(CONFIG.API.AI.OPENAI_COST, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to load OpenAI cost estimate');
+}
+
+
+export async function resetOpenAiCostSnapshot() {
+    const response = await fetchAi(CONFIG.API.AI.OPENAI_COST_RESET, {
+        method: 'POST',
+        headers: buildSessionHeaders(false),
+    });
+    return await readJsonResponse(response, 'Failed to reset OpenAI cost estimate');
+}
+
+
 function validateModelPullEvent(event) {
     if (!event || typeof event !== 'object' || Array.isArray(event)) {
         throw new Error('Ollama model-download event must be an object');

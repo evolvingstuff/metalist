@@ -51,6 +51,7 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "listAiModels",
     "loadAiDebugSnapshot",
     "loadAiChatSession",
+    "loadOpenAiCostSnapshot",
     "loadAgentPromptDefaults",
     "pullOllamaModel",
     "streamAiChat",
@@ -59,6 +60,7 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "saveOpenAiCredential",
     "clearOpenAiCredential",
     "previewCloudPrivacy",
+    "resetOpenAiCostSnapshot",
 )
 
 JS_ALLOWED_TRY_CALLEE_PREFIXES = (

@@ -9,6 +9,42 @@ const AI_CHAT_MINIMUM_WIDTH = 280;
 const AI_CHAT_MINIMUM_NOTES_WIDTH = 480;
 
 
+export function validateOpenAiCostSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+        throw new Error('OpenAI cost snapshot must be an object');
+    }
+    if (
+        !Number.isFinite(snapshot.estimated_cost_usd)
+        || snapshot.estimated_cost_usd < 0
+    ) {
+        throw new Error('OpenAI estimated cost must be non-negative and finite');
+    }
+    for (const fieldName of [
+        'uncached_input_tokens',
+        'cached_input_tokens',
+        'cache_write_tokens',
+        'output_tokens',
+    ]) {
+        const value = snapshot[fieldName];
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error(`OpenAI ${fieldName} must be a non-negative integer`);
+        }
+    }
+    return snapshot;
+}
+
+
+export function formatOpenAiCostUsd(estimatedCostUsd) {
+    if (!Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0) {
+        throw new Error('formatOpenAiCostUsd requires non-negative finite cost');
+    }
+    return `$${estimatedCostUsd.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+    })}`;
+}
+
+
 export function calculateAiChatMaximumWidth(viewportWidth) {
     if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
         throw new Error('calculateAiChatMaximumWidth requires positive viewportWidth');

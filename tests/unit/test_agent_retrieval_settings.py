@@ -73,7 +73,7 @@ def test_agent_retrieval_settings_keep_provider_preferences_independent() -> Non
         OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "6000",
         OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "80000",
         OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "75",
-        OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "20000",
+        OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "500000",
         OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "125",
         OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "24000",
         OPENAI_IDEAL_NARROWED_SCOPE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "52000",
@@ -94,7 +94,7 @@ def test_agent_retrieval_settings_keep_provider_preferences_independent() -> Non
         max_note_characters=6_000,
         max_page_characters=80_000,
         max_notes_per_page=75,
-        max_page_approximate_tokens=20_000,
+        max_page_approximate_tokens=500_000,
         max_ranked_tags_per_page=125,
         max_working_summary_characters=24_000,
         ideal_narrowed_scope_approximate_tokens=52_000,
@@ -134,7 +134,7 @@ def test_agent_retrieval_settings_reject_unknown_provider() -> None:
         (2_000, 20_000, 0, 5_000),
         (2_000, 20_000, 101, 5_000),
         (2_000, 20_000, 50, 499),
-        (2_000, 20_000, 50, 250_001),
+        (2_000, 20_000, 50, 500_001),
     ],
 )
 def test_agent_retrieval_settings_reject_out_of_range_values(

@@ -169,7 +169,7 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error(`Unsupported AI provider: ${state.provider}`);
         }
         const disabledAttribute = state.isDownloading ? 'disabled' : '';
-        const maximumPageApproximateTokens = isOpenAi ? 250000 : 24000;
+        const maximumPageApproximateTokens = isOpenAi ? 500000 : 24000;
         const maximumNarrowedScopeApproximateTokens = isOpenAi ? 500000 : 200000;
         const progressHiddenAttribute = state.downloadTotal > 0 ? '' : 'hidden';
         const progressMaximum = state.downloadTotal > 0 ? state.downloadTotal : 1;

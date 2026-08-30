@@ -4,7 +4,9 @@ import {
     copyAiChatResponse,
     listAiModels,
     loadAiChatSession,
+    loadOpenAiCostSnapshot,
     previewCloudPrivacy,
+    resetOpenAiCostSnapshot,
     streamAiChat,
 } from './ai-chat-api.js';
 import { AgentDebugView } from './ai-agent-debug-view.js';
@@ -12,8 +14,10 @@ import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
     collapseCompletedActivityPairs,
+    formatOpenAiCostUsd,
     formatCompactWorkingActivityLabel,
     splitSearchActivityLabel,
+    validateOpenAiCostSnapshot,
 } from './ai-chat-panel-service.js';
 import {
     queueMermaidDiagramRendering,
@@ -217,6 +221,8 @@ class AiChatPanelController {
         this._isPrivacyPreviewHovered = false;
         this._privacyPreviewMutationObserver = null;
         this._isClearingSession = false;
+        this._isResettingOpenAiCost = false;
+        this._activeOpenAiCostRefresh = null;
         this._localMessageSequence = 0;
         this._getSettings = null;
         this._saveSettings = null;
@@ -304,6 +310,31 @@ class AiChatPanelController {
             panel: requireElement('ai-chat-panel', HTMLElement),
             resizer: requireElement('ai-chat-resizer', HTMLElement),
             messages: requireElement('ai-chat-messages', HTMLElement),
+            openAiCost: requireElement('ai-chat-openai-cost', HTMLElement),
+            openAiCostAmount: requireElement(
+                'ai-chat-openai-cost-amount',
+                HTMLElement,
+            ),
+            openAiCostReset: requireElement(
+                'ai-chat-openai-cost-reset',
+                HTMLButtonElement,
+            ),
+            openAiUncachedInputTokens: requireElement(
+                'ai-chat-openai-uncached-input-tokens',
+                HTMLElement,
+            ),
+            openAiCachedInputTokens: requireElement(
+                'ai-chat-openai-cached-input-tokens',
+                HTMLElement,
+            ),
+            openAiCacheWriteTokens: requireElement(
+                'ai-chat-openai-cache-write-tokens',
+                HTMLElement,
+            ),
+            openAiOutputTokens: requireElement(
+                'ai-chat-openai-output-tokens',
+                HTMLElement,
+            ),
             form: requireElement('ai-chat-form', HTMLFormElement),
             input: requireElement('ai-chat-input', HTMLTextAreaElement),
             send: requireElement('ai-chat-send', HTMLButtonElement),
@@ -352,6 +383,7 @@ class AiChatPanelController {
             await this._loadModels();
         }
         await this._loadSession({ shouldScrollToBottom: true });
+        await this._refreshOpenAiCostSnapshot();
     }
 
     _bindEvents() {
@@ -394,6 +426,10 @@ class AiChatPanelController {
             () => void this._toggleDiagnosticActivities(),
         );
         elements.clear.addEventListener('click', () => void this._clearSession());
+        elements.openAiCostReset.addEventListener(
+            'click',
+            () => void this._resetOpenAiCostSnapshot(),
+        );
         elements.resizer.addEventListener('pointerdown', (event) => {
             if (event.button !== 0) {
                 return;
@@ -421,6 +457,7 @@ class AiChatPanelController {
             this._syncResizerAria();
             this._elements.input.focus();
             void this._loadModels();
+            void this._refreshOpenAiCostSnapshot();
         } else {
             this._clearPrivacyPreview();
         }
@@ -431,6 +468,7 @@ class AiChatPanelController {
             throw new Error('AI settings event is malformed');
         }
         this._syncSettingsControls();
+        void this._refreshOpenAiCostSnapshot();
         if (this._isPrivacyPreviewHovered) {
             void this._refreshPrivacyPreview();
         }
@@ -799,6 +837,90 @@ class AiChatPanelController {
             ? `Message ${settings.model}…`
             : 'Select a model to start chatting…';
         this._syncComposerControlsDisabled();
+        this._syncOpenAiCostVisibility();
+    }
+
+    _syncOpenAiCostVisibility() {
+        const settings = this._getSettings();
+        const isOpenAi = settings.provider === 'openai';
+        this._elements.openAiCost.hidden = !isOpenAi;
+        return isOpenAi;
+    }
+
+    _renderOpenAiCostSnapshot(snapshot) {
+        validateOpenAiCostSnapshot(snapshot);
+        this._elements.openAiCostAmount.textContent = formatOpenAiCostUsd(
+            snapshot.estimated_cost_usd,
+        );
+        this._elements.openAiUncachedInputTokens.textContent = (
+            snapshot.uncached_input_tokens.toLocaleString()
+        );
+        this._elements.openAiCachedInputTokens.textContent = (
+            snapshot.cached_input_tokens.toLocaleString()
+        );
+        this._elements.openAiCacheWriteTokens.textContent = (
+            snapshot.cache_write_tokens.toLocaleString()
+        );
+        this._elements.openAiOutputTokens.textContent = (
+            snapshot.output_tokens.toLocaleString()
+        );
+        this._elements.openAiCostReset.disabled = this._isResettingOpenAiCost;
+    }
+
+    async _refreshOpenAiCostSnapshot() {
+        if (!this._syncOpenAiCostVisibility()) {
+            return;
+        }
+        if (this._activeOpenAiCostRefresh !== null) {
+            await this._activeOpenAiCostRefresh;
+            return;
+        }
+        const refreshRequest = (async () => {
+            try {
+                const snapshot = await loadOpenAiCostSnapshot();
+                this._renderOpenAiCostSnapshot(snapshot);
+            } catch (error) {
+                if (!(error instanceof AiApiError)) {
+                    throw error;
+                }
+                Logger.logError('OpenAI cost estimate refresh failed', error);
+            }
+        })();
+        const refresh = refreshRequest.finally(() => {
+            if (this._activeOpenAiCostRefresh !== refresh) {
+                throw new Error('OpenAI cost refresh promise changed during request');
+            }
+            this._activeOpenAiCostRefresh = null;
+        });
+        this._activeOpenAiCostRefresh = refresh;
+        await refresh;
+    }
+
+    async _resetOpenAiCostSnapshot() {
+        if (this._isResettingOpenAiCost) {
+            return;
+        }
+        if (!this._syncOpenAiCostVisibility()) {
+            throw new Error('OpenAI cost can only be reset for the OpenAI provider');
+        }
+        if (this._activeOpenAiCostRefresh !== null) {
+            await this._activeOpenAiCostRefresh;
+        }
+        this._isResettingOpenAiCost = true;
+        this._elements.openAiCostReset.disabled = true;
+        try {
+            const snapshot = await resetOpenAiCostSnapshot();
+            this._renderOpenAiCostSnapshot(snapshot);
+        } catch (error) {
+            if (!(error instanceof AiApiError)) {
+                throw error;
+            }
+            this._appendLocalErrorPanel(error.message);
+            throw error;
+        } finally {
+            this._isResettingOpenAiCost = false;
+            this._elements.openAiCostReset.disabled = false;
+        }
     }
 
     _syncComposerControlsDisabled() {
@@ -1090,6 +1212,16 @@ class AiChatPanelController {
                     }
                     const shouldScrollToBottom = event.type !== 'done';
                     this._render({ shouldScrollToBottom });
+                    if (
+                        settings.provider === 'openai'
+                        && (
+                            (event.type === 'action_status' && event.status === 'completed')
+                            || event.type === 'done'
+                            || event.type === 'error'
+                        )
+                    ) {
+                        void this._refreshOpenAiCostSnapshot();
+                    }
                 },
             });
         } catch (error) {
@@ -1112,6 +1244,9 @@ class AiChatPanelController {
                 throw error;
             }
         } finally {
+            if (settings.provider === 'openai') {
+                await this._refreshOpenAiCostSnapshot();
+            }
             this._stopThinkingFeedback();
             if (this._activeChatAbortController !== abortController) {
                 throw new Error('AI chat abort controller changed during request');

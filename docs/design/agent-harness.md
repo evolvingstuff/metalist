@@ -72,6 +72,24 @@ memory under the authenticated session key: a browser refresh retains it, while
 logout, lock/session replacement, or process restart removes it. The raw key is
 never returned to the browser after configuration.
 
+Every completed OpenAI request also contributes its API-reported usage to a
+process-local cost tracker. The tracker separates ordinary uncached input, cached
+input, cache-write input, and output tokens, and applies the exact selected model's
+standard per-million-token prices. Requests above OpenAI's 272,000-input-token
+threshold use the documented long-context rates for the complete request. A
+structured validation retry is a separate billable request and is therefore
+recorded separately; an output-limit or other rejected finish reason is recorded
+before MetaList surfaces the failure. If an interrupted response never supplies a
+final usage object, MetaList cannot account for it, so the UI deliberately labels
+the total as estimated. Pricing constants were verified against the
+[OpenAI pricing documentation](https://developers.openai.com/api/docs/pricing) on
+2026-08-30.
+
+The aggregate exists only in the namespace server process. It is not written to
+SQLite, files, browser storage, chat history, or Agent Debug. An authenticated
+Reset action clears the dollar total and all four token counters; clearing the chat
+does not. Process restart also returns it to zero.
+
 The high-level route sees the canonical conversation, the base system prompt, and
 a trailing content-free `ROUTE_SELECTION_REQUEST` containing the exact current
 request plus the user-driven search query, scope kind/label, sort/date state,
@@ -185,7 +203,7 @@ to the model.
 - Pages greedily pack complete top-level result trees in frozen MetaList order to
   a provider-specific approximate serialized-input-token target (Ollama default
   5,000, configurable 500–24,000; OpenAI default 250,000, configurable
-  500–250,000),
+  500–500,000),
   with a separate provider-specific hard cap of 50 result trees by default
   (configurable 1–100). Tree counts therefore vary by page, and whichever bound is
   reached first starts the next page.
@@ -419,6 +437,10 @@ transient working state and do not enter later conversation context.
   separate approximate input-token count.
 - Hidden eye mode still shows one compact live Working indicator without exposing
   refinement/search details.
+- When OpenAI is selected, a compact tracker below the chat header shows estimated
+  spend plus new-input, cached-input, cache-write, and output token totals. It
+  refreshes after completed intermediate and final OpenAI calls and has an explicit
+  Reset button. Ollama does not display this cloud-cost tracker.
 - Agent Debug records frozen scope/counts, every exact provider request/response and
   retry, every full summary replacement, action arguments/reason, state transition,
   page/tool payload, source rehydration, timing, error, and final response. Every
@@ -443,7 +465,8 @@ transient working state and do not enter later conversation context.
   `app/services/agent/skill_settings.py`
 - Inference/debug: `app/services/agent/inference.py`,
   `app/services/agent/ollama_inference.py`,
-  `app/services/agent/openai_inference.py`, `app/services/agent/trace.py`
+  `app/services/agent/openai_inference.py`,
+  `app/services/agent/openai_cost_tracking.py`, `app/services/agent/trace.py`
 - OpenAI credentials: `app/services/openai_credentials.py`
 - Cloud privacy: `app/services/agent/cloud_privacy.py`
 - Scope UI: `app/static/js/modules/ai-chat/ai-chat-panel-controller.js`
@@ -452,8 +475,8 @@ transient working state and do not enter later conversation context.
 
 ## Deferred Seams
 
-- LiteLLM may wrap the provider-neutral inference seam if routing, fallbacks, or
-  cost accounting later justify the dependency.
+- LiteLLM may wrap the provider-neutral inference seam if routing or fallbacks
+  later justify the dependency.
 - Regex refinement requires a separate safe-engine/time/budget design.
 - Any note mutation requires new closed actions, permissions, confirmation UX, and
   tests; it must not be added by widening this read-only loop.

@@ -5,10 +5,31 @@ import {
     calculateAiChatMaximumWidth,
     calculateAiChatPanelWidth,
     collapseCompletedActivityPairs,
+    formatOpenAiCostUsd,
     formatCompactWorkingActivityLabel,
     splitSearchActivityLabel,
     parseAiChatNdjsonBuffer,
+    validateOpenAiCostSnapshot,
 } from '../../app/static/js/modules/ai-chat/ai-chat-panel-service.js';
+
+
+test('OpenAI cost display validates every token category and preserves small costs', () => {
+    const snapshot = {
+        estimated_cost_usd: 0.00438,
+        uncached_input_tokens: 700,
+        cached_input_tokens: 200,
+        cache_write_tokens: 100,
+        output_tokens: 50,
+    };
+
+    assert.equal(validateOpenAiCostSnapshot(snapshot), snapshot);
+    assert.equal(formatOpenAiCostUsd(0), '$0.00');
+    assert.equal(formatOpenAiCostUsd(snapshot.estimated_cost_usd), '$0.00438');
+    assert.throws(
+        () => validateOpenAiCostSnapshot({ ...snapshot, cached_input_tokens: -1 }),
+        /cached_input_tokens/,
+    );
+});
 
 
 test('chat resizer converts pointer position into clamped right-panel width', () => {

@@ -36,6 +36,8 @@ from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OPENAI_MODELS
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import validate_openai_model
+from app.services.agent.openai_cost_tracking import OpenAICostSnapshot
+from app.services.agent.openai_cost_tracking import openai_cost_tracker
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompt_settings import resolve_agent_prompt_set
@@ -125,6 +127,14 @@ class OpenAICredentialRequest(BaseModel):
 class OpenAICredentialStatusResponse(BaseModel):
     configured: bool
     persistent: bool
+
+
+class OpenAICostResponse(BaseModel):
+    estimated_cost_usd: float = Field(..., ge=0)
+    uncached_input_tokens: int = Field(..., ge=0)
+    cached_input_tokens: int = Field(..., ge=0)
+    cache_write_tokens: int = Field(..., ge=0)
+    output_tokens: int = Field(..., ge=0)
 
 
 class CloudPrivacyPreviewRequest(BaseModel):
@@ -371,6 +381,38 @@ def delete_openai_credential(
         configured=status.configured,
         persistent=status.persistent,
     )
+
+
+def _openai_cost_response(snapshot: OpenAICostSnapshot) -> OpenAICostResponse:
+    return OpenAICostResponse(
+        estimated_cost_usd=float(snapshot.estimated_cost_usd),
+        uncached_input_tokens=snapshot.uncached_input_tokens,
+        cached_input_tokens=snapshot.cached_input_tokens,
+        cache_write_tokens=snapshot.cache_write_tokens,
+        output_tokens=snapshot.output_tokens,
+    )
+
+
+@router.get("/openai/cost", response_model=OpenAICostResponse)
+def get_openai_cost(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> OpenAICostResponse:
+    del token
+    response.headers["Cache-Control"] = "no-store"
+    return _openai_cost_response(openai_cost_tracker.snapshot())
+
+
+@router.post("/openai/cost/reset", response_model=OpenAICostResponse)
+@transactional_route
+def reset_openai_cost(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> OpenAICostResponse:
+    del token
+    response.headers["Cache-Control"] = "no-store"
+    openai_cost_tracker.reset()
+    return _openai_cost_response(openai_cost_tracker.snapshot())
 
 
 @router.get("/prompts/defaults", response_model=AiPromptDefaultsResponse)
@@ -711,7 +753,10 @@ def stream_ai_chat(
                 runtime = agent_runtime
             else:
                 runtime = _agent_runtime(
-                    inference=OpenAIInferenceAdapter(api_key=openai_api_key)
+                    inference=OpenAIInferenceAdapter(
+                        api_key=openai_api_key,
+                        cost_tracker=openai_cost_tracker,
+                    )
                 )
             runtime_started_event = activity_timer.stamp(event={
                 "type": "action_status",

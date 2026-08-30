@@ -115,6 +115,38 @@
                 <button id="ai-chat-close" type="button" title="Close AI chat" aria-label="Close AI chat">×</button>
             </div>
         </header>
+        <section
+            id="ai-chat-openai-cost"
+            class="ai-chat-openai-cost"
+            aria-label="Estimated OpenAI API spend since last reset"
+            hidden
+        >
+            <div class="ai-chat-openai-cost-heading">
+                <div>
+                    <span>Estimated OpenAI spend</span>
+                    <strong id="ai-chat-openai-cost-amount">$0.00</strong>
+                </div>
+                <button id="ai-chat-openai-cost-reset" type="button">Reset</button>
+            </div>
+            <dl class="ai-chat-openai-cost-metrics">
+                <div>
+                    <dt>New input</dt>
+                    <dd id="ai-chat-openai-uncached-input-tokens">0</dd>
+                </div>
+                <div>
+                    <dt>Cached input</dt>
+                    <dd id="ai-chat-openai-cached-input-tokens">0</dd>
+                </div>
+                <div>
+                    <dt>Cache writes</dt>
+                    <dd id="ai-chat-openai-cache-write-tokens">0</dd>
+                </div>
+                <div>
+                    <dt>Output</dt>
+                    <dd id="ai-chat-openai-output-tokens">0</dd>
+                </div>
+            </dl>
+        </section>
         <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
         <form id="ai-chat-form" class="ai-chat-composer">
             <textarea

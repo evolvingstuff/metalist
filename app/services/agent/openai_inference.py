@@ -16,15 +16,17 @@ from pydantic import BaseModel
 from instructor.v2.core.client import AsyncInstructor
 
 from app.services.agent.inference import InferenceContextWindow
+from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
+from app.services.agent.openai_cost_tracking import OpenAICostTracker
+from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.ollama_inference import _InstructorTraceCapture
 from app.services.agent.ollama_inference import _attach_trace_capture
 from app.services.agent.ollama_inference import _create_structured_completion
 from app.services.agent.ollama_inference import _extract_reasoning
-from app.services.agent.ollama_inference import _extract_usage
 from app.services.agent.ollama_inference import _json_object
 from app.services.agent.ollama_inference import _structured_max_output_tokens
 
@@ -102,11 +104,88 @@ def _provider_error_message(exc: APIError) -> str:
     return f"OpenAI API request failed: {detail[:500]}"
 
 
+def _required_usage_integer(*, usage: dict[str, object], field_name: str) -> int:
+    if field_name not in usage:
+        raise TypeError(f"OpenAI usage omitted {field_name}")
+    value = usage[field_name]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise TypeError(f"OpenAI usage {field_name} must be a non-negative integer")
+    return value
+
+
+def _detail_usage_integer(*, details: dict[str, object], field_name: str) -> int:
+    if field_name not in details or details[field_name] is None:
+        return 0
+    value = details[field_name]
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise TypeError(f"OpenAI usage {field_name} must be a non-negative integer")
+    return value
+
+
+def _extract_openai_token_usage(raw_response: dict[str, object]) -> OpenAITokenUsage:
+    if "usage" not in raw_response:
+        raise TypeError("OpenAI response omitted usage")
+    raw_usage = raw_response["usage"]
+    if not isinstance(raw_usage, dict):
+        raise TypeError("OpenAI response usage must be an object")
+    raw_details: object = {}
+    if "prompt_tokens_details" in raw_usage:
+        raw_details = raw_usage["prompt_tokens_details"]
+    if raw_details is None:
+        raw_details = {}
+    if not isinstance(raw_details, dict):
+        raise TypeError("OpenAI prompt token details must be an object")
+    return OpenAITokenUsage(
+        prompt_tokens=_required_usage_integer(
+            usage=raw_usage,
+            field_name="prompt_tokens",
+        ),
+        cached_input_tokens=_detail_usage_integer(
+            details=raw_details,
+            field_name="cached_tokens",
+        ),
+        cache_write_tokens=_detail_usage_integer(
+            details=raw_details,
+            field_name="cache_write_tokens",
+        ),
+        output_tokens=_required_usage_integer(
+            usage=raw_usage,
+            field_name="completion_tokens",
+        ),
+        total_tokens=_required_usage_integer(
+            usage=raw_usage,
+            field_name="total_tokens",
+        ),
+    )
+
+
+def _record_captured_openai_usage(
+    *,
+    cost_tracker: OpenAICostTracker,
+    model: str,
+    attempts: list[InferenceAttempt],
+) -> None:
+    for attempt in attempts:
+        if not attempt.response:
+            continue
+        if "usage" not in attempt.response:
+            if attempt.error == "":
+                raise TypeError("Successful OpenAI structured response omitted usage")
+            continue
+        cost_tracker.record(
+            model=model,
+            usage=_extract_openai_token_usage(attempt.response),
+        )
+
+
 class OpenAIInferenceAdapter:
-    def __init__(self, *, api_key: str) -> None:
+    def __init__(self, *, api_key: str, cost_tracker: OpenAICostTracker) -> None:
         if not isinstance(api_key, str) or api_key == "":
             raise ValueError("OpenAI inference requires an API key")
+        if not isinstance(cost_tracker, OpenAICostTracker):
+            raise TypeError("OpenAI inference requires an OpenAI cost tracker")
         self._api_key = api_key
+        self._cost_tracker = cost_tracker
 
     @property
     def provider_label(self) -> str:
@@ -157,12 +236,19 @@ class OpenAIInferenceAdapter:
                 request_options={
                     "max_completion_tokens": _structured_max_output_tokens(response_model),
                     "reasoning_effort": reasoning_effort,
+                    "stream_options": {"include_usage": True},
                     "store": False,
                 },
             )
         # lint: allow-PY001 rationale="translate external OpenAI API failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
+        finally:
+            _record_captured_openai_usage(
+                cost_tracker=self._cost_tracker,
+                model=normalized_model,
+                attempts=capture.freeze(),
+            )
         if not isinstance(parsed, response_model):
             raise TypeError("Instructor returned the wrong structured response type")
         capture.record_success()
@@ -173,7 +259,7 @@ class OpenAIInferenceAdapter:
         return InferenceResponse(
             content=parsed.model_dump_json(),
             thinking=_extract_reasoning(raw_response),
-            usage=_extract_usage(raw_response),
+            usage=_extract_openai_token_usage(raw_response).as_inference_usage(),
             attempts=attempts,
         )
 
@@ -236,6 +322,9 @@ class OpenAIInferenceAdapter:
             )
             async for chunk in stream:
                 if chunk.usage is not None:
+                    usage_payload = chunk.usage.model_dump()
+                    usage = _extract_openai_token_usage({"usage": usage_payload})
+                    self._cost_tracker.record(model=normalized_model, usage=usage)
                     if finish_reason == "length":
                         raise OpenAIProviderError(
                             "OpenAI reached the maximum output-token limit before "
@@ -246,22 +335,7 @@ class OpenAIInferenceAdapter:
                             f"OpenAI ended the response with finish reason "
                             f"{finish_reason!r}"
                         )
-                    usage_payload = chunk.usage.model_dump()
-                    usage: dict[str, int] = {}
-                    for field_name in (
-                        "prompt_tokens",
-                        "completion_tokens",
-                        "total_tokens",
-                    ):
-                        if field_name not in usage_payload:
-                            continue
-                        value = usage_payload[field_name]
-                        if not isinstance(value, int):
-                            raise TypeError(
-                                f"OpenAI usage {field_name} must be an integer"
-                            )
-                        usage[field_name] = value
-                    yield {"type": "done", "usage": usage}
+                    yield {"type": "done", "usage": usage.as_inference_usage()}
                     did_finish = True
                     continue
                 for choice in chunk.choices:

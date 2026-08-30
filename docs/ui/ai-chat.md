@@ -107,7 +107,7 @@ not left to prompt compliance.
 - Evidence pages greedily pack complete result trees, in canonical order, to an
   approximate serialized-input-token target. Ollama defaults to 5,000 tokens and
   is configurable from 500–24,000. OpenAI defaults to 250,000 and is configurable
-  from 500–250,000. The providers have independent settings. Page 1 may therefore
+  from 500–500,000. The providers have independent settings. Page 1 may therefore
   contain many more roots than page 2 when page 2's roots are longer.
 - A separate hard cap allows at most 50 result trees per evidence page by default
   (configurable from 1–100). Whichever limit is reached first starts the next page.
@@ -166,6 +166,13 @@ for OpenAI.
   but receive a gray background until the pointer leaves chat.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
   Selection persists immediately; GPT-OSS does not offer Thinking Off.
+- Selecting OpenAI reveals a compact estimated-spend tracker directly below the
+  chat header. Its four token totals are New input, Cached input, Cache writes, and
+  Output. Values come from OpenAI's response usage rather than MetaList's prompt
+  estimator and update after each completed intermediate or final request. Reset
+  returns the process-local aggregate to `$0.00`; clearing chat does not. Nothing
+  from this tracker is persisted, and an interrupted request that never returns
+  final usage may be absent from the estimate.
 - MetaList lazily starts one owned Ollama daemon shared by namespaces at
   `127.0.0.1:11435` with `OLLAMA_CONTEXT_LENGTH=32768`, cloud/history/request-body
   logging disabled, and one parallel request.
@@ -249,6 +256,8 @@ notice; it is preserved but never applied until Save or Restore removes it.
 - Transcript/activity state lives only in server memory keyed by authenticated
   session token hash. Refresh rehydrates it; logout, auth reset, runtime lock, or
   restart clears it.
+- The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
+  refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.
   Scope, skills, summaries, facets, pages, actions, tool payloads, reasoning, and
   citations are transient.

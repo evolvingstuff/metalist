@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from types import SimpleNamespace
 
 import httpx
@@ -9,15 +10,67 @@ import pytest
 from openai import AsyncOpenAI
 
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import resolve_openai_reasoning_effort
 from app.services.agent.openai_inference import validate_openai_model
+from app.services.agent.openai_cost_tracking import OpenAICostTracker
 import app.services.agent.openai_inference as openai_inference_module
 
 
 _API_KEY = "sk-test-0123456789abcdefghijklmnop"
+
+
+def test_openai_structured_cost_records_every_completed_retry_attempt() -> None:
+    tracker = OpenAICostTracker()
+    attempts = [
+        InferenceAttempt(
+            request={},
+            response={
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 2,
+                    "total_tokens": 12,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 5,
+                        "cache_write_tokens": 0,
+                    },
+                }
+            },
+            error="ValidationError: invalid action",
+            duration_ms=1.0,
+        ),
+        InferenceAttempt(
+            request={},
+            response={
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 3,
+                    "total_tokens": 23,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 10,
+                        "cache_write_tokens": 2,
+                    },
+                }
+            },
+            error="",
+            duration_ms=1.0,
+        ),
+    ]
+
+    openai_inference_module._record_captured_openai_usage(
+        cost_tracker=tracker,
+        model="gpt-5.6-sol",
+        attempts=attempts,
+    )
+
+    snapshot = tracker.snapshot()
+    assert snapshot.uncached_input_tokens == 13
+    assert snapshot.cached_input_tokens == 15
+    assert snapshot.cache_write_tokens == 2
+    assert snapshot.output_tokens == 5
 
 
 class FakeInstructorClient:
@@ -54,6 +107,7 @@ class FakeInstructorClient:
             response_format=response_format,
             max_completion_tokens=kwargs["max_completion_tokens"],
             reasoning_effort=kwargs["reasoning_effort"],
+            stream_options=kwargs["stream_options"],
             store=kwargs["store"],
         )
         assert len(self.wire_request_hooks) == 1
@@ -67,6 +121,7 @@ class FakeInstructorClient:
                 "stream": True,
                 "max_completion_tokens": kwargs["max_completion_tokens"],
                 "reasoning_effort": kwargs["reasoning_effort"],
+                "stream_options": kwargs["stream_options"],
                 "store": kwargs["store"],
             },
         )
@@ -90,6 +145,10 @@ class FakeInstructorClient:
                     "prompt_tokens": 31,
                     "completion_tokens": 8,
                     "total_tokens": 39,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 10,
+                        "cache_write_tokens": 2,
+                    },
                 },
             },
         )
@@ -132,7 +191,11 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
 
     monkeypatch.setattr(instructor, "from_openai", fake_from_openai)
     progress_events: list[StructuredInferenceProgress] = []
-    adapter = OpenAIInferenceAdapter(api_key=_API_KEY)
+    cost_tracker = OpenAICostTracker()
+    adapter = OpenAIInferenceAdapter(
+        api_key=_API_KEY,
+        cost_tracker=cost_tracker,
+    )
 
     response = asyncio.run(
         adapter.infer_structured(
@@ -157,6 +220,7 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
     assert fake_client.create_kwargs["response_model"] is AgentRouteEnvelope
     assert fake_client.create_kwargs["max_completion_tokens"] == 512
     assert fake_client.create_kwargs["reasoning_effort"] == "medium"
+    assert fake_client.create_kwargs["stream_options"] == {"include_usage": True}
     assert fake_client.create_kwargs["store"] is False
     assert fake_client.is_closed is True
     assert response.content == (
@@ -166,7 +230,11 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
         "prompt_tokens": 31,
         "completion_tokens": 8,
         "total_tokens": 39,
+        "uncached_input_tokens": 19,
+        "cached_input_tokens": 10,
+        "cache_write_tokens": 2,
     }
+    assert cost_tracker.snapshot().estimated_cost_usd == Decimal("0.00025")
     wire_body = progress_events[0].wire_request["body"]
     assert wire_body["model"] == "gpt-5.6-sol"
     assert wire_body["store"] is False
@@ -202,6 +270,10 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
                         "prompt_tokens": 10,
                         "completion_tokens": 2,
                         "total_tokens": 12,
+                        "prompt_tokens_details": {
+                            "cached_tokens": 4,
+                            "cache_write_tokens": 1,
+                        },
                     }
                 ),
                 choices=[],
@@ -236,7 +308,11 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
             await self._http_client.aclose()
 
     monkeypatch.setattr(openai_inference_module, "AsyncOpenAI", FakeOpenAIClient)
-    adapter = OpenAIInferenceAdapter(api_key=_API_KEY)
+    cost_tracker = OpenAICostTracker()
+    adapter = OpenAIInferenceAdapter(
+        api_key=_API_KEY,
+        cost_tracker=cost_tracker,
+    )
     wire_requests: list[dict[str, object]] = []
 
     async def collect_events() -> list[dict[str, object]]:
@@ -267,9 +343,13 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
                 "prompt_tokens": 10,
                 "completion_tokens": 2,
                 "total_tokens": 12,
+                "uncached_input_tokens": 5,
+                "cached_input_tokens": 4,
+                "cache_write_tokens": 1,
             },
         },
     ]
+    assert cost_tracker.snapshot().estimated_cost_usd == Decimal("0.00000373")
     assert len(wire_requests) == 1
     assert wire_requests[0]["body"]["store"] is False
     assert _API_KEY not in str(wire_requests[0])
@@ -318,7 +398,11 @@ def test_openai_text_stream_rejects_output_limit_truncation(monkeypatch) -> None
             await self._http_client.aclose()
 
     monkeypatch.setattr(openai_inference_module, "AsyncOpenAI", FakeOpenAIClient)
-    adapter = OpenAIInferenceAdapter(api_key=_API_KEY)
+    cost_tracker = OpenAICostTracker()
+    adapter = OpenAIInferenceAdapter(
+        api_key=_API_KEY,
+        cost_tracker=cost_tracker,
+    )
 
     async def collect_events() -> list[dict[str, object]]:
         return [
@@ -338,6 +422,7 @@ def test_openai_text_stream_rejects_output_limit_truncation(monkeypatch) -> None
         match="maximum output-token limit",
     ):
         asyncio.run(collect_events())
+    assert cost_tracker.snapshot().output_tokens == 256
 
 
 def test_openai_models_and_reasoning_levels_are_strict() -> None:

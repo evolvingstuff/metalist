@@ -69,7 +69,7 @@ test('agent retrieval settings keep provider preferences independent', () => {
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters, '6000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters, '80000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage, '75'],
-        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '20000'],
+        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '500000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage, '125'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters, '24000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.idealNarrowedScopeApproximateTokens, '52000'],
@@ -89,7 +89,7 @@ test('agent retrieval settings keep provider preferences independent', () => {
         maxNoteCharacters: 6000,
         maxPageCharacters: 80000,
         maxNotesPerPage: 75,
-        maxPageApproximateTokens: 20000,
+        maxPageApproximateTokens: 500000,
         maxRankedTagsPerPage: 125,
         maxWorkingSummaryCharacters: 24000,
         idealNarrowedScopeApproximateTokens: 52000,
@@ -207,4 +207,15 @@ test('agent retrieval settings reject values outside bounded ranges', () => {
         maxWorkingSummaryCharacters: 8000,
         idealNarrowedScopeApproximateTokens: 500000,
     }, 'openai'), DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS);
+    assert.equal(validateAgentRetrievalSettings({
+        ...DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
+        maxPageApproximateTokens: 500000,
+    }, 'openai').maxPageApproximateTokens, 500000);
+    assert.throws(
+        () => validateAgentRetrievalSettings({
+            ...DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
+            maxPageApproximateTokens: 500001,
+        }, 'openai'),
+        /500 to 500000/,
+    );
 });

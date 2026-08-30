@@ -52,7 +52,7 @@ const AGENT_RETRIEVAL_LIMITS = Object.freeze({
     maximumNotesPerPage: 100,
     minimumPageApproximateTokens: 500,
     maximumOllamaPageApproximateTokens: 24000,
-    maximumOpenAiPageApproximateTokens: 250000,
+    maximumOpenAiPageApproximateTokens: 500000,
     minimumRankedTagsPerPage: 1,
     maximumRankedTagsPerPage: 200,
     minimumWorkingSummaryCharacters: 2000,

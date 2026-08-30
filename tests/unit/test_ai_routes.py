@@ -10,6 +10,8 @@ import app.api.routes.ai as ai_routes
 from app.services.ai_chat import AiChatSessionStore
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
+from app.services.agent.openai_cost_tracking import OpenAICostTracker
+from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 from app.services.ollama_provider import OllamaProviderError
@@ -295,6 +297,49 @@ def test_openai_credential_routes_use_authenticated_session(
     assert status_response.headers["Cache-Control"] == "no-store"
     assert save_response.headers["Cache-Control"] == "no-store"
     assert clear_response.headers["Cache-Control"] == "no-store"
+
+
+def test_openai_cost_routes_report_all_categories_and_reset(monkeypatch) -> None:
+    cost_tracker = OpenAICostTracker()
+    cost_tracker.record(
+        model="gpt-5.6-sol",
+        usage=OpenAITokenUsage(
+            prompt_tokens=1_000,
+            cached_input_tokens=200,
+            cache_write_tokens=100,
+            output_tokens=50,
+            total_tokens=1_050,
+        ),
+    )
+    monkeypatch.setattr(ai_routes, "openai_cost_tracker", cost_tracker)
+
+    get_response = Response()
+    snapshot = ai_routes.get_openai_cost(
+        response=get_response,
+        token="auth-token",
+    )
+    reset_response = Response()
+    reset_snapshot = ai_routes.reset_openai_cost(
+        response=reset_response,
+        token="auth-token",
+    )
+
+    assert snapshot.model_dump() == {
+        "estimated_cost_usd": 0.00438,
+        "uncached_input_tokens": 700,
+        "cached_input_tokens": 200,
+        "cache_write_tokens": 100,
+        "output_tokens": 50,
+    }
+    assert reset_snapshot.model_dump() == {
+        "estimated_cost_usd": 0.0,
+        "uncached_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "output_tokens": 0,
+    }
+    assert get_response.headers["Cache-Control"] == "no-store"
+    assert reset_response.headers["Cache-Control"] == "no-store"
 
 
 def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
@@ -853,8 +898,9 @@ def test_stream_chat_uses_openai_provider_without_starting_ollama(
             "pref.ai.openai.retrieval.max_page_approximate_tokens": "20000",
         },
     )
-    def fake_openai_adapter(*, api_key: str):
+    def fake_openai_adapter(*, api_key: str, cost_tracker):
         assert api_key == "sk-test-0123456789abcdefghijklmnop"
+        assert cost_tracker is ai_routes.openai_cost_tracker
         return inference_sentinel
 
     monkeypatch.setattr(ai_routes, "OpenAIInferenceAdapter", fake_openai_adapter)

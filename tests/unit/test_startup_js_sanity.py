@@ -145,3 +145,9 @@ def test_installed_distribution_js_scan_excludes_neighboring_packages(tmp_path: 
 
     assert relative_paths == ["app/static/js/main.js"]
     assert violations == []
+
+
+def test_repository_passes_startup_js_sanity() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+
+    assert_startup_js_sanity(repository_root)
