@@ -151,8 +151,9 @@ to the model.
 ### Note pages
 
 - Pages greedily pack complete top-level result trees in frozen MetaList order to
-  an approximate serialized-input-token target (default 5,000; configurable
-  500–24,000), with a separate hard cap of 50 result trees by default
+  a provider-specific approximate serialized-input-token target (Ollama default
+  5,000; OpenAI default 24,000; each independently configurable 500–24,000),
+  with a separate provider-specific hard cap of 50 result trees by default
   (configurable 1–100). Tree counts therefore vary by page, and whichever bound is
   reached first starts the next page.
 - A root tree is atomic and never crosses a page boundary. A single tree whose
@@ -162,6 +163,9 @@ to the model.
 - Each note returns bounded content (default 2,000 chars; 500–10,000), original
   content length, truncation state, exact user tags/tag bar, parent/root IDs, and
   ISO created/updated timestamps.
+- All retrieval limits are stored independently for Ollama and OpenAI. Selecting a
+  provider resolves only that provider's settings; changing OpenAI page sizing can
+  never alter the Ollama configuration, or vice versa.
 - Page cost includes the compact serialized JSON—not merely `content_text`—so IDs,
   tags, timestamps, hierarchy, keys, and punctuation consume the same budget.
 - `token_estimation.py` provides one deterministic provider-neutral estimate for
@@ -190,7 +194,7 @@ to the model.
 - `inspect_tag_facets`: inspect another deterministic facet page.
 - `backtrack`: restore a disclosed earlier subset.
 - `reopen_sources`: rehydrate 1–12 previously observed frozen records.
-- `answer`: declare sufficient evidence and select up to 12 observed source IDs for
+- `answer`: declare sufficient evidence and select up to 32 observed source IDs for
   authoritative final rehydration.
 
 ## Bounded Working Context
@@ -226,11 +230,15 @@ from:
 Prior raw pages, earlier summary versions, and abandoned tool transcripts are not
 appended. Agent Debug still records each exact wire request at the time it occurs.
 Every generation has a response-type ceiling: 512 tokens for routes, 2,048 for
-multi-page investigation steps, and 1,024 for legacy search-query preparation and
-final prose. Structured requests carry `max_tokens`; native final-response streams carry
-`options.num_predict`. Instructor partial streaming provides schema-aware parsing
-while live activity reports an approximate output-token count. These limits prevent
-malformed or repetitive output from generating without a practical bound.
+multi-page investigation steps, and 1,024 for legacy search-query preparation.
+Final prose is provider-specific: 1,024 tokens for Ollama and 8,192 for OpenAI.
+Structured requests carry their provider's output-token option; native
+final-response streams carry `options.num_predict` for Ollama or
+`max_completion_tokens` for OpenAI. OpenAI `finish_reason="length"` is a provider
+failure and can never be recorded as a completed partial answer. Instructor partial
+streaming provides schema-aware parsing while live activity reports an approximate
+output-token count. These limits prevent malformed or repetitive output from
+generating without a practical bound.
 
 On `answer`, `build_scoped_final_messages` receives the latest summary and newly
 serialized frozen source records selected by the model. Final note claims must be

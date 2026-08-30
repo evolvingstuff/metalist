@@ -50,6 +50,30 @@ function renderInstalledModelOptions(state) {
 }
 
 
+function retrievalStateFields(settings) {
+    const validated = validateAgentRetrievalSettings(settings);
+    return {
+        maxNoteCharacters: validated.maxNoteCharacters,
+        maxPageCharacters: validated.maxPageCharacters,
+        maxNotesPerPage: validated.maxNotesPerPage,
+        maxPageApproximateTokens: validated.maxPageApproximateTokens,
+        maxRankedTagsPerPage: validated.maxRankedTagsPerPage,
+        maxWorkingSummaryCharacters: validated.maxWorkingSummaryCharacters,
+    };
+}
+
+
+function retrievalSettingsKey(provider) {
+    if (provider === 'ollama') {
+        return 'ollamaRetrievalSettings';
+    }
+    if (provider === 'openai') {
+        return 'openAiRetrievalSettings';
+    }
+    throw new Error(`Unsupported AI provider: ${provider}`);
+}
+
+
 export class AiAgentSettingsModal extends BaseModal {
     constructor(readSettings, saveSettings) {
         super('aiAgentSettingsModal', 'ai-agent-settings-modal');
@@ -65,15 +89,19 @@ export class AiAgentSettingsModal extends BaseModal {
 
     getInitialModalState() {
         const settings = this._readSettings();
+        const retrievalSettings = settings.provider === 'openai'
+            ? settings.openAiRetrievalSettings
+            : settings.ollamaRetrievalSettings;
         return {
             provider: settings.provider,
             model: settings.model,
-            maxNoteCharacters: settings.maxNoteCharacters,
-            maxPageCharacters: settings.maxPageCharacters,
-            maxNotesPerPage: settings.maxNotesPerPage,
-            maxPageApproximateTokens: settings.maxPageApproximateTokens,
-            maxRankedTagsPerPage: settings.maxRankedTagsPerPage,
-            maxWorkingSummaryCharacters: settings.maxWorkingSummaryCharacters,
+            ollamaRetrievalSettings: retrievalStateFields(
+                settings.ollamaRetrievalSettings,
+            ),
+            openAiRetrievalSettings: retrievalStateFields(
+                settings.openAiRetrievalSettings,
+            ),
+            ...retrievalStateFields(retrievalSettings),
             installedModels: [],
             isLoadingModels: false,
             isLoadingCredential: false,
@@ -212,7 +240,7 @@ export class AiAgentSettingsModal extends BaseModal {
                         </select>
                     </label>
                     <fieldset class="ai-agent-retrieval-settings">
-                        <legend>Note retrieval limits</legend>
+                        <legend>${isOpenAi ? 'OpenAI' : 'Ollama'} note retrieval limits</legend>
                         <p>
                             Evidence pages pack complete result trees in user-visible order
                             up to an approximate input-token target. A result tree is never
@@ -324,11 +352,15 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!['ollama', 'openai'].includes(providerSelect.value)) {
                 throw new Error(`Unsupported AI provider: ${providerSelect.value}`);
             }
+            const nextRetrievalSettings = this.getModalState()[
+                retrievalSettingsKey(providerSelect.value)
+            ];
             this.updateModalState({
                 provider: providerSelect.value,
                 model: '',
                 installedModels: [],
                 error: '',
+                ...retrievalStateFields(nextRetrievalSettings),
             });
             this.renderModalContent();
             void this._loadProviderState();
@@ -355,34 +387,34 @@ export class AiAgentSettingsModal extends BaseModal {
             };
         }
         maxNoteCharactersInput.oninput = () => {
-            this.updateModalState({
-                maxNoteCharacters: Number(maxNoteCharactersInput.value),
-                error: '',
-            });
+            this._updateRetrievalSetting(
+                'maxNoteCharacters',
+                Number(maxNoteCharactersInput.value),
+            );
         };
         maxPageApproximateTokensInput.oninput = () => {
-            this.updateModalState({
-                maxPageApproximateTokens: Number(maxPageApproximateTokensInput.value),
-                error: '',
-            });
+            this._updateRetrievalSetting(
+                'maxPageApproximateTokens',
+                Number(maxPageApproximateTokensInput.value),
+            );
         };
         maxNotesPerPageInput.oninput = () => {
-            this.updateModalState({
-                maxNotesPerPage: Number(maxNotesPerPageInput.value),
-                error: '',
-            });
+            this._updateRetrievalSetting(
+                'maxNotesPerPage',
+                Number(maxNotesPerPageInput.value),
+            );
         };
         maxRankedTagsPerPageInput.oninput = () => {
-            this.updateModalState({
-                maxRankedTagsPerPage: Number(maxRankedTagsPerPageInput.value),
-                error: '',
-            });
+            this._updateRetrievalSetting(
+                'maxRankedTagsPerPage',
+                Number(maxRankedTagsPerPageInput.value),
+            );
         };
         maxWorkingSummaryCharactersInput.oninput = () => {
-            this.updateModalState({
-                maxWorkingSummaryCharacters: Number(maxWorkingSummaryCharactersInput.value),
-                error: '',
-            });
+            this._updateRetrievalSetting(
+                'maxWorkingSummaryCharacters',
+                Number(maxWorkingSummaryCharactersInput.value),
+            );
         };
         if (downloadButton instanceof HTMLButtonElement) {
             downloadButton.onclick = () => void this._handleDownload();
@@ -395,6 +427,23 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         saveButton.onclick = () => void this._handleSave();
         cancelButton.onclick = () => this.requestClose();
+    }
+
+    _updateRetrievalSetting(fieldName, value) {
+        const state = this.getModalState();
+        const settingsKey = retrievalSettingsKey(state.provider);
+        const providerSettings = state[settingsKey];
+        if (!providerSettings || typeof providerSettings !== 'object') {
+            throw new Error(`AI ${state.provider} retrieval settings missing`);
+        }
+        this.updateModalState({
+            [fieldName]: value,
+            [settingsKey]: {
+                ...providerSettings,
+                [fieldName]: value,
+            },
+            error: '',
+        });
     }
 
     onOpen() {
@@ -630,27 +679,28 @@ export class AiAgentSettingsModal extends BaseModal {
             this.renderModalContent();
             return;
         }
-        const retrievalCandidate = {
-            maxNoteCharacters: state.maxNoteCharacters,
-            maxPageCharacters: state.maxPageCharacters,
-            maxNotesPerPage: state.maxNotesPerPage,
-            maxPageApproximateTokens: state.maxPageApproximateTokens,
-            maxRankedTagsPerPage: state.maxRankedTagsPerPage,
-            maxWorkingSummaryCharacters: state.maxWorkingSummaryCharacters,
-        };
-        const validationMessage = getAgentRetrievalSettingsValidationMessage(
-            retrievalCandidate,
-        );
-        if (validationMessage !== '') {
-            this.updateModalState({ error: validationMessage });
-            this.renderModalContent();
-            return;
+        for (const provider of ['ollama', 'openai']) {
+            const providerSettings = state[retrievalSettingsKey(provider)];
+            const validationMessage = getAgentRetrievalSettingsValidationMessage(
+                providerSettings,
+            );
+            if (validationMessage !== '') {
+                this.updateModalState({
+                    error: `${provider === 'openai' ? 'OpenAI' : 'Ollama'}: ${validationMessage}`,
+                });
+                this.renderModalContent();
+                return;
+            }
         }
-        const retrievalSettings = validateAgentRetrievalSettings(retrievalCandidate);
         await this._saveSettings({
             provider: state.provider,
             model: state.model,
-            ...retrievalSettings,
+            ollamaRetrievalSettings: validateAgentRetrievalSettings(
+                state.ollamaRetrievalSettings,
+            ),
+            openAiRetrievalSettings: validateAgentRetrievalSettings(
+                state.openAiRetrievalSettings,
+            ),
         });
         this.close();
     }

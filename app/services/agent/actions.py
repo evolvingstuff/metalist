@@ -609,8 +609,11 @@ class InvestigationStep(_OllamaCompatibleSchemaModel):
     )
     answer_source_ids: list[str] = Field(
         ...,
-        max_length=12,
-        description="Used only for answer; emit an empty array otherwise.",
+        max_length=32,
+        description=(
+            "Used only for answer; include at most 32 observed authoritative "
+            "sources and emit an empty array otherwise."
+        ),
     )
     reason: str = Field(..., min_length=1, max_length=2_000)
     evidence_sufficiency: Literal[

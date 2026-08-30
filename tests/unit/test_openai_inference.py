@@ -184,7 +184,17 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
         async def __aiter__(self):
             yield SimpleNamespace(
                 usage=None,
-                choices=[SimpleNamespace(delta=SimpleNamespace(content="Hello"))],
+                choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content="Hello"),
+                    finish_reason=None,
+                )],
+            )
+            yield SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content=None),
+                    finish_reason="stop",
+                )],
             )
             yield SimpleNamespace(
                 usage=SimpleNamespace(
@@ -263,6 +273,71 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
     assert len(wire_requests) == 1
     assert wire_requests[0]["body"]["store"] is False
     assert _API_KEY not in str(wire_requests[0])
+
+
+def test_openai_text_stream_rejects_output_limit_truncation(monkeypatch) -> None:
+    class FakeStream:
+        async def __aiter__(self):
+            yield SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content="Partial response"),
+                    finish_reason=None,
+                )],
+            )
+            yield SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content=None),
+                    finish_reason="length",
+                )],
+            )
+            yield SimpleNamespace(
+                usage=SimpleNamespace(
+                    model_dump=lambda: {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 256,
+                        "total_tokens": 266,
+                    }
+                ),
+                choices=[],
+            )
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            del kwargs
+            return FakeStream()
+
+    class FakeOpenAIClient:
+        def __init__(self, *, api_key, base_url, http_client, max_retries) -> None:
+            del api_key, base_url, max_retries
+            self._http_client = http_client
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        async def close(self) -> None:
+            await self._http_client.aclose()
+
+    monkeypatch.setattr(openai_inference_module, "AsyncOpenAI", FakeOpenAIClient)
+    adapter = OpenAIInferenceAdapter(api_key=_API_KEY)
+
+    async def collect_events() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in adapter.stream_text(
+                base_url=OPENAI_API_BASE_URL,
+                model="gpt-5.6-sol",
+                thinking_level="off",
+                messages=[{"role": "user", "content": "Summarize"}],
+                max_output_tokens=256,
+                on_request=lambda request: None,
+            )
+        ]
+
+    with pytest.raises(
+        openai_inference_module.OpenAIProviderError,
+        match="maximum output-token limit",
+    ):
+        asyncio.run(collect_events())
 
 
 def test_openai_models_and_reasoning_levels_are_strict() -> None:

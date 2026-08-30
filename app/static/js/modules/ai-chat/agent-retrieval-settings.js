@@ -7,6 +7,17 @@ export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxWorkingSummaryCharacters: 'pref.ai.retrieval.max_working_summary_characters',
 });
 
+export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
+    maxNoteCharacters: 'pref.ai.openai.retrieval.max_note_characters',
+    maxPageCharacters: 'pref.ai.openai.retrieval.max_page_characters',
+    maxNotesPerPage: 'pref.ai.openai.retrieval.max_notes_per_page',
+    maxPageApproximateTokens: 'pref.ai.openai.retrieval.max_page_approximate_tokens',
+    maxRankedTagsPerPage: 'pref.ai.openai.retrieval.max_ranked_tags_per_page',
+    maxWorkingSummaryCharacters: (
+        'pref.ai.openai.retrieval.max_working_summary_characters'
+    ),
+});
+
 export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     maxNoteCharacters: 2000,
     maxPageCharacters: 20000,
@@ -14,6 +25,11 @@ export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     maxPageApproximateTokens: 5000,
     maxRankedTagsPerPage: 50,
     maxWorkingSummaryCharacters: 8000,
+});
+
+export const DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
+    ...DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+    maxPageApproximateTokens: 24000,
 });
 
 const AGENT_RETRIEVAL_LIMITS = Object.freeze({
@@ -118,42 +134,60 @@ export function getAgentRetrievalSettingsValidationMessage(settings) {
 }
 
 
-export function readAgentRetrievalSettings(getPreference) {
+export function readAgentRetrievalSettings(getPreference, provider) {
     if (typeof getPreference !== 'function') {
         throw new Error('readAgentRetrievalSettings requires getPreference');
     }
+    const { preferenceKeys, defaults } = providerRetrievalConfiguration(provider);
     return validateAgentRetrievalSettings({
         maxNoteCharacters: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNoteCharacters,
+            getPreference(preferenceKeys.maxNoteCharacters),
+            defaults.maxNoteCharacters,
             'Stored maximum note characters',
         ),
         maxPageCharacters: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageCharacters,
+            getPreference(preferenceKeys.maxPageCharacters),
+            defaults.maxPageCharacters,
             'Stored maximum total characters per result page',
         ),
         maxNotesPerPage: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxNotesPerPage,
+            getPreference(preferenceKeys.maxNotesPerPage),
+            defaults.maxNotesPerPage,
             'Stored maximum result trees per page',
         ),
         maxPageApproximateTokens: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxPageApproximateTokens,
+            getPreference(preferenceKeys.maxPageApproximateTokens),
+            defaults.maxPageApproximateTokens,
             'Stored approximate input tokens per evidence page',
         ),
         maxRankedTagsPerPage: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxRankedTagsPerPage,
+            getPreference(preferenceKeys.maxRankedTagsPerPage),
+            defaults.maxRankedTagsPerPage,
             'Stored maximum ranked tags per facet page',
         ),
         maxWorkingSummaryCharacters: parseStoredInteger(
-            getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters),
-            DEFAULT_AGENT_RETRIEVAL_SETTINGS.maxWorkingSummaryCharacters,
+            getPreference(preferenceKeys.maxWorkingSummaryCharacters),
+            defaults.maxWorkingSummaryCharacters,
             'Stored maximum working-summary characters',
         ),
     });
+}
+
+
+function providerRetrievalConfiguration(provider) {
+    if (provider === 'ollama') {
+        return {
+            preferenceKeys: AGENT_RETRIEVAL_PREFERENCE_KEYS,
+            defaults: DEFAULT_AGENT_RETRIEVAL_SETTINGS,
+        };
+    }
+    if (provider === 'openai') {
+        return {
+            preferenceKeys: OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
+            defaults: DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
+        };
+    }
+    throw new Error(`Unsupported agent retrieval provider: ${provider}`);
 }
 
 

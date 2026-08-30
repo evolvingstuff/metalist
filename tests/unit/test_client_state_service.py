@@ -150,6 +150,12 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.retrieval.max_page_approximate_tokens": "7000",
         "pref.ai.retrieval.max_ranked_tags_per_page": "50",
         "pref.ai.retrieval.max_working_summary_characters": "8000",
+        "pref.ai.openai.retrieval.max_note_characters": "6000",
+        "pref.ai.openai.retrieval.max_page_characters": "80000",
+        "pref.ai.openai.retrieval.max_notes_per_page": "75",
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "20000",
+        "pref.ai.openai.retrieval.max_ranked_tags_per_page": "125",
+        "pref.ai.openai.retrieval.max_working_summary_characters": "24000",
         "pref.ai.prompt.system": "Custom MetaList agent",
         "pref.ai.prompt.final_response": "FINAL\n{basis}",
         "pref.ai.prompt.tool_result": "TOOL {action_name}\n{payload_json}",
@@ -238,6 +244,7 @@ def test_save_client_preferences_rejects_invalid_ai_diagnostic_visibility(
         ("pref.ai.retrieval.max_ranked_tags_per_page", "201"),
         ("pref.ai.retrieval.max_working_summary_characters", "1999"),
         ("pref.ai.retrieval.max_working_summary_characters", "32001"),
+        ("pref.ai.openai.retrieval.max_page_approximate_tokens", "24001"),
     ],
 )
 def test_save_client_preferences_rejects_invalid_agent_retrieval_limits(

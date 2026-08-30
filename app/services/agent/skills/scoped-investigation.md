@@ -60,7 +60,8 @@ inactive sentinel: empty strings for `tag_expression`, `exact_text`, and
   dates, values, code, identifiers, or contradiction resolution. It cannot open
   unseen IDs.
 - `answer`: finish only when the requested evidence burden is met. Provide the
-  observed source IDs that should be rehydrated as authoritative final evidence.
+  observed source IDs that should be rehydrated as authoritative final evidence,
+  up to 32 IDs.
 
 Use the question's evidence burden:
 

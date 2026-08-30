@@ -823,6 +823,10 @@ def test_stream_chat_uses_openai_provider_without_starting_ollama(
             assert arguments["canonical_messages"] == [
                 {"role": "user", "content": "Hello"}
             ]
+            assert (
+                arguments["retrieval_settings"].max_page_approximate_tokens
+                == 20_000
+            )
             yield {
                 "type": "content_delta",
                 "text": "Hi from OpenAI",
@@ -841,7 +845,14 @@ def test_stream_chat_uses_openai_provider_without_starting_ollama(
         "get_session_key",
         lambda token: "session-key",
     )
-    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+    monkeypatch.setattr(
+        ai_routes,
+        "load_client_preferences",
+        lambda *, token: {
+            "pref.ai.retrieval.max_page_approximate_tokens": "7000",
+            "pref.ai.openai.retrieval.max_page_approximate_tokens": "20000",
+        },
+    )
     def fake_openai_adapter(*, api_key: str):
         assert api_key == "sk-test-0123456789abcdefghijklmnop"
         return inference_sentinel

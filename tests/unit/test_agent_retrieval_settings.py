@@ -2,17 +2,24 @@ import pytest
 
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.retrieval_settings import DEFAULT_AGENT_RETRIEVAL_SETTINGS
+from app.services.agent.retrieval_settings import DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
 from app.services.agent.retrieval_settings import MAX_NOTE_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_PAGE_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_NOTES_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
 
 
 def test_agent_retrieval_settings_use_bounded_defaults() -> None:
-    assert resolve_agent_retrieval_settings(preferences={}) == (
+    assert resolve_agent_retrieval_settings(preferences={}, provider="ollama") == (
         DEFAULT_AGENT_RETRIEVAL_SETTINGS
     )
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_note_characters == 2_000
@@ -21,10 +28,19 @@ def test_agent_retrieval_settings_use_bounded_defaults() -> None:
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens == 5_000
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_ranked_tags_per_page == 50
     assert DEFAULT_AGENT_RETRIEVAL_SETTINGS.max_working_summary_characters == 8_000
+    assert resolve_agent_retrieval_settings(
+        preferences={},
+        provider="openai",
+    ) == DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
+    assert (
+        DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS.max_page_approximate_tokens
+        == 24_000
+    )
 
 
 def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
     settings = resolve_agent_retrieval_settings(
+        provider="ollama",
         preferences={
             MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "4000",
             MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "30000",
@@ -43,6 +59,43 @@ def test_agent_retrieval_settings_resolve_namespace_preferences() -> None:
         max_ranked_tags_per_page=25,
         max_working_summary_characters=12_000,
     )
+
+
+def test_agent_retrieval_settings_keep_provider_preferences_independent() -> None:
+    preferences = {
+        MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "7000",
+        OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "6000",
+        OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "80000",
+        OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "75",
+        OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: "20000",
+        OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "125",
+        OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: "24000",
+    }
+
+    ollama = resolve_agent_retrieval_settings(
+        preferences=preferences,
+        provider="ollama",
+    )
+    openai = resolve_agent_retrieval_settings(
+        preferences=preferences,
+        provider="openai",
+    )
+
+    assert ollama.max_page_approximate_tokens == 7_000
+    assert ollama.max_note_characters == 2_000
+    assert openai == AgentRetrievalSettings(
+        max_note_characters=6_000,
+        max_page_characters=80_000,
+        max_notes_per_page=75,
+        max_page_approximate_tokens=20_000,
+        max_ranked_tags_per_page=125,
+        max_working_summary_characters=24_000,
+    )
+
+
+def test_agent_retrieval_settings_reject_unknown_provider() -> None:
+    with pytest.raises(ValueError, match="Unsupported agent retrieval provider"):
+        resolve_agent_retrieval_settings(preferences={}, provider="anthropic")
 
 
 @pytest.mark.parametrize(

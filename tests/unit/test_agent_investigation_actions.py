@@ -159,6 +159,28 @@ def test_investigation_step_schema_explains_inactive_action_sentinels() -> None:
     )
 
 
+def test_investigation_step_allows_32_final_answer_sources() -> None:
+    properties = InvestigationStep.model_json_schema()["properties"]
+
+    assert properties["source_ids"]["maxItems"] == 12
+    assert properties["answer_source_ids"]["maxItems"] == 32
+
+    payload = _payload()
+    payload["answer_source_ids"] = [f"note-{index}" for index in range(32)]
+
+    step = InvestigationStep.model_validate(payload)
+
+    assert len(step.answer_source_ids) == 32
+
+
+def test_investigation_step_rejects_33_final_answer_sources() -> None:
+    payload = _payload()
+    payload["answer_source_ids"] = [f"note-{index}" for index in range(33)]
+
+    with pytest.raises(ValidationError, match="at most 32 items"):
+        InvestigationStep.model_validate(payload)
+
+
 def test_investigation_step_still_validates_string_length_off_wire() -> None:
     payload = _payload()
     payload["reason"] = "x" * 2_001

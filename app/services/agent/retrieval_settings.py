@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 MAX_NOTE_CHARACTERS_PREFERENCE_KEY = "pref.ai.retrieval.max_note_characters"
@@ -17,6 +18,24 @@ MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY = (
 MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY = (
     "pref.ai.retrieval.max_working_summary_characters"
 )
+OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_note_characters"
+)
+OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_page_characters"
+)
+OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_notes_per_page"
+)
+OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_page_approximate_tokens"
+)
+OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_ranked_tags_per_page"
+)
+OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY = (
+    "pref.ai.openai.retrieval.max_working_summary_characters"
+)
 
 DEFAULT_MAX_NOTE_CHARACTERS = 2_000
 DEFAULT_MAX_PAGE_CHARACTERS = 20_000
@@ -24,6 +43,7 @@ DEFAULT_MAX_NOTES_PER_PAGE = 50
 DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS = 5_000
 DEFAULT_MAX_RANKED_TAGS_PER_PAGE = 50
 DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS = 8_000
+DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
 MIN_MAX_NOTE_CHARACTERS = 500
 MAX_MAX_NOTE_CHARACTERS = 10_000
 MIN_MAX_PAGE_CHARACTERS = 5_000
@@ -143,32 +163,35 @@ def validate_max_working_summary_characters_preference(value: str) -> str:
 def resolve_agent_retrieval_settings(
     *,
     preferences: dict[str, str],
+    provider: Literal["ollama", "openai"],
 ) -> AgentRetrievalSettings:
     if not isinstance(preferences, dict):
         raise TypeError("preferences must be a dict")
+    preference_keys = _preference_keys_for_provider(provider=provider)
+    defaults = _defaults_for_provider(provider=provider)
     raw_max_note_characters = preferences.get(
-        MAX_NOTE_CHARACTERS_PREFERENCE_KEY,
-        str(DEFAULT_MAX_NOTE_CHARACTERS),
+        preference_keys["max_note_characters"],
+        str(defaults.max_note_characters),
     )
     raw_max_notes_per_page = preferences.get(
-        MAX_NOTES_PER_PAGE_PREFERENCE_KEY,
-        str(DEFAULT_MAX_NOTES_PER_PAGE),
+        preference_keys["max_notes_per_page"],
+        str(defaults.max_notes_per_page),
     )
     raw_max_page_characters = preferences.get(
-        MAX_PAGE_CHARACTERS_PREFERENCE_KEY,
-        str(DEFAULT_MAX_PAGE_CHARACTERS),
+        preference_keys["max_page_characters"],
+        str(defaults.max_page_characters),
     )
     raw_max_page_approximate_tokens = preferences.get(
-        MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY,
-        str(DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS),
+        preference_keys["max_page_approximate_tokens"],
+        str(defaults.max_page_approximate_tokens),
     )
     raw_max_ranked_tags_per_page = preferences.get(
-        MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY,
-        str(DEFAULT_MAX_RANKED_TAGS_PER_PAGE),
+        preference_keys["max_ranked_tags_per_page"],
+        str(defaults.max_ranked_tags_per_page),
     )
     raw_max_working_summary_characters = preferences.get(
-        MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY,
-        str(DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS),
+        preference_keys["max_working_summary_characters"],
+        str(defaults.max_working_summary_characters),
     )
     validated_max_note_characters = validate_max_note_characters_preference(
         raw_max_note_characters
@@ -252,3 +275,60 @@ DEFAULT_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
     max_ranked_tags_per_page=DEFAULT_MAX_RANKED_TAGS_PER_PAGE,
     max_working_summary_characters=DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS,
 )
+
+DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
+    max_note_characters=DEFAULT_MAX_NOTE_CHARACTERS,
+    max_page_characters=DEFAULT_MAX_PAGE_CHARACTERS,
+    max_notes_per_page=DEFAULT_MAX_NOTES_PER_PAGE,
+    max_page_approximate_tokens=DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
+    max_ranked_tags_per_page=DEFAULT_MAX_RANKED_TAGS_PER_PAGE,
+    max_working_summary_characters=DEFAULT_MAX_WORKING_SUMMARY_CHARACTERS,
+)
+
+
+def _preference_keys_for_provider(
+    *,
+    provider: Literal["ollama", "openai"],
+) -> dict[str, str]:
+    if provider == "ollama":
+        return {
+            "max_note_characters": MAX_NOTE_CHARACTERS_PREFERENCE_KEY,
+            "max_page_characters": MAX_PAGE_CHARACTERS_PREFERENCE_KEY,
+            "max_notes_per_page": MAX_NOTES_PER_PAGE_PREFERENCE_KEY,
+            "max_page_approximate_tokens": (
+                MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+            ),
+            "max_ranked_tags_per_page": (
+                MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
+            ),
+            "max_working_summary_characters": (
+                MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+            ),
+        }
+    if provider == "openai":
+        return {
+            "max_note_characters": OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY,
+            "max_page_characters": OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY,
+            "max_notes_per_page": OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY,
+            "max_page_approximate_tokens": (
+                OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+            ),
+            "max_ranked_tags_per_page": (
+                OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
+            ),
+            "max_working_summary_characters": (
+                OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+            ),
+        }
+    raise ValueError(f"Unsupported agent retrieval provider: {provider}")
+
+
+def _defaults_for_provider(
+    *,
+    provider: Literal["ollama", "openai"],
+) -> AgentRetrievalSettings:
+    if provider == "ollama":
+        return DEFAULT_AGENT_RETRIEVAL_SETTINGS
+    if provider == "openai":
+        return DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
+    raise ValueError(f"Unsupported agent retrieval provider: {provider}")

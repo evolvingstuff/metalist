@@ -27,6 +27,12 @@ from app.services.agent.retrieval_settings import MAX_PAGE_CHARACTERS_PREFERENCE
 from app.services.agent.retrieval_settings import MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import validate_max_note_characters_preference
 from app.services.agent.retrieval_settings import validate_max_notes_per_page_preference
 from app.services.agent.retrieval_settings import validate_max_page_characters_preference
@@ -76,6 +82,18 @@ _ALLOWED_CLIENT_PREFERENCES = {
     ),
     MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: "agent_max_ranked_tags_per_page",
     MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: (
+        "agent_max_working_summary_characters"
+    ),
+    OPENAI_MAX_NOTE_CHARACTERS_PREFERENCE_KEY: "agent_max_note_characters",
+    OPENAI_MAX_PAGE_CHARACTERS_PREFERENCE_KEY: "agent_max_page_characters",
+    OPENAI_MAX_NOTES_PER_PAGE_PREFERENCE_KEY: "agent_max_notes_per_page",
+    OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
+        "agent_max_page_approximate_tokens"
+    ),
+    OPENAI_MAX_RANKED_TAGS_PER_PAGE_PREFERENCE_KEY: (
+        "agent_max_ranked_tags_per_page"
+    ),
+    OPENAI_MAX_WORKING_SUMMARY_CHARACTERS_PREFERENCE_KEY: (
         "agent_max_working_summary_characters"
     ),
     SYSTEM_PROMPT_PREFERENCE_KEY: "agent_system_prompt",

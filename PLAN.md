@@ -335,8 +335,10 @@ separate summarization inference call per page.
     from the ranked facet page.
 - Instructor continues to own every structured route/investigation call. Direct
   Ollama streaming remains limited to final prose.
-- Bound every generation over the wire (512 route; 1,024 query, investigation,
-  and final prose) and show a live approximate output-token count in eye mode.
+- Bound every generation over the wire (512 route; 2,048 investigation; 1,024
+  query; provider-specific final prose at 1,024 for Ollama and 8,192 for OpenAI)
+  and show a live approximate output-token count in eye mode. Treat provider
+  truncation as an explicit failure.
 - Use a flat required wire schema rather than a root union/reference layout, while
   preserving strong internal action models and semantic validators.
 - Version the prompt/skill override contract. Existing saved overrides targeting
@@ -450,11 +452,12 @@ Introduce focused services rather than putting scope logic in the FastAPI route:
 
 ## Configuration
 
-Retain the existing namespace-scoped controls:
+Retain namespace-scoped controls separately for Ollama and OpenAI:
 
 - maximum characters per note;
-- approximate serialized-input tokens per evidence page (default 5,000), with
-  greedy root-atomic packing and variable root counts;
+- approximate serialized-input tokens per evidence page (Ollama default 5,000;
+  OpenAI default 24,000), with greedy root-atomic packing and variable root
+  counts;
 
 Add:
 

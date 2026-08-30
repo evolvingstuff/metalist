@@ -246,14 +246,44 @@ class InvestigationState:
         return self.current_note_page()
 
     def reopen_sources(self, *, note_ids: list[str]) -> tuple[dict[str, object], ...]:
+        return self._rehydrate_observed_sources(
+            note_ids=note_ids,
+            maximum_note_ids=12,
+            operation_label="Source reopen",
+        )
+
+    def rehydrate_answer_sources(
+        self,
+        *,
+        note_ids: list[str],
+    ) -> tuple[dict[str, object], ...]:
+        return self._rehydrate_observed_sources(
+            note_ids=note_ids,
+            maximum_note_ids=32,
+            operation_label="Final answer source rehydration",
+        )
+
+    def _rehydrate_observed_sources(
+        self,
+        *,
+        note_ids: list[str],
+        maximum_note_ids: int,
+        operation_label: str,
+    ) -> tuple[dict[str, object], ...]:
+        if maximum_note_ids < 1:
+            raise ValueError("Source rehydration maximum must be positive")
+        if not isinstance(operation_label, str) or operation_label == "":
+            raise ValueError("Source rehydration operation label must be non-empty")
         if not isinstance(note_ids, list) or len(note_ids) == 0:
-            raise ValueError("Source reopen requires note ids")
-        if len(note_ids) > 12:
-            raise ValueError("Source reopen accepts at most 12 note ids")
+            raise ValueError(f"{operation_label} requires note ids")
+        if len(note_ids) > maximum_note_ids:
+            raise ValueError(
+                f"{operation_label} accepts at most {maximum_note_ids} note ids"
+            )
         if any(not isinstance(note_id, str) or note_id == "" for note_id in note_ids):
-            raise ValueError("Source reopen ids must be non-empty strings")
+            raise ValueError(f"{operation_label} ids must be non-empty strings")
         if len(set(note_ids)) != len(note_ids):
-            raise ValueError("Source reopen ids must be unique")
+            raise ValueError(f"{operation_label} ids must be unique")
         if not set(note_ids).issubset(self._observed_source_ids):
             raise ValueError("Sources must have been previously observed")
         character_limits = self._allocate_content_characters(

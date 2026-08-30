@@ -29,6 +29,7 @@ from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.retrieval_settings import DEFAULT_AGENT_RETRIEVAL_SETTINGS
 from app.services.agent.runtime import AgentRuntime
+from app.services.agent.runtime import _final_response_max_output_tokens
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skill_settings import AgentSkill
@@ -1891,3 +1892,10 @@ def test_agent_tools_redact_password_note_content() -> None:
         assert "correct horse battery staple" not in serialized_payload
         assert result.payload["notes"][0]["content_text"] == "[REDACTED: @password]"
         assert result.payload["notes"][0]["content_is_redacted"] is True
+
+
+def test_final_response_output_limit_is_provider_specific() -> None:
+    assert _final_response_max_output_tokens(provider_label="Ollama") == 1_024
+    assert _final_response_max_output_tokens(provider_label="OpenAI") == 8_192
+    with pytest.raises(ValueError, match="Unsupported inference provider"):
+        _final_response_max_output_tokens(provider_label="Unknown")

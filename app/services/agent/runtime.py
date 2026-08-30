@@ -65,7 +65,10 @@ from app.services.search_query import parse_search_query
 
 _MAX_ACTION_STEPS = 8
 _MAX_INVESTIGATION_STEPS = 16
-_FINAL_RESPONSE_MAX_OUTPUT_TOKENS = 1_024
+_FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
+    "Ollama": 1_024,
+    "OpenAI": 8_192,
+}
 _SearchClauseKey = tuple[
     frozenset[str],
     frozenset[str],
@@ -78,6 +81,12 @@ _SearchRequestKey = tuple[_SearchQueryKey, int]
 
 class AgentExecutionError(Exception):
     """Expected failure caused by provider/model output during an agent run."""
+
+
+def _final_response_max_output_tokens(*, provider_label: str) -> int:
+    if provider_label not in _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER:
+        raise ValueError(f"Unsupported inference provider: {provider_label}")
+    return _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER[provider_label]
 
 
 @dataclass(frozen=True, slots=True)
@@ -432,7 +441,7 @@ class AgentRuntime:
                         ),
                         approx_input_tokens=step_tokens,
                     )
-                    verified_sources = state.reopen_sources(
+                    verified_sources = state.rehydrate_answer_sources(
                         note_ids=step.answer_source_ids
                     )
                     self._trace_store.append_event(
@@ -1458,7 +1467,9 @@ class AgentRuntime:
                     model=model,
                     thinking_level=run.thinking_level,
                     messages=final_messages,
-                    max_output_tokens=_FINAL_RESPONSE_MAX_OUTPUT_TOKENS,
+                    max_output_tokens=_final_response_max_output_tokens(
+                        provider_label=self._provider_label
+                    ),
                     on_request=lambda wire_request, current_attempt=attempt: self._record_wire_request(
                         run=run,
                         purpose=InferencePurpose.FINAL_RESPONSE,

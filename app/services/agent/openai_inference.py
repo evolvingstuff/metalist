@@ -222,6 +222,7 @@ class OpenAIInferenceAdapter:
             max_retries=0,
         )
         did_finish = False
+        finish_reason = ""
         # lint: allow-PY001 rationale="OpenAI streaming and transport failures are external provider failures"
         try:
             stream = await client.chat.completions.create(
@@ -235,6 +236,16 @@ class OpenAIInferenceAdapter:
             )
             async for chunk in stream:
                 if chunk.usage is not None:
+                    if finish_reason == "length":
+                        raise OpenAIProviderError(
+                            "OpenAI reached the maximum output-token limit before "
+                            "finishing the response"
+                        )
+                    if finish_reason != "stop":
+                        raise OpenAIProviderError(
+                            f"OpenAI ended the response with finish reason "
+                            f"{finish_reason!r}"
+                        )
                     usage_payload = chunk.usage.model_dump()
                     usage: dict[str, int] = {}
                     for field_name in (
@@ -257,6 +268,19 @@ class OpenAIInferenceAdapter:
                     content = choice.delta.content
                     if content is not None and content != "":
                         yield {"type": "content_delta", "text": content}
+                    choice_finish_reason = choice.finish_reason
+                    if choice_finish_reason is None:
+                        continue
+                    if (
+                        not isinstance(choice_finish_reason, str)
+                        or choice_finish_reason == ""
+                    ):
+                        raise TypeError("OpenAI finish reason must be non-empty text")
+                    if finish_reason != "" and finish_reason != choice_finish_reason:
+                        raise OpenAIProviderError(
+                            "OpenAI returned conflicting stream finish reasons"
+                        )
+                    finish_reason = choice_finish_reason
         # lint: allow-PY001 rationale="translate external OpenAI stream failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc

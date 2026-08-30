@@ -581,7 +581,10 @@ def stream_ai_chat(
     preferences = load_client_preferences(token=token)
     prompts = resolve_agent_prompt_set(preferences=preferences)
     skills = resolve_agent_skill_set(preferences=preferences)
-    retrieval_settings = resolve_agent_retrieval_settings(preferences=preferences)
+    retrieval_settings = resolve_agent_retrieval_settings(
+        preferences=preferences,
+        provider=payload.provider,
+    )
     authoritative_active_tab_id = tab_state_store.get_active_tab_id()
     if payload.scope.active_tab_id != authoritative_active_tab_id:
         raise HTTPException(

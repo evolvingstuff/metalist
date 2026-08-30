@@ -55,6 +55,7 @@ import {
 } from '../ai-chat/ai-thinking-level-service.js';
 import {
     AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
@@ -668,14 +669,22 @@ class CommandPaletteController {
     }
 
     getAiSettings() {
-        const retrievalSettings = readAgentRetrievalSettings(
-            (key) => this._preferences.getRaw(key),
-        );
         const provider = this._getSelect(
             'pref.ai.provider',
             ['ollama', 'openai'],
             'ollama',
         );
+        const ollamaRetrievalSettings = readAgentRetrievalSettings(
+            (key) => this._preferences.getRaw(key),
+            'ollama',
+        );
+        const openAiRetrievalSettings = readAgentRetrievalSettings(
+            (key) => this._preferences.getRaw(key),
+            'openai',
+        );
+        const retrievalSettings = provider === 'openai'
+            ? openAiRetrievalSettings
+            : ollamaRetrievalSettings;
         const modelPreferenceKey = provider === 'openai'
             ? 'pref.ai.openai_model'
             : 'pref.ai.ollama_model';
@@ -687,6 +696,8 @@ class CommandPaletteController {
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
                 DEFAULT_AI_THINKING_LEVEL,
             ),
+            ollamaRetrievalSettings,
+            openAiRetrievalSettings,
             ...retrievalSettings,
         };
     }
@@ -792,7 +803,12 @@ class CommandPaletteController {
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI connection settings require model');
         }
-        const retrievalSettings = validateAgentRetrievalSettings(settings);
+        const ollamaRetrievalSettings = validateAgentRetrievalSettings(
+            settings.ollamaRetrievalSettings,
+        );
+        const openAiRetrievalSettings = validateAgentRetrievalSettings(
+            settings.openAiRetrievalSettings,
+        );
         const modelPreferenceKey = settings.provider === 'openai'
             ? 'pref.ai.openai_model'
             : 'pref.ai.ollama_model';
@@ -800,22 +816,40 @@ class CommandPaletteController {
             'pref.ai.provider': settings.provider,
             [modelPreferenceKey]: settings.model.trim(),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
-                retrievalSettings.maxNoteCharacters,
+                ollamaRetrievalSettings.maxNoteCharacters,
             ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters]: String(
-                retrievalSettings.maxPageCharacters,
+                ollamaRetrievalSettings.maxPageCharacters,
             ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
-                retrievalSettings.maxNotesPerPage,
+                ollamaRetrievalSettings.maxNotesPerPage,
             ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
-                retrievalSettings.maxPageApproximateTokens,
+                ollamaRetrievalSettings.maxPageApproximateTokens,
             ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage]: String(
-                retrievalSettings.maxRankedTagsPerPage,
+                ollamaRetrievalSettings.maxRankedTagsPerPage,
             ),
             [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
-                retrievalSettings.maxWorkingSummaryCharacters,
+                ollamaRetrievalSettings.maxWorkingSummaryCharacters,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNoteCharacters]: String(
+                openAiRetrievalSettings.maxNoteCharacters,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageCharacters]: String(
+                openAiRetrievalSettings.maxPageCharacters,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxNotesPerPage]: String(
+                openAiRetrievalSettings.maxNotesPerPage,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
+                openAiRetrievalSettings.maxPageApproximateTokens,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxRankedTagsPerPage]: String(
+                openAiRetrievalSettings.maxRankedTagsPerPage,
+            ),
+            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxWorkingSummaryCharacters]: String(
+                openAiRetrievalSettings.maxWorkingSummaryCharacters,
             ),
         });
         document.dispatchEvent(new CustomEvent(

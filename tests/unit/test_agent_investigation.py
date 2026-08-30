@@ -113,6 +113,33 @@ def _settings() -> AgentRetrievalSettings:
     )
 
 
+def _many_root_snapshot(*, count: int) -> ScopedSearchSnapshot:
+    note_ids = tuple(f"note-{index}" for index in range(count))
+    notes = {
+        note_id: _note(note_id, note_id, f"evidence {index}", (), index)
+        for index, note_id in enumerate(note_ids)
+    }
+    tree_nodes = {
+        note_id: FrozenScopedTreeNode(
+            note_id=note_id,
+            parent_id="",
+            root_note_id=note_id,
+            child_ids=(),
+        )
+        for note_id in note_ids
+    }
+    return ScopedSearchSnapshot(
+        run_id="run-many",
+        session_key="session-1",
+        descriptor=_snapshot().descriptor,
+        created_at="2026-08-29T00:00:00+00:00",
+        ordered_root_ids=note_ids,
+        ordered_note_ids=note_ids,
+        notes_by_id=MappingProxyType(notes),
+        tree_nodes_by_id=MappingProxyType(tree_nodes),
+    )
+
+
 def test_facets_count_unique_notes_and_result_trees_over_full_subset() -> None:
     state = InvestigationState.start(snapshot=_snapshot(), settings=_settings())
 
@@ -282,6 +309,29 @@ def test_reopen_sources_rejects_unobserved_and_duplicate_ids() -> None:
 
     reopened = state.reopen_sources(note_ids=["a-child"])
     assert reopened[0]["content_text"] == "lorem ipsum child"
+
+
+def test_final_answer_rehydration_accepts_32_sources_but_rejects_33() -> None:
+    snapshot = _many_root_snapshot(count=33)
+    settings = AgentRetrievalSettings(
+        max_note_characters=500,
+        max_page_characters=100_000,
+        max_notes_per_page=100,
+        max_page_approximate_tokens=24_000,
+        max_ranked_tags_per_page=2,
+        max_working_summary_characters=8_000,
+    )
+    state = InvestigationState.start(snapshot=snapshot, settings=settings)
+    page = state.current_note_page()
+    assert page.evidence_note_ids == snapshot.ordered_note_ids
+
+    rehydrated = state.rehydrate_answer_sources(
+        note_ids=list(snapshot.ordered_note_ids[:32])
+    )
+    assert len(rehydrated) == 32
+
+    with pytest.raises(ValueError, match="at most 32 note ids"):
+        state.rehydrate_answer_sources(note_ids=list(snapshot.ordered_note_ids))
 
 
 def test_page_next_fails_at_last_page() -> None:

@@ -135,6 +135,9 @@ test('AI agent settings expose bounded note retrieval controls', () => {
     assert.match(settingsModal, /id="ai-agent-max-working-summary-characters"/);
     assert.match(settingsModal, /A result tree is never/);
     assert.match(settingsModal, /search-redacted branches are excluded/);
+    assert.match(settingsModal, /\$\{isOpenAi \? 'OpenAI' : 'Ollama'\} note retrieval limits/);
+    assert.match(commandController, /openAiRetrievalSettings/);
+    assert.match(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
     assert.match(commandController, /maxNoteCharacters/);
     assert.match(commandController, /maxPageApproximateTokens/);

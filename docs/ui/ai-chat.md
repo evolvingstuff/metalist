@@ -2,21 +2,24 @@
 
 ## Scope
 
-- MetaList chats with one user-selected Ollama model through an authenticated,
-  application-owned agent runtime.
+- MetaList chats with one user-selected Ollama or OpenAI model through an
+  authenticated, application-owned agent runtime.
 - Every Send freezes the currently displayed MetaList result scope. The agent can
   investigate only matching notes inside that boundary; it cannot run a new
   namespace-wide search or escape to hidden notes.
 - The runtime is read-only. It cannot create, edit, move, tag, trash, or delete
   notes.
 - Instructor owns structured route/investigation calls. Final natural-language
-  prose streams directly from Ollama. LiteLLM and remote providers are deferred.
-- While Ollama generates, the active eye-mode panel shows an approximate output-token
+  prose streams directly from the selected provider; OpenAI requests disable
+  provider-side storage.
+- While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
 - Every generation is bounded over the wire: route selection uses 512 output tokens;
-  multi-page investigation steps use 2,048; query and final-response requests use
-  1,024.
+  multi-page investigation steps use 2,048; query requests use 1,024; final prose
+  uses 1,024 with Ollama and 8,192 with OpenAI. If OpenAI reports that this limit
+  truncated its output, the run fails visibly instead of presenting partial prose
+  as complete.
 
 ## Scope at Send
 
@@ -97,9 +100,10 @@ not left to prompt compliance.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
 - Evidence pages greedily pack complete result trees, in canonical order, to an
-  approximate serialized-input-token target. The default is 5,000 tokens and the
-  configurable range is 500–24,000; page 1 may therefore contain many more roots
-  than page 2 when page 2's roots are longer.
+  approximate serialized-input-token target. Ollama defaults to 5,000 tokens and
+  OpenAI defaults to 24,000; each provider has an independent configuration in AI
+  Agent Settings, with a range of 500–24,000. Page 1 may therefore contain many
+  more roots than page 2 when page 2's roots are longer.
 - A separate hard cap allows at most 50 result trees per evidence page by default
   (configurable from 1–100). Whichever limit is reached first starts the next page.
 - A root tree is never divided between pages. An individually oversized tree gets
