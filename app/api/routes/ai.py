@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 from collections.abc import AsyncIterator
@@ -27,7 +26,6 @@ from app.services.agent.cloud_privacy import cloud_privacy_evaluator
 from app.services.agent.cloud_privacy import resolve_cloud_privacy_boundary
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.model_policy import SingleModelPolicy
-from app.services.agent.ollama_inference import OllamaInferenceAdapter
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OPENAI_MODELS
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
@@ -52,13 +50,7 @@ from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
 from app.services.client_state_service import load_client_preferences
 from app.services.markdown_rendering import render_markdown_to_html
-from app.services.managed_ollama_runtime import ManagedOllamaRuntimeError
-from app.services.managed_ollama_runtime import managed_ollama_runtime
 from app.services.note_store import store as note_store
-from app.services.ollama_provider import OllamaProviderError
-from app.services.ollama_provider import ollama_provider
-from app.services.ollama_provider import resolve_ollama_think_value
-from app.services.ollama_provider import validate_ollama_model
 from app.services.openai_credentials import OpenAICredentialInputError
 from app.services.openai_credentials import openai_credential_store
 from app.services.openai_credentials import validate_openai_api_key
@@ -89,17 +81,10 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
     )
 
 
-agent_runtime = _agent_runtime(
-    inference=OllamaInferenceAdapter(provider=ollama_provider)
-)
-
-
-
-
 class AiModelsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["ollama", "openai"]
+    provider: Literal["openai"]
 
 
 class AiModelsResponse(BaseModel):
@@ -128,7 +113,7 @@ class OpenAICostResponse(BaseModel):
 class CloudPrivacyPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["ollama", "openai"]
+    provider: Literal["openai"]
     note_ids: list[str] = Field(..., max_length=20_000)
 
     @field_validator("note_ids")
@@ -163,22 +148,10 @@ class AiPromptDefaultsResponse(BaseModel):
     skills: list[AiSkillDefaultResponse]
 
 
-class AiModelPullRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    provider: Literal["ollama"]
-    model: str
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, value: str) -> str:
-        return validate_ollama_model(value)
-
-
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["ollama", "openai"]
+    provider: Literal["openai"]
     model: str
     thinking_level: Literal["off", "low", "medium", "high"]
     show_diagnostics: bool
@@ -202,14 +175,7 @@ class AiChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_thinking_level_for_model(self) -> Self:
-        if self.provider == "ollama":
-            validate_ollama_model(self.model)
-            resolve_ollama_think_value(
-                model=self.model,
-                thinking_level=self.thinking_level,
-            )
-        else:
-            validate_openai_model(self.model)
+        validate_openai_model(self.model)
         return self
 
 
@@ -239,7 +205,7 @@ class AiChatMessage(BaseModel):
     rendered_thinking: str
     status: Literal["complete", "streaming", "error"]
     error: str
-    provider: Literal["ollama", "openai"]
+    provider: Literal["openai"]
     model: str
     activities: list[AiChatActivity]
 
@@ -308,15 +274,8 @@ async def list_ai_models(
     payload: AiModelsRequest,
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> AiModelsResponse:
-    del token
-    if payload.provider == "openai":
-        return AiModelsResponse(models=list(OPENAI_MODELS))
-    try:
-        runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
-        models = await ollama_provider.list_models(base_url=runtime_info.base_url)
-    except (ManagedOllamaRuntimeError, OllamaProviderError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return AiModelsResponse(models=models)
+    del token, payload
+    return AiModelsResponse(models=list(OPENAI_MODELS))
 
 
 @router.get(
@@ -473,38 +432,6 @@ def preview_cloud_privacy(
         hidden_note_ids=[
             note_id for note_id in payload.note_ids if note_id in hidden_note_ids
         ]
-    )
-
-
-@router.post("/models/pull")
-@transactional_route
-def pull_ai_model(
-    payload: AiModelPullRequest,
-    token: Annotated[str, Depends(require_request_auth_token)],
-) -> StreamingResponse:
-    del token
-
-    async def stream_events() -> AsyncIterator[str]:
-        try:
-            runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
-            async for event in ollama_provider.stream_pull(
-                base_url=runtime_info.base_url,
-                model=payload.model,
-            ):
-                yield f"{json.dumps(event, separators=(',', ':'))}\n"
-        # lint: allow-PY001 rationale="pull errors must be delivered after response headers are sent"
-        except (ManagedOllamaRuntimeError, OllamaProviderError) as exc:
-            error_event = {"type": "error", "message": str(exc)}
-            yield f"{json.dumps(error_event, separators=(',', ':'))}\n"
-
-    return StreamingResponse(
-        stream_events(),
-        media_type="application/x-ndjson",
-        headers={
-            "X-Accel-Buffering": "no",
-            "Cache-Control": "no-store",
-            "Content-Encoding": "identity",
-        },
     )
 
 
@@ -666,21 +593,19 @@ def stream_ai_chat(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
-    openai_api_key = ""
-    if payload.provider == "openai":
-        credential_status = openai_credential_store.status(
-            token=token,
-            session_key=session_key,
+    credential_status = openai_credential_store.status(
+        token=token,
+        session_key=session_key,
+    )
+    if not credential_status.configured:
+        raise HTTPException(
+            status_code=409,
+            detail="OpenAI API key is not configured",
         )
-        if not credential_status.configured:
-            raise HTTPException(
-                status_code=409,
-                detail="OpenAI API key is not configured",
-            )
-        openai_api_key = openai_credential_store.resolve(
-            token=token,
-            session_key=session_key,
-        )
+    openai_api_key = openai_credential_store.resolve(
+        token=token,
+        session_key=session_key,
+    )
     preferences = load_client_preferences(token=token)
     prompts = resolve_agent_prompt_set(preferences=preferences)
     skills = resolve_agent_skill_set(preferences=preferences)
@@ -758,18 +683,9 @@ async def _stream_runtime_events(
     action, start_label = 'provider_runtime', 'Connecting to OpenAI API'
     ready_label = 'OpenAI API ready · 1,050,000-token context'
     base_url = OPENAI_API_BASE_URL
-    if payload.provider == 'ollama':
-        action = 'ollama_runtime'
-        start_label = 'Starting MetaList-managed Ollama · 32,768-token context'
-        runtime = agent_runtime
-    else:
-        runtime = _agent_runtime(inference=OpenAIInferenceAdapter(api_key=openai_api_key, cost_tracker=openai_cost_tracker))
+    runtime = _agent_runtime(inference=OpenAIInferenceAdapter(api_key=openai_api_key, cost_tracker=openai_cost_tracker))
     yield dict(type='action_status', action=action, status='started', label=start_label,
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
-    if payload.provider == 'ollama':
-        runtime_info = await asyncio.to_thread(managed_ollama_runtime.ensure_running)
-        base_url = runtime_info.base_url
-        ready_label = f'MetaList-managed Ollama ready · {runtime_info.context_tokens:,}-token context'
     yield dict(type='action_status', action=action, status='completed', label=ready_label,
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
     events = runtime.stream_scoped(session_key=session_key, base_url=base_url,

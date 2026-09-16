@@ -98,7 +98,7 @@ def _snapshot(*, large_tail: bool) -> ScopedSearchSnapshot:
 
 
 class _FakeInference:
-    provider_label = "Ollama"
+    provider_label = "OpenAI"
 
     def __init__(self, *, route_kind: str) -> None:
         self.route_kind = route_kind
@@ -196,7 +196,7 @@ def _runtime(inference: _FakeInference) -> AgentRuntime:
         permission_policy=AgentPermissionPolicy(),
         tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
-        provider_label="Ollama",
+        provider_label="OpenAI",
     )
 
 
@@ -213,8 +213,8 @@ def _events(
             async for event in _runtime(inference).stream_scoped(
                 tag_handler=None,
                 session_key="session-1",
-                base_url="http://127.0.0.1:11434",
-                selected_model="qwen2.5:7b-instruct",
+                base_url="https://api.openai.com/v1",
+                selected_model="gpt-5.6-sol",
                 thinking_level="off",
                 canonical_messages=[{"role": "user", "content": message}],
                 prompts=DEFAULT_AGENT_PROMPTS,

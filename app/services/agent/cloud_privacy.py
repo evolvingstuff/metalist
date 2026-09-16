@@ -16,7 +16,7 @@ from app.utils.text_utils import strip_html
 
 CLOUD_PRIVACY_POLICY_PREFERENCE_KEY = "pref.ai.cloud_privacy_policy"
 _CLOUD_PROVIDERS = frozenset({"openai"})
-_SUPPORTED_PROVIDERS = frozenset({"ollama", "openai"})
+_SUPPORTED_PROVIDERS = frozenset({"openai"})
 _MAX_POLICY_ENTRIES_PER_LIST = 200
 _MAX_POLICY_TAG_LENGTH = 256
 _MAX_POLICY_PHRASE_LENGTH = 500

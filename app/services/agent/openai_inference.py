@@ -23,12 +23,12 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
-from app.services.agent.ollama_inference import _InstructorTraceCapture
-from app.services.agent.ollama_inference import _attach_trace_capture
-from app.services.agent.ollama_inference import _create_structured_completion
-from app.services.agent.ollama_inference import _extract_reasoning
-from app.services.agent.ollama_inference import _json_object
-from app.services.agent.ollama_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import _InstructorTraceCapture
+from app.services.agent.structured_inference import _attach_trace_capture
+from app.services.agent.structured_inference import _create_structured_completion
+from app.services.agent.structured_inference import _extract_reasoning
+from app.services.agent.structured_inference import _json_object
+from app.services.agent.structured_inference import _structured_max_output_tokens
 
 
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"

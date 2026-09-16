@@ -1,26 +1,15 @@
-export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
-    maxPageApproximateTokens: 'pref.ai.retrieval.max_page_approximate_tokens',
-    taggingBatchTokens: 'pref.ai.tagging.batch_tokens',
-});
-
 export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxPageApproximateTokens: 'pref.ai.openai.retrieval.max_page_approximate_tokens',
     taggingBatchTokens: 'pref.ai.openai.tagging.batch_tokens',
 });
 
-export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
-    maxPageApproximateTokens: 5000,
-    taggingBatchTokens: 2000,
-});
-
 export const DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
-    maxPageApproximateTokens: 250000,
-    taggingBatchTokens: 8000,
+    maxPageApproximateTokens: 500000,
+    taggingBatchTokens: 100000,
 });
 
 const LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24000;
 const MINIMUM_PAGE_APPROXIMATE_TOKENS = 500;
-const MAXIMUM_OLLAMA_PAGE_APPROXIMATE_TOKENS = 24000;
 const MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS = 500000;
 
 
@@ -104,9 +93,6 @@ function parseStoredInteger(value, defaultValue) {
 
 
 function maximumForProvider(provider) {
-    if (provider === 'ollama') {
-        return MAXIMUM_OLLAMA_PAGE_APPROXIMATE_TOKENS;
-    }
     if (provider === 'openai') {
         return MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS;
     }
@@ -115,12 +101,6 @@ function maximumForProvider(provider) {
 
 
 function configurationForProvider(provider) {
-    if (provider === 'ollama') {
-        return {
-            preferenceKeys: AGENT_RETRIEVAL_PREFERENCE_KEYS,
-            defaults: DEFAULT_AGENT_RETRIEVAL_SETTINGS,
-        };
-    }
     if (provider === 'openai') {
         return {
             preferenceKeys: OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,

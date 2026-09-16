@@ -20,27 +20,16 @@ export function validateAiThinkingLevel(thinkingLevel) {
 }
 
 
-export function isGptOssModel(model) {
-    if (typeof model !== 'string') {
-        throw new Error('isGptOssModel requires model string');
-    }
-    return model.trim().toLowerCase().startsWith('gpt-oss');
-}
-
-
 export function isThinkingLevelAvailableForModel({ model, thinkingLevel }) {
-    validateAiThinkingLevel(thinkingLevel);
-    if (isGptOssModel(model) && thinkingLevel === 'off') {
-        return false;
+    if (typeof model !== 'string') {
+        throw new Error('Thinking level requires model string');
     }
+    validateAiThinkingLevel(thinkingLevel);
     return true;
 }
 
 
 export function normalizeThinkingLevelForModel({ model, thinkingLevel }) {
-    const validated = validateAiThinkingLevel(thinkingLevel);
-    if (!isThinkingLevelAvailableForModel({ model, thinkingLevel: validated })) {
-        return DEFAULT_AI_THINKING_LEVEL;
-    }
-    return validated;
+    isThinkingLevelAvailableForModel({ model, thinkingLevel });
+    return validateAiThinkingLevel(thinkingLevel);
 }

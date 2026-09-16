@@ -138,7 +138,6 @@ export const CONFIG = {
         },
         AI: {
             MODELS: `${API_AI_BASE}/models`,
-            PULL_MODEL: `${API_AI_BASE}/models/pull`,
             OPENAI_CREDENTIAL: `${API_AI_BASE}/openai/credential`,
             OPENAI_COST: `${API_AI_BASE}/openai/cost`,
             OPENAI_COST_RESET: `${API_AI_BASE}/openai/cost/reset`,

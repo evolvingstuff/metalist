@@ -6,20 +6,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
-    "pref.ai.retrieval.max_page_approximate_tokens"
-)
 OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
     "pref.ai.openai.retrieval.max_page_approximate_tokens"
 )
 
-DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS = 5_000
-DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 250_000
-DEFAULT_TAGGING_BATCH_TOKENS = 2_000
-DEFAULT_OPENAI_TAGGING_BATCH_TOKENS = 8_000
+DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 500_000
+DEFAULT_OPENAI_TAGGING_BATCH_TOKENS = 100_000
 LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
 MIN_MAX_PAGE_APPROXIMATE_TOKENS = 500
-MAX_OLLAMA_PAGE_APPROXIMATE_TOKENS = 24_000
 MAX_OPENAI_PAGE_APPROXIMATE_TOKENS = 500_000
 
 
@@ -38,19 +32,7 @@ class AgentRetrievalSettings:
         )
 
 
-def validate_max_page_approximate_tokens_preference(value: str) -> str:
-    return _validate_integer_preference(
-        value=value,
-        label="Agent approximate tokens per evidence payload preference",
-        minimum=MIN_MAX_PAGE_APPROXIMATE_TOKENS,
-        maximum=MAX_OLLAMA_PAGE_APPROXIMATE_TOKENS,
-    )
-
-
 def resolve_tagging_batch_tokens(preferences: dict[str, str], provider: str) -> int:
-    if provider == "ollama":
-        return int(validate_max_page_approximate_tokens_preference(
-            preferences.get("pref.ai.tagging.batch_tokens", str(DEFAULT_TAGGING_BATCH_TOKENS))))
     if provider == "openai":
         return int(validate_openai_max_page_approximate_tokens_preference(
             preferences.get("pref.ai.openai.tagging.batch_tokens", str(DEFAULT_OPENAI_TAGGING_BATCH_TOKENS))))
@@ -69,7 +51,7 @@ def validate_openai_max_page_approximate_tokens_preference(value: str) -> str:
 def resolve_agent_retrieval_settings(
     *,
     preferences: dict[str, str],
-    provider: Literal["ollama", "openai"],
+    provider: Literal["openai"],
 ) -> AgentRetrievalSettings:
     if not isinstance(preferences, dict):
         raise TypeError("preferences must be a dict")
@@ -84,9 +66,7 @@ def resolve_agent_retrieval_settings(
         and raw_value == str(LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS)
     ):
         raw_value = str(DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS)
-    validator = validate_max_page_approximate_tokens_preference
-    if provider == "openai":
-        validator = validate_openai_max_page_approximate_tokens_preference
+    validator = validate_openai_max_page_approximate_tokens_preference
     return AgentRetrievalSettings(
         max_page_approximate_tokens=int(validator(raw_value)),
     )
@@ -129,7 +109,7 @@ def _validate_integer_range(
 
 
 DEFAULT_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
-    max_page_approximate_tokens=DEFAULT_MAX_PAGE_APPROXIMATE_TOKENS,
+    max_page_approximate_tokens=DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
 )
 DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
     max_page_approximate_tokens=DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
@@ -138,10 +118,8 @@ DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
 
 def _preference_key_for_provider(
     *,
-    provider: Literal["ollama", "openai"],
+    provider: Literal["openai"],
 ) -> str:
-    if provider == "ollama":
-        return MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
     if provider == "openai":
         return OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
     raise ValueError(f"Unsupported agent retrieval provider: {provider}")
@@ -149,10 +127,8 @@ def _preference_key_for_provider(
 
 def _default_for_provider(
     *,
-    provider: Literal["ollama", "openai"],
+    provider: Literal["openai"],
 ) -> AgentRetrievalSettings:
-    if provider == "ollama":
-        return DEFAULT_AGENT_RETRIEVAL_SETTINGS
     if provider == "openai":
         return DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
     raise ValueError(f"Unsupported agent retrieval provider: {provider}")

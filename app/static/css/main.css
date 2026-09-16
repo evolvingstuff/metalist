@@ -3238,7 +3238,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-weight: 600;
 }
 
-.ai-agent-managed-runtime {
+.ai-agent-connection {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: 3px 12px;
@@ -3250,7 +3250,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     color: #155e75;
 }
 
-.ai-agent-managed-runtime > span {
+.ai-agent-connection > span {
     grid-row: 1 / 3;
     font-size: 12px;
     font-weight: 700;
@@ -3258,11 +3258,11 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     text-transform: uppercase;
 }
 
-.ai-agent-managed-runtime > strong {
+.ai-agent-connection > strong {
     font-size: 14px;
 }
 
-.ai-agent-managed-runtime > small {
+.ai-agent-connection > small {
     color: #0e7490;
 }
 
@@ -3335,7 +3335,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 .ai-agent-settings-controls input,
 .ai-agent-settings-controls select,
 .ai-agent-settings-controls textarea,
-.ai-agent-model-download-row input {
+.ai-agent-credential-row input {
     width: 100%;
     box-sizing: border-box;
     padding: 9px 10px;
@@ -3354,31 +3354,31 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     line-height: 1.45;
 }
 
-.ai-agent-model-download {
+.ai-agent-credential {
     margin-top: 18px;
     padding-top: 16px;
     border-top: 1px solid #e2e8f0;
 }
 
-.ai-agent-model-download h3 {
+.ai-agent-credential h3 {
     margin: 0 0 6px;
     font-size: 16px;
 }
 
-.ai-agent-model-download > p {
+.ai-agent-credential > p {
     margin: 0 0 12px;
     color: #64748b;
     line-height: 1.45;
 }
 
-.ai-agent-model-download-row {
+.ai-agent-credential-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
     gap: 10px;
 }
 
-.ai-agent-model-download-row label {
+.ai-agent-credential-row label {
     display: grid;
     gap: 6px;
     color: #334155;
@@ -3386,16 +3386,11 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-weight: 600;
 }
 
-.ai-agent-model-download-row button {
+.ai-agent-credential-row button {
     min-height: 40px;
 }
 
-.ai-agent-model-download progress {
-    width: 100%;
-    margin-top: 12px;
-}
-
-.ai-agent-download-status {
+.ai-agent-credential-status {
     min-height: 1.4em;
     margin-top: 6px !important;
 }
@@ -3550,19 +3545,19 @@ html[data-theme="dark"] .ai-chat-composer textarea,
 html[data-theme="dark"] .ai-agent-settings-controls input,
 html[data-theme="dark"] .ai-agent-settings-controls select,
 html[data-theme="dark"] .ai-agent-settings-controls textarea,
-html[data-theme="dark"] .ai-agent-model-download-row input {
+html[data-theme="dark"] .ai-agent-credential-row input {
     border-color: #475569;
     background: #0f172a;
     color: #e5e7eb;
 }
 
-html[data-theme="dark"] .ai-agent-managed-runtime {
+html[data-theme="dark"] .ai-agent-connection {
     border-color: #0e7490;
     background: #083344;
     color: #cffafe;
 }
 
-html[data-theme="dark"] .ai-agent-managed-runtime > small {
+html[data-theme="dark"] .ai-agent-connection > small {
     color: #67e8f9;
 }
 
@@ -3592,11 +3587,11 @@ html[data-theme="dark"] .ai-agent-cloud-privacy-settings > p {
     color: #94a3b8;
 }
 
-html[data-theme="dark"] .ai-agent-model-download {
+html[data-theme="dark"] .ai-agent-credential {
     border-color: #334155;
 }
 
-html[data-theme="dark"] .ai-agent-model-download-row label {
+html[data-theme="dark"] .ai-agent-credential-row label {
     color: #cbd5e1;
 }
 

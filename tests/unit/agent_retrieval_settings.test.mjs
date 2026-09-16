@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-    AGENT_RETRIEVAL_PREFERENCE_KEYS,
-    DEFAULT_AGENT_RETRIEVAL_SETTINGS,
     DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
     OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
     readAgentRetrievalSettings,
@@ -12,29 +10,21 @@ import {
 
 
 test('retrieval settings contain evidence and tagging token limits', () => {
-    assert.deepEqual(DEFAULT_AGENT_RETRIEVAL_SETTINGS, {
-        maxPageApproximateTokens: 5000,
-        taggingBatchTokens: 2000,
-    });
     assert.deepEqual(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS, {
-        maxPageApproximateTokens: 250000,
-        taggingBatchTokens: 8000,
+        maxPageApproximateTokens: 500000,
+        taggingBatchTokens: 100000,
     });
 });
 
 
-test('provider-specific evidence limits read independently', () => {
+test('retired local settings do not affect OpenAI limits', () => {
     const values = new Map([
-        [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '7000'],
+        ['pref.ai.retrieval.max_page_approximate_tokens', '7000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '500000'],
-        [AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens, '3000'],
+        ['pref.ai.tagging.batch_tokens', '3000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens, '12000'],
     ]);
     const getPreference = (key) => values.get(key) ?? null;
-    assert.deepEqual(readAgentRetrievalSettings(getPreference, 'ollama'), {
-        maxPageApproximateTokens: 7000,
-        taggingBatchTokens: 3000,
-    });
     assert.deepEqual(readAgentRetrievalSettings(getPreference, 'openai'), {
         maxPageApproximateTokens: 500000,
         taggingBatchTokens: 12000,

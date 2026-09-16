@@ -13,7 +13,6 @@ from app.services.markdown_rendering import render_markdown_to_html
 from app.services.runtime_generation import register_current_task, unregister_task
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.inference import InferenceProviderError
-from app.services.managed_ollama_runtime import ManagedOllamaRuntimeError
 
 
 def event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
@@ -108,7 +107,7 @@ class ChatTurnStream:
             async for event in source:
                 yield json.dumps(self.transform(event), separators=(',', ':')) + '\n'
         # lint: allow-PY001 rationale="expected provider/network failures must be delivered after response headers"
-        except (AgentExecutionError, InferenceProviderError, ManagedOllamaRuntimeError) as exc:
+        except (AgentExecutionError, InferenceProviderError) as exc:
             if not self.is_streaming():
                 raise
             self.fail(str(exc))

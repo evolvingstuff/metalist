@@ -15,7 +15,7 @@ from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
-from app.services.ollama_provider import OllamaProviderError
+from app.services.agent.inference import InferenceProviderError
 from app.services.openai_credentials import OpenAICredentialStatus
 
 
@@ -66,15 +66,9 @@ def _without_activity_token_counts(
 
 
 @pytest.fixture(autouse=True)
-def use_fake_managed_ollama_runtime(monkeypatch):
-    class FakeManagedRuntime:
-        def ensure_running(self):
-            return SimpleNamespace(
-                base_url="http://127.0.0.1:11435",
-                context_tokens=32_768,
-            )
-
-    monkeypatch.setattr(ai_routes, "managed_ollama_runtime", FakeManagedRuntime())
+def use_fake_chat_dependencies(monkeypatch):
+    monkeypatch.setattr(ai_routes.openai_credential_store, "status", lambda **kwargs: OpenAICredentialStatus(configured=True, persistent=False))
+    monkeypatch.setattr(ai_routes.openai_credential_store, "resolve", lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
     monkeypatch.setattr(
         ai_routes.tab_state_store,
         "get_active_tab_id",
@@ -107,15 +101,15 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Hello",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     store.append_activity(
         session_key="session-key",
         turn_id=turn_id,
         action="model_request",
         status="started",
-        label="Waiting for Ollama",
+        label="Waiting for OpenAI",
         approx_input_tokens=1_234,
         output_tokens_received=0,
         duration_ms=12.5,
@@ -142,7 +136,7 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
             "sequence": 1,
             "action": "model_request",
             "status": "started",
-            "label": "Waiting for Ollama",
+            "label": "Waiting for OpenAI",
                     "approx_input_tokens": 1_234,
                     "output_tokens_received": 0,
                     "duration_ms": 12.5,
@@ -179,7 +173,7 @@ def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
     assert http_response.headers["Cache-Control"] == "no-store"
 
 
-def test_openai_model_discovery_does_not_start_ollama() -> None:
+def test_openai_model_discovery_returns_supported_models() -> None:
     response = asyncio.run(
         ai_routes.list_ai_models(
             payload=ai_routes.AiModelsRequest(provider="openai"),
@@ -374,8 +368,8 @@ def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) ->
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Explain it",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     store.append_delta(
         session_key="session-key",
@@ -441,8 +435,8 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Summarize it",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     store.append_delta(
         session_key="session-key",
@@ -478,8 +472,8 @@ def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> N
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Give me a link",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     store.append_delta(
         session_key="session-key",
@@ -513,8 +507,8 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Explain it",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     raw_markdown = "# Result\n\nInline math: $x^2$."
     store.append_delta(
@@ -580,8 +574,8 @@ def test_copy_ai_response_rejects_user_message(monkeypatch) -> None:
     store.start_turn(
         session_key="session-key",
         user_content="Do not copy me",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     user_message_id = store.snapshot(session_key="session-key")["messages"][0]["id"]
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
@@ -602,8 +596,8 @@ def test_copy_ai_response_rejects_streaming_message(monkeypatch) -> None:
     turn_id = store.start_turn(
         session_key="session-key",
         user_content="Wait for it",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
@@ -624,17 +618,17 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
     store.start_turn(
         session_key="session-a",
         user_content="A",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     store.start_turn(
         session_key="session-b",
         user_content="B",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     traces.set_exact_details_enabled(session_key="session-a", enabled=True)
-    traces.start_run(session_key="session-a", model="qwen3:8b", user_message="A")
+    traces.start_run(session_key="session-a", model="gpt-5.6-sol", user_message="A")
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "agent_trace_store", traces)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-a")
@@ -660,7 +654,7 @@ def test_debug_trace_defaults_to_exact_details_and_can_hide_them_afterward(monke
 
     run_id = traces.start_run(
         session_key="session-a",
-        model="qwen3:8b",
+        model="gpt-5.6-sol",
         user_message="Why did this fail?",
     )
     traces.fail_run(
@@ -709,8 +703,8 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             tag_handler,
         ):
             assert session_key == "session-key"
-            assert base_url == "http://127.0.0.1:11435"
-            assert selected_model == "qwen3:8b"
+            assert base_url == "https://api.openai.com/v1"
+            assert selected_model == "gpt-5.6-sol"
             assert thinking_level == "low"
             assert canonical_messages == [{"role": "user", "content": "Hello"}]
             assert prompts.system_prompt == "Custom system prompt"
@@ -738,21 +732,21 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             yield {"type": "done", "reference_note_ids": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "agent_runtime", FakeRuntime())
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
     monkeypatch.setattr(
         ai_routes,
         "load_client_preferences",
         lambda *, token: {
             SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt",
-            "pref.ai.retrieval.max_page_approximate_tokens": "7000",
+            "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
         },
     )
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
-            provider="ollama",
-            model="qwen3:8b",
+            provider="openai",
+            model="gpt-5.6-sol",
             thinking_level="low",
             show_diagnostics=True,
             message="Hello",
@@ -775,15 +769,15 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     assert _without_activity_token_counts(events) == [
         {
             "type": "action_status",
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "started",
-            "label": "Starting MetaList-managed Ollama · 32,768-token context",
+            "label": "Connecting to OpenAI API",
         },
         {
             "type": "action_status",
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "completed",
-            "label": "MetaList-managed Ollama ready · 32,768-token context",
+            "label": "OpenAI API ready · 1,050,000-token context",
         },
         {
             "type": "action_status",
@@ -816,14 +810,14 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         snapshot["messages"][1]["activities"]
     ) == [
         {
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "started",
-            "label": "Starting MetaList-managed Ollama · 32,768-token context",
+            "label": "Connecting to OpenAI API",
         },
         {
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "completed",
-            "label": "MetaList-managed Ollama ready · 32,768-token context",
+            "label": "OpenAI API ready · 1,050,000-token context",
         },
         {
             "action": "planning",
@@ -833,13 +827,12 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     ]
 
 
-@pytest.mark.parametrize("prior_provider", ["ollama", "openai"])
-def test_stream_chat_uses_openai_provider_without_starting_ollama(
-    monkeypatch, prior_provider,
+def test_stream_chat_uses_openai_provider_with_cloud_boundary(
+    monkeypatch,
 ) -> None:
     store = AiChatSessionStore()
     store.synchronize_disclosure_boundary(session_key="session-key", disclosure_key="previous-disclosure-boundary")
-    previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider=prior_provider, model="old-model")
+    previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider="openai", model="old-model")
     store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY")
     api_key = "sk-test-0123456789abcdefghijklmnop"
     inference_sentinel = object()
@@ -889,7 +882,7 @@ def test_stream_chat_uses_openai_provider_without_starting_ollama(
         ai_routes,
         "load_client_preferences",
         lambda *, token: {
-            "pref.ai.retrieval.max_page_approximate_tokens": "7000",
+            "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
             "pref.ai.openai.retrieval.max_page_approximate_tokens": "20000",
         },
     )
@@ -966,8 +959,8 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
     with pytest.raises(HTTPException, match="Active MetaList tab changed") as error:
         ai_routes.stream_ai_chat(
             payload=ai_routes.AiChatRequest(
-                provider="ollama",
-                model="qwen3:8b",
+                provider="openai",
+                model="gpt-5.6-sol",
                 thinking_level="low",
                 show_diagnostics=False,
                 message="Hello",
@@ -1025,8 +1018,8 @@ def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
 
     ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
-            provider="ollama",
-            model="qwen3:8b",
+            provider="openai",
+            model="gpt-5.6-sol",
             thinking_level="low",
             show_diagnostics=False,
             message="Follow up",
@@ -1126,7 +1119,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
                 "type": "action_status",
                 "action": "model_request",
                 "status": "started",
-                "label": "Ollama choosing next action",
+                "label": "OpenAI choosing next action",
                     "approx_input_tokens": 1_400,
                     "output_tokens_received": 0,
                     "duration_ms": 0.0,
@@ -1135,7 +1128,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
             await asyncio.Event().wait()
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "agent_runtime", FakeRuntime())
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
     monkeypatch.setattr(
         ai_routes.token_service,
         "get_session_key",
@@ -1149,8 +1142,8 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
-            provider="ollama",
-            model="qwen3:8b",
+            provider="openai",
+            model="gpt-5.6-sol",
             thinking_level="low",
             show_diagnostics=False,
             message="Cancel this request",
@@ -1233,8 +1226,8 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     prior_turn_id = store.start_turn(
         session_key="session-key",
         user_content="Summarize testosterone notes",
-        provider="ollama",
-        model="qwen3:8b",
+        provider="openai",
+        model="gpt-5.6-sol",
     )
     prior_content = f"Sleep affects testosterone. [[{stale_note_id}]]"
     store.append_delta(
@@ -1249,7 +1242,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
         final_content=prior_content,
     )
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "agent_runtime", FakeRuntime())
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())
     monkeypatch.setattr(
         ai_routes.token_service,
@@ -1260,8 +1253,8 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
-            provider="ollama",
-            model="qwen3:8b",
+            provider="openai",
+            model="gpt-5.6-sol",
             thinking_level="low",
             show_diagnostics=False,
             message="Describe Bayes' theorem briefly",
@@ -1289,7 +1282,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     assert snapshot["messages"][-1]["content"] == "Bayes updates a prior."
 
 
-def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
+def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
     store = AiChatSessionStore()
 
     class FailingRuntime:
@@ -1310,18 +1303,18 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings
             del frozen_scope
-            raise OllamaProviderError("Ollama generation failed")
+            raise InferenceProviderError("OpenAI generation failed")
             yield
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_routes, "agent_runtime", FailingRuntime())
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FailingRuntime())
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
-            provider="ollama",
-            model="qwen3:8b",
+            provider="openai",
+            model="gpt-5.6-sol",
             thinking_level="high",
             show_diagnostics=False,
             message="Hello",
@@ -1341,106 +1334,32 @@ def test_stream_chat_persists_and_emits_ollama_failure(monkeypatch) -> None:
     assert _without_activity_token_counts(events) == [
         {
             "type": "action_status",
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "started",
-            "label": "Starting MetaList-managed Ollama · 32,768-token context",
+            "label": "Connecting to OpenAI API",
         },
         {
             "type": "action_status",
-            "action": "ollama_runtime",
+            "action": "provider_runtime",
             "status": "completed",
-            "label": "MetaList-managed Ollama ready · 32,768-token context",
+            "label": "OpenAI API ready · 1,050,000-token context",
         },
-        {"type": "error", "message": "Ollama generation failed"},
+        {"type": "error", "message": "OpenAI generation failed"},
     ]
     assert snapshot["messages"][1]["status"] == "error"
-    assert snapshot["messages"][1]["error"] == "Ollama generation failed"
+    assert snapshot["messages"][1]["error"] == "OpenAI generation failed"
 
 
-def test_chat_request_rejects_disabled_gpt_oss_thinking() -> None:
-    with pytest.raises(ValueError, match="does not support disabling thinking"):
-        ai_routes.AiChatRequest(
-            provider="ollama",
-            model="gpt-oss:20b",
-            thinking_level="off",
-            show_diagnostics=False,
-            message="Hello",
-            scope=_all_notes_scope(),
-        )
+@pytest.mark.parametrize("request_type, fields", [
+    (ai_routes.AiModelsRequest, {}),
+    (ai_routes.CloudPrivacyPreviewRequest, {"note_ids": []}),
+    (ai_routes.AiChatRequest, {"model": "qwen3:8b", "thinking_level": "low",
+        "show_diagnostics": False, "message": "Hello", "scope": _all_notes_scope()}),
+])
+def test_ai_requests_reject_retired_ollama_provider(request_type, fields):
+    with pytest.raises(ValidationError, match="provider"):
+        request_type(provider="ollama", **fields)
 
 
-def test_ai_requests_reject_obsolete_client_selected_ollama_url() -> None:
-    with pytest.raises(ValidationError, match="base_url"):
-        ai_routes.AiModelsRequest(
-            provider="ollama",
-            base_url="http://127.0.0.1:11434",
-        )
-
-
-def test_model_discovery_maps_ollama_failure_to_bad_gateway(monkeypatch) -> None:
-    class FailingProvider:
-        async def list_models(self, *, base_url):
-            raise OllamaProviderError("Could not connect to Ollama")
-
-    monkeypatch.setattr(ai_routes, "ollama_provider", FailingProvider())
-
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            ai_routes.list_ai_models(
-                payload=ai_routes.AiModelsRequest(
-                    provider="ollama",
-                ),
-                token="auth-token",
-            )
-        )
-
-    assert exc_info.value.status_code == 502
-    assert exc_info.value.detail == "Could not connect to Ollama"
-
-
-def test_model_pull_route_streams_progress_from_ollama(monkeypatch) -> None:
-    class FakeProvider:
-        async def stream_pull(self, *, base_url, model):
-            assert base_url == "http://127.0.0.1:11435"
-            assert model == "gemma3:4b"
-            yield {
-                "type": "progress",
-                "status": "pulling layer",
-                "completed": 50,
-                "total": 100,
-            }
-            yield {
-                "type": "done",
-                "status": "success",
-                "completed": 100,
-                "total": 100,
-            }
-
-    monkeypatch.setattr(ai_routes, "ollama_provider", FakeProvider())
-
-    response = ai_routes.pull_ai_model(
-        payload=ai_routes.AiModelPullRequest(
-            provider="ollama",
-            model="gemma3:4b",
-        ),
-        token="auth-token",
-    )
-
-    async def read_events() -> list[dict[str, object]]:
-        raw_chunks = [chunk async for chunk in response.body_iterator]
-        return [json.loads(chunk) for chunk in raw_chunks]
-
-    assert asyncio.run(read_events()) == [
-        {
-            "type": "progress",
-            "status": "pulling layer",
-            "completed": 50,
-            "total": 100,
-        },
-        {
-            "type": "done",
-            "status": "success",
-            "completed": 100,
-            "total": 100,
-        },
-    ]
+def test_model_download_endpoint_is_removed():
+    assert "/ai/models/pull" not in {route.path for route in ai_routes.router.routes}

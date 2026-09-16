@@ -55,7 +55,6 @@ from app.services.search_query import parse_search_query
 
 _MAX_ACTION_STEPS = 8
 _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
-    "Ollama": 1_024,
     "OpenAI": 8_192,
 }
 _SearchClauseKey = tuple[
@@ -1384,7 +1383,7 @@ class AgentRuntime:
         self._trace_store.append_event(
             session_key=run.session_key,
             run_id=run.run_id,
-            event_type="OLLAMA_REQUEST",
+            event_type="PROVIDER_REQUEST",
             label=(
                 f"{self._provider_label} wire request: {purpose.value}"
                 f"{attempt_suffix}"
@@ -1610,8 +1609,6 @@ class AgentRuntime:
         return f" · attempt {attempt} of {max_attempts}"
 
     def _model_context_check_label(self) -> str:
-        if self._provider_label == "Ollama":
-            return "Loading Ollama model and checking context"
         return f"Checking {self._provider_label} model context"
 
     @staticmethod

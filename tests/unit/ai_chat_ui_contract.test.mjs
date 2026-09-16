@@ -263,7 +263,7 @@ test('AI agent settings expose one provider-specific evidence limit', () => {
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
     assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
-    assert.match(settingsModal, /isOpenAi \? 500000 : 24000/);
+    assert.match(settingsModal, /max="500000"/);
     assert.match(settingsModal, /Maximum approximate evidence tokens/);
     assert.match(settingsModal, /A result tree is never divided/);
     assert.match(settingsModal, /trailing trees are omitted/);
@@ -273,7 +273,7 @@ test('AI agent settings expose one provider-specific evidence limit', () => {
     assert.doesNotMatch(settingsModal, /max-working-summary-characters/);
     assert.doesNotMatch(settingsModal, /ideal-narrowed-scope/);
     assert.match(commandController, /openAiRetrievalSettings/);
-    assert.match(commandController, /ollamaRetrievalSettings/);
+    assert.doesNotMatch(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
     assert.match(commandController, /maxPageApproximateTokens/);
 });
@@ -663,7 +663,7 @@ test('streaming thinking renders honest progress and only discloses real reasoni
 });
 
 
-test('streaming keeps drafting available and reset cancels the active Ollama request', () => {
+test('streaming keeps drafting available and reset cancels the active provider request', () => {
     const template = readFileSync(TEMPLATE_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
@@ -815,12 +815,10 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
     assert.match(modal, /id="ai-agent-installed-model"/);
     assert.match(modal, /id="ai-agent-save"[^>]*>Save<\/button>/);
-    assert.match(modal, /MetaList-managed Ollama/);
-    assert.match(modal, /32,768-token context/);
     assert.doesNotMatch(modal, /id="ai-agent-base-url"/);
     assert.doesNotMatch(chatApi, /base_url:/);
     assert.doesNotMatch(modal, /_saveConnection/);
-    assert.match(modal, /<option value="openai"/);
+    assert.match(modal, /OpenAI API/);
     assert.match(modal, /id="ai-agent-openai-api-key" type="password"/);
     assert.match(modal, /Encrypted namespaces[\s\S]*?persist it encrypted/);
     assert.match(modal, /unencrypted namespaces keep it[\s\S]*?server session only/);
@@ -851,27 +849,13 @@ test('OpenAI API key storage is independent from provider model settings', () =>
 });
 
 
-test('AI settings download a named Ollama model through the supported pull API', () => {
+test('AI settings expose only OpenAI and no local model downloads', () => {
     const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
-    const downloadHandler = modal.slice(
-        modal.indexOf('async _handleDownload()'),
-        modal.indexOf('async _handleSave()'),
-    );
-
-    assert.match(modal, /id="ai-agent-download-model"/);
-    assert.match(modal, /href="https:\/\/ollama\.com\/library"/);
-    assert.match(modal, /id="ai-agent-download"/);
-    assert.match(modal, /id="ai-agent-download-progress"/);
-    assert.match(modal, /await pullOllamaModel\(/);
-    assert.match(chatApi, /CONFIG\.API\.AI\.PULL_MODEL/);
-    assert.match(chatApi, /export async function pullOllamaModel/);
-    assert.match(chatApi, /onEvent\(event\)/);
-    assert.doesNotMatch(modal, /Configure the temporary unmanaged Ollama connection/);
-    assert.match(modal, /Downloaded \$\{model\}\. Select it above when ready\./);
-    assert.match(downloadHandler, /if \(didComplete\) \{[\s\S]*?await this\._loadInstalledModels\(\)/);
-    assert.doesNotMatch(downloadHandler, /this\._saveSettings/);
+    assert.match(modal, /OpenAI API/);
+    assert.doesNotMatch(modal, /Ollama|ai-agent-provider|id="ai-agent-download/);
+    assert.doesNotMatch(chatApi, /PULL_MODEL|pullOllamaModel/);
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);
     assert.match(controller, /option\.textContent = 'Select model'/);
 });

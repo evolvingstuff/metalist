@@ -62,7 +62,6 @@ import {
     validateAiThinkingLevel,
 } from '../ai-chat/ai-thinking-level-service.js';
 import {
-    AGENT_RETRIEVAL_PREFERENCE_KEYS,
     OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
@@ -653,34 +652,21 @@ class CommandPaletteController {
     }
 
     getAiSettings() {
-        const provider = this._getSelect(
-            'pref.ai.provider',
-            ['ollama', 'openai'],
-            'ollama',
-        );
-        const ollamaRetrievalSettings = readAgentRetrievalSettings(
-            (key) => this._preferences.getRaw(key),
-            'ollama',
-        );
         const openAiRetrievalSettings = readAgentRetrievalSettings(
             (key) => this._preferences.getRaw(key),
             'openai',
         );
-        const retrievalSettings = provider === 'openai'
-            ? openAiRetrievalSettings
-            : ollamaRetrievalSettings;
-        const modelPreferenceKey = provider === 'openai'
-            ? 'pref.ai.openai_model'
-            : 'pref.ai.ollama_model';
+        const provider = 'openai';
+        const retrievalSettings = openAiRetrievalSettings;
+        const modelPreferenceKey = 'pref.ai.openai_model';
         return {
             provider,
-            model: this._preferences.getRaw(modelPreferenceKey) ?? '',
+            model: this._preferences.getRaw(modelPreferenceKey) ?? 'gpt-5.6-luna',
             thinkingLevel: this._getSelect(
                 'pref.ai.thinking_level',
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
                 DEFAULT_AI_THINKING_LEVEL,
             ),
-            ollamaRetrievalSettings,
             openAiRetrievalSettings,
             cloudPrivacyPolicy: readCloudPrivacyPolicy(
                 (key) => this._preferences.getRaw(key),
@@ -755,16 +741,14 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiSettings requires settings object');
         }
-        if (!['ollama', 'openai'].includes(settings.provider)) {
+        if (settings.provider !== 'openai') {
             throw new Error('Unsupported AI provider');
         }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
         const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
-        const modelPreferenceKey = settings.provider === 'openai'
-            ? 'pref.ai.openai_model'
-            : 'pref.ai.ollama_model';
+        const modelPreferenceKey = 'pref.ai.openai_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
             [modelPreferenceKey]: settings.model.trim(),
@@ -784,16 +768,12 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
         }
-        if (!['ollama', 'openai'].includes(settings.provider)) {
+        if (settings.provider !== 'openai') {
             throw new Error('Unsupported AI provider');
         }
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI connection settings require model');
         }
-        const ollamaRetrievalSettings = validateAgentRetrievalSettings(
-            settings.ollamaRetrievalSettings,
-            'ollama',
-        );
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
             'openai',
@@ -801,19 +781,13 @@ class CommandPaletteController {
         const cloudPrivacyPolicy = validateCloudPrivacyPolicy(
             settings.cloudPrivacyPolicy,
         );
-        const modelPreferenceKey = settings.provider === 'openai'
-            ? 'pref.ai.openai_model'
-            : 'pref.ai.ollama_model';
+        const modelPreferenceKey = 'pref.ai.openai_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
             [modelPreferenceKey]: settings.model.trim(),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
-                ollamaRetrievalSettings.maxPageApproximateTokens,
-            ),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
             ),
-            [AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens]: String(ollamaRetrievalSettings.taggingBatchTokens),
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens]: String(openAiRetrievalSettings.taggingBatchTokens),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,

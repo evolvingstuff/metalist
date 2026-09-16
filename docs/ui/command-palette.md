@@ -45,13 +45,14 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 ## Config
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
+- Search `LLM` or `OpenAI` to find `AI Agent Settings` for API key and model configuration.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
 - `Note Layout & Appearance` stores namespace-scoped presets for top-level note size, child indentation, and vertical spacing. The defaults are `Larger`, `Standard`, and `Comfortable` respectively.
 - `Search suggestion stats & settings` is the single suggestion-personalization control surface. Its ordered 1–365 day slots and default-on time-window-label and one-credit-per-note-per-search-context toggles save immediately when changed. The modal also displays retained daily tag-credit statistics and provides the confirmed activity reset. An empty slot list disables personalization; the default slots are 1, 7, and 30 days.
 - `Show/Hide AI Chat` controls the resizable right-side chat panel.
-- `AI Agent Settings` shows the MetaList-managed loopback Ollama runtime, selects a downloaded model, and configures namespace-scoped maximum characters per returned note and matching result trees per search page. MetaList owns one shared on-demand daemon at `127.0.0.1:11435` with a required 32,768-token context window; the URL is not user-editable. The read-only agent may search and read hydrated notes through application-owned tools; no mutation action exists. See `docs/ui/ai-chat.md`.
+- `AI Agent Settings`: configures the OpenAI API key, model, cloud privacy policy, evidence-token limit, and tagging batch size. Model and thinking level are also selected beside chat Send. See `docs/ui/ai-chat.md`.
 - `Agent prompts` inspects all three packaged runtime prompts plus collapsible
   registered skills and saves validated namespace-specific overrides. Reset removes
   every prompt/skill override and resumes using packaged defaults; changes apply to
@@ -75,7 +76,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - `Version info`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
 - `Note Layout & Appearance`: previews and saves the note hierarchy presets. Search terms include `layout`, `appearance`, `font`, `size`, `spacing`, `indentation`, and `hierarchy`.
 - `Search suggestion stats & settings`: combines ordered personalized-window editing, promoted-suggestion label visibility, default-on per-context note-credit suppression, retained daily tag-credit statistics, and confirmed activity reset. It does not collect search text or note content.
-- `AI Agent Settings`: configures the loopback Ollama endpoint and bounded note-retrieval page/size limits used by the read-only agent harness. The chat composer loads installed models and keeps its model and thinking-level selectors immediately left of Send.
+- `AI Agent Settings`: configures the OpenAI API key, model, cloud privacy policy, evidence-token limit, and tagging batch size. Model and thinking level are also selected beside chat Send. See `docs/ui/ai-chat.md`.
 - `Agent prompts`: opens the prompt-and-skill editor. Template placeholders and
   skill text are validated before saving, and protected namespaces encrypt these
   overrides through the existing client-state path.

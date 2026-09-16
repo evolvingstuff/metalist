@@ -27,17 +27,17 @@ test('AI thinking levels expose the product abstraction with low default', () =>
 });
 
 
-test('GPT-OSS cannot select Off and normalizes it visibly to Low', () => {
+test('OpenAI models preserve the selected thinking level', () => {
     assert.equal(
-        isThinkingLevelAvailableForModel({ model: 'gpt-oss:20b', thinkingLevel: 'off' }),
-        false,
+        isThinkingLevelAvailableForModel({ model: 'gpt-5.6-sol', thinkingLevel: 'off' }),
+        true,
     );
     assert.equal(
-        normalizeThinkingLevelForModel({ model: 'gpt-oss:20b', thinkingLevel: 'off' }),
-        'low',
+        normalizeThinkingLevelForModel({ model: 'gpt-5.6-sol', thinkingLevel: 'off' }),
+        'off',
     );
     assert.equal(
-        normalizeThinkingLevelForModel({ model: 'qwen3:8b', thinkingLevel: 'off' }),
+        normalizeThinkingLevelForModel({ model: 'gpt-5.6-terra', thinkingLevel: 'off' }),
         'off',
     );
 });

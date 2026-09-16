@@ -40,14 +40,14 @@ Node is still required for the `.mjs` JS unit tests and Mermaid diagram
 rendering, but not for the startup sanity gate.
 
 The read-only agent harness has focused coverage for typed action boundaries,
-the flat Ollama action envelope and inactive-placeholder projection, concise
+the flat action envelope and inactive-placeholder projection, concise
 structured-failure presentation, Instructor mode/request handling and retry traces,
 transient context, packaged/default and namespace-overridden prompts, prompt-template
 placeholder validation, read-only note tools, latest-run trace replacement, live
 Instructor attempt/retry status, default-on exact debug detail, persisted default-hidden
 developer activity panels, compact hidden-mode progress, duplicate lifecycle-panel
 collapse, required per-panel approximate input-token metadata, API/session isolation,
-packaged prompt resources, per-call Ollama wire bodies,
+packaged prompt resources, per-call OpenAI wire bodies,
 action-status parsing, and the debugger UI contract:
 
 - `tests/unit/test_agent_runtime.py`

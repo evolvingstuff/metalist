@@ -43,7 +43,7 @@ def test_password_note_rewrite_rejects_partial_encryption_metadata(encrypted):
 ])
 def test_internal_stream_failure_closes_source_and_fails_turn(events):
     store = AiChatSessionStore()
-    turn_id = store.start_turn(session_key='test', user_content='question', provider='ollama', model='test')
+    turn_id = store.start_turn(session_key='test', user_content='question', provider='openai', model='test')
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key='test', turn_id=turn_id,
                             initial_input_tokens=1)
     closed = []

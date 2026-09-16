@@ -112,16 +112,6 @@ CAPTURE_BOUNDARIES = {
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/link_titles.py:fetch_link_title:target_capture': ('_LinkTitleTargetRejected',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/managed_ollama_runtime.py:_acquire_startup_lock:lock_capture': ('FileExistsError',),
-    # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/managed_ollama_runtime.py:_is_process_running:process_capture': ('ProcessLookupError', 'PermissionError'),
-    # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/managed_ollama_runtime.py:_probe_ollama_version:probe_capture': ('HTTPError', 'JSONDecodeError'),
-    # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/managed_ollama_runtime.py:_remove_stale_lock:missing_capture': ('FileNotFoundError',),
-    # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/managed_ollama_runtime.py:_remove_stale_lock:read_capture': ('FileNotFoundError',),
-    # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_is_process_running:kill_capture': ('ProcessLookupError', 'PermissionError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_send_signal_if_running:signal_capture': ('ProcessLookupError',),

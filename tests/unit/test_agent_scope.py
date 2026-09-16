@@ -139,7 +139,7 @@ def _descriptor() -> AgentScopeDescriptor:
 
 def _local_privacy_boundary() -> CloudPrivacyBoundary:
     return CloudPrivacyBoundary(
-        provider="ollama",
+        provider="openai",
         apply_cloud_policy=False,
         policy=EMPTY_CLOUD_PRIVACY_POLICY,
     )

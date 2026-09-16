@@ -74,7 +74,7 @@ def test_password_creation_failure_restores_sidecar_and_key_metadata(live_databa
 
 def test_switching_provider_does_not_replay_local_answer():
     chat = AiChatSessionStore()
-    turn = chat.start_turn(session_key='fixture', user_content='Read local notes', provider='ollama', model='local')
+    turn = chat.start_turn(session_key='fixture', user_content='Read local notes', provider='retired-provider', model='local')
     chat.complete_turn(session_key='fixture', turn_id=turn, final_content='LOCAL_ONLY_CANARY')
     chat.start_turn(session_key='fixture', user_content='Hello cloud', provider='openai', model='cloud')
     assert chat.provider_messages(session_key='fixture') == [{'role':'user', 'content':'Hello cloud'}]

@@ -264,12 +264,11 @@ def test_structured_progress_uses_only_current_action_purposes() -> None:
     event = AgentRuntime._progress_status_event(
         progress,
         purpose=InferencePurpose.ACTION_SELECTION,
-        provider_label="Ollama",
+        provider_label="OpenAI",
     )
     assert event["output_tokens_received"] == 24
     assert "choosing next action" in event["label"]
 
 
 def test_final_response_output_limit_is_provider_specific() -> None:
-    assert _final_response_max_output_tokens(provider_label="Ollama") == 1_024
     assert _final_response_max_output_tokens(provider_label="OpenAI") == 8_192

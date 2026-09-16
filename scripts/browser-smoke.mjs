@@ -14,6 +14,7 @@ import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.
 import {checkBackgroundSortMenu} from './browser-sort-menu-regressions.mjs';
 import {prepareUpdateFixture, checkAppUpdates} from './browser-update-regressions.mjs';
 import {checkFloatingNotes} from './browser-floating-note-regressions.mjs';
+import {checkOpenAiSettings} from './browser-ai-settings-regressions.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
 const probe = createServer();
@@ -54,6 +55,7 @@ try {
   await page.goto(origin);
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
   await checkAppUpdates(page, updateFixture);
+  await checkOpenAiSettings(page);
   await page.waitForNetworkIdle({idleTime:500});
   // Exercise initial document mouse movement, including stationary axes and
   // duplicate browser observations that must not become duplicate state writes.

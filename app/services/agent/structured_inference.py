@@ -1,17 +1,13 @@
-"""Instructor for typed Ollama output; direct Ollama for streamed prose."""
+"""Shared Instructor structured streaming, retries, and exact request tracing."""
 
 from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
 
 import httpx
-import instructor
-from openai import AsyncOpenAI
 from pydantic import BaseModel
 from pydantic import ValidationError
 
@@ -23,16 +19,9 @@ from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.tagging import TagBatchResult, TagOperationIntent
 from app.services.agent.inference import InferenceAttempt
-from app.services.agent.inference import InferenceContextWindow
-from app.services.agent.inference import InferenceResponse
-from app.services.agent.inference import MINIMUM_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
-from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.token_estimation import estimate_text_tokens
-from app.services.ollama_provider import OllamaProvider
-from app.services.ollama_provider import normalize_ollama_base_url
-from app.services.ollama_provider import resolve_ollama_think_value
 
 
 _STRUCTURED_MAX_RETRIES = 1
@@ -267,7 +256,7 @@ class _InstructorTraceCapture:
 
     def record_completion_error(self, error: Exception, **metadata: object) -> None:
         del metadata
-        self._record_error(error=error, failure_kind="Ollama request failed")
+        self._record_error(error=error, failure_kind="Provider request failed")
 
     def record_parse_error(self, error: Exception, **metadata: object) -> None:
         del metadata
@@ -467,34 +456,6 @@ def _response_finish_reason(raw_response: dict[str, object]) -> str:
     return finish_reason
 
 
-def _create_instructor_client(
-    *,
-    base_url: str,
-    model: str,
-    capture: _InstructorTraceCapture,
-) -> AsyncInstructor:
-    normalized_base_url = normalize_ollama_base_url(base_url)
-    http_client = httpx.AsyncClient(
-        event_hooks={"request": [capture.record_wire_request]},
-        follow_redirects=False,
-        trust_env=False,
-    )
-    openai_client = AsyncOpenAI(
-        api_key="ollama",
-        base_url=f"{normalized_base_url}/v1",
-        http_client=http_client,
-        max_retries=0,
-    )
-    return cast(
-        AsyncInstructor,
-        instructor.from_openai(
-            openai_client,
-            model=model,
-            mode=instructor.Mode.JSON_SCHEMA,
-        ),
-    )
-
-
 def _attach_trace_capture(
     *,
     client: AsyncInstructor,
@@ -539,7 +500,7 @@ async def _run_structured_attempt(
     attempt_number: int,
 ) -> tuple[BaseModel, object]:
     last_partial: BaseModel | None = None
-    # lint: allow-PY001 rationale="Ollama and model-produced structured JSON are external and receive one bounded retry"
+    # lint: allow-PY001 rationale="Provider responses and model-produced structured JSON are external and receive one bounded retry"
     try:
         async for partial in client.create_partial(
             response_model=response_model,
@@ -629,103 +590,3 @@ def _structured_retry_messages(
         {"role": "assistant", "content": failed_content},
         {"role": "user", "content": retry_instruction},
     ]
-
-
-class OllamaInferenceAdapter:
-    def __init__(self, *, provider: OllamaProvider) -> None:
-        self._provider = provider
-
-    @property
-    def provider_label(self) -> str:
-        return "Ollama"
-
-    async def inspect_context_window(
-        self,
-        *,
-        base_url: str,
-        model: str,
-    ) -> InferenceContextWindow:
-        model_context = await self._provider.inspect_model_context(
-            base_url=base_url,
-            model=model,
-        )
-        required_tokens = min(
-            model_context.maximum_tokens,
-            TARGET_AGENT_CONTEXT_TOKENS,
-        )
-        if model_context.maximum_tokens < MINIMUM_AGENT_CONTEXT_TOKENS:
-            required_tokens = MINIMUM_AGENT_CONTEXT_TOKENS
-        return InferenceContextWindow(
-            model=model_context.model,
-            maximum_tokens=model_context.maximum_tokens,
-            loaded_tokens=model_context.loaded_tokens,
-            required_tokens=required_tokens,
-        )
-
-    async def infer_structured(
-        self,
-        *,
-        base_url: str,
-        model: str,
-        thinking_level: str,
-        messages: list[dict[str, str]],
-        response_model: type[BaseModel],
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> InferenceResponse:
-        think_value = resolve_ollama_think_value(
-            model=model,
-            thinking_level=thinking_level,
-        )
-        capture = _InstructorTraceCapture(
-            on_progress=on_progress,
-        )
-        client = _create_instructor_client(
-            base_url=base_url,
-            model=model,
-            capture=capture,
-        )
-        _attach_trace_capture(client=client, capture=capture)
-        parsed, raw_completion = await _create_structured_completion(
-            client=client,
-            capture=capture,
-            response_model=response_model,
-            messages=messages,
-            request_options={
-                "max_tokens": _structured_max_output_tokens(response_model),
-                "temperature": 0,
-                "extra_body": {"think": think_value},
-            },
-        )
-        if not isinstance(parsed, response_model):
-            raise TypeError("Instructor returned the wrong structured response type")
-        capture.record_success()
-        raw_response = _json_object(raw_completion)
-        attempts = capture.freeze()
-        if len(attempts) == 0:
-            raise RuntimeError("Instructor returned without recording an inference attempt")
-        return InferenceResponse(
-            content=parsed.model_dump_json(),
-            thinking=_extract_reasoning(raw_response),
-            usage=_extract_usage(raw_response),
-            attempts=attempts,
-        )
-
-    async def stream_text(
-        self,
-        *,
-        base_url: str,
-        model: str,
-        thinking_level: str,
-        messages: list[dict[str, str]],
-        max_output_tokens: int,
-        on_request: Callable[[dict[str, object]], None],
-    ) -> AsyncIterator[dict[str, object]]:
-        async for event in self._provider.stream_chat(
-            base_url=base_url,
-            model=model,
-            thinking_level=thinking_level,
-            messages=messages,
-            max_output_tokens=max_output_tokens,
-            on_request=on_request,
-        ):
-            yield event

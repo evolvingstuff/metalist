@@ -61,11 +61,12 @@ function chatHarness(events) {
     };
     const panel = new Function(...Object.keys(dependencies), `${moduleSource('ai-chat/ai-chat-panel-controller.js')}
         captureActiveAgentScope = () => ({}); return AiChatPanel;`)(...Object.values(dependencies));
-    panel._getSettings = () => ({ provider: 'ollama', model: 'test-model' });
+    panel._getSettings = () => ({ provider: 'openai', model: 'test-model' });
     panel._models = ['test-model'];
     panel._elements = { input: new Input() };
     panel._render = () => {};
     panel._loadSession = async () => {};
+    panel._refreshOpenAiCostSnapshot = async () => {};
     panel._syncComposerControlsDisabled = () => {};
     return { panel, timers };
 }

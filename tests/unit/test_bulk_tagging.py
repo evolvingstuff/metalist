@@ -222,10 +222,8 @@ def test_batches_share_whole_context_vocabulary_and_keep_large_roots():
 
 def test_tagging_window_is_provider_specific_and_validated():
     preferences = {"pref.ai.tagging.batch_tokens": "3000", "pref.ai.openai.tagging.batch_tokens": "12000"}
-    assert resolve_tagging_batch_tokens(preferences, "ollama") == 3000
     assert resolve_tagging_batch_tokens(preferences, "openai") == 12000
-    assert resolve_tagging_batch_tokens({}, "ollama") == 2000
-    assert resolve_tagging_batch_tokens({}, "openai") == 8000
+    assert resolve_tagging_batch_tokens({}, "openai") == 100000
     with pytest.raises(ValueError):
         resolve_tagging_batch_tokens({"pref.ai.tagging.batch_tokens": "499"}, "ollama")
 

@@ -140,7 +140,6 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'read_notes_by_id',
     'respond',
     'cancel',
-    'ollama_runtime',
     'provider_runtime',
     'model_context',
     'scope',
@@ -804,7 +803,7 @@ class AiChatPanelController {
             this._elements.model.appendChild(option);
             for (const model of this._models) {
                 if (typeof model !== 'string' || model === '') {
-                    throw new Error('Ollama model list contains invalid model');
+                    throw new Error('OpenAI model list contains invalid model');
                 }
                 const option = document.createElement('option');
                 option.value = model;

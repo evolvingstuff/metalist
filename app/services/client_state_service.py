@@ -23,15 +23,11 @@ from app.services.agent.prompt_settings import validate_system_prompt
 from app.services.agent.prompt_settings import validate_tool_result_prompt
 from app.services.agent.cloud_privacy import CLOUD_PRIVACY_POLICY_PREFERENCE_KEY
 from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_preference
-from app.services.agent.retrieval_settings import MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
-from app.services.agent.retrieval_settings import validate_max_page_approximate_tokens_preference
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.skill_settings import AGENT_SKILL_PREFERENCE_KEYS
 from app.services.agent.skill_settings import SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
 from app.services.agent.skill_settings import validate_agent_skill_content
-from app.services.ollama_provider import normalize_ollama_base_url
-from app.services.ollama_provider import validate_ollama_model
 from app.services.agent.openai_inference import validate_openai_model
 
 
@@ -54,20 +50,14 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
-    "pref.ai.provider": {"ollama", "openai"},
-    "pref.ai.ollama_base_url": "ollama_base_url",
-    "pref.ai.ollama_model": "ollama_model",
+    "pref.ai.provider": {"openai"},
     "pref.ai.openai_model": "openai_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
-    MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
-        "agent_max_page_approximate_tokens"
-    ),
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"
     ),
-    "pref.ai.tagging.batch_tokens": "agent_max_page_approximate_tokens",
     "pref.ai.openai.tagging.batch_tokens": "openai_agent_max_page_approximate_tokens",
     SYSTEM_PROMPT_PREFERENCE_KEY: "agent_system_prompt",
     FINAL_RESPONSE_PROMPT_PREFERENCE_KEY: "agent_final_response_prompt",
@@ -80,6 +70,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
+        "pref.ai.ollama_base_url",
+        "pref.ai.ollama_model",
+        "pref.ai.retrieval.max_page_approximate_tokens",
+        "pref.ai.tagging.batch_tokens",
         "pref.show_perf_overlay",
         "pref.reminder_default_popup_sound_enabled",
         "pref.reminder_default_popup_sound_id",
@@ -200,6 +194,11 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             raise ClientStateValidationError("client preference keys must be non-empty strings")
         if key in _OBSOLETE_CLIENT_PREFERENCES:
             continue
+        # Retire the local-provider selection and its stale cloud-model override.
+        if preferences.get("pref.ai.provider") == "ollama" and key in {
+            "pref.ai.provider", "pref.ai.openai_model",
+        }:
+            continue
         if key not in _ALLOWED_CLIENT_PREFERENCES:
             raise ClientStateValidationError(f"Unknown client preference key: {key}")
         if not isinstance(value, str):
@@ -210,18 +209,12 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 raise ClientStateValidationError("Invalid update notice version")
         elif allowed_values == "tag_activity_windows":
             _validate_tag_activity_windows_preference(key=key, value=value)
-        elif allowed_values == "ollama_base_url":
-            value = normalize_ollama_base_url(value)
-        elif allowed_values == "ollama_model":
-            value = validate_ollama_model(value)
         elif allowed_values == "openai_model":
             value = validate_openai_model(value)
         elif allowed_values == "ai_chat_width":
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":
             _validate_ai_chat_composer_height_preference(key=key, value=value)
-        elif allowed_values == "agent_max_page_approximate_tokens":
-            value = validate_max_page_approximate_tokens_preference(value)
         elif allowed_values == "openai_agent_max_page_approximate_tokens":
             value = validate_openai_max_page_approximate_tokens_preference(value)
         elif allowed_values == "agent_system_prompt":

@@ -6,7 +6,7 @@ MetaList owns orchestration and evidence access. The selected model can either
 answer normally or investigate the exact result scope visible when the user pressed
 Send. Investigation cannot search outside that boundary or mutate notes. Explicit tag proposal requests use a separate application-owned bulk operation described below.
 
-Supported providers are MetaList-managed Ollama and the OpenAI API. Instructor owns
+The supported provider is the OpenAI API. Instructor owns
 the small structured routing call; final prose streams through the provider's native
 client. LiteLLM is not part of the current path.
 
@@ -81,7 +81,6 @@ Cloud providers additionally share one namespace-level policy with tag/text
 whitelists and blacklists. Entries on each side are OR; blacklist wins. Tag rules
 use canonical inherited, implied, and synonym-expanded effective tags. Text rules
 are case-insensitive literal substrings. A hidden ancestor hides every descendant.
-Ollama ignores the configurable cloud lists but still respects `@password`.
 
 Filtering happens before counts, token sizing, serialization, citations, or Agent
 Debug. The hover preview calls the same evaluator and gives hidden notes a readable
@@ -122,8 +121,7 @@ The current user request, rather than the broad search topic, defines relevance.
 The only retrieval setting is a provider-specific maximum approximate evidence
 token count:
 
-- Ollama default 5,000; allowed 500–24,000.
-- OpenAI default 250,000; allowed 500–500,000.
+- OpenAI default 500,000; allowed 500–500,000.
 
 The deterministic estimator covers the serialized JSON, not just note text. The
 same estimate is used for retention and developer feedback.
@@ -177,9 +175,6 @@ Traces are never persisted.
 
 ## Provider Details
 
-Ollama is started lazily on `127.0.0.1:11435`, cloud disabled, with managed runtime
-ownership and context verification before inference.
-
 OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted
 with the namespace DEK; plaintext namespaces hold it only in authenticated server
 session memory. The raw key is never returned to the browser or included in traces.
@@ -216,7 +211,7 @@ Generation captures the search-visible trees. Visible ancestors supply content, 
 - Generation intent never selects the per-pass focus. Every generation request asks the three-way structured focus question, preselects the exact previous choice, and keeps all choices available. The answer updates both the remembered focus and the two-way vocabulary permission in one submission. Request wording and model interpretation cannot skip the question, including explicit requests for existing, new, or both. Existing focus validates output against batch vocabulary.
 - The configured evidence budget determines batching. Evidence above 1× requires explicit confirmation, combined with the focus question when one is needed. Randomize visible root-tree order before batching so display-adjacent roots do not systematically share requests. Complete visible root trees remain together and preserve their internal hierarchy/order; every requested tree is reviewed. Processing time is hidden and paused during questions; no predicted duration. Proposal dialogs reuse the shared modal-content and form-actions styles.
 - New-only focus strictly excludes disclosed accepted vocabulary terms (case insensitive). The namespace catalog remains undisclosed, so post-inference validation silently drops a collision with an accepted namespace tag the model could not know about.
-- Every pass uses token-sized requests, configured alongside the evidence limit in AI settings: `pref.ai.tagging.batch_tokens` (Ollama, default 2,000) and `pref.ai.openai.tagging.batch_tokens` (OpenAI, default 8,000). Bounds match the corresponding evidence setting (500–24,000 / 500–500,000). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
+- Every pass uses token-sized requests, configured alongside the evidence limit in AI settings: `pref.ai.openai.tagging.batch_tokens` (default 100,000). Bounds match the corresponding evidence setting (500–500,000). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
 - Chat tag generation renders its choice and progress controls inside the transcript. The focus selector has three real options and no explanation paragraph or placeholder; Continue explicitly submits the selected option. No preparation overlay. Chat input and surrounding UI are locked while operation controls stay usable. Non-chat regions are inert, greyed, slightly blurred, and use a not-allowed cursor. Transcript rerenders preserve the live operation element and its selected value/focus. Programmatic acceptance/removal stays in the ordinary chat working state through its atomic update and never creates a progress or cancellation panel. Menu choice and confirmation dialogs use normal modals, but submitting a programmatic acceptance/removal operation shows only the application busy state with no second progress modal.
 - An application-owned modal locks normal interaction while the batch guard rejects conflicting server mutations. Pending question answers remain available, and Cancel aborts the stream before final application. The final synchronous commit phase disables Cancel.
 - Validated proposals accumulate only in session memory. New terms from completed batches are supplied separately to later batches as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. All batches must succeed before one database transaction writes the result. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.

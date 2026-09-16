@@ -18,7 +18,7 @@
     },
     {
       "id": "pref.show_ai_chat",
-      "tags": ["ai", "chat", "assistant", "ollama", "agent", "right", "panel", "view", "show", "hide", "toggle"]
+      "tags": ["ai", "chat", "assistant", "agent", "right", "panel", "view", "show", "hide", "toggle"]
     },
     {
       "id": "pref.animated_transitions",
@@ -62,7 +62,7 @@
     },
     {
       "id": "form.ai_agent_settings",
-      "tags": ["ai", "agent", "assistant", "ollama", "model", "models", "provider", "connection", "url", "configure", "configuration", "settings"]
+      "tags": ["ai", "llm", "openai", "gpt", "api", "key", "agent", "assistant", "model", "models", "provider", "connection", "configure", "configuration", "settings"]
     },
     {
       "id": "form.cloud_ai_privacy",
@@ -70,7 +70,7 @@
     },
     {
       "id": "form.agent_prompts",
-      "tags": ["ai", "agent", "assistant", "prompt", "prompts", "system", "instructions", "ollama", "inspect", "edit", "alter", "override", "defaults", "developer", "settings"]
+      "tags": ["ai", "agent", "assistant", "prompt", "prompts", "system", "instructions", "inspect", "edit", "alter", "override", "defaults", "developer", "settings"]
     },
     {
       "id": "action.expand_all",

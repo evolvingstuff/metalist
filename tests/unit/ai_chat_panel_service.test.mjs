@@ -134,14 +134,14 @@ test('model wait response and validation phases update one attempt panel', () =>
             sequence: 1,
             action: 'model_request',
             status: 'started',
-            label: 'Waiting for Ollama',
+            label: 'Waiting for OpenAI',
             approx_input_tokens: 1300,
         },
         {
             sequence: 2,
             action: 'validation',
             status: 'started',
-            label: 'Ollama responded · validating',
+            label: 'OpenAI responded · validating',
             approx_input_tokens: 1300,
         },
         {
@@ -173,7 +173,7 @@ test('live output-token updates replace the active model request panel', () => {
             sequence: 1,
             action: 'model_request',
             status: 'started',
-            label: 'Ollama updating evidence and choosing next step',
+            label: 'OpenAI updating evidence and choosing next step',
             approx_input_tokens: 12000,
             output_tokens_received: 8,
         },
@@ -181,7 +181,7 @@ test('live output-token updates replace the active model request panel', () => {
             sequence: 2,
             action: 'model_request',
             status: 'started',
-            label: 'Ollama updating evidence and choosing next step',
+            label: 'OpenAI updating evidence and choosing next step',
             approx_input_tokens: 12000,
             output_tokens_received: 16,
         },
@@ -196,12 +196,12 @@ test('model retries remain visible between independently collapsed attempt panel
         {
             action: 'model_request',
             status: 'started',
-            label: 'Waiting for Ollama',
+            label: 'Waiting for OpenAI',
         },
         {
             action: 'validation',
             status: 'started',
-            label: 'Ollama responded · validating',
+            label: 'OpenAI responded · validating',
         },
         {
             action: 'retry',
@@ -211,12 +211,12 @@ test('model retries remain visible between independently collapsed attempt panel
         {
             action: 'model_request',
             status: 'started',
-            label: 'Instructor retrying · Waiting for Ollama · attempt 2 of 2',
+            label: 'Instructor retrying · Waiting for OpenAI · attempt 2 of 2',
         },
         {
             action: 'validation',
             status: 'started',
-            label: 'Ollama responded · validating attempt 2 of 2',
+            label: 'OpenAI responded · validating attempt 2 of 2',
         },
         {
             action: 'validation',
@@ -249,7 +249,7 @@ test('response retry updates the existing lifecycle panel', () => {
         {
             action: 'respond',
             status: 'started',
-            label: 'Ollama rejected the response before output · retrying attempt 2 of 2',
+            label: 'OpenAI rejected the response before output · retrying attempt 2 of 2',
         },
         { action: 'respond', status: 'completed', label: 'Response complete' },
     ];

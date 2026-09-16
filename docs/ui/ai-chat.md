@@ -2,7 +2,7 @@
 
 ## Scope
 
-- MetaList chats with one user-selected Ollama or OpenAI model through an
+- MetaList chats with one user-selected OpenAI model through an
   authenticated, application-owned agent runtime.
 - Every Send freezes the currently displayed MetaList result scope. The agent can
   investigate only matching notes inside that boundary; it cannot run a new
@@ -16,8 +16,7 @@
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
 - Every generation is bounded over the wire: route selection uses 512 output tokens,
-  query requests use 1,024, and final prose uses 1,024 with Ollama and 8,192 with
-  OpenAI. If OpenAI reports that this limit
+  query requests use 1,024, and final prose uses 8,192 with OpenAI. If OpenAI reports that this limit
   truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
 
@@ -102,10 +101,8 @@ or cite an undisclosed note ID. Those boundaries are enforced programmatically.
   order. SearchIndex membership never becomes ordering.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
-- MetaList greedily packs complete result trees into one payload. Ollama defaults
-  to 5,000 approximate tokens and is configurable from 500–24,000. OpenAI defaults
-  to 250,000 and is configurable from 500–500,000. The providers have independent
-  settings.
+- MetaList greedily packs complete result trees into one payload. OpenAI defaults
+  to 500,000 approximate tokens and is configurable from 500–500,000.
 - A root tree is never divided. If the first root alone exceeds the limit, the run
   fails visibly; otherwise the first root that would overflow and all following
   roots are omitted.
@@ -125,37 +122,37 @@ or cite an undisclosed note ID. Those boundaries are enforced programmatically.
 The only retrieval control in `AI Agent Settings…` is the provider-specific maximum
 approximate evidence-token count.
 
-## Configuration and Managed Ollama
+## OpenAI Configuration
+
+- Defaults: `gpt-5.6-luna`, 500,000 approximate evidence tokens, and 100,000
+  tagging batch tokens. Saved model and token-limit overrides are retained.
 
 - Open `AI Agent Settings…` from the command palette or chat gear to select an
-  installed model, download a named model, and edit the evidence-token limit.
+  supported OpenAI model, configure an API key, and edit the evidence-token limit.
 - The same settings modal has one Cloud privacy section shared by all cloud
   providers. Its four one-entry-per-line fields configure whitelisted tags,
-  whitelisted text phrases, blacklisted tags, and blacklisted text phrases. Ollama
-  ignores these configurable lists; the automatic `@password` boundary still
-  applies. The policy is namespace-scoped and is encrypted with client preferences
+  whitelisted text phrases, blacklisted tags, and blacklisted text phrases.
+  The automatic `@password` boundary also applies. The policy is namespace-scoped and is encrypted with client preferences
   when the namespace is password-protected.
 - Hovering the AI chat column asks the server to preview that boundary over the
   current note view. Notes the selected provider cannot receive keep readable text
   but receive a gray background until the pointer leaves chat.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
-  Selection persists immediately; GPT-OSS does not offer Thinking Off.
-- Selecting OpenAI reveals a compact estimated-spend tracker directly below the
+  Selection persists immediately.
+- A compact estimated-spend tracker appears directly below the
   chat header. Its four token totals are New input, Cached input, Cache writes, and
   Output. Values come from OpenAI's response usage rather than MetaList's prompt
   estimator and update after each completed intermediate or final request. Reset
   returns the process-local aggregate to `$0.00`; clearing chat does not. Nothing
   from this tracker is persisted, and an interrupted request that never returns
   final usage may be absent from the estimate.
-- MetaList lazily starts one owned Ollama daemon shared by namespaces at
-  `127.0.0.1:11435` with `OLLAMA_CONTEXT_LENGTH=32768`, cloud/history/request-body
-  logging disabled, and one parallel request.
-- Runtime ownership is coordinated through
-  `~/MetaList/runtime/ollama/ollama-runtime.json`; the bounded log is
-  `~/MetaList/logs/ollama-managed.log`.
-- Every run preloads the selected model, checks `/api/show` and `/api/ps`, records
-  maximum/loaded/required context in Agent Debug, and refuses an undersized active
-  allocation.
+
+- Ollama support has been removed. Legacy local-provider preferences are discarded
+  on load/save. If Ollama was selected, any saved OpenAI model selection is also
+  cleared so the default OpenAI model is used. Existing OpenAI
+  configurations retain their model, credential, privacy policy, and limits.
+  MetaList no longer launches local model servers or downloads models. Existing
+  external installations, downloaded models, runtime files, and backups are untouched.
 
 Open `Agent prompts…` to inspect/override packaged prompt Markdown and registered
 skills. Skills are collapsed with a disclosure arrow and trigger label. Overrides
@@ -182,7 +179,7 @@ notice; it is preserved but never applied until Save or Restore removes it.
   Every panel shows its own retained duration; the current panel counts live and
   completed durations remain visible after reopening the chat.
 - The composer remains editable during generation. Send becomes red Stop and aborts
-  browser/server Ollama work. Clear Chat cancels and awaits any active request before
+  browser/server provider work. Clear Chat cancels and awaits any active request before
   clearing transcript and latest trace. No status/error line is placed below the
   composer.
 - A Thinking disclosure appears only if the model emits real reasoning; Thinking
@@ -241,11 +238,11 @@ notice; it is preserved but never applied until Save or Restore removes it.
 - The latest debug trace is always captured so Agent Debug can be opened after a
   failure. Starting another run replaces it.
 - Exact detail is shown by default and may be toggled after a run without changing
-  capture. The outline records every exact outbound Ollama body and response,
+  capture. The outline records every exact outbound provider body and response,
   retry/validation state, frozen scope/counts, action reason, retained/omitted
   roots, the bounded evidence payload, timing, and final
   response.
-- Every investigation request has an `Evidence payload sent to Ollama` entry with
+- Every investigation request has an `Evidence payload sent to OpenAI` entry with
   the exact compact note tree for that request. `Copy all` copies the complete
   current/most-recent run—including all events and payloads—as formatted JSON.
 - Traces are never stored in SQLite, files, browser storage, or canonical history.

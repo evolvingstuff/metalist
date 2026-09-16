@@ -79,7 +79,7 @@ export async function checkAdditionalStateTransitions(page) {
       }
       return originalFetch(url, options);
     };
-    panel._getSettings = () => ({provider:'ollama', model:'state-smoke-model', thinkingLevel:'low'});
+    panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
     panel._models = ['state-smoke-model'];
     try {
       for (scenario of ['stream', 'stream', 'bulk']) {

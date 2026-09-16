@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 
 from app.db.settings_sql import fetch_settings
+from app.db.settings_sql import update_client_preferences_json
+from app.db.session import begin_writer
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
 from app.security.encryption import clear_encryption_key
 from app.security.encryption import set_session_dek
+from app.security.encryption import get_encryption_service
 from app.services.client_state_service import load_client_preferences
 from app.services.client_state_service import load_client_state
 from app.services.client_state_service import load_command_palette_usage
@@ -140,9 +143,8 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
 
     expected_preferences = {
         "pref.show_ai_chat": "true",
-        "pref.ai.provider": "ollama",
-        "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
-        "pref.ai.ollama_model": "qwen3:8b",
+        "pref.ai.provider": "openai",
+        "pref.ai.openai_model": "gpt-5.6-sol",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
         "pref.ai.tagging.vocabulary": "new",
@@ -152,7 +154,6 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
             '"blacklist_tags":["private"],'
             '"whitelist_phrases":[],"whitelist_tags":["project"]}'
         ),
-        "pref.ai.retrieval.max_page_approximate_tokens": "7000",
         "pref.ai.openai.retrieval.max_page_approximate_tokens": "500000",
         "pref.ai.prompt.system": "Custom MetaList agent",
         "pref.ai.prompt.final_response": "FINAL\n{basis}",
@@ -251,8 +252,7 @@ def test_save_client_preferences_rejects_invalid_ai_diagnostic_visibility(
 @pytest.mark.parametrize(
     ("key", "value"),
     [
-        ("pref.ai.retrieval.max_page_approximate_tokens", "499"),
-        ("pref.ai.retrieval.max_page_approximate_tokens", "24001"),
+        ("pref.ai.openai.retrieval.max_page_approximate_tokens", "499"),
         ("pref.ai.openai.retrieval.max_page_approximate_tokens", "500001"),
     ],
 )
@@ -290,16 +290,64 @@ def test_save_client_preferences_rejects_invalid_agent_prompts(
         save_client_preferences(preferences={key: value}, token="")
 
 
-def test_save_client_preferences_rejects_unsafe_ollama_url(memory_settings_db) -> None:
-    del memory_settings_db
+def test_retired_local_settings_discard_obsolete_model_selection(memory_settings_db):
+    retired = {
+        "pref.ai.provider": "ollama",
+        "pref.ai.ollama_model": "qwen3:8b",
+        "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
+        "pref.ai.retrieval.max_page_approximate_tokens": "5000",
+        "pref.ai.tagging.batch_tokens": "2000",
+        "pref.ai.openai_model": "gpt-5.6-sol",
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "10000",
+        "pref.theme": "dark",
+    }
+    save_client_preferences(token="", preferences=retired)
+    assert load_client_preferences(token="") == {
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "10000",
+        "pref.theme": "dark",
+    }
 
-    with pytest.raises(ValueError, match="must not include credentials"):
-        save_client_preferences(
-            preferences={
-                "pref.ai.ollama_base_url": "http://user:secret@127.0.0.1:11434",
-            },
-            token="",
+
+@pytest.mark.parametrize("encrypted", [False, True])
+@pytest.mark.parametrize("provider", ["ollama", "openai"])
+def test_load_legacy_provider_preferences_from_live_storage(
+    memory_settings_db, encrypted, provider,
+):
+    if encrypted:
+        set_encryption_required(True)
+        set_session_dek(b"d" * 32)
+    save_client_preferences(preferences={}, token="")
+    legacy = {
+        "pref.ai.provider": provider,
+        "pref.ai.ollama_model": "qwen3:8b",
+        "pref.ai.ollama_base_url": "http://127.0.0.1:11434",
+        "pref.ai.retrieval.max_page_approximate_tokens": "5000",
+        "pref.ai.tagging.batch_tokens": "2000",
+        "pref.ai.openai_model": "gpt-5.6-sol",
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "10000",
+        "pref.ai.openai.tagging.batch_tokens": "8000",
+        "pref.theme": "dark",
+    }
+    stored_json, nonce, tag = json.dumps(legacy), None, None
+    if encrypted:
+        stored_json, nonce, tag = get_encryption_service().encrypt_for_storage(stored_json)
+    with begin_writer() as connection:
+        update_client_preferences_json(
+            connection,
+            client_preferences_json=stored_json,
+            client_preferences_encryption_nonce=nonce,
+            client_preferences_encryption_tag=tag,
         )
+    expected = {
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "10000",
+        "pref.ai.openai.tagging.batch_tokens": "8000",
+        "pref.theme": "dark",
+    }
+    if provider == "openai":
+        expected.update({"pref.ai.provider": "openai", "pref.ai.openai_model": "gpt-5.6-sol"})
+    assert load_client_preferences(token="") == expected
+    assert save_client_preferences(preferences=expected, token="") == expected
+    assert load_client_preferences(token="") == expected
 
 
 def test_save_client_preferences_validates_search_suggestion_windows(
