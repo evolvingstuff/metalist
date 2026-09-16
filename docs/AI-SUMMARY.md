@@ -211,6 +211,7 @@ metalist
 - Tagging focus is separate from vocabulary permission: broad requests ask existing/new/both when new tags are allowed; explicit focus skips clarification. Focus applies only to the current pass. Existing-only permission is never overridden by inferred intent or a focus answer.
 - Removing the `app/services/store.py` adapter and calling `NoteStore` directly from all usecases still exposes referential integrity issues in some undo flows (delete/move). Adapter remains; revisit with tighter invariants + targeted tests.
 - Search is server-side + indexed: `app/services/search_index.py` (tag postings plus cached scans of tag-filtered, case-folded plain text), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
+  - Search-bar completions (`suggest_all_tag_completions`) require a real match in the active OR clause after completing the token; full tag/text/exclusion constraints apply before personalization/limiting. Note-tag recommendations retain the broader partial-overlap ranking in `suggest_tag_completions`.
   - Query terms: unquoted tokens are tag terms; quoted strings are text terms. Exact uppercase unquoted `OR` separates implicit-AND clauses, with forbidden terms scoped to their clause; uppercase `OR` is reserved from tag creation (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
   - Search syntax does not provide created/updated date constraints.
   - Views remain windowed (roots chunked; infinite scroll extends as needed).

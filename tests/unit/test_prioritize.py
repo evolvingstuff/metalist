@@ -8,6 +8,7 @@ import pytest
 
 import app.api.routes.notes as notes_route
 import app.usecases.prioritize as prioritize_module
+from app.services.search_index import SearchIndex, SearchRecord
 from app.usecases.prioritize import CmdPrioritize
 from app.usecases.prioritize import list_prioritize_tag_suggestions
 
@@ -407,6 +408,23 @@ def test_search_suggestions_route_uses_configured_limit(
         "suggestions": [f"tag-{index}" for index in range(7)],
         "personalizedSuggestions": [],
     }
+
+
+def test_search_suggestions_route_excludes_nonexistent_tag_combination(monkeypatch) -> None:
+    index = SearchIndex()
+    records = [
+        SearchRecord('prediction', '', 'prediction-future', frozenset({'prediction-future'})),
+        SearchRecord('security', '', 'computer-security', frozenset({'computer-security'})),
+    ]
+    index.rebuild(
+        records, raw_tag_terms_by_id={record.note_id: record.tag_terms for record in records},
+        progress_update=lambda _processed: None, progress_interval=1000,
+    )
+    monkeypatch.setattr(notes_route, 'search_index', index)
+
+    assert notes_route.search_suggestions(
+        None, {'query': 'prediction-future security', 'windowDays': [1, 7, 30]},
+    ) == {'suggestions': [], 'personalizedSuggestions': []}
 
 
 def test_search_suggestions_route_reports_each_promoting_window(

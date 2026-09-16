@@ -17,13 +17,22 @@ from app.services.search_text import build_searchable_text_casefold_from_plainte
 _QUOTE_CHARS = {"'", '"'}
 
 
-def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...], Optional[str]]:
+@dataclass(frozen=True, slots=True)
+class _SearchSuggestionContext:
+    anchors: Tuple[str, ...]
+    partial_prefix: str | None
+    completed_clause: str
+    is_exclusion: bool
+
+
+def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext:
     if not isinstance(raw_input, str):
         raise TypeError(f"raw_input must be a string, got {type(raw_input)}")
 
     anchors: List[str] = []
     partial_prefix: Optional[str] = None
     clause_term_count = 0
+    clause_start = 0
     has_trailing_whitespace = len(raw_input) > 0 and raw_input[-1].isspace()
 
     index = 0
@@ -34,12 +43,13 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
         if index >= length:
             break
 
+        term_start = index
         prefix: Optional[str] = None
         if raw_input[index] in ("+", "-"):
             prefix = raw_input[index]
             index += 1
             if index >= length or raw_input[index].isspace():
-                return tuple(anchors), None
+                return _SearchSuggestionContext(tuple(anchors), None, '', False)
 
         if raw_input[index] in _QUOTE_CHARS:
             quote_char = raw_input[index]
@@ -58,7 +68,7 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
                         continue
                 index += 1
             if not closed:
-                return tuple(anchors), None
+                return _SearchSuggestionContext(tuple(anchors), None, '', False)
             clause_term_count += 1
             continue
 
@@ -72,19 +82,21 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
 
         if token == "OR":
             if prefix is not None:
-                return tuple(anchors), None
+                return _SearchSuggestionContext(tuple(anchors), None, '', False)
             if clause_term_count == 0:
-                return tuple(anchors), None
+                return _SearchSuggestionContext(tuple(anchors), None, '', False)
             if index >= length and not raw_input[-1].isspace():
-                return tuple(anchors), None
+                return _SearchSuggestionContext(tuple(anchors), None, '', False)
             anchors = []
             clause_term_count = 0
+            clause_start = index
             continue
 
         is_partial = index >= length and not raw_input[-1].isspace()
         if is_partial:
-            partial_prefix = token
-            continue
+            return _SearchSuggestionContext(
+                tuple(anchors), token, raw_input[clause_start:term_start], prefix == '-',
+            )
 
         if prefix == "-":
             clause_term_count += 1
@@ -94,7 +106,12 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
 
     if partial_prefix is None and has_trailing_whitespace:
         partial_prefix = ""
-    return tuple(anchors), partial_prefix
+    return _SearchSuggestionContext(tuple(anchors), partial_prefix, raw_input[clause_start:], False)
+
+
+def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...], Optional[str]]:
+    context = _parse_search_suggestion_context(raw_input)
+    return context.anchors, context.partial_prefix
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,10 +564,34 @@ class SearchIndex:
             return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
 
     def suggest_all_tag_completions(self, *, query: str) -> List[str]:
-        """Return the complete ranked candidate set before UI truncation."""
+        """Return ranked search completions with real matches, before UI truncation.
+
+        Note-tag recommendations retain partial co-occurrence ranking through
+        suggest_tag_completions; search completions must satisfy the whole clause.
+        """
         with self._lock:
             candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
-        return self.suggest_tag_completions(query=query, limit=candidate_capacity)
+            suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity)
+            if not suggestions:
+                return []
+            context = _parse_search_suggestion_context(query)
+            if context.completed_clause.strip() == '':
+                matching_ids = self._alive
+            else:
+                clause = parse_search_query(context.completed_clause).first_clause
+                matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
+            if not matching_ids:
+                return []
+            completions: List[str] = []
+            for term in suggestions:
+                posting = self._tag_notes_casefold.get(term.casefold(), frozenset())
+                if context.is_exclusion:
+                    has_matches = not matching_ids.issubset(posting)
+                else:
+                    has_matches = not matching_ids.isdisjoint(posting)
+                if has_matches:
+                    completions.append(term)
+            return completions
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()
         if not isinstance(search, str):

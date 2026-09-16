@@ -139,6 +139,46 @@ def test_search_suggestion_context_resets_anchors_after_or() -> None:
     assert _parse_search_query_for_suggestions("alpha beta OR gam") == ((), "gam")
 
 
+@pytest.mark.parametrize('prefix', ['sec', 'security', 'computer-s'])
+def test_search_suggestions_exclude_security_without_prediction_future(prefix) -> None:
+    index = _build_index([
+        SearchRecord('prediction', '', 'prediction-future', frozenset({'prediction-future'})),
+        SearchRecord('security', '', 'computer-security', frozenset({'computer-security'})),
+    ])
+
+    assert index.query_note_ids('prediction-future computer-security') == set()
+    assert index.suggest_all_tag_completions(query=f'prediction-future {prefix}') == []
+    assert index.suggest_all_tag_completions(query=prefix) == ['computer-security']
+    # Note-tag recommendations may still suggest new combinations.
+    assert index.suggest_tag_completions(query=f'prediction-future {prefix}', limit=20) == ['computer-security']
+
+
+@pytest.mark.parametrize('query,expected', [
+    ('prediction-future sec', {'security-valid', 'security-blocked'}),
+    ('prediction-future horizon sec', {'security-valid'}),
+    ('prediction-future missing sec', set()),
+    ('prediction-future -blocked sec', {'security-valid'}),
+    ('prediction-future "safe" sec', {'security-valid'}),
+    ('prediction-future -"danger" sec', {'security-valid'}),
+    ('prediction-future @todo sec', {'security-valid'}),
+    ('unrelated OR prediction-future sec', {'security-valid', 'security-blocked'}),
+    ('prediction-future OR unrelated sec', {'security-unrelated'}),
+    ('prediction-future OR sec', {'security-valid', 'security-blocked', 'security-unrelated'}),
+    ('"say \\"OR\\"" sec', {'security-valid'}),
+    ('prediction-future +sec', {'security-valid', 'security-blocked'}),
+    ('prediction-future -"danger" -sec', {'security-blocked', 'security-unrelated'}),
+    ('prediction-future horizon ', {'security-valid'}),
+])
+def test_search_suggestions_require_matches_in_active_clause(query, expected) -> None:
+    index = _build_index([
+        SearchRecord('valid', 'safe say "OR"', '', frozenset({'prediction-future', 'horizon', 'security-valid', '@todo'})),
+        SearchRecord('blocked', 'danger', '', frozenset({'prediction-future', 'blocked', 'security-blocked'})),
+        SearchRecord('other', 'other', '', frozenset({'unrelated', 'security-unrelated'})),
+    ])
+
+    assert set(index.suggest_all_tag_completions(query=query)) == expected
+
+
 def test_exact_uppercase_or_is_not_indexed_as_a_tag() -> None:
     assert extract_tags_for_search("OR or [alpha OR]") == frozenset({"or", "alpha"})
 
