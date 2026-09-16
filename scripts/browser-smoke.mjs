@@ -15,6 +15,7 @@ import {checkBackgroundSortMenu} from './browser-sort-menu-regressions.mjs';
 import {prepareUpdateFixture, checkAppUpdates} from './browser-update-regressions.mjs';
 import {checkFloatingNotes} from './browser-floating-note-regressions.mjs';
 import {checkOpenAiSettings} from './browser-ai-settings-regressions.mjs';
+import {checkWritingAssistantCorrections} from './browser-writing-assistant-regressions.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
 const probe = createServer();
@@ -37,6 +38,7 @@ const server = spawn(resolve(python), ['serve_namespace.py','--namespace','defau
 server.stdout.on('data', chunk => { logs += chunk; });
 server.stderr.on('data', chunk => { logs += chunk; });
 let browser;
+const browserDiagnostics = [];
 try {
   let ready = false;
   for (let count=0; count<300; count++) {
@@ -46,16 +48,39 @@ try {
     await delay(100);
   }
   assert(ready, 'Server did not become ready');
-  browser = await puppeteer.launch({headless:true});
+  const browserName = process.env.BROWSER_TEST_BROWSER ?? 'chrome';
+  assert(['chrome', 'firefox'].includes(browserName), 'BROWSER_TEST_BROWSER must be chrome or firefox');
+  const browserDriver = process.env.BROWSER_TEST_DRIVER_MODULE
+    ? (await import(process.env.BROWSER_TEST_DRIVER_MODULE)).default : puppeteer;
+  browser = await browserDriver.launch({headless:true, browser:browserName,
+    ...(process.env.BROWSER_TEST_EXECUTABLE ? {executablePath:process.env.BROWSER_TEST_EXECUTABLE} : {})});
   const page = await browser.newPage();
+  page.on('console', message => browserDiagnostics.push(`${new Date().toISOString()} ${message.type()} ${message.text()}`));
+  page.on('framenavigated', frame => {
+    if (frame === page.mainFrame()) browserDiagnostics.push(`${new Date().toISOString()} navigate ${frame.url()}`);
+  });
+  page.on('requestfailed', request => browserDiagnostics.push(`${new Date().toISOString()} failed ${request.url()} ${request.failure()?.errorText}`));
   const updateFixture = await prepareUpdateFixture(page);
+  if (process.env.BROWSER_TEST_SUITE === 'writing-assistant') {
+    // The focused suite does not run checkAppUpdates, which normally releases
+    // this intentionally held request. Avoid an unrelated update notice too.
+    updateFixture.outage = true;
+    updateFixture.releaseInitial();
+  }
   const errors = [];
   page.on('pageerror', error => { errors.push(error.message); console.error('BROWSER ERROR', error.stack); });
   const pageFailure = new Promise((resolve, reject) => page.on('pageerror', reject));
   await page.goto(origin);
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
+  if (process.env.BROWSER_TEST_SUITE === 'writing-assistant') {
+    await checkWritingAssistantCorrections(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS writing-assistant regressions in ${await browser.version()}`);
+  } else {
+  assert(process.env.BROWSER_TEST_SUITE === undefined, 'Unknown BROWSER_TEST_SUITE');
   await checkAppUpdates(page, updateFixture);
   await checkOpenAiSettings(page);
+  await checkWritingAssistantCorrections(page);
   await page.waitForNetworkIdle({idleTime:500});
   // Exercise initial document mouse movement, including stationary axes and
   // duplicate browser observations that must not become duplicate state writes.
@@ -348,8 +373,10 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
   console.log(`Browser smoke passed; disposable artifacts: ${directory}`);
+  }
 } catch (error) {
   await writeFile(join(directory,'server.log'), logs);
+  await writeFile(join(directory,'browser.log'), browserDiagnostics.join('\n'));
   console.error(`Browser smoke failed; disposable logs: ${directory}`);
   throw error;
 } finally {

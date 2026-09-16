@@ -11,6 +11,7 @@ const source = readFileSync(new URL(
 function harness(isEditing) {
     class Element {
         closest() { return null; }
+        matches() { return false; }
     }
     const note = new Element();
     note.dataset = { noteId: 'note-1' };
@@ -37,6 +38,7 @@ function harness(isEditing) {
     };`).bind(null, ApplicationState)(...Object.values(dependencies));
     return { handlers, events, label, anchor, event: {
         target: label, clientX: 10, clientY: 10, button: 0, type: 'click',
+        composedPath() { return [label, anchor, content, note]; },
         preventDefault() { events.push('prevent-default'); },
         stopPropagation() { events.push('stop-propagation'); },
     } };

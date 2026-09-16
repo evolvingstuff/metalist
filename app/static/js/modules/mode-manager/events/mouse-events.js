@@ -350,6 +350,8 @@ function handleImmediateMouseDown(event) {
         return;
     }
 
+    if (isWritingAssistantInteraction(event)) return;
+
     if (isViewModeNoteLink(event.target)) {
         return;
     }
@@ -852,6 +854,14 @@ function handleCollapseToggleMouseDown(event) {
     handleCollapseToggleInteraction(event, collapseToggle, 'mousedown');
 }
 
+function isWritingAssistantInteraction(event) {
+    // Suggestion cards live outside the note, often inside a shadow root.
+    // Let the assistant apply its correction before any save/deselect. A
+    // closed shadow root retargets the event to its Grammarly host.
+    return event.composedPath().some(target => target instanceof Element
+        && target.matches('grammarly-extension, grammarly-desktop-integration'));
+}
+
 function handleClick(event) {
     if (!event) {
         throw new Error('handleClick called without an event object');
@@ -864,6 +874,8 @@ function handleClick(event) {
     if (!event.target) {
         throw new Error('Click event missing target element');
     }
+
+    if (isWritingAssistantInteraction(event)) return;
 
     // Consume the gesture before any target-specific early return. Holding the
     // mouse button does not expire an action already performed on mousedown.
