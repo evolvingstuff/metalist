@@ -516,6 +516,17 @@ def get_ai_debug_snapshot(
     )
 
 
+@router.get("/history")
+def get_ai_history(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> list:
+    response.headers["Cache-Control"] = "no-store"
+    return agent_trace_store.export_history(
+        session_key=token_service.get_session_key(token)
+    )
+
+
 @router.put("/debug", response_model=AiDebugSnapshotResponse)
 @transactional_route
 def put_ai_debug_details(

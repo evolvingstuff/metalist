@@ -283,3 +283,15 @@ def test_direct_response_does_not_send_note_content() -> None:
     serialized_messages = json.dumps(inference.final_messages)
     assert "ROOT_ALPHA" not in serialized_messages
     assert "CHILD_ALPHA" not in serialized_messages
+
+
+def test_model_can_respond_to_request_prohibiting_note_inspection() -> None:
+    inference = _FakeInference(route_kind="respond")
+    _events(
+        inference=inference,
+        snapshot=_snapshot(large_tail=False),
+        message="Answer from our conversation; do not inspect current notes.",
+        token_limit=24_000,
+    )
+    assert inference.final_messages
+    assert "ROOT_ALPHA" not in json.dumps(inference.final_messages)

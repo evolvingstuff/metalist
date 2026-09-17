@@ -43,7 +43,7 @@ The read-only agent harness has focused coverage for typed action boundaries,
 the flat action envelope and inactive-placeholder projection, concise
 structured-failure presentation, Instructor mode/request handling and retry traces,
 transient context, packaged/default and namespace-overridden prompts, prompt-template
-placeholder validation, read-only note tools, latest-run trace replacement, live
+placeholder validation, read-only note tools, latest-run debug snapshots plus full session history, live
 Instructor attempt/retry status, default-on exact debug detail, persisted default-hidden
 developer activity panels, compact hidden-mode progress, duplicate lifecycle-panel
 collapse, required per-panel approximate input-token metadata, API/session isolation,
@@ -211,3 +211,62 @@ Local validation: 1,496 Python tests passed with real PowerShell enabled; both s
 ### Linux PowerShell fixture identity correction
 
 Run 34887017802 at 89361930 stopped in the Ubuntu build unit suite: the live-process fixture queried StartTime in two separate PowerShell/.NET hosts, producing a false identity mismatch on Linux. The fixture now obtains its expected start time inside the same PowerShell host that checks and stops the disposable process. Native Windows still exercises GetProcessTimes on the retained process handle; production identity validation is unchanged. All 1,496 local tests and both startup sanity gates passed with real PowerShell enabled. Docker validation was not run; the user requested proceeding without Docker. Linux confirmation remains the next CI build.
+
+
+## Opt-in prompt regressions
+
+See [evals/README.md](../../evals/README.md) for exporting input/output pairs,
+constructing recorded or synthetic cases, and explicitly running baseline and
+candidate prompts. Every live case runs ten times; reports preserve all outcomes
+and errors and compare percentage correct without a 100% gate. Output cases use
+an explicitly configured Instructor judge. Ordinary test commands never run this
+live suite.
+
+`test_agent_history.py` exercises the real OpenAI SDK/Instructor against a simulated
+HTTP provider, covering retry pairs, multi-turn retention, session isolation,
+partial/cancelled output, and the authenticated no-cache endpoint.
+`test_prompt_regressions.py` checks expectation matching, independent repetitions,
+judge criteria, candidate substitution, schema drift, export-to-case drafts,
+comparison, and skill instruction lifetime without provider calls.
+`browser-ai-history-regressions.mjs` checks the authenticated empty-history endpoint
+and the export button's downloaded JSON for a simulated multi-turn history. It is
+included in full smoke and selectable via `BROWSER_TEST_SUITE=ai-history`.
+
+
+2026-09-17 prompt-suite validation: **1,517 Python tests passed, 7 skipped**;
+**728 JavaScript tests passed**; startup checks passed across **410 Python** and
+**183 JS/JSX** files. The focused export browser check passed in **Chrome 131** and
+**Firefox 155.0.1** on macOS. Provider capture tests use real SDK/Instructor code
+with a simulated HTTP transport; no paid live regressions were run. Windows UI
+and real-model accuracy have not been measured by these checks.
+
+
+The live suite/fixtures and ordinary tests remain repository-only: wheel package
+selection includes `app*`, and `MANIFEST.in` prunes `evals/` and `tests/` from the
+source distribution. `scripts/check_distribution.py` rejects either tree in both
+artifact formats. Runtime history capture/export still ships with the app.
+
+`evals/cases/actions/` adds 24 entirely synthetic routing cases (eight for each
+current route), about 210 KB total. Both baseline and candidate configurations
+validate without model calls. The initial live Luna run scored 218/240 correct,
+15 incorrect, and 7 validation errors. A keyword-based intent override caused
+those validation errors; that override and its prompt signal have since been
+removed. Case expectations remain unchanged; see the suite README. This collection
+does not import personal history exports or query the live note database.
+
+
+2026-09-17 removal of intent heuristics: the saved-note keyword validator, injected
+routing signal, phrase-based system instruction, and legacy rationale-text action
+override were removed. Instructor still validates structured actions; execution
+still enforces permissions, scope, and tool limits. Synthetic conversations and
+expected actions were not changed. Both the removal-only run and the final prompt
+run scored **240/240 correct, zero incorrect, zero errors** with `gpt-5.6-luna`,
+thinking off, 24 cases × 10 repetitions. This is a sample, not a guarantee of
+future accuracy. Final frozen fixture prompts match the evaluated candidate.
+The original run was 218/240 correct, 15 incorrect, and 7 validation errors.
+Full local reports: `/tmp/metalist-luna-synthetic-live-20260917/`,
+`/tmp/metalist-luna-no-keyword-routing-20260917/`, and
+`/tmp/metalist-luna-no-keyword-candidate-20260917/` (includes `RESULTS.md`).
+Final candidate estimated cost: $0.02515422. Ordinary validation passed **1,524
+Python tests, 7 skipped**, **728 JavaScript tests**, and both startup gates;
+focused prompt/fixture checks also passed after updating the final prompt.

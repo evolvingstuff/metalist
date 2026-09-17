@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "faithful-summary",
+  "description": "A summary must preserve quantities and avoid inventing details.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "kind": "text",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Summarize the supplied note accurately and concisely."
+        },
+        {
+          "role": "user",
+          "content": "Summarize this note: I planted three apple trees in April. Two survived the summer."
+        }
+      ],
+      "response_model": "",
+      "max_output_tokens": 1024,
+      "current_user_request": "Summarize this note.",
+      "prompt_bindings": [],
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "facts",
+            "instruction": "Preserve that three apple trees were planted in April and two survived the summer."
+          },
+          {
+            "id": "no-invention",
+            "instruction": "Do not invent a location, cause of death, or other unsupported facts."
+          }
+        ],
+        "reference_facts": "Three apple trees planted in April; two survived summer."
+      },
+      "response_schema": {}
+    }
+  ],
+  "provenance": {
+    "source": "synthetic output-judge example"
+  }
+}

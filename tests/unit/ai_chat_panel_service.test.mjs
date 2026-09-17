@@ -289,13 +289,6 @@ test('search activity labels expose the query as a separate display part', () =>
     });
     assert.deepEqual(splitSearchActivityLabel({
         action: 'search_notes',
-        label: 'Skipped repeat-search selection · foo OR "foo"',
-    }), {
-        statusLabel: 'Skipped repeat-search selection',
-        searchQuery: 'foo OR "foo"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
         label: 'Selected action · Search notes · The answer depends on the notes.',
     }), {
         statusLabel: 'Selected action · Search notes · The answer depends on the notes.',

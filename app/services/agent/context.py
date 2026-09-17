@@ -6,7 +6,6 @@ import json
 
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
-from app.services.agent.actions import request_explicitly_requires_saved_notes
 from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.prompt_settings import AgentPromptSet
@@ -103,10 +102,7 @@ class AgentContextBuilder:
                 "AUTHORITATIVE ROUTING RULE: Explicit requests to generate, accept, reject, or remove tag proposals select tag_proposals. Questions about tagging do not authorize mutations. Otherwise classify current_user_request as "
                 "the current task, using the "
                 "immediately preceding conversation to resolve references and "
-                "elliptical follow-ups. When "
-                "surface_saved_note_signal is present, choose "
-                "investigate_current_scope; the active scope has no note content "
-                "and does not make respond valid. If the current request continues, "
+                "elliptical follow-ups. If the current request continues, "
                 "retries, reissues, or asks to perform an unresolved earlier task "
                 "that requires saved-note evidence, choose investigate_current_scope "
                 "against the active scope captured for this Send even when the current "
@@ -116,21 +112,9 @@ class AgentContextBuilder:
                 "claim that evidence was unavailable as authoritative for the newly "
                 "captured scope. A correction, objection, or challenge that only asks "
                 "for a conversational acknowledgment remains respond. "
-                "A missing surface saved-note signal does not make respond valid when "
-                "the conversation establishes a note-dependent continuation. "
                 "active_metalist_scope is routing context and has no note content."
             ),
             "current_user_request": canonical_messages[-1]["content"],
-            "surface_saved_note_signal": (
-                "present"
-                if request_explicitly_requires_saved_notes(
-                    canonical_messages[-1]["content"]
-                )
-                else (
-                    "not_present; this does not rule out a note-dependent "
-                    "conversational continuation"
-                )
-            ),
             "active_metalist_scope": {
                 "scope_kind": descriptor.scope_kind,
                 "label": descriptor.label,

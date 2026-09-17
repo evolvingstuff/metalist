@@ -14,6 +14,8 @@ from pydantic import ValidationError
 from instructor.v2.core.client import AsyncInstructor
 from instructor.v2.core.errors import InstructorRetryException
 
+from app.services.agent.history import record_provider_event
+from app.services.agent.judging import OutputJudgment
 from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
@@ -32,6 +34,7 @@ _SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
+        OutputJudgment: 4_096,
         TagBatchResult: 8_192,
         TagOperationIntent: 1_024,
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
@@ -99,6 +102,7 @@ class _InstructorTraceCapture:
             "url": str(request.url),
             "body": body,
         }
+        record_provider_event("LLM_WIRE_REQUEST", {"attempt": len(self._attempts), **attempt.wire_request})
         self._emit_progress(
             phase="attempt_started",
             failure_kind="",
@@ -296,15 +300,19 @@ class _InstructorTraceCapture:
         )
 
     def freeze(self) -> list[InferenceAttempt]:
-        return [
-            InferenceAttempt(
-                request=attempt.request,
-                response=attempt.response,
-                error=attempt.error,
-                duration_ms=attempt.duration_ms,
-            )
-            for attempt in self._attempts
-        ]
+        attempts = []
+        for attempt in self._attempts:
+            response = attempt.response
+            error = attempt.error
+            if response == {}:
+                response = self._assembled_stream_response(attempt)
+                if error == "":
+                    error = "Incomplete provider response"
+            attempts.append(InferenceAttempt(
+                request=attempt.request, response=response,
+                error=error, duration_ms=attempt.duration_ms,
+            ))
+        return attempts
 
     def current_response(self) -> dict[str, object]:
         response = self._current_attempt().response

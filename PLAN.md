@@ -1,6 +1,6 @@
 # MetaList agent history, behavior regressions, skills, and actions
 
-Status: **Draft — awaiting user approval.**
+Status: **Approved; implementation in progress.**
 
 Date: 2026-09-17.
 
@@ -31,7 +31,34 @@ implementation before approval or settle the design questions listed below.
   “how do I…” requests can only receive explanations or open dialogs. For example,
   “how do I change the agent context to 250k tokens” can appropriately result in
   setting the relevant limit to 250,000.
+- Skill instructions belong only to calls that explicitly need them; using a skill
+  at step 5 must not automatically add its content to every later call. Exported
+  history retains the original input without making it future conversation context.
 - Work from concrete cases before designing a broad action or skill framework.
+
+## First implementation delivered
+
+- Complete session input/output-pair export is implemented in the chat header.
+  Exact provider attempts, retries, failures, and partial/cancelled output are
+  recorded; session retention was chosen by the user. Latest-run Debug remains.
+- `evals/` provides recorded/synthetic JSON cases, export-to-case drafts, explicit
+  prompt bindings, production Instructor decision calls, output judging, ten
+  repetitions, per-case percentages, and baseline/candidate comparison.
+- Regression cases and the runner stay in Git but are excluded from PyPI wheels
+  and source distributions, enforced by the distribution check.
+- Three routing seed cases and one output-judge example are included. Ordinary
+  tests use a simulated provider; live Luna action results are recorded in
+  `docs/testing/harness.md`.
+- Added a separate 24-case synthetic action suite, with eight cases for each
+  current route and invented scope/conversation inputs only. No personal exports
+  or note contents are used. Keyword-based intent validation and prompt signals
+  have been removed, along with the legacy rationale-text routing override.
+  Expectations remain unchanged; model action choices are scored directly.
+- `evals/README.md` documents the working commands and supported case contracts.
+- This delivery establishes the prompt suite. Execution/state assertions for new
+  UI/settings actions and the concrete skill/action additions in Phase 6 remain
+  future work. Decision sequences can reference previous generated outputs, but
+  do not claim to reproduce the full runtime's tool execution.
 
 ## Existing implementation to build on
 
@@ -63,12 +90,13 @@ implementation before approval or settle the design questions listed below.
 
 ## Phase 1 — Complete interaction recording and UI export
 
-- [ ] Define a versioned, structured export format with stable conversation, turn,
+- [x] Define a versioned, structured export format with stable conversation, turn,
   run, call, attempt, and action identifiers and chronological event ordering.
-- [ ] Retain every run belonging to the exportable conversation instead of only
+- [x] Retain every run belonging to the exportable conversation instead of only
   the latest run. Preserve each call's actual model-visible history, which may
   differ from the displayed transcript because of disclosure boundaries.
-- [ ] Capture the exact effective inputs at call time:
+- [ ] Capture the exact effective inputs at call time (model-visible requests are
+  implemented; broader application state for future execution tests remains):
   - System/developer instructions, prompt overrides, and loaded skill text.
   - Ordered messages and their roles, supplied note data, tool/action schemas,
     structured response schemas, and tool results available to that call.
@@ -76,25 +104,25 @@ implementation before approval or settle the design questions listed below.
     version, and prompt/skill versions or hashes.
   - The application context needed to interpret actions: current scope, relevant
     settings and UI state, available commands, and disclosed note snapshots.
-- [ ] Record raw returned outputs and parsed structured values, validation errors,
+- [x] Record raw returned outputs and parsed structured values, validation errors,
   retry requests, failures, cancellations, and partial streamed outputs. Capture
   only data actually returned by the provider; do not claim access to hidden
   model reasoning.
 - [ ] Record requested actions separately from actual execution and results,
   including relevant before/after state and failures. A model saying it opened a
   dialog is not proof that the browser opened it.
-- [ ] Cover routing, investigation, tagging interpretation, all tagging batches,
+- [x] Cover routing, investigation, tagging interpretation, all tagging batches,
   validation retries, and final response generation through the same export.
-- [ ] Add a discoverable **Export LLM history** button to the chat UI, producing
+- [x] Add a discoverable **Export LLM history** button to the chat UI, producing
   JSON suitable for constructing regression cases. Reuse Agent Debug where useful;
   exact button placement and whether Copy all remains are review decisions.
-- [ ] Export the recorded snapshots without another model call. Do not rebuild
+- [x] Export the recorded snapshots without another model call. Do not rebuild
   past inputs from today's notes, preferences, or prompt files.
-- [ ] Resolve retention and lifecycle before implementing storage: current-chat
+- [x] Resolve retention and lifecycle before implementing storage: current-chat
   memory versus persistence across reload/restart, and behavior on Clear Chat,
   logout, cancellation, and concurrent export. An export taken during a running
   turn must identify that turn as incomplete.
-- [ ] Preserve existing authentication, namespace isolation, and disclosure rules.
+- [x] Preserve existing authentication, namespace isolation, and disclosure rules.
   Export model-visible content faithfully; omit credentials and authentication
   headers. Do not add undisclosed note data to make a case easier to reproduce.
   Choose retention/storage consistent with namespace encryption if persistence
@@ -111,14 +139,14 @@ Acceptance:
 
 ## Phase 2 — Recorded and synthetic regression cases
 
-- [ ] Define a case format that supports both adapted exports and entirely
+- [x] Define a case format that supports both adapted exports and entirely
   synthetic conversations, note data, application state, and action results.
-- [ ] Preserve recorded behavior as evidence and separately specify expected
+- [x] Preserve recorded behavior as evidence and separately specify expected
   behavior. A recorded mistake must not automatically become the expected answer.
-- [ ] Keep original effective prompts and skills for baseline reproduction, while
+- [x] Keep original effective prompts and skills for baseline reproduction, while
   preserving enough input structure to rebuild requests with candidate prompts.
   Replaying unchanged serialized requests would not test a prompt modification.
-- [ ] Allow cases targeting one particular decision/output or a complete sequence
+- [x] Allow cases targeting one particular decision/output or a complete sequence
   of decisions. Earlier messages, actions, and tool results remain available when
   they are needed to understand a follow-up.
 - [ ] Reconstruct scope and relevant state from the case rather than querying live
@@ -127,7 +155,7 @@ Acceptance:
 - [ ] Run execution checks against disposable state or controlled command handlers.
   Regressions must not change live preferences/notes, open the user's dialogs, or
   submit real application operations.
-- [ ] Supply a documented workflow for turning an export into a case, adding its
+- [x] Supply a documented workflow for turning an export into a case, adding its
   expectations, and running that case before editing prompts. Automatic generation
   of expected behavior is not assumed.
 
@@ -136,16 +164,16 @@ both can be run independently of the original live conversation or database.
 
 ## Phase 3 — Action correctness regressions
 
-- [ ] Invoke the real Instructor-backed decision path with the case context.
+- [x] Invoke the real Instructor-backed decision path with the case context.
   Mock-only tests cannot establish that the live model selects the correct action.
-- [ ] Compare structured actions and arguments with case-specific expectations:
+- [x] Compare structured actions and arguments with case-specific expectations:
   required actions, permitted alternatives, forbidden actions, intended targets,
   scope, values, and ordering where order affects correctness.
-- [ ] Evaluate the action sequence overall. Do not require identical explanatory
+- [x] Evaluate the action sequence overall. Do not require identical explanatory
   wording or an identical sequence when several sequences satisfy the case.
 - [ ] Where execution is part of the case, check the resulting state or handler
   acknowledgment as well as the model's requested action.
-- [ ] Treat Instructor schema validation as structural validation. A valid action
+- [x] Treat Instructor schema validation as structural validation. A valid action
   object still fails if it targets the wrong setting, scope, or value.
 - [ ] Report expected versus actual actions, missing/extra actions, and execution
   failures with links/identifiers back to the recorded calls.
@@ -166,20 +194,20 @@ visible rather than presenting all planned examples as existing functionality.
 
 ## Phase 4 — Output quality regressions with an LLM judge
 
-- [ ] Save explicit output criteria and supporting reference facts/evidence with
+- [x] Save explicit output criteria and supporting reference facts/evidence with
   each output case. Do not use exact prose matching as the quality test.
-- [ ] Generate a fresh candidate output for each of the case's 10 repetitions,
+- [x] Generate a fresh candidate output for each of the case's 10 repetitions,
   using the same starting context and selected prompts, and judge each output.
   Judging one fixed output 10 times does not satisfy this requirement.
-- [ ] Use an Instructor-validated judge response with per-criterion verdicts,
+- [x] Use an Instructor-validated judge response with per-criterion verdicts,
   reasons, and an overall result. Select the judge prompt/model and pass rule
   explicitly, and record them with each run.
 - [ ] Use ordinary assertions for objectively checkable facts such as valid
   citations, required structured values, and scope membership; use the judge for
   semantic criteria such as whether an explanation answers the question correctly.
-- [ ] Keep candidate and judge calls identifiable in reports. Candidate text is
+- [x] Keep candidate and judge calls identifiable in reports. Candidate text is
   material to evaluate, not authority for changing the judging criteria.
-- [ ] Treat judge/provider failures as test errors, not passes. Preserve each
+- [x] Treat judge/provider failures as test errors, not passes. Preserve each
   repetition's verdict or error; do not retry until a test happens to pass.
 
 Acceptance: an intentionally incorrect output fails its criteria, and an acceptable
@@ -188,33 +216,33 @@ remain reviewable evidence rather than a guarantee of correctness.
 
 ## Phase 5 — Explicit execution and failing-test-first workflow
 
-- [ ] Place live behavior cases behind a separate opt-in command/suite, with case
-  selection and explicit model/judge configuration. Exact command names are TBD.
-- [ ] Keep normal pytest, Node tests, browser smoke, startup checks, and routine CI
+- [x] Place live behavior cases behind a separate opt-in command/suite, with case
+  selection and explicit model/judge configuration: `.venv/bin/python -m evals`.
+- [x] Keep normal pytest, Node tests, browser smoke, startup checks, and routine CI
   free of live provider/judge calls. Test the regression infrastructure itself with
   deterministic fixtures in those ordinary suites.
-- [ ] Run every selected action or output case exactly 10 times, resetting its
+- [x] Run every selected action or output case exactly 10 times, resetting its
   conversation, fixture data, and application state before each repetition.
   Repetitions must not inherit actions or conversation from earlier repetitions.
-- [ ] Report each case's correct count and percentage, for example **8/10 (80%)**,
+- [x] Report each case's correct count and percentage, for example **8/10 (80%)**,
   alongside incorrect and error counts and all individual outcomes. Keep errors
   visible in the denominator rather than dropping them to inflate the rate.
   Record ordinary inference retries within their repetition, not as new successes.
-- [ ] Do not impose a universal 100% requirement. Overall acceptance thresholds
+- [x] Do not impose a universal 100% requirement. Overall acceptance thresholds
   and what constitutes a meaningful regression remain decisions for discussion;
   distinguish each repetition's verdict from the case's measured success rate.
-- [ ] Intended workflow: export a failure → add expected behavior → establish a
+- [x] Intended workflow: export a failure → add expected behavior → establish a
   failing case → edit prompts/skills → rerun that case and the relevant behavior
   set → inspect changes and results.
-- [ ] Report prompt/skill identities, model identities/settings, action/output
+- [x] Report prompt/skill identities, model identities/settings, action/output
   verdicts, errors, call counts, latency, and provider usage/cost when available.
-- [ ] Preserve the baseline and candidate results. Hold conversation, note data,
+- [x] Preserve the baseline and candidate results. Hold conversation, note data,
   expectations, and model settings fixed when measuring a prompt-only change.
   Run each case 10 times for the baseline and 10 times for the candidate, and
   report both percentages and their percentage-point difference. Exact provider
   reproducibility is not guaranteed by recording a context; these measured rates
   can vary between runs.
-- [ ] Do not silently update expected results when a candidate prompt fails.
+- [x] Do not silently update expected results when a candidate prompt fails.
 
 ## Phase 6 — Concrete MetaList skills and actions
 
@@ -249,17 +277,17 @@ baseline, not a mandatory architecture or a free latency budget.
 
 ## Decisions still requiring discussion
 
-1. Export retention: current conversation only, and what must survive reload,
-   Clear Chat, logout, or application restart?
-2. Export UX: button placement, download versus copy options, and whether selecting
-   a particular turn should also be available alongside the complete history.
-3. Case authoring: initially edit a structured case file, or also provide an explicit
-   “add regression case” UI? Export is agreed; a full test-authoring UI is not.
+1. Export retention resolved: session history only; clear with Clear Chat/logout
+   and application restart. A page reload in the same authenticated session retains it.
+2. Export UX resolved for v1: download all input/output pairs from the chat header.
+   The CLI selects an individual pair when creating a draft case.
+3. Case authoring in v1 uses editable JSON and the export-to-case CLI. A full
+   “add regression case” UI is still future discussion.
 4. Expected-action rules: permitted alternatives and degree of execution checking
    for the first concrete examples.
-5. Output judging: rubric format, judge model/prompt, and per-output pass rule.
-   Each case runs 10 times; acceptable overall rates and regression thresholds
-   still need discussion and must not default to requiring 100%.
+5. Output judging in v1 uses explicit per-case criteria and a separate judge JSON
+   configuration. All listed criteria must pass per output. Each case runs ten
+   times; acceptable overall rates and regression thresholds remain undecided.
 6. Initial skills/actions beyond AI settings, and which instructions justify lookup
    latency. No broad capability expansion is approved by this draft.
 
@@ -283,12 +311,10 @@ baseline, not a mandatory architecture or a free latency budget.
 
 ## Approval and git workflow
 
-- [ ] User reviews and approves this draft before implementation.
-- [ ] After approval, request permission for the PLAN workflow's documentation-only
-  **COMMIT CHECKPOINT** so the agreed plan is preserved.
-- [ ] Confirm the implementation branch/base without merging or completing the
-  unfinished Grammarly feature as a side effect. This draft was created on
-  `feature/grammarly-editing`, whose prior checkpoint is `6275bf1b`.
+- [x] User approved implementation.
+- [x] Plan preserved in documentation checkpoint `abf856c9`.
+- [x] Implementation branch `feature/agent-regression-suite` starts from the plan
+  checkpoint and includes the unmerged Grammarly checkpoint `6275bf1b`.
 - [ ] Implement and validate the approved phases, keeping this plan current.
 - [ ] Follow the repository's testing/commit requirements. Remove `PLAN.md` only
   through the eventual **COMMIT FEATURE** workflow; never push automatically.

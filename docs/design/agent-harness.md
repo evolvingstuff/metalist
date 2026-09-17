@@ -136,10 +136,12 @@ The route sees canonical conversation history plus a content-free block containi
 the exact current user request, user search, scope kind/label, sort/date state, and
 note/root counts. It does not serialize note content to choose a route.
 
-`respond` is for general conversation and corrections that do not explicitly ask
-for fresh saved-note evidence. An explicit request to summarize, search, review, or
-otherwise use saved notes is bound by validation to
-`investigate_current_scope`.
+`respond` is for conversation that needs no fresh note evidence. The model
+interprets the request and conversation to choose investigation or a tag operation.
+Instructor validates supported action names, required fields, and field types;
+no keyword classifier, prompt signal, or rationale-text heuristic overrides the
+model decision. Execution still enforces permissions, scope, and tool limits.
+Action regression expectations measure whether the selected action was appropriate.
 
 The packaged scoped skill describes one authoritative payload and direct final
 answer. No skill or prompt describes page traversal, summary mutation, facet
@@ -221,3 +223,28 @@ Generation captures the search-visible trees. Visible ancestors supply content, 
 Bulk acceptance/removal resolves the complete requested target set programmatically, independent of provider disclosure and token limits. Current context is the default; entire-namespace scope must be explicit. Menu and chat support an exact case-insensitive tag filter or all proposals. These operations execute directly without an additional confirmation or tagging inference. Removing proposals creates no rejection memory.
 
 Implementation: `app/services/agent/tagging.py`, `tagging_run.py`, `app/services/bulk_operation.py`, and `app/usecases/bulk_tag_proposals.py`. Structured questions and direct menu operations use authenticated `/api2/ai/proposals/*` endpoints.
+
+
+## Session history and explicit regression replay
+
+`history.py` binds an inference recorder to the scoped run using task-local context.
+The OpenAI adapter records logical call inputs, actual HTTP bodies, structured
+attempt outputs, and raw text-stream chunks, including errors and cancellation.
+`AgentTraceStore` retains every run for the session while its debug snapshot still
+returns the latest run. Authenticated `GET /api2/ai/history` exports chronological
+input/output pairs with `Cache-Control: no-store`. Clear Chat/logout/reset remove
+history; there is no new persistence or provider-side storage.
+
+History recording never inserts old instructions or evidence into new requests.
+Each call records precisely its own context. Skills in future replay steps must
+be explicitly included; loading a skill once does not make it permanent history.
+The existing scoped investigation path records skill activation for its policy;
+that activation record alone does not prove the skill text was sent to a model.
+The exported actual request is authoritative.
+
+`evals/` uses the production inference adapter and response models for explicit
+prompt tests. Ten independent repetitions report rates, with structured action
+expectations or an Instructor-validated output judge. This initial replay layer
+checks decisions/outputs; it does not execute UI or note mutations. See
+[the suite guide](../../evals/README.md) for prompt bindings, fixture authoring,
+comparison rules, and limitations. Additional application actions remain planned.

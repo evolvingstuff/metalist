@@ -14,6 +14,7 @@ import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.
 import {checkBackgroundSortMenu} from './browser-sort-menu-regressions.mjs';
 import {prepareUpdateFixture, checkAppUpdates} from './browser-update-regressions.mjs';
 import {checkFloatingNotes} from './browser-floating-note-regressions.mjs';
+import {checkAiHistoryExport} from './browser-ai-history-regressions.mjs';
 import {checkOpenAiSettings} from './browser-ai-settings-regressions.mjs';
 import {checkWritingAssistantCorrections} from './browser-writing-assistant-regressions.mjs';
 
@@ -61,7 +62,7 @@ try {
   });
   page.on('requestfailed', request => browserDiagnostics.push(`${new Date().toISOString()} failed ${request.url()} ${request.failure()?.errorText}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (process.env.BROWSER_TEST_SUITE === 'writing-assistant') {
+  if (['writing-assistant', 'ai-history'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -72,7 +73,11 @@ try {
   const pageFailure = new Promise((resolve, reject) => page.on('pageerror', reject));
   await page.goto(origin);
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
-  if (process.env.BROWSER_TEST_SUITE === 'writing-assistant') {
+  if (process.env.BROWSER_TEST_SUITE === 'ai-history') {
+    await checkAiHistoryExport(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS AI history regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'writing-assistant') {
     await checkWritingAssistantCorrections(page);
     assert.deepEqual(errors, []);
     console.log(`PASS writing-assistant regressions in ${await browser.version()}`);
@@ -80,6 +85,7 @@ try {
   assert(process.env.BROWSER_TEST_SUITE === undefined, 'Unknown BROWSER_TEST_SUITE');
   await checkAppUpdates(page, updateFixture);
   await checkOpenAiSettings(page);
+  await checkAiHistoryExport(page);
   await checkWritingAssistantCorrections(page);
   await page.waitForNetworkIdle({idleTime:500});
   // Exercise initial document mouse movement, including stationary axes and

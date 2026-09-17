@@ -1,4 +1,4 @@
-"""Session-only trace capture for the current or most recent agent run."""
+"""Session-only trace capture for the complete conversation and latest-run debug view."""
 
 from __future__ import annotations
 
@@ -7,10 +7,14 @@ from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 
+from app.version import __version__
+
 
 class AgentTraceStore:
     def __init__(self) -> None:
         self._exact_detail_hidden_sessions: set[str] = set()
+        self._histories: dict[str, list[dict[str, object]]] = {}
+        self._discarded_run_ids: set[str] = set()
         self._latest_runs: dict[str, dict[str, object]] = {}
         self._lock = Lock()
 
@@ -18,17 +22,23 @@ class AgentTraceStore:
         with self._lock:
             self._exact_detail_hidden_sessions.clear()
             self._latest_runs.clear()
+            self._histories.clear()
+            self._discarded_run_ids.clear()
 
     def clear_session(self, *, session_key: str) -> None:
         self._validate_session_key(session_key)
         with self._lock:
             self._exact_detail_hidden_sessions.discard(session_key)
+            self._discarded_run_ids.update(run["run_id"] for run in self._histories.get(session_key, []))
             self._latest_runs.pop(session_key, None)
+            self._histories.pop(session_key, None)
 
     def clear_trace(self, *, session_key: str) -> None:
         self._validate_session_key(session_key)
         with self._lock:
+            self._discarded_run_ids.update(run["run_id"] for run in self._histories.get(session_key, []))
             self._latest_runs.pop(session_key, None)
+            self._histories.pop(session_key, None)
 
     def set_exact_details_enabled(self, *, session_key: str, enabled: bool) -> None:
         self._validate_session_key(session_key)
@@ -63,6 +73,7 @@ class AgentTraceStore:
                 "error": "",
                 "events": [],
             }
+            self._histories.setdefault(session_key, []).append(self._latest_runs[session_key])
         return run_id
 
     def append_event(
@@ -84,11 +95,9 @@ class AgentTraceStore:
             duration_ms=duration_ms,
         )
         with self._lock:
-            run = self._latest_runs.get(session_key)
+            run = self._find_run(session_key, run_id)
             if run is None:
                 return
-            if run["run_id"] != run_id:
-                raise RuntimeError("Agent trace run id does not match latest run")
             events = run["events"]
             assert isinstance(events, list)
             events.append(
@@ -120,6 +129,70 @@ class AgentTraceStore:
                 "run": deepcopy(run) if run is not None else {},
             }
 
+    def export_history(self, *, session_key: str) -> list:
+        """One input/output pair per actual provider attempt, in request order."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            runs = deepcopy(self._histories.get(session_key, []))
+        pairs = []
+        for run in runs:
+            calls = {}
+            for event in run["events"]:
+                detail = event["detail"]
+                kind = event["type"]
+                if kind == "LLM_CALL_STARTED":
+                    calls[detail["call_id"]] = {"input": detail, "pairs": []}
+                elif kind == "LLM_WIRE_REQUEST":
+                    call = calls[detail["call_id"]]
+                    pair = [{
+                        "schema_version": 1, "application_version": __version__,
+                        "run_id": run["run_id"], "call_id": detail["call_id"],
+                        "attempt": len(call["pairs"]) + 1,
+                        "timestamp": event["timestamp"],
+                        "request": detail["body"],
+                        "invocation": call["input"],
+                    }, {"status": "running", "response": {}, "chunks": [], "error": ""}]
+                    call["pairs"].append(pair)
+                    pairs.append(pair)
+                elif kind == "LLM_ATTEMPT_OUTPUT":
+                    call = calls[detail["call_id"]]
+                    if detail["attempt"] <= len(call["pairs"]):
+                        output = call["pairs"][detail["attempt"] - 1][1]
+                        output.update(response=detail["response"], error=detail["error"])
+                        output["status"] = "complete"
+                        if detail["error"] != "":
+                            output["status"] = "error"
+                elif kind == "LLM_RAW_CHUNK":
+                    calls[detail["call_id"]]["pairs"][-1][1]["chunks"].append(
+                        {key: value for key, value in detail.items() if key != "call_id"}
+                    )
+                elif kind == "LLM_CALL_FINISHED":
+                    call = calls[detail["call_id"]]
+                    if not call["pairs"]:
+                        # Failure before HTTP: retain the attempted invocation explicitly.
+                        pair = [{"schema_version": 1, "application_version": __version__,
+                                 "run_id": run["run_id"], "call_id": detail["call_id"],
+                                 "attempt": 0, "timestamp": event["timestamp"],
+                                 "request": {}, "invocation": call["input"]},
+                                {"status": detail["status"], "response": {},
+                                 "chunks": [], "error": detail["error"]}]
+                        pairs.append(pair)
+                    else:
+                        output = call["pairs"][-1][1]
+                        output["status"] = detail["status"]
+                        if detail["error"]:
+                            output["error"] = detail["error"]
+        return pairs
+
+    def _find_run(self, session_key: str, run_id: str):
+        # A cleared session may still receive the cancellation of an old call.
+        if session_key not in self._histories or run_id in self._discarded_run_ids:
+            return None
+        for run in self._histories[session_key]:
+            if run["run_id"] == run_id:
+                return run
+        raise RuntimeError("Agent trace run id does not match a recorded run")
+
     def _finish_run(self, *, session_key: str, run_id: str, status: str, error: str) -> None:
         self._validate_session_key(session_key)
         if not isinstance(run_id, str) or run_id == "":
@@ -127,11 +200,9 @@ class AgentTraceStore:
         if status not in {"complete", "error"}:
             raise ValueError("Unsupported trace completion status")
         with self._lock:
-            run = self._latest_runs.get(session_key)
+            run = self._find_run(session_key, run_id)
             if run is None:
                 return
-            if run["run_id"] != run_id:
-                raise RuntimeError("Agent trace run id does not match latest run")
             run["status"] = status
             run["finished_at"] = self._now_iso()
             run["error"] = error

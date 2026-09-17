@@ -3,6 +3,7 @@ import { rethrowUnexpectedError } from '../expected-errors.js';
 import {
     AiApiError,
     loadAiDebugSnapshot,
+    loadAiHistory,
     setAiDebugExactDetails,
 } from './ai-chat-api.js';
 
@@ -94,6 +95,7 @@ class AgentDebugViewController {
         }
         this._elements = {
             button: requireElement('ai-chat-debug', HTMLButtonElement),
+            exportHistory: requireElement('ai-chat-export-history', HTMLButtonElement),
             dialog: requireElement('ai-agent-debug-dialog', HTMLDialogElement),
             enabled: requireElement('ai-agent-debug-enabled', HTMLInputElement),
             copyAll: requireElement('ai-agent-debug-copy-all', HTMLButtonElement),
@@ -117,6 +119,7 @@ class AgentDebugViewController {
     _bindEvents() {
         this._elements.button.addEventListener('click', () => void this._open());
         this._elements.close.addEventListener('click', () => this._elements.dialog.close());
+        this._elements.exportHistory.addEventListener('click', () => void this._exportHistory());
         this._elements.copyAll.addEventListener('click', () => void this._copyAll());
         this._elements.refresh.addEventListener('click', () => void this._loadSnapshot());
         this._elements.enabled.addEventListener('change', () => void this._toggleExactDetails());
@@ -182,6 +185,19 @@ class AgentDebugViewController {
             this._setStatus(error.message);
             throw error;
         }
+    }
+
+    async _exportHistory() {
+        const pairs = await loadAiHistory();
+        const blob = new Blob([JSON.stringify(pairs, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `metalist-llm-history-${Date.now()}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     async _copyAll() {

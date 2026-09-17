@@ -296,3 +296,18 @@ export async function streamAiChat({
         throw new AiApiError('AI chat stream ended before completion');
     }
 }
+
+
+export async function loadAiHistory() {
+    const response = await fetchAi(CONFIG.API.AI.HISTORY, {
+        headers: buildSessionHeaders(false), cache: 'no-store',
+    });
+    if (!response.ok) {
+        await readJsonResponse(response, 'Failed to export LLM history');
+    }
+    const pairs = await response.json();
+    if (!Array.isArray(pairs) || pairs.some((pair) => !Array.isArray(pair) || pair.length !== 2)) {
+        throw new Error('LLM history must contain input/output pairs');
+    }
+    return pairs;
+}

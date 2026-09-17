@@ -1,38 +1,22 @@
 import pytest
 
-from app.services.agent.actions import ScopedRouteConstraints
+from pydantic import ValidationError
+
 from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import bind_scoped_route_constraints
-from app.services.agent.actions import request_explicitly_requires_saved_notes
 
 
-@pytest.mark.parametrize(
-    "message",
-    [
-        "please summarize my notes about testosterone",
-        "search my saved notes for foo",
-        "review all of our notes about this",
-    ],
-)
-def test_saved_note_requests_are_detected(message: str) -> None:
-    assert request_explicitly_requires_saved_notes(message) is True
+@pytest.mark.parametrize("kind", ["respond", "investigate_current_scope", "tag_proposals"])
+def test_route_schema_accepts_each_supported_model_choice(kind: str) -> None:
+    route = ScopedRouteEnvelope.model_validate({"kind": kind, "reason": "Model decision."})
+    assert route.kind == kind
 
 
-def test_explicit_saved_note_request_requires_scoped_investigation() -> None:
-    constraints = ScopedRouteConstraints(explicit_saved_notes_request=True)
-    with bind_scoped_route_constraints(constraints):
-        with pytest.raises(ValueError, match="investigate_current_scope"):
-            ScopedRouteEnvelope.model_validate({
-                "kind": "respond",
-                "reason": "Answer directly.",
-            })
-        route = ScopedRouteEnvelope.model_validate({
-            "kind": "investigate_current_scope",
-            "reason": "The request requires saved-note evidence.",
-        })
-    assert route.kind == "investigate_current_scope"
-
-
-def test_saved_note_exclusion_allows_direct_response() -> None:
-    message = "answer without using my saved notes"
-    assert request_explicitly_requires_saved_notes(message) is False
+@pytest.mark.parametrize("payload", [
+    {"kind": "delete_notes", "reason": "Unsupported action."},
+    {"kind": "respond"},
+    {"kind": "respond", "reason": " "},
+    {"kind": "respond", "reason": "Answer.", "extra": True},
+])
+def test_route_schema_still_rejects_malformed_actions(payload: dict) -> None:
+    with pytest.raises(ValidationError):
+        ScopedRouteEnvelope.model_validate(payload)

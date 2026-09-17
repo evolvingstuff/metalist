@@ -7,8 +7,9 @@
 - Every Send freezes the currently displayed MetaList result scope. The agent can
   investigate only matching notes inside that boundary; it cannot run a new
   namespace-wide search or escape to hidden notes.
-- The runtime is read-only. It cannot create, edit, move, tag, trash, or delete
-  notes.
+- Investigation is read-only. Explicit requests can generate, accept, or remove
+  tag proposals through the separate bulk proposal workflow. The agent cannot
+  create, edit, move, trash, or delete note bodies.
 - Instructor owns structured route/investigation calls. Final natural-language
   prose streams directly from the selected provider; OpenAI requests disable
   provider-side storage.
@@ -74,11 +75,13 @@ The first structured call chooses:
 - `respond` for ordinary conversation/general knowledge that does not require the
   user's saved notes;
 - `investigate_current_scope` when the answer depends on evidence in the frozen
-  result view.
+  result view;
+- `tag_proposals` for explicit requests to generate, accept, or remove proposals.
 
-The routing request also receives a content-free `ACTIVE_METALIST_SCOPE` block
+The routing request also receives a content-free `ROUTE_SELECTION_REQUEST` block
 with the exact active user search query, scope label/kind, sort state, and
-result counts. Explicit saved-note requests cannot validate as a direct `respond`.
+result counts. The model interprets the request in context; Instructor validates
+the action structure without keyword-based intent overrides.
 Note content enters the model context only after investigation is selected.
 
 An investigation walks matching root trees in visible order and retains the longest
@@ -236,7 +239,8 @@ notice; it is preserved but never applied until Save or Restore removes it.
   Scope, skills, actions, tool payloads, reasoning, and
   citations are transient.
 - The latest debug trace is always captured so Agent Debug can be opened after a
-  failure. Starting another run replaces it.
+  failure. Starting another run replaces the debug view; session history retains
+  earlier runs for export.
 - Exact detail is shown by default and may be toggled after a run without changing
   capture. The outline records every exact outbound provider body and response,
   retry/validation state, frozen scope/counts, action reason, retained/omitted
@@ -248,3 +252,17 @@ notice; it is preserved but never applied until Save or Restore removes it.
 - Traces are never stored in SQLite, files, browser storage, or canonical history.
 
 See `docs/design/agent-harness.md` for service and invariant details.
+
+
+## Export LLM history
+
+The chat header's **⇩ Export LLM history** button downloads the current session's
+chronological `[input, output]` pairs as JSON. Inputs include the exact provider
+request and original application invocation; outputs include responses or stream
+chunks and completed/running/error/cancelled status. Routing, tagging, retries,
+and final answers are included. Exporting makes no model call.
+
+Page reloads retain server-session history. Clear Chat, logout, and server restart
+clear it. The existing Agent Debug dialog and Copy all still concern the latest
+run. See [prompt regression authoring](../../evals/README.md) to turn an exported
+failure into a ten-run action or output-quality case.

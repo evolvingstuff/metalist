@@ -10,11 +10,10 @@ schema supplied by the inference layer:
   notes. MetaList will activate a detailed scoped-investigation skill and expose a
   frozen, server-enforced snapshot of the result view that was active at Send time.
 
-If the user explicitly asks to summarize, search, review, analyze, or otherwise use
-their notes, choose `investigate_current_scope`. Phrases such as "my notes" or
-"our saved notes" are direct evidence requirements, not requests for a general-
-knowledge answer. Never choose `respond` while claiming such an explicit request
-does not require the user's saved notes.
+Interpret the user's intended task in the context of the conversation. Choose
+`investigate_current_scope` when fulfilling that task requires fresh saved-note
+evidence. Mentioning notes or describing an action does not itself request access
+or execution; account for negation, quoted text, and hypothetical questions.
 
 Do not investigate merely because a user message contains words that might occur
 in notes. The deciding question is whether saved-note evidence is necessary for

@@ -20,11 +20,8 @@ from app.services.agent.actions import SearchNotesIntent
 from app.services.agent.actions import SearchNotesAction
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import ScopedRouteConstraints
-from app.services.agent.actions import bind_scoped_route_constraints
 from app.services.agent.actions import parse_agent_route_json
 from app.services.agent.actions import parse_search_query_json
-from app.services.agent.actions import request_explicitly_requires_saved_notes
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.context import serialize_investigation_evidence_payload
 from app.services.agent.inference import InferenceAdapter
@@ -50,6 +47,7 @@ from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
+from app.services.agent.history import record_history
 from app.services.search_query import parse_search_query
 
 
@@ -144,32 +142,38 @@ class AgentRuntime:
             skills=skills,
             retrieval_settings=retrieval_settings,
         )
-        # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
-        try:
-            async for event in self._run_scoped_steps(
-                run=run,
-                canonical_messages=canonical_messages,
-                initial_messages=initial_messages,
-                frozen_scope=frozen_scope,
-                tag_handler=tag_handler,
-            ):
-                yield event
-        # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
-        except asyncio.CancelledError:
-            self._record_failure(
-                session_key=session_key,
-                run_id=run.run_id,
-                error="Agent run interrupted",
-            )
-            raise
-        # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
-        except Exception as exc:
-            self._record_failure(
-                session_key=session_key,
-                run_id=run.run_id,
-                error=f"{type(exc).__name__}: {exc}",
-            )
-            raise
+        with record_history(self._trace_store, session_key=session_key, run_id=run.run_id):
+            # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
+            try:
+                async for event in self._run_scoped_steps(
+                    run=run,
+                    canonical_messages=canonical_messages,
+                    initial_messages=initial_messages,
+                    frozen_scope=frozen_scope,
+                    tag_handler=tag_handler,
+                ):
+                    self._trace_store.append_event(
+                        session_key=run.session_key, run_id=run.run_id,
+                        event_type="APPLICATION_EVENT", label="Application outcome",
+                        detail=event, duration_ms=0.0,
+                    )
+                    yield event
+            # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
+            except asyncio.CancelledError:
+                self._record_failure(
+                    session_key=session_key,
+                    run_id=run.run_id,
+                    error="Agent run interrupted",
+                )
+                raise
+            # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
+            except Exception as exc:
+                self._record_failure(
+                    session_key=session_key,
+                    run_id=run.run_id,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                raise
 
     async def _run_scoped_steps(
         self,
@@ -227,7 +231,6 @@ class AgentRuntime:
             self._select_scoped_route(
                 run=run,
                 messages=route_messages,
-                user_message=canonical_messages[-1]["content"],
                 on_progress=lambda progress: self._publish_inference_progress(
                     run=run,
                     progress_queue=route_progress,
@@ -528,7 +531,6 @@ class AgentRuntime:
         reference_note_ids: list[str] = []
         completed_search_count = 0
         completed_search_requests: set[_SearchRequestKey] = set()
-        completed_search_query_texts: set[str] = set()
         for _ in range(_MAX_ACTION_STEPS):
             current_input_tokens = estimate_message_tokens(current_messages)
             yield self._status_event(
@@ -560,44 +562,6 @@ class AgentRuntime:
                     provider_label=self._provider_label,
                 )
             route_action, current_messages = await route_task
-            if (
-                isinstance(route_action, SearchNotesIntent)
-                and self._search_intent_repeats_completed_query(
-                    action=route_action,
-                    completed_search_query_texts=completed_search_query_texts,
-                )
-            ):
-                respond_action = RespondAction(
-                    kind="respond",
-                    basis=(
-                        "The proposed repeat search merely restates a completed query. "
-                        "Answer using the evidence already retrieved."
-                    ),
-                )
-                self._record_repeat_search_selection_policy(
-                    run=run,
-                    action=route_action,
-                )
-                yield self._status_event(
-                    "search_notes",
-                    "completed",
-                    f"Skipped repeat-search selection · {route_action.rationale}",
-                    approx_input_tokens=current_input_tokens,
-                )
-                self._record_action(run=run, action=respond_action)
-                yield self._selected_action_status_event(
-                    respond_action,
-                    completed_search_count=completed_search_count,
-                    approx_input_tokens=current_input_tokens,
-                )
-                async for event in self._stream_final_response(
-                    run=run,
-                    messages=current_messages,
-                    action=respond_action,
-                    reference_note_ids=tuple(reference_note_ids),
-                ):
-                    yield event
-                return
             yield self._selected_action_status_event(
                 route_action,
                 completed_search_count=completed_search_count,
@@ -712,9 +676,6 @@ class AgentRuntime:
             )
             if isinstance(action, SearchNotesAction):
                 completed_search_requests.add(self._search_request_key(action))
-                completed_search_query_texts.add(
-                    self._search_query_surface_key(action.query)
-                )
                 completed_search_count += 1
         raise AgentExecutionError(f"Agent exceeded {_MAX_ACTION_STEPS} action steps")
 
@@ -752,30 +713,21 @@ class AgentRuntime:
         *,
         run: _RunContext,
         messages: list[dict[str, str]],
-        user_message: str,
         on_progress: Callable[[StructuredInferenceProgress], None],
     ) -> ScopedRouteEnvelope:
         model = self._model_policy.for_stage(
             purpose=InferencePurpose.ACTION_SELECTION,
             selected_model=run.selected_model,
         )
-        if not isinstance(user_message, str) or user_message.strip() == "":
-            raise ValueError("Scoped route user_message must not be blank")
-        constraints = ScopedRouteConstraints(
-            explicit_saved_notes_request=request_explicitly_requires_saved_notes(
-                user_message
-            ),
+        response = await self._request_structured_inference(
+            run=run,
+            model=model,
+            messages=messages,
+            response_model=ScopedRouteEnvelope,
+            purpose=InferencePurpose.ACTION_SELECTION,
+            on_progress=on_progress,
         )
-        with bind_scoped_route_constraints(constraints):
-            response = await self._request_structured_inference(
-                run=run,
-                model=model,
-                messages=messages,
-                response_model=ScopedRouteEnvelope,
-                purpose=InferencePurpose.ACTION_SELECTION,
-                on_progress=on_progress,
-            )
-            route = ScopedRouteEnvelope.model_validate_json(response.content)
+        route = ScopedRouteEnvelope.model_validate_json(response.content)
         self._record_structured_attempts(
             run=run,
             attempts=response.attempts,
@@ -1008,28 +960,6 @@ class AgentRuntime:
                 "mutates": False,
                 "reason": "The same semantic query already completed.",
                 "arguments": action.model_dump(),
-            },
-            duration_ms=0.0,
-        )
-
-    def _record_repeat_search_selection_policy(
-        self,
-        *,
-        run: _RunContext,
-        action: SearchNotesIntent,
-    ) -> None:
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="POLICY_DECISION",
-            label="Skipped repeat-search selection",
-            detail={
-                "action": action.model_dump(),
-                "allowed": False,
-                "reason": (
-                    "The repeat-search rationale restates a completed query instead "
-                    "of identifying missing evidence."
-                ),
             },
             duration_ms=0.0,
         )
@@ -1687,25 +1617,6 @@ class AgentRuntime:
             for clause in parsed_query.clauses
         )
         return clause_keys
-
-    @staticmethod
-    def _search_query_surface_key(query: str) -> str:
-        if not isinstance(query, str) or query.strip() == "":
-            raise ValueError("Search query surface key requires non-empty text")
-        return " ".join(query.split()).casefold()
-
-    @staticmethod
-    def _search_intent_repeats_completed_query(
-        *,
-        action: SearchNotesIntent,
-        completed_search_query_texts: set[str],
-    ) -> bool:
-        if not isinstance(action, SearchNotesIntent):
-            raise TypeError("Repeat-search check requires SearchNotesIntent")
-        if not isinstance(completed_search_query_texts, set):
-            raise TypeError("Completed search query texts must be a set")
-        proposed_query_text = " ".join(action.rationale.split()).casefold()
-        return proposed_query_text in completed_search_query_texts
 
     @staticmethod
     def _compact_status_reason(reason: str) -> str:

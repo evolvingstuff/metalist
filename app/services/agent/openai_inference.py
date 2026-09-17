@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from instructor.v2.core.client import AsyncInstructor
 
+from app.services.agent.history import record_provider_event, record_provider_chunk, record_structured_call, record_text_call
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceProviderError
@@ -206,6 +207,7 @@ class OpenAIInferenceAdapter:
             required_tokens=TARGET_AGENT_CONTEXT_TOKENS,
         )
 
+    @record_structured_call
     async def infer_structured(
         self,
         *,
@@ -244,6 +246,11 @@ class OpenAIInferenceAdapter:
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
         finally:
+            for number, attempt in enumerate(capture.freeze(), 1):
+                record_provider_event("LLM_ATTEMPT_OUTPUT", {
+                    "attempt": number, "response": attempt.response,
+                    "error": attempt.error, "duration_ms": attempt.duration_ms,
+                })
             _record_captured_openai_usage(
                 cost_tracker=self._cost_tracker,
                 model=normalized_model,
@@ -263,6 +270,7 @@ class OpenAIInferenceAdapter:
             attempts=attempts,
         )
 
+    @record_text_call
     async def stream_text(
         self,
         *,
@@ -288,6 +296,7 @@ class OpenAIInferenceAdapter:
             body = json.loads(raw_body)
             if not isinstance(body, dict):
                 raise TypeError("OpenAI wire request body must be an object")
+            record_provider_event("LLM_WIRE_REQUEST", {"method": request.method, "url": str(request.url), "body": body})
             on_request(
                 {
                     "method": request.method,
@@ -321,6 +330,7 @@ class OpenAIInferenceAdapter:
                 store=False,
             )
             async for chunk in stream:
+                record_provider_chunk(chunk)
                 if chunk.usage is not None:
                     usage_payload = chunk.usage.model_dump()
                     usage = _extract_openai_token_usage({"usage": usage_payload})

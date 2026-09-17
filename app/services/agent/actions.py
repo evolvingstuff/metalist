@@ -2,73 +2,12 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 from typing_extensions import Self
 
 from app.services.search_query import parse_search_query
-
-
-@dataclass(frozen=True, slots=True)
-class ScopedRouteConstraints:
-    explicit_saved_notes_request: bool
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.explicit_saved_notes_request, bool):
-            raise TypeError("explicit_saved_notes_request must be bool")
-
-
-_SCOPED_ROUTE_CONSTRAINTS: ContextVar[ScopedRouteConstraints | None] = ContextVar(
-    "scoped_route_constraints",
-    default=None,
-)
-
-_EXPLICIT_SAVED_NOTES_PATTERNS = (
-    re.compile(r"\b(?:my|our)\s+(?:saved\s+)?notes?\b", re.IGNORECASE),
-    re.compile(
-        r"\b(?:summari[sz]e|search|find|review|read|inspect|analy[sz]e|"
-        r"synthesi[sz]e)\b(?:\W+\w+){0,12}\W+notes?\b",
-        re.IGNORECASE,
-    ),
-)
-_SAVED_NOTES_EXCLUSION_PATTERN = re.compile(
-    r"\b(?:without|do\s+not|don't|dont)\b.{0,48}"
-    r"\b(?:use|using|search|read|consult|reference)\b.{0,48}"
-    r"\b(?:my|our)?\s*(?:saved\s+)?notes?\b",
-    re.IGNORECASE,
-)
-
-
-def request_explicitly_requires_saved_notes(user_message: str) -> bool:
-    if not isinstance(user_message, str):
-        raise TypeError("user_message must be a string")
-    if user_message.strip() == "":
-        raise ValueError("user_message must not be blank")
-    if _SAVED_NOTES_EXCLUSION_PATTERN.search(user_message) is not None:
-        return False
-    return any(
-        pattern.search(user_message) is not None
-        for pattern in _EXPLICIT_SAVED_NOTES_PATTERNS
-    )
-
-
-@contextmanager
-def bind_scoped_route_constraints(
-    constraints: ScopedRouteConstraints,
-) -> Iterator[None]:
-    if not isinstance(constraints, ScopedRouteConstraints):
-        raise TypeError("constraints must be ScopedRouteConstraints")
-    token = _SCOPED_ROUTE_CONSTRAINTS.set(constraints)
-    try:
-        yield
-    finally:
-        _SCOPED_ROUTE_CONSTRAINTS.reset(token)
 
 
 def _validate_agent_search_query(value: str) -> str:
@@ -182,20 +121,6 @@ class ScopedRouteEnvelope(BaseModel):
         if value.strip() == "":
             raise ValueError("Scoped route reason must not be blank")
         return value
-
-    @model_validator(mode="after")
-    def enforce_explicit_saved_notes_request(self) -> Self:
-        constraints = _SCOPED_ROUTE_CONSTRAINTS.get()
-        if (
-            constraints is not None
-            and constraints.explicit_saved_notes_request
-            and self.kind not in {"investigate_current_scope", "tag_proposals"}
-        ):
-            raise ValueError(
-                "The user explicitly requests evidence from saved notes; choose "
-                "investigate_current_scope, not respond"
-            )
-        return self
 
 
 AgentAction = Annotated[

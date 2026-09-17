@@ -190,17 +190,6 @@ export function splitSearchActivityLabel(activity) {
         const statusLabel = duplicatePrefixMatch[0].slice(0, -3);
         return { statusLabel, searchQuery };
     }
-    const repeatSelectionPrefix = 'Skipped repeat-search selection · ';
-    if (activity.label.startsWith(repeatSelectionPrefix)) {
-        const searchQuery = activity.label.slice(repeatSelectionPrefix.length);
-        if (searchQuery === '') {
-            throw new Error('Skipped repeat-search selection query must be non-empty');
-        }
-        return {
-            statusLabel: 'Skipped repeat-search selection',
-            searchQuery,
-        };
-    }
     return { statusLabel: activity.label, searchQuery: '' };
 }
 
