@@ -3711,6 +3711,13 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria
     border-color: #9ca3af;
 }
 
+/* Blur excluded content without compounding the blur on nested notes. */
+.note.cloud-ai-private-preview > .note-content,
+.note.cloud-ai-private-preview > .note-tag-bar,
+.note.cloud-ai-private-preview > .note-tags {
+    filter: blur(4px) !important;
+}
+
 .note:not(.editing):not(.locked):not(:where(.floating-note-tree *, .note-fullscreen-tree *)):hover:not(:has(.note:hover)) {
     border-color: #b0b0b0;
 }

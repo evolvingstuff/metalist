@@ -163,8 +163,9 @@ approximate evidence-token count.
   The automatic `@password` boundary also applies. The policy is namespace-scoped and is encrypted with client preferences
   when the namespace is password-protected.
 - Hovering the AI chat column asks the server to preview that boundary over the
-  current note view. Notes the selected provider cannot receive keep readable text
-  but receive a gray background until the pointer leaves chat.
+  current note view. Notes the selected provider cannot receive have a gray
+  background and blurred content until the pointer leaves chat. Excluded
+  descendants are blurred too.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
   Selection persists immediately.
 - A compact estimated-spend tracker appears directly below the

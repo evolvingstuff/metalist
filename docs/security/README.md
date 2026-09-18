@@ -515,7 +515,8 @@ swap, or filesystem snapshots.
   search tags, blacklist wins, and a hidden ancestor removes its full subtree.
   `@password` always removes its full subtree for local and cloud providers.
 - `POST /api2/ai/cloud-privacy/preview` is authenticated and applies the same
-  evaluator to visible note IDs solely to render readable gray hover feedback. It
+  evaluator to visible note IDs solely to render gray backgrounds and blurred content
+  while hovering chat. It
   does not replace or weaken server-side scope filtering.
 
 ### Multi-Client Support

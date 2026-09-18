@@ -61,6 +61,12 @@ action-status parsing, and the debugger UI contract:
 For deterministic browser automation, the server still exposes a
 `TEST_MODE`-only reset endpoint: `POST /api2/test/reset`.
 
+`BROWSER_TEST_SUITE=ai-privacy npm run test:browser` checks the chat-hover privacy
+preview with synthetic notes: blacklist matches, missing whitelist matches,
+excluded descendants, and an allowed note. It verifies blurred content without lock
+icons, plus repeated hover cleanup in light and dark themes. Passed
+locally in Chrome 131 and Firefox 155; screenshots are saved under `/tmp/metalist-ai-privacy-*.png`.
+
 That reset clears all state a browser harness is allowed to assume away:
 
 - notes + app settings tables

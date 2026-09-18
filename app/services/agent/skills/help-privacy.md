@@ -8,7 +8,9 @@ ontology relationships; text phrases are case-insensitive literal phrases.
 A hidden ancestor hides its descendants. Password-tagged notes always hide the
 entire subtree from the AI. Filtering happens before note content, counts,
 evidence, citations, debug, or provider requests. Hovering the chat column
-previews excluded notes with readable gray backgrounds. It is not deletion.
+previews excluded notes with gray backgrounds and blurred content, including
+all descendants of excluded notes. The preview ends when the pointer leaves chat.
+It is not deletion.
 A general product-help question does not need to send saved-note contents.
 
 OpenAI credentials persist encrypted when the namespace is password-protected.
