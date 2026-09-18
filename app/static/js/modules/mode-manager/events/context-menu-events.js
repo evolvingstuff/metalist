@@ -1063,6 +1063,11 @@ function handleContextMenu(event) {
     if (element.closest('.note-fullscreen-overlay')) {
         return;
     }
+    // Let the chat controller own the entire response bubble, including padding
+    // that overlaps the coordinate-based side rail and links inside the response.
+    if (element.closest('.ai-chat-message-assistant[data-message-id]')) {
+        return;
+    }
 
     const priorityTarget = resolvePriorityContextMenuTarget(element, {
         isInLeftRail: isInLeftTabRail(event),

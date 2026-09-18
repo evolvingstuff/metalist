@@ -216,6 +216,9 @@ notice; it is preserved but never applied until Save or Restore removes it.
 
 ## Rendering and References
 
+- Right-click anywhere inside a completed response bubble, including its padding
+  and links, to choose **Copy Response**. Streaming and failed responses do not
+  offer this action.
 - Assistant output is rendered as Markdown during streaming. Completed LaTeX and
   fenced Mermaid are supported. Blank lines between ordered-list items produce one
   loose list rather than restarting numbering. Explicit non-one list starts are

@@ -1,5 +1,6 @@
 import {checkAgentHelpMenus} from './browser-agent-help-regressions.mjs';
 import {checkAiPrivacyPreview} from './browser-ai-privacy-regressions.mjs';
+import {checkAiResponseMenu} from './browser-ai-response-menu-regressions.mjs';
 /** A small real-browser smoke test. Every server run owns a fresh temporary namespace. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -64,7 +65,7 @@ try {
   });
   page.on('requestfailed', request => browserDiagnostics.push(`${new Date().toISOString()} failed ${request.url()} ${request.failure()?.errorText}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (['writing-assistant', 'ai-history', 'agent-help', 'ai-privacy'].includes(process.env.BROWSER_TEST_SUITE)) {
+  if (['writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -75,7 +76,11 @@ try {
   const pageFailure = new Promise((resolve, reject) => page.on('pageerror', reject));
   await page.goto(origin);
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
-  if (process.env.BROWSER_TEST_SUITE === 'ai-privacy') {
+  if (process.env.BROWSER_TEST_SUITE === 'ai-response-menu') {
+    await checkAiResponseMenu(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS AI response menu regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'ai-privacy') {
     await checkAiPrivacyPreview(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI privacy preview regressions in ${await browser.version()}`);
