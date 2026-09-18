@@ -19,7 +19,7 @@ POST /api2/ai/chat + AgentScopeDescriptor
   → apply the provider disclosure boundary
   → freeze immutable ScopedSearchSnapshot S0
   → select provider and verify its runtime/credential
-  → Instructor route: respond | investigate_current_scope | tag_proposals
+  → Instructor route: respond | investigate_current_scope | tag_proposals | metalist_help
       respond:
         stream final prose without note content
       investigate_current_scope:
@@ -248,3 +248,31 @@ expectations or an Instructor-validated output judge. This initial replay layer
 checks decisions/outputs; it does not execute UI or note mutations. See
 [the suite guide](../../evals/README.md) for prompt bindings, fixture authoring,
 comparison rules, and limitations. Additional application actions remain planned.
+
+## Product help route and browser acknowledgments
+
+`ScopedRouteEnvelope` requires `help_topics`: a nonempty, unique supported list for
+`metalist_help`, and an empty list for all other routes. This is structural
+validation; there is no keyword-based intent override. The content-free routing
+request includes ten topic descriptions. `build_help_messages` adds only those
+selected skills to a fresh canonical conversation and the compact menu catalog.
+The second Instructor call returns `MetaListHelpResponse(answer, menu_id)`. Help
+prose is buffered until the structured response validates. Overrides are loaded
+through the existing skill registry, recorded with their effective text, and
+never saved as subsequent conversation instructions.
+
+The shared JSON menu catalog is the application-owned destination allowlist.
+`dialog` invokes an existing form-opening handler; `palette` opens and highlights
+an existing entry without invoking its operation. Help cannot change preferences
+or submit a form. Explicit proposal mutations still use the separate tagging
+route. The browser checks scope/cancellation/modal availability and visible DOM,
+then POSTs `{request_id, status, detail}` to `/ai/menu-result`. Requests are bound
+to the authenticated session, single use, and expire after 30 seconds. Unknown,
+wrong-session and replayed acknowledgments return 409; malformed input returns
+422. Cancellation closes pending futures. The application appends actual opening
+status to the answer; model wording is not an execution record.
+
+`AgentTraceStore.export_history` associates `MENU_REQUESTED` and `MENU_RESULT`
+with the producing output pair under `application_events`, retaining request IDs,
+menu IDs, scope and outcome. History remains session-only. Tests use disposable
+state/controlled handlers; opt-in live cases only evaluate model choices/answers.

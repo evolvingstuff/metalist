@@ -44,7 +44,7 @@ def test_real_instructor_records_retry_pairs_and_preserves_all_turns(monkeypatch
     def handle(request):
         body = json.loads(request.content)
         requests.append(body)
-        answer = {"kind": "respond", "reason": "Hello"}
+        answer = {"kind": "respond", "reason": "Hello", "help_topics": []}
         if len(requests) == 1:
             answer = {"kind": "not-an-action", "reason": "invalid"}
         return response([chunk(json.dumps(answer), None, None), chunk(None, "stop", USAGE)])

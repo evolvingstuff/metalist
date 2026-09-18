@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
-from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL
+from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL, load_skill
+from app.services.agent.help_catalog import HELP_TOPICS
 
 
 SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v7"
@@ -34,6 +35,7 @@ LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
 AGENT_SKILL_PREFERENCE_KEYS = (
     SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
+    *(f"pref.ai.skill.help_{topic}_v1" for topic in HELP_TOPICS),
 )
 SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
     LEGACY_NARROW_CONTEXT_SKILL_PREFERENCE_KEY,
@@ -133,6 +135,11 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
                 *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
             ),
         ),
+        *(AgentSkill(
+            skill_id=f"help_{topic}_v1", title=title, description=description,
+            trigger_action=f"help_{topic}", preference_key=f"pref.ai.skill.help_{topic}_v1",
+            content=load_skill(f"help-{topic}.md"),
+        ) for topic, (title, description) in HELP_TOPICS.items()),
     )
 )
 

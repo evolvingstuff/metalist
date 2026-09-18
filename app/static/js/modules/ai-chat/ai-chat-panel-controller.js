@@ -1,8 +1,10 @@
+import { executeAgentMenuRequest } from './agent-menu-actions.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { rethrowUnexpectedError } from '../expected-errors.js';
 import { handleBulkEvent, closeBulkProgress } from './bulk-proposal-ui.js';
 import {
     AiApiError,
+    acknowledgeAgentMenu,
     clearAiChatSession,
     copyAiChatResponse,
     listAiModels,
@@ -145,6 +147,7 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'scope',
     'investigate_current_scope',
     'tag_proposals',
+    'metalist_help',
     'evidence_selection',
     'investigation_step',
     'investigation_evidence',
@@ -227,6 +230,7 @@ class AiChatPanelController {
         this._composerHeightBeforePointerInteraction = 0;
         this._setVisible = null;
         this._openSettings = null;
+        this._openMenu = null;
         this._elements = null;
 
         this._handleVisibilityChanged = this._handleVisibilityChanged.bind(this);
@@ -256,6 +260,7 @@ class AiChatPanelController {
         saveComposerHeight,
         setVisible,
         openSettings,
+        openMenu,
     }) {
         if (this._initialized) {
             return;
@@ -300,6 +305,8 @@ class AiChatPanelController {
         this._saveComposerHeight = saveComposerHeight;
         this._setVisible = setVisible;
         this._openSettings = openSettings;
+        if (typeof openMenu !== 'function') throw new Error('AiChatPanel.init requires openMenu');
+        this._openMenu = openMenu;
         this._elements = {
             panel: requireElement('ai-chat-panel', HTMLElement),
             resizer: requireElement('ai-chat-resizer', HTMLElement),
@@ -680,7 +687,7 @@ class AiChatPanelController {
     }
 
     _handleComposerPointerDown(event) {
-        if (event.button !== 0) {
+        if (event.button !== 0 || this._composerHeightBeforePointerInteraction !== 0) {
             return;
         }
         this._composerHeightBeforePointerInteraction = Math.round(
@@ -688,16 +695,21 @@ class AiChatPanelController {
         );
         window.addEventListener('pointerup', this._handleComposerPointerUp, { once: true });
         window.addEventListener('pointercancel', this._handleComposerPointerUp, { once: true });
+        window.addEventListener('blur', this._handleComposerPointerUp, { once: true });
     }
 
     _handleComposerPointerUp(event) {
         window.removeEventListener('pointerup', this._handleComposerPointerUp);
         window.removeEventListener('pointercancel', this._handleComposerPointerUp);
-        if (event.type === 'pointercancel') {
+        window.removeEventListener('blur', this._handleComposerPointerUp);
+        const heightBeforeInteraction = this._composerHeightBeforePointerInteraction;
+        if (heightBeforeInteraction === 0) return;
+        this._composerHeightBeforePointerInteraction = 0;
+        if (event.type === 'pointercancel' || event.type === 'blur') {
             return;
         }
         const height = Math.round(this._elements.input.getBoundingClientRect().height);
-        if (height === this._composerHeightBeforePointerInteraction) {
+        if (height === heightBeforeInteraction) {
             return;
         }
         if (!Number.isInteger(height) || height < 74 || height > 220) {
@@ -1178,7 +1190,12 @@ class AiChatPanelController {
                 scope,
                 showDiagnostics,
                 signal: abortController.signal,
-                onEvent: (event) => {
+                onEvent: async (event) => {
+                    if (event.type === 'menu_open') {
+                        await executeAgentMenuRequest({ event, signal: abortController.signal,
+                            openMenu: this._openMenu, acknowledge: acknowledgeAgentMenu });
+                        return;
+                    }
                     if (event.type.startsWith('bulk_')) {
                         const needsBulkPanel = ['bulk_question', 'bulk_progress'].includes(event.type);
                         if (needsBulkPanel && this._bulkPanel === null) {

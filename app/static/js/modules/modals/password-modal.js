@@ -1,5 +1,5 @@
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
+import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../expected-errors.js';
 /** Three explicit password-management modals backed by shared behavior. */
 
 import { BaseModal } from './base-modal.js';
@@ -67,6 +67,7 @@ class PasswordOperationModal extends BaseModal {
     }
     
     async onOpen() {
+        const generation = this._openGeneration;
         await (async () => {
             const response = await fetch(this.apiEndpoints.status, {
                 headers: buildSessionHeaders(false),
@@ -75,14 +76,15 @@ class PasswordOperationModal extends BaseModal {
                 throw new HttpRequestError(`Password status request failed with ${response.status}`);
             }
             const status = await response.json();
+            if (!this.isCurrentOpen(generation)) return;
             if (typeof status.has_password !== 'boolean') {
                 throw new Error('Password status response is missing has_password');
             }
             if (this.mode === 'create' && status.has_password) {
-                throw new Error('A password is already set. Use Change Password or Remove Password.');
+                throw new UserInputRejected('A password is already set. Use Change Password or Remove Password.');
             }
             if (this.mode !== 'create' && !status.has_password) {
-                throw new Error('No password is set. Use Add Password first.');
+                throw new UserInputRejected('No password is set. Use Add Password first.');
             }
 
             this.renderModalContent();
@@ -91,6 +93,7 @@ class PasswordOperationModal extends BaseModal {
             }
         })().catch((error) => {
             rethrowUnexpectedError(error);
+            if (!this.isCurrentOpen(generation)) return;
             console.error('Failed to open password operation modal');
             const errorMessage = error && typeof error.message === 'string' && error.message !== ''
                 ? error.message

@@ -52,6 +52,8 @@ def from_export(arguments):
 
 
 async def run(arguments):
+    if arguments.repetitions < 1:
+        raise ValueError("Repetitions must be a positive integer")
     cases = [RegressionCase.model_validate_json(path.read_text(encoding="utf-8")) for path in arguments.cases]
     if len({case.id for case in cases}) != len(cases):
         raise ValueError("Case IDs must be unique")
@@ -67,7 +69,7 @@ async def run(arguments):
     if judge is not None:
         validate_openai_model(judge.model)
     if not arguments.live:
-        print(f"Validated {len(cases)} cases; add --live to make provider calls (10 runs per case).")
+        print(f"Validated {len(cases)} cases; add --live to make provider calls ({arguments.repetitions} runs per case).")
         return
     api_key = os.environ["OPENAI_API_KEY"]
     costs = OpenAICostTracker()
@@ -79,12 +81,12 @@ async def run(arguments):
         case_directory.mkdir()
         def preserve(outcome):
             write_new(case_directory / f"{outcome['repetition']:02d}.json", outcome)
-            print(f"{case.id} {outcome['repetition']}/10: {outcome['status']}", flush=True)
+            print(f"{case.id} {outcome['repetition']}/{arguments.repetitions}: {outcome['status']}", flush=True)
         report = await run_case(case, adapter=adapter, judge=judge,
-            variant=arguments.variant, directory=path.parent, on_repetition=preserve)
+            variant=arguments.variant, directory=path.parent, on_repetition=preserve, repetitions=arguments.repetitions)
         write_new(case_directory / "report.json", report)
         reports.append(report)
-        print(f"{case.id}: {report['counts']['correct']}/10 ({report['percent_correct']:g}%) correct; "
+        print(f"{case.id}: {report['counts']['correct']}/{arguments.repetitions} ({report['percent_correct']:g}%) correct; "
               f"{report['counts']['error']} errors")
     write_new(arguments.output / "report.json", {"cases": reports,
         "estimated_cost_usd": str(costs.snapshot().estimated_cost_usd)})
@@ -103,8 +105,8 @@ def compare(arguments):
         after = right[case_id]
         if before["case_fingerprint"] != after["case_fingerprint"] or before["judge"] != after["judge"]:
             raise ValueError(f"Case context, expectations, model, or judge changed: {case_id}")
-        if before["repetitions"] != 10 or after["repetitions"] != 10:
-            raise ValueError("Comparisons require 10 repetitions per case")
+        if before["repetitions"] != after["repetitions"]:
+            raise ValueError("Comparisons require equal repetitions per case")
         difference = after["percent_correct"] - before["percent_correct"]
         print(f"{case_id}: {before['percent_correct']:g}% → {after['percent_correct']:g}% "
               f"({difference:+g} percentage points); errors "
@@ -119,6 +121,7 @@ def main():
     extract.add_argument("--pair", type=int, required=True, help="Zero-based exported pair index")
     extract.add_argument("--output", type=Path, required=True)
     execute = commands.add_parser("run")
+    execute.add_argument("--repetitions", type=int, default=10, help="Independent trials per case (default: 10)")
     execute.add_argument("cases", type=Path, nargs="+")
     execute.add_argument("--variant", choices=["baseline", "candidate"], required=True)
     execute.add_argument("--judge", type=Path)

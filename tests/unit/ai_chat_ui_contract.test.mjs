@@ -39,6 +39,26 @@ const PROPOSAL_MENU_URL = new URL(
     '../../app/static/js/modules/ai-chat/proposal-menu.js',
     import.meta.url,
 );
+
+for (const entrypoint of ['main.js', 'modules/auth.js']) {
+    test(`${entrypoint} initializes chat with a working menu callback`, () => {
+        const source = readFileSync(new URL(`../../app/static/js/${entrypoint}`, import.meta.url), 'utf8');
+        const start = source.indexOf('await AiChatPanel.init({');
+        assert.notEqual(start, -1);
+        const end = source.indexOf('});', start);
+        const optionsSource = source.slice(start + 'await AiChatPanel.init('.length, end + 1);
+        const calls = [];
+        const expectedResult = {status: 'opened'};
+        const options = runInNewContext(`(${optionsSource})`, {
+            CommandPalette: {openAgentMenu: (...args) => { calls.push(args); return expectedResult; }},
+        });
+        assert.equal(typeof options.openMenu, 'function');
+        const scope = {active_tab_id: 'login-tab'};
+        const signal = new AbortController().signal;
+        assert.equal(options.openMenu('form.ai_agent_settings', scope, signal), expectedResult);
+        assert.deepEqual(calls, [['form.ai_agent_settings', scope, signal]]);
+    });
+}
 const BULK_PROPOSAL_UI_URL = new URL(
     '../../app/static/js/modules/ai-chat/bulk-proposal-ui.js',
     import.meta.url,

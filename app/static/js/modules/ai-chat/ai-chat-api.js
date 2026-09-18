@@ -280,7 +280,7 @@ export async function streamAiChat({
         const parsed = parseAiChatNdjsonBuffer(buffer);
         buffer = parsed.remainder;
         for (const event of parsed.events) {
-            onEvent(event);
+            await onEvent(event);
             if (event.type === 'done' || event.type === 'error') {
                 didFinish = true;
             }
@@ -310,4 +310,12 @@ export async function loadAiHistory() {
         throw new Error('LLM history must contain input/output pairs');
     }
     return pairs;
+}
+
+
+export async function acknowledgeAgentMenu(result) {
+    const response = await fetchAi(CONFIG.API.AI.MENU_RESULT, {
+        method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify(result),
+    });
+    return await readJsonResponse(response, 'Failed to acknowledge menu opening');
 }

@@ -1,7 +1,8 @@
 # Prompt regression suite
 
 This is an explicitly invoked live suite, separate from pytest, browser smoke,
-startup checks, and routine CI. Each selected case runs **10 times**. A case can
+startup checks, and routine CI. Each selected case defaults to **10 times**;
+`--repetitions 5` selects five fresh attempts for a shorter run. A case can
 check structured actions, judge output quality, or check several decisions in
 sequence. No replay executes application actions or reads the live note database.
 
@@ -13,10 +14,14 @@ The application's history recording and export button remain in the release.
 ## Synthetic action suite
 
 [The 24-case action suite](cases/actions/README.md) uses only invented requests,
-conversation history, and small view metadata. It covers the three current routes
-equally: eight `respond`, eight `investigate_current_scope`, eight `tag_proposals`.
+conversation history, and small view metadata. It originally covered three routes
+equally. With help enabled, three explanation cases now expect `metalist_help`.
 No personal notes, exports, paper corpus, or output judge are needed. Each case is
-about 9 KB including frozen prompts/schema; the complete suite is about 210 KB.
+small including frozen prompts/schema.
+
+[The 105-case help suite](cases/help/README.md) covers skill choice, menu selection,
+permission/context cases and judged feature explanations. Its five-run measured
+results are preserved separately from the older action suite.
 
 ```bash
 # Validate all cases without making model calls.
@@ -32,7 +37,7 @@ Instructor retries can add provider attempts. Use `--variant candidate` and a
 different output directory after changing the main system prompt, then compare
 reports with `python -m evals compare`. This suite measures action selection, not
 the subsequent summary or application of proposals. See the case index for the
-individual expectations and one known code-level routing conflict.
+individual expectations and measured results.
 
 ## Capture a failure
 
@@ -49,6 +54,8 @@ the page retains it; Clear Chat, logout, and restarting the server remove it.
 Exports contain the actual disclosed note content and conversation. No credential
 headers are included. Review real content before committing it as a fixture.
 Agent Debug still displays/copies the latest run, including application events.
+Menu requests and browser results appear in `output.application_events` on the
+producing call's pair. Requested and acknowledged opening are distinct events.
 
 ```bash
 .venv/bin/python -m evals from-export /path/to/history.json \
@@ -93,7 +100,13 @@ seed cases, not evidence of measured model accuracy.
 
 `baseline` uses the literal captured messages in the case. `candidate` replaces
 only explicitly bound instructions with the current contents of files. Paths are
-relative to the case file. Files are read once per case before its ten repetitions.
+relative to the case file. Files are read once per case before its repetitions.
+
+`target: "skill"` reloads a skill Markdown file and takes exactly `skill_id` and
+`trigger_action` variables to recreate its production wrapper. `json_instruction`
+can replace the instruction in `FINAL_RESPONSE_REQUEST` or `METALIST_HELP_REQUEST`
+while preserving the fixture context and catalog. Compare reports only when their
+repetition counts and reviewed case inputs/expectations match.
 
 ```json
 {

@@ -147,6 +147,7 @@ export const CONFIG = {
             HISTORY: `${API_AI_BASE}/history`,
             CLOUD_PRIVACY_PREVIEW: `${API_AI_BASE}/cloud-privacy/preview`,
             CHAT: `${API_AI_BASE}/chat`,
+            MENU_RESULT: `${API_AI_BASE}/menu-result`,
             COPY_MESSAGE: (messageId) => `${API_AI_BASE}/messages/${messageId}/copy`,
         }
     },

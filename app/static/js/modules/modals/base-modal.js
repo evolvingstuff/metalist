@@ -24,6 +24,7 @@ export class BaseModal {
             this.modalElementId = `${modalName}-modal`;
         }
         this.isOpen = false;
+        this._openGeneration = 0;
         
         // Bind event handlers
         this.handleKeyDown = this.handleKeyDown.bind(this);
@@ -55,16 +56,20 @@ export class BaseModal {
         // Set up event listeners
         this.setupEventListeners();
         
-        // Call subclass hook
-        this.onOpen();
-        
         this.isOpen = true;
+        this._openGeneration += 1;
         console.log(`[BaseModal] ${this.modalName} opened`);
+        // Return initialization so callers can acknowledge a ready dialog.
+        return this.onOpen();
     }
     
     /**
      * Close the modal - cleanup and restore state
      */
+    isCurrentOpen(generation) {
+        return this.isOpen && this._openGeneration === generation;
+    }
+
     close() {
         if (!this.isOpen) {
             throw new Error(`[BaseModal] ${this.modalName} is not open`);

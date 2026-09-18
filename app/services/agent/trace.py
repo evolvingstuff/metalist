@@ -137,6 +137,7 @@ class AgentTraceStore:
         pairs = []
         for run in runs:
             calls = {}
+            run_pair_start = len(pairs)
             for event in run["events"]:
                 detail = event["detail"]
                 kind = event["type"]
@@ -166,6 +167,9 @@ class AgentTraceStore:
                     calls[detail["call_id"]]["pairs"][-1][1]["chunks"].append(
                         {key: value for key, value in detail.items() if key != "call_id"}
                     )
+                elif kind in {"MENU_REQUESTED", "MENU_RESULT"}:
+                    if len(pairs) > run_pair_start:
+                        pairs[-1][1].setdefault("application_events", []).append(event)
                 elif kind == "LLM_CALL_FINISHED":
                     call = calls[detail["call_id"]]
                     if not call["pairs"]:

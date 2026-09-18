@@ -1,6 +1,8 @@
+import { openAgentMenu } from '../ai-chat/agent-menu-actions.js';
+import { captureActiveAgentScope } from '../ai-chat/ai-chat-panel-controller.js';
 import { showUpdateNotice } from '../app-update-service.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
-import { ApplicationState } from '../application-state.js';
+import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError } from '../expected-errors.js';
 import {
     openProposalMenu,
@@ -2250,6 +2252,27 @@ class CommandPaletteController {
         }
     }
 
+    async showAgentMenuEntry(id) {
+        await this.open();
+        if (!this._isOpen || id === 'command_palette') return;
+        const index = this._getVisibleMatches().findIndex((entry) => entry.id === id);
+        if (index < 0) throw new Error(`Missing palette destination: ${id}`);
+        this._previousSelection = { query: '', selectedIndex: index };
+        this._render();
+        const row = this._elements.results.querySelector('.selected');
+        if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    async openAgentMenu(menuId, scope, signal) {
+        return await openAgentMenu({
+            menuId, endpoints: this._endpoints, signal,
+            isCurrent: () => stateValuesEqual(scope, captureActiveAgentScope()),
+            hasOpenModal: () => ModeContext.modalStack.length > 0 || ModeContext.isLoading,
+            queryElement: (selector) => document.querySelector(selector),
+            showMenuEntry: (id) => this.showAgentMenuEntry(id),
+        });
+    }
+
     async openBackupRestore() {
         const isReady = await this._prepareForModalOpen('commandPalette.openBackupRestore');
         if (!isReady) {
@@ -2259,7 +2282,7 @@ class CommandPaletteController {
         if (this._backupRestoreModal === null) {
             this._backupRestoreModal = new BackupRestoreModal();
         }
-        this._backupRestoreModal.open();
+        await this._backupRestoreModal.open();
     }
 
     async openRandomPasswordGenerator() {
@@ -2271,7 +2294,7 @@ class CommandPaletteController {
         if (this._randomPasswordModal === null) {
             this._randomPasswordModal = new RandomPasswordModal();
         }
-        this._randomPasswordModal.open();
+        await this._randomPasswordModal.open();
     }
 
     async openOntologyEditor() {
@@ -2283,7 +2306,7 @@ class CommandPaletteController {
         if (this._ontologyModal === null) {
             this._ontologyModal = new OntologyModal();
         }
-        this._ontologyModal.open();
+        await this._ontologyModal.open();
     }
 
     async openKeyboardShortcutsHelp() {
@@ -2295,7 +2318,7 @@ class CommandPaletteController {
         if (this._helpModal === null) {
             this._helpModal = new HelpModal();
         }
-        this._helpModal.open();
+        await this._helpModal.open();
     }
 
     async openSwitchNamespace() {
@@ -2307,7 +2330,7 @@ class CommandPaletteController {
         if (this._switchNamespaceModal === null) {
             this._switchNamespaceModal = new SwitchNamespaceModal();
         }
-        this._switchNamespaceModal.open();
+        await this._switchNamespaceModal.open();
     }
 
     async openCreateNamespace() {
@@ -2319,7 +2342,7 @@ class CommandPaletteController {
         if (this._createNamespaceModal === null) {
             this._createNamespaceModal = new CreateNamespaceModal();
         }
-        this._createNamespaceModal.open();
+        await this._createNamespaceModal.open();
     }
 
     async openManageNamespacePorts() {
@@ -2331,7 +2354,7 @@ class CommandPaletteController {
         if (this._manageNamespacePortsModal === null) {
             this._manageNamespacePortsModal = new ManageNamespacePortsModal();
         }
-        this._manageNamespacePortsModal.open();
+        await this._manageNamespacePortsModal.open();
     }
 
     async openRenameCurrentNamespace() {
@@ -2343,7 +2366,7 @@ class CommandPaletteController {
         if (this._renameNamespaceModal === null) {
             this._renameNamespaceModal = new RenameNamespaceModal();
         }
-        this._renameNamespaceModal.open();
+        await this._renameNamespaceModal.open();
     }
 
     async openDeleteCurrentNamespace() {
@@ -2355,7 +2378,7 @@ class CommandPaletteController {
         if (this._deleteNamespaceModal === null) {
             this._deleteNamespaceModal = new DeleteNamespaceModal();
         }
-        this._deleteNamespaceModal.open();
+        await this._deleteNamespaceModal.open();
     }
 
     async openAddPassword() {
@@ -2367,7 +2390,7 @@ class CommandPaletteController {
         if (this._addPasswordModal === null) {
             this._addPasswordModal = new AddPasswordModal();
         }
-        this._addPasswordModal.open();
+        await this._addPasswordModal.open();
     }
 
     async openChangePassword() {
@@ -2379,7 +2402,7 @@ class CommandPaletteController {
         if (this._changePasswordModal === null) {
             this._changePasswordModal = new ChangePasswordModal();
         }
-        this._changePasswordModal.open();
+        await this._changePasswordModal.open();
     }
 
     async openRemovePassword() {
@@ -2391,7 +2414,7 @@ class CommandPaletteController {
         if (this._removePasswordModal === null) {
             this._removePasswordModal = new RemovePasswordModal();
         }
-        this._removePasswordModal.open();
+        await this._removePasswordModal.open();
     }
 
     async openSessionTimeoutSettings() {
@@ -2403,7 +2426,7 @@ class CommandPaletteController {
         if (this._sessionTimeoutModal === null) {
             this._sessionTimeoutModal = new SessionTimeoutModal();
         }
-        this._sessionTimeoutModal.open();
+        await this._sessionTimeoutModal.open();
     }
 
     async openReminders(options = {}) {
@@ -2426,7 +2449,7 @@ class CommandPaletteController {
         if (this._reminderModal === null) {
             this._reminderModal = new ReminderModal();
         }
-        this._reminderModal.open({ search });
+        await this._reminderModal.open({ search });
     }
 
     async notifyAppUpdate() {
@@ -2441,7 +2464,7 @@ class CommandPaletteController {
         if (this._versionInfoModal === null) {
             this._versionInfoModal = new VersionInfoModal();
         }
-        this._versionInfoModal.open();
+        await this._versionInfoModal.open();
     }
 
     async openNoteLayoutAppearance() {
@@ -2455,7 +2478,7 @@ class CommandPaletteController {
                 this._saveNoteLayoutSettings.bind(this),
             );
         }
-        this._noteLayoutAppearanceModal.open();
+        await this._noteLayoutAppearanceModal.open();
     }
 
     async openAiAgentSettings(focusCloudPrivacy = false) {
@@ -2472,7 +2495,7 @@ class CommandPaletteController {
                 this._saveAiAgentSettings.bind(this),
             );
         }
-        this._aiAgentSettingsModal.open();
+        await this._aiAgentSettingsModal.open();
         if (focusCloudPrivacy) {
             this._aiAgentSettingsModal.focusCloudPrivacySettings();
         }
@@ -2496,7 +2519,7 @@ class CommandPaletteController {
                 this._resetAgentPromptOverrides.bind(this),
             );
         }
-        this._agentPromptEditorModal.open();
+        await this._agentPromptEditorModal.open();
     }
 
     async openSearchSuggestionStatistics() {
@@ -2516,7 +2539,7 @@ class CommandPaletteController {
                 this._performSearchSuggestionHistoryReset.bind(this),
             );
         }
-        this._searchSuggestionStatisticsModal.open();
+        await this._searchSuggestionStatisticsModal.open();
     }
 }
 

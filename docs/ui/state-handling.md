@@ -610,3 +610,20 @@ The ModeManager is designed to run in parallel with the existing state machine d
 Floating windows belong to the current authenticated page, independently of ML3 tabs and search state. ApplicationState owns their note IDs, geometry, stacking order, refresh revisions, and active pointer gesture. The DOM stays outside the diff renderer and is isolated in shadow roots; there are no duplicate note IDs in the main editor DOM. Windows display saved note content and its entire subtree, are read-only, and never expand the AI disclosure scope. Their endpoints are authenticated read-only projections without tab/undo mutations.
 
 Unchanged revision checks avoid rendering; unrelated revisions with identical HTML preserve existing DOM and scroll. Refreshes do not overlap, and closed window IDs reject late responses. Login/session teardown removes the windows and their timer/listeners. No window geometry or plaintext content is written to browser storage or persisted to disk.
+
+### Modal initialization and delayed responses
+
+`BaseModal.open()` marks the modal open before `onOpen`, increments its open
+generation, and returns the hook's initialization promise. Command-palette
+openers await that promise where provided. Settings and namespace catalog loaders
+capture the generation and ignore late external responses after close/reopen;
+they must not write disposed or replacement state. This permits reliable agent
+menu acknowledgments and avoids stale writes when a user closes a loading form.
+The help browser suite exercises two pending credential loads across close/reopen.
+
+The AI composer owns one height snapshot per pointer interaction. Release consumes
+and clears it before checking for a resize; pointer cancellation/window blur clear
+it without persisting a height. Repeated clicks and overlapping events must not
+rewrite or reuse a completed interaction's snapshot. Strict state setters remain
+enabled. Tests cover ordinary clicks, cancellation, blur, resize persistence and
+returning to the composer after closing an agent-opened password generator.

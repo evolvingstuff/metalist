@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import aclosing
 import math
 import time
 from collections.abc import AsyncIterator
@@ -48,6 +49,8 @@ from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.history import record_history
+from app.services.agent.help_catalog import MetaListHelpResponse, MENU_BY_ID
+from app.services.agent.menu_actions import menu_action_store
 from app.services.search_query import parse_search_query
 
 
@@ -145,19 +148,20 @@ class AgentRuntime:
         with record_history(self._trace_store, session_key=session_key, run_id=run.run_id):
             # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
             try:
-                async for event in self._run_scoped_steps(
+                async with aclosing(self._run_scoped_steps(
                     run=run,
                     canonical_messages=canonical_messages,
                     initial_messages=initial_messages,
                     frozen_scope=frozen_scope,
                     tag_handler=tag_handler,
-                ):
-                    self._trace_store.append_event(
-                        session_key=run.session_key, run_id=run.run_id,
-                        event_type="APPLICATION_EVENT", label="Application outcome",
-                        detail=event, duration_ms=0.0,
-                    )
-                    yield event
+                )) as steps:
+                    async for event in steps:
+                        self._trace_store.append_event(
+                            session_key=run.session_key, run_id=run.run_id,
+                            event_type="APPLICATION_EVENT", label="Application outcome",
+                            detail=event, duration_ms=0.0,
+                        )
+                        yield event
             # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
             except asyncio.CancelledError:
                 self._record_failure(
@@ -256,6 +260,13 @@ class AgentRuntime:
             f"Selected action · {route.kind.replace('_', ' ')} · {self._compact_status_reason(route.reason)}",
             approx_input_tokens=route_tokens,
         )
+        if route.kind == "metalist_help":
+            async with aclosing(self._stream_help(run=run, canonical_messages=canonical_messages,
+                                                  topics=route.help_topics, snapshot=snapshot)) as events:
+                async for event in events:
+                    yield event
+            return
+
         if route.kind == "respond":
             action = RespondAction(kind="respond", basis=route.reason)
             async for event in self._stream_final_response(
@@ -376,6 +387,67 @@ class AgentRuntime:
             reference_note_ids=reference_note_ids,
         ):
             yield event
+
+    async def _stream_help(self, *, run, canonical_messages, topics, snapshot):
+        messages = self._context_builder.build_help_messages(
+            canonical_messages=canonical_messages, prompts=run.prompts, skills=run.skills, topics=topics,
+        )
+        for topic in topics:
+            skill = run.skills.for_action(f"help_{topic}")
+            self._record_skill_activation(run=run, skill=skill)
+            yield self._status_event("skill", "completed", f"Activated skill · {skill.title}",
+                                     approx_input_tokens=estimate_message_tokens(messages))
+        yield self._status_event("model_request", "started", "Answering with MetaList help skills",
+                                 approx_input_tokens=estimate_message_tokens(messages))
+        response = await self._request_structured_inference(
+            run=run, model=run.selected_model, messages=messages, response_model=MetaListHelpResponse,
+            purpose=InferencePurpose.FINAL_RESPONSE,
+            on_progress=lambda progress: self._record_inference_progress(
+                run=run, progress=progress, purpose=InferencePurpose.FINAL_RESPONSE),
+        )
+        answer = MetaListHelpResponse.model_validate_json(response.content)
+        self._record_structured_attempts(run=run, attempts=response.attempts,
+            parsed=answer.model_dump(), purpose=InferencePurpose.FINAL_RESPONSE)
+        yield self._status_event("model_request", "completed", "MetaList help ready",
+                                 approx_input_tokens=estimate_message_tokens(messages))
+        yield {"type": "content_delta", "text": answer.answer, "reference_note_ids": []}
+        if answer.menu_id != "none":
+            async with aclosing(self._open_help_menu(run=run, menu_id=answer.menu_id, snapshot=snapshot)) as events:
+                async for event in events:
+                    yield event
+        self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
+        yield {"type": "done", "reference_note_ids": []}
+
+    async def _open_help_menu(self, *, run, menu_id, snapshot):
+        pending = menu_action_store.create(session_key=run.session_key, menu_id=menu_id)
+        request = {"type": "menu_open", "request_id": pending.request_id, "menu_id": menu_id,
+                   "scope": snapshot.descriptor.model_dump(mode="json")}
+        self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
+            event_type="MENU_REQUESTED", label="Requested menu opening", detail=request, duration_ms=0.0)
+        # lint: allow-PY001 rationale="wait for external browser acknowledgment and preserve cancellation"
+        try:
+            yield request
+            result = await menu_action_store.wait(pending)
+        # lint: allow-PY001 rationale="record cancellation of browser menu acknowledgment, then propagate it"
+        except (asyncio.CancelledError, GeneratorExit):
+            self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
+                event_type="MENU_RESULT", label="Menu cancelled", detail={
+                    "request_id": pending.request_id, "menu_id": menu_id,
+                    "status": "cancelled", "detail": "Chat request ended before acknowledgment.",
+                }, duration_ms=0.0)
+            raise
+        finally:
+            menu_action_store.discard(pending)
+        self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
+            event_type="MENU_RESULT", label=f"Menu {result.status}",
+            detail={**result.model_dump(), "menu_id": menu_id}, duration_ms=0.0)
+        label = MENU_BY_ID[menu_id]["label"]
+        text = f"Opened **{label}**."
+        if MENU_BY_ID[menu_id]["presentation"] == "palette":
+            text = f"Opened the menu at **{label}**; the command has not been executed."
+        if result.status != "opened":
+            text = f"Could not open **{label}** ({result.status})."
+        yield {"type": "content_delta", "text": "\n\n" + text, "reference_note_ids": []}
 
     async def _ensure_model_context(
         self,

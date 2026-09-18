@@ -25,6 +25,35 @@ This document describes the security architecture for MetaList3's password prote
 
 ## Two-Key Encryption System
 
+### What “encrypted at rest” covers
+
+Namespace password protection uses field-level AES-256-GCM encryption, not
+whole-file SQLite encryption. Protected payloads include note bodies and
+accepted/proposed tags, ontology text, attachment titles/metadata/bytes, saved
+tab state, tag activity, reminders, cached link URLs/titles, client preferences
+and persisted OpenAI credentials. The authoritative payload/schema inventory is
+in `app/encryption_audit.py`.
+
+Structural and operational metadata remain readable: note IDs, hierarchy/order,
+collapse flags, timestamps, namespace names/ports, schema/vault versions and
+cryptographic metadata. Attachment filename/MIME metadata is inside an encrypted
+payload; this is distinct from readable database structure and container sizes.
+Without a namespace password, ordinary note/file payloads are plaintext at the
+MetaList layer. OS disk encryption is separate.
+
+Backup creation copies SQLite snapshots without decrypting encrypted payloads
+or adding whole-archive encryption. Protected snapshot payloads remain encrypted;
+plaintext snapshots remain plaintext. The tar/gzip container's manifest and
+structural metadata are readable. Historical archives keep their original state
+and password; adding/changing the live password never rewrites them. See the
+immutability and recovery sections for historical copies and temporary rollback
+images. At-rest encryption does not imply protection of unlocked process memory,
+exported HTML, downloaded files, clipboard copies, or every historical disk byte.
+
+The agent's on-demand privacy skill mirrors this distinction rather than claiming
+that backup/attachment protection is undocumented. Product facts do not establish
+the user's current password state or constitute a personal security audit.
+
 ### Key Components
 
 1. **KEK (Key Encryption Key)**

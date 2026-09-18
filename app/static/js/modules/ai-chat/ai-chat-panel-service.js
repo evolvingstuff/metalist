@@ -1,6 +1,6 @@
 const AI_STREAM_EVENT_TYPES = new Set([
     'bulk_progress', 'bulk_question', 'bulk_complete', 'bulk_preferences',
-    'action_status',
+    'action_status', 'menu_open',
     'thinking_delta',
     'content_delta',
     'done',
@@ -200,6 +200,13 @@ function validateAiStreamEvent(event) {
     }
     if (typeof event.type !== 'string' || !AI_STREAM_EVENT_TYPES.has(event.type)) {
         throw new Error(`Unknown AI stream event type: ${event.type}`);
+    }
+    if (event.type === 'menu_open') {
+        if (typeof event.request_id !== 'string' || !event.request_id
+            || typeof event.menu_id !== 'string' || !event.menu_id
+            || !event.scope || typeof event.scope !== 'object' || Array.isArray(event.scope)) {
+            throw new Error('menu_open requires request_id, menu_id and scope');
+        }
     }
     if (
         event.type === 'action_status'

@@ -131,6 +131,7 @@ class _FakeInference:
         del thinking_level
         payload = {
             "kind": self.route_kind,
+            "help_topics": [],
             "reason": "Saved-note evidence is required."
             if self.route_kind == "investigate_current_scope"
             else "No saved-note evidence is required.",

@@ -71,6 +71,56 @@ function chatHarness(events) {
     return { panel, timers };
 }
 
+function composerPointerHarness() {
+    const window = new EventTarget();
+    const panel = new Function('ApplicationState', 'window',
+        `${moduleSource('ai-chat/ai-chat-panel-controller.js')}\nreturn AiChatPanel;`)(ApplicationState, window);
+    let height = 100;
+    const saved = [];
+    class Input { getBoundingClientRect() { return {height}; } }
+    panel._elements = {input: new Input()};
+    panel._saveComposerHeight = async value => { saved.push(value); };
+    return {panel, saved, setHeight: value => { height = value; },
+        down: () => panel._handleComposerPointerDown({button: 0}),
+        end: type => window.dispatchEvent(new Event(type))};
+}
+
+test('repeated composer clicks release the height snapshot without saving a resize', () => {
+    const h = composerPointerHarness();
+    h.down();
+    h.end('pointerup');
+    h.down();
+    h.end('pointerup');
+    assert.equal(h.panel._composerHeightBeforePointerInteraction, 0);
+    assert.deepEqual(h.saved, []);
+});
+
+for (const ending of ['pointercancel', 'blur']) {
+    test(`composer ${ending} clears the snapshot before the next click`, () => {
+        const h = composerPointerHarness();
+        h.down();
+        h.end(ending);
+        h.down();
+        h.end('pointerup');
+        assert.deepEqual(h.saved, []);
+        assert.equal(h.panel._composerHeightBeforePointerInteraction, 0);
+    });
+}
+
+test('composer resize saves once and overlapping pointer events retain the original height', () => {
+    const h = composerPointerHarness();
+    h.down();
+    h.down();
+    h.setHeight(150);
+    h.end('pointerup');
+    h.end('pointercancel');
+    h.end('blur');
+    h.down();
+    h.end('pointerup');
+    assert.deepEqual(h.saved, [150]);
+    assert.equal(h.panel._composerHeightBeforePointerInteraction, 0);
+});
+
 test('streamed chat deltas and matching final snapshot complete and clean up exactly once', async () => {
     const h = chatHarness([
         { type: 'content_delta', text: 'Hello', rendered_text: '<p>Hello</p>' },

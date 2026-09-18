@@ -48,6 +48,7 @@ from app.services.agent.skill_settings import resolve_agent_skill_set
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
+from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.client_state_service import load_client_preferences
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.note_store import store as note_store
@@ -708,6 +709,18 @@ async def _stream_runtime_events(
             yield event
     finally:
         await events.aclose()
+
+
+@router.post("/menu-result")
+@transactional_route
+async def acknowledge_menu_result(payload: MenuResult, token: Annotated[str, Depends(require_request_auth_token)]):
+    # lint: allow-PY001 rationale="browser acknowledgments can be stale or belong to another session"
+    try:
+        menu_action_store.acknowledge(session_key=token_service.get_session_key(token), result=payload)
+    # lint: allow-PY001 rationale="reject invalid external menu acknowledgment with a conflict response"
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"acknowledged": True}
 
 
 class BulkAnswerRequest(BaseModel):

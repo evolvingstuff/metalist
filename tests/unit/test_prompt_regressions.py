@@ -19,7 +19,7 @@ def test_past_operation_response_is_not_overridden_by_keyword_validation(tmp_pat
     class Adapter:
         async def infer_structured(self, **kwargs):
             response = kwargs["response_model"].model_validate({
-                "kind": "respond", "reason": "The user prohibits fresh investigation.",
+                "kind": "respond", "reason": "The user prohibits fresh investigation.", "help_topics": [],
             })
             return SimpleNamespace(content=response.model_dump_json())
 
@@ -47,7 +47,7 @@ def test_ten_repetitions_keep_errors_in_denominator_and_reset_context(tmp_path):
             return SimpleNamespace(content=json.dumps({"kind": kind, "reason": "varied wording"}))
 
     outcomes = []
-    report = asyncio.run(run_case(case("tagging-question"), adapter=Adapter(), judge=None, variant="baseline",
+    report = asyncio.run(run_case(case("actions/hello"), adapter=Adapter(), judge=None, variant="baseline",
                                   directory=tmp_path, on_repetition=outcomes.append))
     assert report["counts"] == {"correct": 8, "incorrect": 1, "error": 1}
     assert report["percent_correct"] == 80
@@ -83,7 +83,7 @@ def test_output_case_generates_and_judges_ten_distinct_outputs(tmp_path):
 
 
 def test_candidate_substitutes_only_explicit_instructions(tmp_path):
-    original = case("tagging-question")
+    original = case("actions/hello")
     original.steps[0].prompt_bindings[0].file = "candidate.md"
     (tmp_path / "candidate.md").write_text("New system instructions")
     baseline = prepare_case(original, variant="baseline", directory=tmp_path)
@@ -104,7 +104,7 @@ def test_action_match_checks_args_extra_list_actions_and_types():
 
 
 def test_skills_do_not_leak_into_later_steps_or_repetitions(tmp_path):
-    fixture = case("tagging-question").model_dump()
+    fixture = case("actions/hello").model_dump()
     step = fixture["steps"][0]
     step["prompt_bindings"] = []
     step["messages"] = [{"role": "system", "content": "SKILL_FOR_THIS_CALL"},
@@ -135,14 +135,14 @@ def test_final_prompt_binding_preserves_evidence_and_schema_drift_fails(tmp_path
     prepared = prepare_case(RegressionCase.model_validate(fixture), variant="candidate", directory=tmp_path)
     payload = json.loads(prepared.steps[0].messages[1].content.split("\n", 1)[1])
     assert payload == {"instruction": "Use notes carefully.", "evidence": "keep exactly"}
-    fixture = case("tagging-question")
+    fixture = case("actions/hello")
     fixture.steps[0].response_schema = {}
     with pytest.raises(ValueError, match="schema changed"):
         prepare_case(fixture, variant="baseline", directory=tmp_path)
 
 
 def test_export_draft_requires_independent_expectations_and_review(tmp_path):
-    fixture = case("tagging-question")
+    fixture = case("actions/hello")
     step = fixture.steps[0]
     invocation = {"kind": step.kind, "model": fixture.model, "thinking_level": fixture.thinking_level,
                   "messages": [message.model_dump() for message in step.messages],
@@ -155,7 +155,7 @@ def test_export_draft_requires_independent_expectations_and_review(tmp_path):
     from_export(SimpleNamespace(history=history, pair=0, output=output))
     draft = RegressionCase.model_validate_json(output.read_text())
     assert not draft.reviewed
-    assert draft.steps[0].current_user_request == "How do tag proposals work?"
+    assert draft.steps[0].current_user_request == "Hello!"
     assert "wrong action" not in str(draft.steps[0].expectation)
     assert "wrong action" in str(draft.provenance)
     with pytest.raises(ValueError, match="Review"):
@@ -194,3 +194,36 @@ def test_comparison_rejects_changed_context(tmp_path, capsys):
     candidate.write_text(json.dumps({"cases": [after]}))
     with pytest.raises(ValueError, match="changed"):
         compare(args)
+
+
+def test_five_repetitions_use_five_as_denominator(tmp_path):
+    seen = []
+    class Adapter:
+        async def infer_structured(self, **kwargs):
+            seen.append(kwargs['messages'])
+            kind = ['respond', 'respond', 'respond', 'respond', 'investigate_current_scope'][len(seen) - 1]
+            return SimpleNamespace(content=json.dumps(dict(kind=kind, help_topics=[], reason='Test')))
+    report = asyncio.run(run_case(case('actions/hello'), adapter=Adapter(), judge=None,
+        variant='baseline', directory=tmp_path, on_repetition=lambda outcome: None, repetitions=5))
+    assert len(seen) == 5
+    assert report['repetitions'] == 5
+    assert report['percent_correct'] == 80
+    assert report['counts'] == dict(correct=4, incorrect=1, error=0)
+
+
+def test_candidate_skill_binding_preserves_exact_production_wrapper(tmp_path):
+    source = case('help/context-value')
+    prepared = prepare_case(source, variant='candidate', directory=ROOT / 'evals/cases/help')
+    for current, frozen in zip(prepared.steps[0].messages, source.steps[0].messages):
+        if frozen.content.startswith('METALIST_HELP_REQUEST\n'):
+            assert json.loads(current.content.split('\n', 1)[1]) == json.loads(frozen.content.split('\n', 1)[1])
+        else:
+            assert current == frozen
+    skill_index = next(i for i, message in enumerate(source.steps[0].messages) if message.content.startswith('ACTIVE_SKILL'))
+    binding = next(b for b in source.steps[0].prompt_bindings if b.message_index == skill_index)
+    binding.file = 'changed.md'
+    (tmp_path / 'changed.md').write_text('Changed skill with literal {braces}.')
+    source.steps[0].prompt_bindings = [binding]
+    candidate = prepare_case(source, variant='candidate', directory=tmp_path)
+    assert candidate.steps[0].messages[skill_index].content.endswith('Changed skill with literal {braces}.')
+    assert candidate.steps[0].messages[skill_index].content.startswith('ACTIVE_SKILL help_ai_v1\nTrigger action: help_ai\n\n')

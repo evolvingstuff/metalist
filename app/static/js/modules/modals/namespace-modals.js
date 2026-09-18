@@ -390,6 +390,7 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
     }
 
     async loadCatalog() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             submitting: false,
@@ -399,6 +400,7 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
         this.renderModalContent();
         const catalogResult = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            if (!this.isCurrentOpen(generation)) return;
             assertCatalogShape(catalog);
             const selectedNamespace = catalog.current_namespace;
             if (typeof selectedNamespace !== 'string' || selectedNamespace.length === 0) {
@@ -412,6 +414,7 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
                 status: '',
             });
         });
+        if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
             const error = catalogResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespaces';
@@ -590,6 +593,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
     }
 
     async loadCatalog() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             submitting: false,
@@ -599,6 +603,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         this.renderModalContent();
         const catalogResult = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            if (!this.isCurrentOpen(generation)) return;
             assertCatalogShape(catalog);
             const profile = catalog.new_namespace_profile;
             assertProfileShape(profile);
@@ -612,6 +617,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                 status: '',
             });
         });
+        if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
             const error = catalogResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespace defaults';
@@ -775,6 +781,7 @@ export class RenameNamespaceModal extends NamespaceModalBase {
     }
 
     async loadCatalog() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             submitting: false,
@@ -784,6 +791,7 @@ export class RenameNamespaceModal extends NamespaceModalBase {
         this.renderModalContent();
         const result = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            if (!this.isCurrentOpen(generation)) return;
             assertCatalogShape(catalog);
             this.updateModalState({
                 loading: false,
@@ -793,6 +801,7 @@ export class RenameNamespaceModal extends NamespaceModalBase {
                 status: '',
             });
         });
+        if (!this.isCurrentOpen(generation)) return;
         if (!result.ok) {
             const error = result.error;
             this.updateModalState({
@@ -995,6 +1004,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
     }
 
     async loadCatalog() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             saving: false,
@@ -1004,6 +1014,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         this.renderModalContent();
         const catalogResult = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            if (!this.isCurrentOpen(generation)) return;
             const rows = this._buildRowsFromCatalog(catalog);
             this.updateModalState({
                 loading: false,
@@ -1014,6 +1025,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                 status: '',
             });
         });
+        if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
             const error = catalogResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespace ports';

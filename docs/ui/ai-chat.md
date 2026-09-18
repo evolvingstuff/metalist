@@ -1,4 +1,4 @@
-# AI Chat and Scoped Read-only Agent
+# AI Chat, Product Help and Scoped Investigation
 
 ## Scope
 
@@ -10,8 +10,12 @@
 - Investigation is read-only. Explicit requests can generate, accept, or remove
   tag proposals through the separate bulk proposal workflow. The agent cannot
   create, edit, move, trash, or delete note bodies.
-- Instructor owns structured route/investigation calls. Final natural-language
-  prose streams directly from the selected provider; OpenAI requests disable
+- Product questions load selected MetaList help skills. Requests can open an
+  existing settings/help dialog or highlight a menu command. Highlighting does
+  not execute that command; forms are not submitted and settings are not changed.
+- Instructor owns structured route/investigation/help calls. Help returns a
+  validated answer and menu destination; other final natural-language
+  prose streams directly from the selected provider. OpenAI requests disable
   provider-side storage.
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
@@ -20,6 +24,27 @@
   query requests use 1,024, and final prose uses 8,192 with OpenAI. If OpenAI reports that this limit
   truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
+
+## Product help and menus
+
+The first model call selects relevant topics from a compact catalog: notes,
+search, tags, formatting, references, menus, reminders, AI, privacy, or data.
+Only selected skill text is loaded into the second call. There is no additional
+model lookup call. Those instructions are not retained in later conversation
+turns; the export records exactly what the model saw. Agent prompts exposes the
+skills for namespace-specific overrides.
+
+Examples: “How does tag inheritance work?” explains from the tags skill.
+“Open AI settings” opens that dialog. “How do I change context to 250k?” opens
+AI settings and identifies Maximum approximate evidence tokens = 250000, leaving
+the user to save. “Open Create backup in the menu” highlights its command without
+creating a backup. Explicit tag-proposal operations retain their existing route.
+
+Before opening, the browser checks the originating scope, cancellation and other
+open dialogs. It acknowledges actual visibility; the application appends the
+result to the answer. Missing acknowledgment times out after 30 seconds and is
+recorded as unavailable. Exported LLM history includes the requested destination
+and browser result, rather than treating model prose as proof of execution.
 
 ## Scope at Send
 

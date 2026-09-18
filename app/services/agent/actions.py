@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator,
 from typing_extensions import Self
 
 from app.services.search_query import parse_search_query
+from app.services.agent.help_catalog import HelpTopic
 
 
 def _validate_agent_search_query(value: str) -> str:
@@ -102,10 +103,11 @@ class ScopedRouteEnvelope(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["respond", "investigate_current_scope", "tag_proposals"] = Field(
+    kind: Literal["respond", "investigate_current_scope", "tag_proposals", "metalist_help"] = Field(
         ...,
         description=(
-            "respond for requests answerable without the user's notes; "
+            "metalist_help for MetaList product questions or opening menus, with relevant help_topics; "
+            "respond for other requests answerable without the user's notes; "
             "investigate_current_scope only when the answer depends on evidence "
             "inside the frozen active MetaList result scope. "
             "tag_proposals ONLY for an explicit current user request to generate, "
@@ -113,6 +115,16 @@ class ScopedRouteEnvelope(BaseModel):
             "hypotheticals, and unrelated requests must never select tag_proposals."
         ),
     )
+    help_topics: list[HelpTopic] = Field(..., max_length=10, description="Relevant product-help topics for metalist_help; empty for other routes.")
+
+    @model_validator(mode="after")
+    def validate_help_topics(self) -> Self:
+        if len(set(self.help_topics)) != len(self.help_topics):
+            raise ValueError("Help topics must be unique")
+        if (self.kind == "metalist_help") != bool(self.help_topics):
+            raise ValueError("Only metalist_help requires nonempty help_topics")
+        return self
+
     reason: str = Field(..., min_length=1, max_length=4_000)
 
     @field_validator("reason")

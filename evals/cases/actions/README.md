@@ -11,7 +11,7 @@ The initial live Luna run exposed a code defect: a keyword-based validator
 rejected `respond` for “do not inspect current notes”. That validator, its prompt
 signal, and a legacy rationale-text routing override have been removed. The
 fixtures now omit the signal and its instructions; conversations, scope metadata,
-and expected actions are unchanged. Instructor validates action structure, while
+and expected actions were unchanged at that checkpoint. Product help now adds a fourth route, so the three explanation cases below expect metalist_help. Instructor validates action structure, while
 these tests score the model's choice. The original run remains a historical
 application-level baseline (218/240 correct, 15 incorrect, 7 validation errors).
 
@@ -19,9 +19,9 @@ application-level baseline (218/240 correct, 15 incorrect, 7 validation errors).
 | --- | --- | --- |
 | [hello](hello.json) | `respond` | A greeting needs no saved-note evidence. |
 | [general-knowledge](general-knowledge.json) | `respond` | A keyword matching the view does not by itself require investigation. |
-| [tagging-help](tagging-help.json) | `respond` | Asking how proposals work is not permission to generate them. |
-| [hypothetical-accept](hypothetical-accept.json) | `respond` | A hypothetical acceptance question must not mutate proposals. |
-| [quoted-command](quoted-command.json) | `respond` | An imperative inside quoted text is material to explain, not execute. |
+| [tagging-help](tagging-help.json) | `metalist_help` | Asking how proposals work is not permission to generate them. |
+| [hypothetical-accept](hypothetical-accept.json) | `metalist_help` | A hypothetical acceptance question must not mutate proposals. |
+| [quoted-command](quoted-command.json) | `metalist_help` | An imperative inside quoted text is material to explain, not execute. |
 | [acknowledge-correction](acknowledge-correction.json) | `respond` | A correction asking for acknowledgment does not require fresh evidence. |
 | [rewrite-conversation](rewrite-conversation.json) | `respond` | Rewriting an answer already present in history needs no investigation. |
 | [past-operation-count](past-operation-count.json) | `respond` | A count cannot establish which tags were changed; no new operation is authorized. |
@@ -56,3 +56,5 @@ passed 10/10 using gpt-5.6-luna, thinking off, with zero validation errors. Both
 the removal-only and final system-prompt runs scored 240/240. The frozen prompts
 now match the final evaluated version. These sample results do not guarantee
 future perfect accuracy. See `docs/testing/harness.md` for report locations.
+
+The five-run help-enabled results are in [help/RESULTS.md](../help/RESULTS.md). They preserve topic-expectation failures separately from schema validation errors.

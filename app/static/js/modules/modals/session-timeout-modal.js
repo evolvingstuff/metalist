@@ -230,6 +230,7 @@ export class SessionTimeoutModal extends BaseModal {
     }
 
     async loadSettings() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             saving: false,
@@ -244,6 +245,7 @@ export class SessionTimeoutModal extends BaseModal {
                 'GET',
                 null,
             );
+            if (!this.isCurrentOpen(generation)) return;
             if (!payload || typeof payload !== 'object') {
                 throw new Error('Session timeout response missing body');
             }
@@ -261,6 +263,7 @@ export class SessionTimeoutModal extends BaseModal {
             this.renderModalContent();
         })().catch((error) => {
             rethrowUnexpectedError(error);
+            if (!this.isCurrentOpen(generation)) return;
             const message = error instanceof Error ? error.message : String(error);
             this.updateModalState({
                 loading: false,

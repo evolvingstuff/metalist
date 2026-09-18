@@ -540,6 +540,7 @@ export class BackupRestoreModal extends BaseModal {
     }
 
     async loadBackups() {
+        const generation = this._openGeneration;
         this.updateModalState({
             loading: true,
             choosingFolder: false,
@@ -563,6 +564,7 @@ export class BackupRestoreModal extends BaseModal {
         this.renderModalContent();
 
         const payload = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+        if (!this.isCurrentOpen(generation)) return;
         if (!payload || typeof payload !== 'object') {
             throw new Error('Backup list response missing body');
         }

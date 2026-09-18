@@ -270,3 +270,63 @@ Full local reports: `/tmp/metalist-luna-synthetic-live-20260917/`,
 Final candidate estimated cost: $0.02515422. Ordinary validation passed **1,524
 Python tests, 7 skipped**, **728 JavaScript tests**, and both startup gates;
 focused prompt/fixture checks also passed after updating the final prompt.
+
+
+## MetaList help and menu regression coverage
+
+The help route has ten packaged skills and 54 allowed menu destinations. Only
+selected skills enter the second model call. The normal deterministic suite checks
+transient instruction lifetime, overrides, schema validation, real runtime and
+SDK/Instructor history, session-bound/single-use API acknowledgments, disconnect
+cleanup and browser timeouts. JS tests cover every destination, scope changes,
+modals, cancellation, visibility and no execution of highlighted commands.
+
+`BROWSER_TEST_SUITE=agent-help npm run test:browser` uses a disposable namespace.
+It opens all 54 targets, rejects stale scope, closes/reopens settings with deferred
+responses, and runs a simulated chat stream through the real controller and
+acknowledgment client. It never submits operations or calls OpenAI. This caught
+and fixed asynchronous modal lifecycle bugs and a missing acknowledgment URL.
+
+Final local validation: **1,611 Python tests passed, 7 skipped**, **789 JavaScript
+tests passed**. Startup gates passed 413 Python and 184 JS/JSX files. All 54 menu
+destinations plus chat acknowledgment/lifecycle checks passed **Chrome 131** and
+**Firefox 155.0.1**, on macOS. Windows and Safari UI were not exercised. Wheel and
+sdist checks verified 457 runtime files, packaged help registry/catalog imports,
+and absence of `evals/` and `tests/`. This is not release-matrix validation.
+
+Live Luna tests were explicitly run **five times per case**, keeping the default
+at ten and adding `--repetitions 5`. Initial help: **480/495 (96.97%)**, 15
+incorrect, zero errors. Four revised help checks: **20/20**, reported separately.
+Existing routing: raw **105/120**; two overly restrictive topic expectations were
+corrected after reviewing skill content, and rescoring the same outputs gives
+**115/120 (95.83%)**. Five quoted-command responses still skip product-help lookup.
+Output-judge limitations and individual scores are preserved in
+`evals/cases/help/RESULTS.md`. None of these scores override LLM actions with
+keywords, imply a universal 100% threshold, or count repeated trials as new cases.
+
+Password-login follow-up: the initial focused help browser run covered only
+passwordless startup and missed the separate `Auth.handleLogin` initialization.
+That path omitted the required `openMenu` callback and blocked opening an encrypted
+workspace. A new disposable password-login step reproduced the reported fatal
+error before the fix. Both startup paths now supply the callback; unit checks
+exercise forwarding from each entrypoint. The expanded password-login plus all
+54 menu checks pass in Chrome 131 and Firefox 155.0.1; all 791 JS tests and the JS
+startup gate pass. No Python logic changed for this correction.
+
+
+Encryption-help correction: the exact reported question failed the new coverage
+criteria **0/5** with the frozen incomplete skill and scored **5/5** after expanding
+the on-demand privacy reference from the code/schema inventory and security docs.
+Five output cases and one route case were added (105 help cases total). Those six
+plus the existing cloud-privacy output case scored **35/35**, five fresh Luna
+attempts each, zero errors. Output cases use explicit LLM-as-judge criteria; the
+route case uses structured expectations. All 97 focused deterministic tests and
+the wheel/sdist resource checks passed. Full paths, costs and per-case results
+are in `evals/cases/help/RESULTS.md`. Restart the server to reload packaged skills.
+
+Final feature validation after the composer fix: all **795 JavaScript tests** and
+both startup gates passed. The expanded Chrome/Firefox help suite also checks
+repeated composer clicks before and after closing an agent-opened password
+generator. Pointer release, cancellation and blur consume the height snapshot;
+the strict state checks remain enabled. The user confirmed manual testing before
+the feature commit.

@@ -11,6 +11,7 @@ from app.services.agent.actions import (
     AgentRouteEnvelope, ScopedRouteEnvelope, SearchQueryEnvelope,
 )
 from app.services.agent.history import record_history
+from app.services.agent.help_catalog import MetaListHelpResponse
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
@@ -22,7 +23,7 @@ from evals.models import Message, PreviousOutput, RegressionCase
 REPETITIONS = 10
 RESPONSE_MODELS = {schema.__name__: schema for schema in (
     ScopedRouteEnvelope, AgentRouteEnvelope, SearchQueryEnvelope,
-    TagOperationIntent, TagBatchResult,
+    TagOperationIntent, TagBatchResult, MetaListHelpResponse,
 )}
 
 
@@ -59,12 +60,16 @@ def prepare_case(case: RegressionCase, *, variant: str, directory: Path) -> Regr
         if variant == "candidate":
             for binding in step.prompt_bindings:
                 text = (directory / binding.file).read_text(encoding="utf-8").rstrip("\n")
-                if binding.variables:
+                if binding.target == "skill":
+                    if set(binding.variables) != {"skill_id", "trigger_action"}:
+                        raise ValueError("Skill binding requires skill_id and trigger_action")
+                    text = f"ACTIVE_SKILL {binding.variables['skill_id']}\nTrigger action: {binding.variables['trigger_action']}\n\n{text}"
+                elif binding.variables:
                     text = text.format(**binding.variables)
                 if not text.strip():
                     raise ValueError(f"Empty prompt: {binding.file}")
                 message = step.messages[binding.message_index]
-                if binding.target == "message":
+                if binding.target in {"message", "skill"}:
                     message.content = text
                 else:
                     prefix, body = message.content.split("\n", 1)
@@ -126,12 +131,15 @@ async def evaluate_output(adapter, *, expectation, messages, output, judge):
             "judgment": verdict.model_dump(), "expected": expectation.model_dump()}
 
 
-async def run_case(case, *, adapter, judge, variant, directory, on_repetition):
+# lint: allow-PY005 rationale="documented ten-trial default; explicit CLI override permits shorter live runs"
+async def run_case(case, *, adapter, judge, variant, directory, on_repetition, repetitions=REPETITIONS):
+    if type(repetitions) is not int or repetitions < 1:
+        raise ValueError("Repetitions must be a positive integer")
     prepared = prepare_case(case, variant=variant, directory=directory)
     if any(step.expectation.kind == "output" for step in prepared.steps) and judge is None:
         raise ValueError("Output cases require --judge configuration")
     outcomes = []
-    for repetition in range(1, REPETITIONS + 1):
+    for repetition in range(1, repetitions + 1):
         traces = AgentTraceStore()
         run_id = traces.start_run(session_key="regression", model=prepared.model, user_message=prepared.id)
         started = time.perf_counter()
@@ -166,12 +174,12 @@ async def run_case(case, *, adapter, judge, variant, directory, on_repetition):
         on_repetition(outcomes[-1])
     counts = {status: sum(item["status"] == status for item in outcomes)
               for status in ("correct", "incorrect", "error")}
-    assert sum(counts.values()) == REPETITIONS
+    assert sum(counts.values()) == repetitions
     return {"schema_version": 1, "case_id": case.id, "variant": variant,
             "case_fingerprint": fingerprint(case.model_dump()),
             "effective_case": prepared.model_dump(),
             "effective_fingerprint": fingerprint(prepared.model_dump()),
             "judge": judge.model_dump() if judge is not None else {},
-            "repetitions": REPETITIONS, "counts": counts,
-            "percent_correct": 100 * counts["correct"] / REPETITIONS,
+            "repetitions": repetitions, "counts": counts,
+            "percent_correct": 100 * counts["correct"] / repetitions,
             "outcomes": outcomes}

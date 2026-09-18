@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from app.services.agent.help_catalog import HELP_TOPICS, HELP_RESPONSE_INSTRUCTION, MENU_ACTIONS
 from app.services.agent.actions import AgentAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.investigation import InvestigationEvidencePayload
@@ -82,6 +83,18 @@ class AgentContextBuilder:
             *[dict(message) for message in messages[1:]],
         ]
 
+    def build_help_messages(self, *, canonical_messages, prompts, skills, topics):
+        assert topics and len(topics) == len(set(topics))
+        messages = self.build_initial_messages(canonical_messages=canonical_messages, prompts=prompts)
+        for topic in topics:
+            messages = self.activate_skill(messages=messages, skill=skills.for_action(f"help_{topic}"))
+        messages.append({"role": "user", "content": "METALIST_HELP_REQUEST\n" + json.dumps({
+            "instruction": HELP_RESPONSE_INSTRUCTION,
+            "current_user_request": canonical_messages[-1]["content"],
+            "available_menus": [{"id": entry["id"], "label": entry["label"], "presentation": entry["presentation"]} for entry in MENU_ACTIONS],
+        }, sort_keys=True)})
+        return messages
+
     def build_scoped_route_messages(
         self,
         *,
@@ -99,7 +112,7 @@ class AgentContextBuilder:
         descriptor = snapshot.descriptor
         route_scope = {
             "instruction": (
-                "AUTHORITATIVE ROUTING RULE: Explicit requests to generate, accept, reject, or remove tag proposals select tag_proposals. Questions about tagging do not authorize mutations. Otherwise classify current_user_request as "
+                "For MetaList product questions and requests to open menus/settings, choose metalist_help and select the smallest sufficient set of help_topics from help_catalog. For a specific feature or its settings, select that feature topic; use menus for the general menu system or controls without a more specific topic. Never use note investigation just to explain the application. Explicit requests to generate, accept, reject, or remove tag proposals select tag_proposals. Questions about tagging do not authorize mutations. Otherwise classify current_user_request as "
                 "the current task, using the "
                 "immediately preceding conversation to resolve references and "
                 "elliptical follow-ups. If the current request continues, "
@@ -114,6 +127,7 @@ class AgentContextBuilder:
                 "for a conversational acknowledgment remains respond. "
                 "active_metalist_scope is routing context and has no note content."
             ),
+            "help_catalog": {topic: description for topic, (_title, description) in HELP_TOPICS.items()},
             "current_user_request": canonical_messages[-1]["content"],
             "active_metalist_scope": {
                 "scope_kind": descriptor.scope_kind,

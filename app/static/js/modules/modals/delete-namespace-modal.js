@@ -88,8 +88,10 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     async onOpen() {
+        const generation = this._openGeneration;
         const catalogResult = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            if (!this.isCurrentOpen(generation)) return;
             const selectableNamespaces = extractDeletableNamespaceNames(catalog);
             this.updateModalState({
                 loading: false,
@@ -98,6 +100,7 @@ export class DeleteNamespaceModal extends BaseModal {
                 error: '',
             });
         });
+        if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
             const error = catalogResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespaces';

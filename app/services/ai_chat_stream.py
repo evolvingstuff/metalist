@@ -83,7 +83,7 @@ class ChatTurnStream:
 
     def transform(self, event: dict[str, object]) -> dict[str, object]:
         event_type = event['type']
-        if event_type in {'bulk_question', 'bulk_progress', 'bulk_complete', 'bulk_preferences'}:
+        if event_type in {'bulk_question', 'bulk_progress', 'bulk_complete', 'bulk_preferences', 'menu_open'}:
             return event
         if event_type == 'action_status':
             return self.action_status(event)

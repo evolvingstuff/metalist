@@ -386,18 +386,20 @@ export class AiAgentSettingsModal extends BaseModal {
     }
 
     onOpen() {
-        void this._loadProviderState();
+        return this._loadProviderState();
     }
 
     async _loadProviderState() {
+        const generation = this._openGeneration;
         const state = this.getModalState();
         if (state.provider === 'openai') {
             await this._loadOpenAiCredentialStatus();
         }
-        await this._loadInstalledModels();
+        if (this.isCurrentOpen(generation)) await this._loadInstalledModels();
     }
 
     async _loadInstalledModels() {
+        const generation = this._openGeneration;
         const state = this.getModalState();
         if (state.isLoadingModels) {
             return;
@@ -408,6 +410,7 @@ export class AiAgentSettingsModal extends BaseModal {
             const payload = await listAiModels({
                 provider: state.provider,
             });
+            if (!this.isCurrentOpen(generation)) return;
             if (!payload || !Array.isArray(payload.models)) {
                 throw new Error('AI model response missing models');
             }
@@ -416,19 +419,24 @@ export class AiAgentSettingsModal extends BaseModal {
                 model = '';
             }
             this.updateModalState({ installedModels: payload.models, model });
+        // lint: allow-JS001 rationale="late external responses belong to the closed dialog generation; internal errors rethrow"
         } catch (error) {
             rethrowUnexpectedError(error);
+            if (!this.isCurrentOpen(generation)) return;
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
             this.updateModalState({ installedModels: [], model: '', error: error.message });
         } finally {
-            this.updateModalState({ isLoadingModels: false });
-            this.renderModalContent();
+            if (this.isCurrentOpen(generation)) {
+                this.updateModalState({ isLoadingModels: false });
+                this.renderModalContent();
+            }
         }
     }
 
     async _loadOpenAiCredentialStatus() {
+        const generation = this._openGeneration;
         const state = this.getModalState();
         if (state.isLoadingCredential) {
             return;
@@ -437,16 +445,21 @@ export class AiAgentSettingsModal extends BaseModal {
         this.renderModalContent();
         try {
             const payload = await loadOpenAiCredentialStatus();
+            if (!this.isCurrentOpen(generation)) return;
             this._applyOpenAiCredentialStatus(payload);
+        // lint: allow-JS001 rationale="late external responses belong to the closed dialog generation; internal errors rethrow"
         } catch (error) {
             rethrowUnexpectedError(error);
+            if (!this.isCurrentOpen(generation)) return;
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
             this.updateModalState({ error: error.message });
         } finally {
-            this.updateModalState({ isLoadingCredential: false });
-            this.renderModalContent();
+            if (this.isCurrentOpen(generation)) {
+                this.updateModalState({ isLoadingCredential: false });
+                this.renderModalContent();
+            }
         }
     }
 

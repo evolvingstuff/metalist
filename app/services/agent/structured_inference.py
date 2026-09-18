@@ -16,6 +16,7 @@ from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.history import record_provider_event
 from app.services.agent.judging import OutputJudgment
+from app.services.agent.help_catalog import MetaListHelpResponse
 from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
@@ -35,6 +36,7 @@ _SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
         OutputJudgment: 4_096,
+        MetaListHelpResponse: 8_192,
         TagBatchResult: 8_192,
         TagOperationIntent: 1_024,
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,

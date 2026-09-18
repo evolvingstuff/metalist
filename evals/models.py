@@ -20,7 +20,7 @@ class PreviousOutput(StrictModel):
 
 
 class PromptBinding(StrictModel):
-    target: Literal["message", "json_instruction"]
+    target: Literal["message", "json_instruction", "skill"]
     message_index: int = Field(ge=0)
     file: str = Field(min_length=1)
     variables: dict[str, str]
@@ -77,10 +77,10 @@ class Step(StrictModel):
             if index >= len(self.messages) or not isinstance(self.messages[index], Message):
                 raise ValueError("Prompt binding must select a literal message")
             binding = next(binding for binding in self.prompt_bindings if binding.message_index == index)
-            if binding.target == "message" and self.messages[index].role not in {"system", "developer"}:
+            if binding.target in {"message", "skill"} and self.messages[index].role not in {"system", "developer"}:
                 raise ValueError("Whole-message bindings must target instruction messages")
-            if binding.target == "json_instruction" and not self.messages[index].content.startswith("FINAL_RESPONSE_REQUEST\n"):
-                raise ValueError("JSON instruction bindings must target FINAL_RESPONSE_REQUEST")
+            if binding.target == "json_instruction" and not self.messages[index].content.startswith(("FINAL_RESPONSE_REQUEST\n", "METALIST_HELP_REQUEST\n")):
+                raise ValueError("JSON instruction bindings must target FINAL_RESPONSE_REQUEST or METALIST_HELP_REQUEST")
         return self
 
 

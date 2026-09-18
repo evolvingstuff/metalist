@@ -102,3 +102,11 @@ The implementation uses `POST /api2/notes/set-collapsed-in-context`.
 These are treated as **global** actions:
 - The client bumps the undo-context epoch.
 - The server clears undo/redo history for the active undo context.
+
+## Opening menus through chat
+
+The agent can select a documented dialog or command-palette destination. Dialog
+entries reuse the existing form opener; operation/toggle entries are highlighted
+without executing. The shared allowlist is `app/static/config/agent-menu-actions.json`.
+The browser rechecks current scope and other modals, then reports actual opening
+back to the chat run. Acknowledgment is distinct from selecting an action.
