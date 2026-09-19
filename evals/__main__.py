@@ -9,7 +9,10 @@ from pathlib import Path
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_inference import OpenAIInferenceAdapter, validate_openai_model
 from evals.models import JudgeConfig, RegressionCase
-from evals.runner import prepare_case, run_case
+from evals.runner import REPETITIONS, prepare_case
+from evals.scheduling import CONCURRENCY, run_cases
+from evals.scenarios import scenario_from_invocation
+from evals.selection import build_coverage, load_coverage, plan_selection
 
 
 def write_new(path: Path, payload) -> None:
@@ -21,30 +24,21 @@ def write_new(path: Path, payload) -> None:
 def from_export(arguments):
     history = json.loads(arguments.history.read_text(encoding="utf-8"))
     pair = history[arguments.pair]
-    request, response = pair
+    request, _response = pair
     if request["schema_version"] != 1:
         raise ValueError("Unsupported export version")
     invocation = request["invocation"]
-    users = [message["content"] for message in invocation["messages"] if message["role"] == "user"]
-    current_request = users[-1]
-    if current_request.startswith("ROUTE_SELECTION_REQUEST\n"):
-        current_request = json.loads(current_request.split("\n", 1)[1])["current_user_request"]
     # lint: allow-PY004 rationale="choose the editable case expectation shape by call kind"
     expectation = ({"kind": "action", "alternatives": [{"REPLACE_WITH_EXPECTED_FIELD": "EXPECTED_VALUE"}]}
                    if invocation["kind"] == "structured" else
                    {"kind": "output", "criteria": [{"id": "correct", "instruction": "REPLACE_WITH_EXPECTED_BEHAVIOR"}],
                     "reference_facts": ""})
     case = RegressionCase.model_validate({
-        "schema_version": 1, "id": arguments.output.stem,
+        "schema_version": 2, "id": arguments.output.stem,
         "description": "Describe this failure and the intended behavior.",
         "reviewed": False, "model": invocation["model"],
         "thinking_level": invocation["thinking_level"],
-        "steps": [{"kind": invocation["kind"], "messages": invocation["messages"],
-                   "response_model": invocation["response_model"],
-                   "response_schema": invocation["response_schema"],
-                   "max_output_tokens": invocation["max_output_tokens"],
-                   "current_user_request": current_request,
-                   "prompt_bindings": [], "expectation": expectation}],
+        "steps": [scenario_from_invocation(invocation, expectation).model_dump()],
         "provenance": {"export_pair_index": arguments.pair, "recorded_pair": pair},
     })
     write_new(arguments.output, case.model_dump())
@@ -52,6 +46,8 @@ def from_export(arguments):
 
 
 async def run(arguments):
+    if arguments.concurrency < 1:
+        raise ValueError("Concurrency must be a positive integer")
     if arguments.repetitions < 1:
         raise ValueError("Repetitions must be a positive integer")
     cases = [RegressionCase.model_validate_json(path.read_text(encoding="utf-8")) for path in arguments.cases]
@@ -61,42 +57,78 @@ async def run(arguments):
     if arguments.judge is not None:
         judge = JudgeConfig.model_validate_json(arguments.judge.read_text(encoding="utf-8"))
     # Validate everything before spending tokens or creating a report directory.
-    for path, case in zip(arguments.cases, cases):
+    prepared_cases = []
+    for case in cases:
         validate_openai_model(case.model)
-        prepare_case(case, variant=arguments.variant, directory=path.parent)
+        prepared_cases.append(prepare_case(case))
         if any(step.expectation.kind == "output" for step in case.steps) and judge is None:
             raise ValueError("Output cases require --judge")
     if judge is not None:
         validate_openai_model(judge.model)
+    plan, baseline = plan_selection(cases, prepared_cases, judge=judge,
+        repetitions=arguments.repetitions, baseline_path=arguments.changed_since)
+    selected_ids = {entry["case_id"] for entry in plan["selected"]}
+    print(f"Selected {len(selected_ids)}/{len(cases)} cases; {len(plan['skipped'])} unchanged cases will not be rerun.")
+    if arguments.changed_since is not None:
+        for entry in plan["selected"]:
+            print(f"  {entry['case_id']}: {entry['reason']}")
     if not arguments.live:
-        print(f"Validated {len(cases)} cases; add --live to make provider calls ({arguments.repetitions} runs per case).")
+        print(f"Validated {len(cases)} cases; add --live to make provider calls ({arguments.repetitions} runs per case, concurrency {arguments.concurrency}).")
         return
-    api_key = os.environ["OPENAI_API_KEY"]
+    all_cases, all_prepared = cases, prepared_cases
+    cases = [case for case in all_cases if case.id in selected_ids]
+    prepared_cases = [prepared for prepared in all_prepared if prepared.id in selected_ids]
     costs = OpenAICostTracker()
-    adapter = OpenAIInferenceAdapter(api_key=api_key, cost_tracker=costs)
     arguments.output.mkdir(parents=True, exist_ok=False)
+    for index in range(len(cases)):
+        (arguments.output / str(index)).mkdir()
+
+    def preserve(index, outcome):
+        write_new(arguments.output / str(index) / f"{outcome['repetition']:02d}.json", outcome)
+        print(f"{cases[index].id} {outcome['repetition']}/{arguments.repetitions}: {outcome['status']}", flush=True)
+
+    def preserve_case(index, report):
+        write_new(arguments.output / str(index) / "report.json", report)
+        print(f"{cases[index].id}: {report['counts']['correct']}/{arguments.repetitions} "
+              f"({report['percent_correct']:g}%) correct; {report['counts']['error']} errors", flush=True)
+
     reports = []
-    for index, (path, case) in enumerate(zip(arguments.cases, cases)):
-        case_directory = arguments.output / str(index)
-        case_directory.mkdir()
-        def preserve(outcome):
-            write_new(case_directory / f"{outcome['repetition']:02d}.json", outcome)
-            print(f"{case.id} {outcome['repetition']}/{arguments.repetitions}: {outcome['status']}", flush=True)
-        report = await run_case(case, adapter=adapter, judge=judge,
-            variant=arguments.variant, directory=path.parent, on_repetition=preserve, repetitions=arguments.repetitions)
-        write_new(case_directory / "report.json", report)
-        reports.append(report)
-        print(f"{case.id}: {report['counts']['correct']}/{arguments.repetitions} ({report['percent_correct']:g}%) correct; "
-              f"{report['counts']['error']} errors")
-    write_new(arguments.output / "report.json", {"cases": reports,
-        "estimated_cost_usd": str(costs.snapshot().estimated_cost_usd)})
-    if any(report["counts"]["error"] for report in reports):
+    if cases:
+        adapter = OpenAIInferenceAdapter(api_key=os.environ["OPENAI_API_KEY"], cost_tracker=costs)
+        reports = await run_cases(cases, prepared_cases=prepared_cases, adapter=adapter, judge=judge,
+            concurrency=arguments.concurrency, repetitions=arguments.repetitions,
+            on_repetition=preserve, on_case=preserve_case)
+    coverage = build_coverage(all_cases, all_prepared, reports=reports, baseline=baseline,
+        judge=judge, repetitions=arguments.repetitions, report_path=arguments.output / "report.json")
+    usage = costs.snapshot()
+    token_usage = {"uncached_input_tokens": usage.uncached_input_tokens,
+        "cached_input_tokens": usage.cached_input_tokens, "cache_write_tokens": usage.cache_write_tokens,
+        "output_tokens": usage.output_tokens}
+    write_new(arguments.output / "report.json", {"cases": reports, "selection": plan, "coverage": coverage,
+        "concurrency": arguments.concurrency, "scheduling": "shared-prefix-warmup",
+        "token_usage": token_usage, "estimated_cost_usd": str(usage.estimated_cost_usd)})
+    print(f"Provider usage: {usage.cached_input_tokens} cached input tokens, "
+          f"{usage.cache_write_tokens} cache-write tokens, {usage.uncached_input_tokens} uncached input tokens; "
+          f"estimated cost ${usage.estimated_cost_usd}", flush=True)
+    prior_failures = [entry for entry in coverage if entry["case_id"] in plan["skipped"]
+                      and (entry["counts"]["incorrect"] or entry["counts"]["error"])]
+    if prior_failures:
+        print(f"{len(prior_failures)} unchanged cases retain earlier failures/errors; they were not rerun.")
+    if any(report["counts"]["error"] for report in coverage):
         raise SystemExit(2)
+    if any(report["counts"]["incorrect"] for report in coverage):
+        raise SystemExit(1)
 
 
 def compare(arguments):
-    baseline = json.loads(arguments.baseline.read_text(encoding="utf-8"))["cases"]
-    candidate = json.loads(arguments.candidate.read_text(encoding="utf-8"))["cases"]
+    baseline_report = json.loads(arguments.baseline.read_text(encoding="utf-8"))
+    candidate_report = json.loads(arguments.candidate.read_text(encoding="utf-8"))
+    baseline, candidate = baseline_report["cases"], candidate_report["cases"]
+    if "coverage" in baseline_report or "coverage" in candidate_report:
+        baseline = list(load_coverage(arguments.baseline).values())
+        candidate = list(load_coverage(arguments.candidate).values())
+        for report in [*baseline, *candidate]:
+            report["percent_correct"] = 100 * report["counts"]["correct"] / report["repetitions"]
     left = {report["case_id"]: report for report in baseline}
     right = {report["case_id"]: report for report in candidate}
     if left.keys() != right.keys():
@@ -105,12 +137,17 @@ def compare(arguments):
         after = right[case_id]
         if before["case_fingerprint"] != after["case_fingerprint"] or before["judge"] != after["judge"]:
             raise ValueError(f"Case context, expectations, model, or judge changed: {case_id}")
+        if ("judge_schema" in before and before["judge_schema"] and after["judge_schema"]
+                and before["judge_schema"] != after["judge_schema"]):
+            raise ValueError(f"Judge schema changed: {case_id}")
         if before["repetitions"] != after["repetitions"]:
             raise ValueError("Comparisons require equal repetitions per case")
         difference = after["percent_correct"] - before["percent_correct"]
         print(f"{case_id}: {before['percent_correct']:g}% → {after['percent_correct']:g}% "
               f"({difference:+g} percentage points); errors "
               f"{before['counts']['error']} → {after['counts']['error']}")
+        if "source_report" in after and after["source_report"] != str(arguments.candidate.resolve()):
+            print(f"  Not rerun; historical result from {after['source_report']}")
 
 
 def main():
@@ -121,11 +158,14 @@ def main():
     extract.add_argument("--pair", type=int, required=True, help="Zero-based exported pair index")
     extract.add_argument("--output", type=Path, required=True)
     execute = commands.add_parser("run")
-    execute.add_argument("--repetitions", type=int, default=10, help="Independent trials per case (default: 10)")
+    execute.add_argument("--repetitions", type=int, default=REPETITIONS, help="Independent trials per case (default: 5)")
+    execute.add_argument("--concurrency", type=int, default=CONCURRENCY,
+        help="Maximum concurrent requests (default: 4; use 1 for serial execution)")
     execute.add_argument("cases", type=Path, nargs="+")
-    execute.add_argument("--variant", choices=["baseline", "candidate"], required=True)
     execute.add_argument("--judge", type=Path)
     execute.add_argument("--live", action="store_true")
+    execute.add_argument("--changed-since", type=Path,
+        help="Rebuild all requests but run only changed/new cases relative to this report")
     execute.add_argument("--output", type=Path, required=True, help="New directory for reports")
     comparison = commands.add_parser("compare")
     comparison.add_argument("baseline", type=Path)

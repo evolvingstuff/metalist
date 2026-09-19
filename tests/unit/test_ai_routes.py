@@ -349,6 +349,7 @@ def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
     with pytest.raises(HTTPException, match="OpenAI API key is not configured") as error:
         ai_routes.stream_ai_chat(
             payload=ai_routes.AiChatRequest(
+                selected_note_id="",
                 provider="openai",
                 model="gpt-5.6-sol",
                 thinking_level="medium",
@@ -745,6 +746,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="low",
@@ -901,6 +903,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="medium",
@@ -959,6 +962,7 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
     with pytest.raises(HTTPException, match="Active MetaList tab changed") as error:
         ai_routes.stream_ai_chat(
             payload=ai_routes.AiChatRequest(
+                selected_note_id="",
                 provider="openai",
                 model="gpt-5.6-sol",
                 thinking_level="low",
@@ -1018,6 +1022,7 @@ def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
 
     ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="low",
@@ -1142,6 +1147,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="low",
@@ -1253,6 +1259,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="low",
@@ -1313,6 +1320,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
 
     response = ai_routes.stream_ai_chat(
         payload=ai_routes.AiChatRequest(
+            selected_note_id="",
             provider="openai",
             model="gpt-5.6-sol",
             thinking_level="high",

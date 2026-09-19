@@ -248,7 +248,7 @@ function handleKeyDown(event) {
     // Native batch dialogs remain keyboard-operable while CommandGate locks the
     // rest of the app. Never treat their Enter/Escape/arrow keys as note commands.
     if (event.target instanceof HTMLElement
-        && event.target.closest('dialog.bulk-proposal-dialog[open], .ai-chat-tag-operation')) {
+        && event.target.closest('dialog.bulk-proposal-dialog[open], #ai-chat-panel')) {
         return;
     }
 

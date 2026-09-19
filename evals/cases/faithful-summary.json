@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "faithful-summary",
   "description": "A summary must preserve quantities and avoid inventing details.",
   "reviewed": true,
@@ -7,21 +7,31 @@
   "thinking_level": "off",
   "steps": [
     {
-      "kind": "text",
-      "messages": [
-        {
-          "role": "system",
-          "content": "Summarize the supplied note accurately and concisely."
-        },
+      "conversation": [
         {
           "role": "user",
           "content": "Summarize this note: I planted three apple trees in April. Two survived the summer."
         }
       ],
-      "response_model": "",
+      "context": {
+        "stage": "respond",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 0,
+          "matching_result_tree_count": 0
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "basis": "the current user request and supplied conversation"
+      },
       "max_output_tokens": 1024,
-      "current_user_request": "Summarize this note.",
-      "prompt_bindings": [],
       "expectation": {
         "kind": "output",
         "criteria": [
@@ -35,8 +45,7 @@
           }
         ],
         "reference_facts": "Three apple trees planted in April; two survived summer."
-      },
-      "response_schema": {}
+      }
     }
   ],
   "provenance": {

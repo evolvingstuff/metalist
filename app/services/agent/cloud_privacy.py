@@ -261,16 +261,38 @@ class CloudPrivacyEvaluator:
         note_id: str,
         match_plan: _CloudPrivacyMatchPlan,
     ) -> bool:
+        return self._direct_exclusion_reason(note_id=note_id, match_plan=match_plan) != ""
+
+    def exclusion_reason(self, *, note_id: str, boundary: CloudPrivacyBoundary) -> str:
+        """Return a content-free reason, including restrictions on ancestors."""
+        match_plan = self._match_plan(boundary)
+        reasons = set()
+        seen = set()
+        current_id = note_id
+        while True:
+            assert current_id not in seen, "Hierarchy cycle in disclosure boundary"
+            seen.add(current_id)
+            reasons.add(self._direct_exclusion_reason(note_id=current_id, match_plan=match_plan))
+            parent_id = self._notes.get_note(current_id).parent_id
+            if parent_id is None:
+                break
+            current_id = parent_id
+        for reason in ("password_protected", "blacklisted", "not_whitelisted"):
+            if reason in reasons:
+                return reason
+        return ""
+
+    def _direct_exclusion_reason(self, *, note_id: str, match_plan: _CloudPrivacyMatchPlan) -> str:
         record = self._notes.get_note(note_id)
         effective_tags_casefold = {
             tag.casefold() for tag in self._effective_tags_provider(note_id)
         }
         if "@password" in effective_tags_casefold:
-            return True
+            return "password_protected"
         if not match_plan.apply_cloud_policy:
-            return False
+            return ""
         if effective_tags_casefold & match_plan.blacklist_tags:
-            return True
+            return "blacklisted"
         needs_plaintext = any(
             (match_plan.blacklist_phrases, match_plan.whitelist_phrases)
         )
@@ -280,14 +302,16 @@ class CloudPrivacyEvaluator:
         if any(
             phrase in plaintext_casefold for phrase in match_plan.blacklist_phrases
         ):
-            return True
+            return "blacklisted"
         if not match_plan.has_whitelist:
-            return False
+            return ""
         if effective_tags_casefold & match_plan.whitelist_tags:
-            return False
-        return not any(
+            return ""
+        if any(
             phrase in plaintext_casefold for phrase in match_plan.whitelist_phrases
-        )
+        ):
+            return ""
+        return "not_whitelisted"
 
     @staticmethod
     def _match_plan(boundary: CloudPrivacyBoundary) -> _CloudPrivacyMatchPlan:

@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 from decimal import Decimal
 import html
+import json
 import re
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
@@ -34,11 +36,12 @@ from app.services.structured_note_renderers import (
 )
 from app.services.footnote_rendering import collect_footnotes, finish_footnotes
 from app.services.latex_rendering import render_latex_to_html
-from app.utils.text_utils import strip_html
+from app.utils.text_utils import HTMLStripper, strip_html
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.link_titles import display_domain_for_url
 from app.services.link_titles import link_title_store
+from app.services.link_titles import normalize_url_for_link_title
 
 
 _OPEN_TO_CLOSE = {
@@ -341,12 +344,52 @@ class MetaTagConfig:
     scoped_renderers: Mapping[Tuple[str, int], str]
 
 
+class _AgentNoteText(HTMLStripper):
+    """Preserve visible text and anchor destinations for cached-title lookup."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchor_urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        super().handle_starttag(tag, attrs)
+        if tag.lower() == "a" and self._ignore_depth == 0:
+            for name, value in attrs:
+                if name.lower() == "href" and value:
+                    self.anchor_urls.append(value)
+
+
+def _cached_agent_url_titles(text: str, anchor_urls: list[str], title_lookup: Callable[[str], str | None]) -> list[dict[str, str]]:
+    urls = [*anchor_urls, *(_split_trailing_url_punctuation(match.group(0))[0]
+                          for match in _PLAIN_URL_RE.finditer(text))]
+    seen = set()
+    titles = []
+    for url in urls:
+        normalized_url = normalize_url_for_link_title(url)
+        if normalized_url is None or normalized_url in seen:
+            continue
+        seen.add(normalized_url)
+        title = title_lookup(url)
+        if title is not None:
+            titles.append({"url": url, "title": title})
+    return titles
+
+
 def extract_note_text_for_agent(*, content_html: str, tags: str) -> tuple[str, bool]:
+    return extract_agent_note_text(content_html=content_html, tags=tags,
+        title_lookup=link_title_store.get_ok_title)
+
+
+def extract_agent_note_text(
+    *, content_html: str, tags: str,
+    title_lookup: Callable[[str], str | None],
+) -> tuple[str, bool]:
     """Return disclosure-safe plain text and whether content was withheld.
 
     Agent retrieval must never expose the value of a note tagged ``@password``.
     Search-redacted notes are excluded by the agent search tool before this helper
     is called; this function enforces the independent credential boundary.
+    Cached URL titles are included as metadata without fetching or rewriting notes.
     """
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
@@ -354,7 +397,13 @@ def extract_note_text_for_agent(*, content_html: str, tags: str) -> tuple[str, b
         raise TypeError(f"tags must be a string, got {type(tags)}")
     if _find_global_credential_tag(tags) == "password":
         return "[REDACTED: @password]", True
-    return strip_html(content_html).strip(), False
+    parser = _AgentNoteText()
+    parser.feed(content_html)
+    text = re.sub(r"\s+", " ", parser.get_data()).strip()
+    titles = _cached_agent_url_titles(text, parser.anchor_urls, title_lookup)
+    if titles:
+        text += "\nCached URL titles (metadata, not page contents): " + json.dumps(titles, ensure_ascii=False)
+    return text, False
 
 
 def format_note_content_for_view(*, content_html: str, tags: str, redact_passwords: bool) -> str:

@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "id": "selected-note-changed-selection-summary",
+  "description": "Summarize the note I am looking at now.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Summarize my travel note."
+        },
+        {
+          "role": "assistant",
+          "content": "Your travel note describes a two-week trip to Japan in November."
+        },
+        {
+          "role": "user",
+          "content": "Summarize the note I am looking at now."
+        }
+      ],
+      "context": {
+        "stage": "respond",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 12,
+          "matching_result_tree_count": 5
+        },
+        "selected_note": {
+          "status": "available",
+          "note_id": "orchard-note",
+          "content_text": "I planted three apple trees in April. Two survived the summer.",
+          "tags": "garden"
+        },
+        "basis": "the selected note and the current request"
+      },
+      "max_output_tokens": 1024,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "facts",
+            "instruction": "Summarize the currently selected orchard note: three apple trees planted in April; two survived summer."
+          },
+          {
+            "id": "no-invention",
+            "instruction": "Do not invent facts or summarize an earlier note in place of the current selection."
+          }
+        ],
+        "reference_facts": "I planted three apple trees in April. Two survived the summer."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic selected-note scenario"
+  }
+}

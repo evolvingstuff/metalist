@@ -18,7 +18,10 @@ Opening this picker neither restores data nor changes backups. Existing backup
 files are immutable recovery artifacts: no rewriting/repackaging/migration of
 historical backups, including after password or schema changes. Restore installs
 and migrates the live database only, leaving its source unchanged. Keep the
-password that was used for an older encrypted snapshot. A backup is not the same
+password that was used for an older encrypted snapshot. The restored live copy
+inherits that snapshot's password/encryption state; restore does not substitute
+the current live password or choose a new password. A later explicit password
+change affects only that restored live copy. A backup is not the same
 as an HTML export.
 
 Export as HTML exports the current view for viewing/sharing, not a full restorable

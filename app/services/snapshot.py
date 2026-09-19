@@ -265,7 +265,9 @@ def resolve_view_scope_membership(
 
     ``matched_note_ids`` contains only evidence-bearing matches. The separate
     ``allowed_note_ids`` set may additionally contain ancestors required to render
-    the hierarchy and must never be treated as agent evidence.
+    the hierarchy. Broader agent investigation uses matches only; selected-tree
+    context may include these visible ancestors, but never search-redacted nodes
+    outside ``allowed_note_ids``. Privacy filtering applies independently.
     """
     if not isinstance(search, str):
         raise TypeError("search must be a string")

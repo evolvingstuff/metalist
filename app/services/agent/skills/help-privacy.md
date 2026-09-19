@@ -94,9 +94,13 @@ envelopes with a DEK-derived logging key. Plaintext fault logging is disabled
 during the unlocked interval. Do not claim logs are all always plaintext or all
 always encrypted.
 
-At-rest encryption does not protect decrypted content displayed in the browser
-or decrypted data/keys in unlocked server memory from a privileged process or
-browser extension. Explicit logout purges application-owned key and plaintext
+Keep the two memory boundaries distinct: the browser holds decrypted displayed
+content, while the unlocked server holds decrypted data and encryption keys.
+MetaList does not send its data-encryption key to the browser. A browser extension
+may read displayed content; a privileged process may inspect unlocked server
+memory. At-rest encryption does not protect those live representations. Do not
+combine these facts into a claim that encryption keys are held in browser memory.
+Explicit logout purges application-owned key and plaintext
 store references. Idle timeout instead invalidates browser authentication while
 keeping the hydrated server cache warm for re-login. These are different, and
 neither is a guarantee of forensic zeroization of Python allocations/OS memory.

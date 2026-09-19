@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import sqlite3
+import pytest
 
 from app.db.link_titles_sql import insert_link_title_row
 from app.db.schema import initialize_schema
@@ -542,6 +543,40 @@ def test_extract_note_text_for_agent_withholds_password_even_with_renderer_tag()
     assert content_text == "[REDACTED: @password]"
     assert is_redacted is True
     assert "sekret" not in content_text
+
+
+@pytest.mark.parametrize("content", [
+    '<p>https://example.test/paper?a=1&amp;b=2</p>',
+    '<a href="https://example.test/paper?a=1&amp;b=2">Read the paper</a>',
+    '<A HREF=https://example.test/paper?a=1&amp;b=2>https://example.test/paper?a=1&amp;b=2</A>',
+    '<p>[Paper](https://example.test/paper?a=1&amp;b=2)</p>',
+])
+def test_agent_text_includes_cached_url_title_without_fetching(monkeypatch, content):
+    lookups = []
+    def cached_title(url):
+        lookups.append(url)
+        assert url == "https://example.test/paper?a=1&b=2"
+        return "Do Transformers Need Three Projections?"
+    monkeypatch.setattr(link_title_store, "get_ok_title", cached_title)
+    monkeypatch.setattr(link_title_store, "maybe_enqueue_fetch", lambda url: pytest.fail("Agent extraction must not fetch"))
+    text, redacted = extract_note_text_for_agent(content_html=content, tags="")
+    assert not redacted
+    assert text.count("Do Transformers Need Three Projections?") == 1
+    assert "https://example.test/paper?a=1&b=2" in text
+    assert lookups == ["https://example.test/paper?a=1&b=2"]
+
+
+def test_agent_text_does_not_lookup_password_or_hidden_html_urls(monkeypatch):
+    monkeypatch.setattr(link_title_store, "get_ok_title", lambda url: pytest.fail("Hidden URL must not reach title cache"))
+    assert extract_note_text_for_agent(content_html='<p>https://secret.test</p>', tags="@password")[1]
+    content = '<script>https://secret.test</script><style>https://style.test</style><p data-url="https://attribute.test">Visible text</p>'
+    assert extract_note_text_for_agent(content_html=content, tags="") == ("Visible text", False)
+
+
+def test_agent_text_keeps_unknown_url_without_fetching(monkeypatch):
+    monkeypatch.setattr(link_title_store, "get_ok_title", lambda url: None)
+    monkeypatch.setattr(link_title_store, "maybe_enqueue_fetch", lambda url: pytest.fail("No network work"))
+    assert extract_note_text_for_agent(content_html='<p>https://unknown.test</p>', tags="") == ("https://unknown.test", False)
 
 
 def test_format_note_content_for_view_email_meta_renders_mailto_link() -> None:

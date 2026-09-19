@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "id": "selected-note-access-blacklisted",
+  "description": "Explain selected-note availability: blacklisted",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Can you read this note?"
+        }
+      ],
+      "context": {
+        "stage": "respond",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 12,
+          "matching_result_tree_count": 5
+        },
+        "selected_note": {
+          "status": "unavailable",
+          "reason": "blacklisted"
+        },
+        "basis": "current selection availability"
+      },
+      "max_output_tokens": 512,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "availability",
+            "instruction": "A note IS selected but the AI privacy blacklist blocks its content, possibly through an ancestor. Explicitly say it is selected and blacklisted. Do not say it is unselected, ask to select it again, or ask to paste/reveal its content. Do not claim to know the content or invent the matching blacklist rule."
+          }
+        ],
+        "reference_facts": "A note IS selected but the AI privacy blacklist blocks its content, possibly through an ancestor. Explicitly say it is selected and blacklisted. Do not say it is unselected, ask to select it again, or ask to paste/reveal its content. Do not claim to know the content or invent the matching blacklist rule. No note content, title, tags, or ID was supplied."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "User reported misleading unavailable response for selected blacklisted note; content-free synthetic fixture."
+  }
+}

@@ -192,8 +192,16 @@ class AgentRuntime:
             raise TypeError("frozen_scope must be ScopedSearchSnapshot")
         if frozen_scope.session_key != run.session_key:
             raise RuntimeError("Frozen scope belongs to another session")
-        initial_tokens = estimate_message_tokens(initial_messages)
         snapshot = frozen_scope
+        selected_note_tokens = 0
+        if snapshot.selected_note.status == "available":
+            selected_note_tokens = estimate_input_tokens(snapshot.selected_note.as_payload())
+        if selected_note_tokens > run.retrieval_settings.max_page_approximate_tokens:
+            raise AgentExecutionError("The selected note tree exceeds the configured evidence token limit")
+        initial_messages = self._context_builder.append_selected_note_context(
+            messages=initial_messages, snapshot=snapshot,
+        )
+        initial_tokens = estimate_message_tokens(initial_messages)
         state = InvestigationState.start(
             snapshot=snapshot,
             settings=run.retrieval_settings,
@@ -213,6 +221,7 @@ class AgentRuntime:
                 "result_tree_count": snapshot.result_tree_count,
                 "ordered_note_ids": list(snapshot.ordered_note_ids),
                 "ordered_root_ids": list(snapshot.ordered_root_ids),
+                "selected_note": snapshot.selected_note.as_payload(),
             },
             duration_ms=0.0,
         )
@@ -273,7 +282,7 @@ class AgentRuntime:
                 run=run,
                 messages=initial_messages,
                 action=action,
-                reference_note_ids=(),
+                reference_note_ids=snapshot.selected_note.reference_note_ids,
             ):
                 yield event
             return
@@ -296,7 +305,8 @@ class AgentRuntime:
             approx_input_tokens=route_tokens,
         )
         retention = await asyncio.to_thread(
-            state.retain_root_prefix_within_token_budget
+            state.retain_root_prefix_within_token_budget,
+            reserved_approximate_tokens=selected_note_tokens,
         )
         dropped_root_count = len(retention.dropped_root_ids)
         self._trace_store.append_event(
@@ -1115,6 +1125,7 @@ class AgentRuntime:
         final_messages = self._context_builder.append_final_request(
             messages=messages,
             action=action,
+            reference_note_ids=reference_note_ids,
             prompts=run.prompts,
             current_user_request=run.current_user_request,
         )

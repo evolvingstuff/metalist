@@ -186,6 +186,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '#root-sort-indicator',
             '#menu-button',
             '#chat-toggle-button',
+            '#ai-chat-panel',
             '.add-note',
             '#trash-can',
             '.note-collapse-toggle',
@@ -881,6 +882,12 @@ function handleClick(event) {
     // mouse button does not expire an action already performed on mousedown.
     if (consumeClickAfterMouseDownAction(event)) return;
 
+    if (event.target.closest('#ai-chat-panel, #chat-toggle-button')) {
+        if (handleAiChatOpenAllReferencesClick(event)) return;
+        handleReferenceLinkClick(event);
+        return;
+    }
+
     if (event.target instanceof Element && event.target.closest('.modal')) {
         return;
     }
@@ -997,6 +1004,7 @@ function handleClick(event) {
     if (handleBacklinkItemClick(event)) {
         return;
     }
+
 
     if (event.target.closest('#backlinks-panel')) {
         return;

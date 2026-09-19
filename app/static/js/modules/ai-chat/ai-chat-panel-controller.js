@@ -1,6 +1,7 @@
 import { executeAgentMenuRequest } from './agent-menu-actions.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
-import { rethrowUnexpectedError } from '../expected-errors.js';
+import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
+import { isNetworkTransportError } from '../api-failure-classification-service.js';
 import { handleBulkEvent, closeBulkProgress } from './bulk-proposal-ui.js';
 import {
     AiApiError,
@@ -28,6 +29,8 @@ import {
     queueMermaidDiagramRendering,
 } from '../mode-manager/services/mermaid-render-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+import { actionSaveNote } from '../mode-manager/actions/content-actions.js';
+import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import {
     getActiveReferenceOriginScope,
     isViewingReferenceSource,
@@ -1109,6 +1112,7 @@ class AiChatPanelController {
     }
 
     async _submitMessage() {
+        if (CommandGate.isBusy()) return;
         if (this._isBusy) {
             return;
         }
@@ -1125,6 +1129,7 @@ class AiChatPanelController {
         }
         const settings = this._getSettings();
         const scope = captureActiveAgentScope();
+        const selectedNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : '';
         const showDiagnostics = this._showDiagnosticActivities;
         if (!this._models.includes(settings.model)) {
             this._appendLocalErrorPanel('Select an available AI model first.');
@@ -1183,11 +1188,18 @@ class AiChatPanelController {
         this._render({ shouldScrollToBottom: true });
 
         let wasCancelled = false;
+        let didStartChat = false;
         try {
+            if (selectedNoteId !== '') {
+                await CommandGate.run('ai.save_selected_note', () => actionSaveNote(selectedNoteId));
+            }
+            abortController.signal.throwIfAborted();
+            didStartChat = true;
             await streamAiChat({
                 settings,
                 message,
                 scope,
+                selectedNoteId,
                 showDiagnostics,
                 signal: abortController.signal,
                 onEvent: async (event) => {
@@ -1271,7 +1283,7 @@ class AiChatPanelController {
                 assistantMessage.status = 'error';
                 assistantMessage.error = 'Cancelled by user';
                 this._render({ shouldScrollToBottom: true });
-            } else if (error instanceof AiApiError) {
+            } else if (error instanceof HttpRequestError || isNetworkTransportError(error)) {
                 assistantMessage.status = 'error';
                 assistantMessage.error = error.message;
                 this._render({ shouldScrollToBottom: true });
@@ -1299,7 +1311,7 @@ class AiChatPanelController {
             this._setBusy(false);
             resolveActiveChatCompletion();
         }
-        if (!wasCancelled) {
+        if (!wasCancelled && didStartChat) {
             await this._loadSession({ shouldScrollToBottom: false });
         }
         this._elements.input.focus();

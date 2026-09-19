@@ -6,11 +6,11 @@ All five-run measured results, including failures, are in [RESULTS.md](RESULTS.m
 
 ```bash
 # Validate fixtures; no provider calls.
-.venv/bin/python -m evals run evals/cases/help/*.json --variant candidate \
+.venv/bin/python -m evals run evals/cases/help/*.json \
   --judge evals/judge.json --repetitions 5 --output /tmp/metalist-help-check
 
 # Opt-in paid calls: five fresh generations per case, plus judges for output cases.
-.venv/bin/python -m evals run evals/cases/help/*.json --variant candidate \
+.venv/bin/python -m evals run evals/cases/help/*.json \
   --judge evals/judge.json --repetitions 5 --live --output /tmp/metalist-help-live
 ```
 
@@ -28,16 +28,10 @@ backups. A judge verdict can be wrong; preserve and inspect its reason.
 Six encryption regressions add the exact reported at-rest question, backup
 snapshot/password history, plaintext structural metadata versus encrypted file
 metadata, logs/memory/logout, passwordless storage, and the routing decision.
-Their frozen baseline retains the incomplete privacy skill; candidate bindings
-load the expanded skill. This preserves the failing baseline for future review.
-
-Candidate bindings reload the system prompt, selected skill files and the help
-response instruction. Skill bindings preserve the production ACTIVE_SKILL wrapper
-and literal Markdown braces. Routing catalogs and menu catalogs are frozen in
-fixture messages: when changing their contents, explicitly refresh/review those
-JSON fields. Schema changes fail until fixtures are reviewed. Baselines always
-retain literal instructions. Outputs and skill text never accumulate implicitly
-across steps or repetitions.
+All cases use current production prompts, selected skills, catalogs, context
+builders, and response schemas automatically. Conversations and expectations stay
+fixed. Saved historical reports preserve prior performance; captured old prompts
+are not executable regression inputs. Steps and repetitions remain isolated.
 
 The live cases test isolated model decisions, not full application execution.
 `test_agent_help.py` exercises the real two-call runtime, Instructor/SDK transport,

@@ -10,12 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 HELP_TOPICS = {
     'notes': ('Notes and editing', 'Hierarchy, editing, moving, copying, undo and keyboard/mouse controls.'),
     'search': ('Search and views', 'Tag/text queries, OR, exclusions, matching, sorting and untagged view.'),
-    'tags': ('Tags and ontology', 'Assignment, inheritance, suggestions and tag relationship rules.'),
+    'tags': ('Tags and ontology', 'Manual tag assignment, inheritance, autocomplete, ontology and tag relationship rules. AI proposal workflows belong to ai.'),
     'formatting': ('Formatting and attachments', 'Markdown, LaTeX, Mermaid, formatting scopes and files.'),
     'references': ('References and floating notes', 'Links, transclusions, backlinks and floating windows.'),
     'menus': ('Menus and settings', 'Find/open menu dialogs and understand preference controls.'),
     'reminders': ('Reminders', 'Creating, editing, snoozing and recurrence.'),
-    'ai': ('AI and tag proposals', 'OpenAI settings, context limits, prompts/skills, tagging and history export.'),
+    'ai': ('AI and tag proposals', 'OpenAI settings, context limits, prompts/skills, history export, and AI tag proposals: generation, acceptance, rejection/removal and bulk undo limits. This topic alone covers proposal workflow explanations.'),
     'privacy': ('Privacy and security', 'Cloud disclosure, gray notes when hovering chat, password exclusion, encryption and credentials.'),
     'data': ('Namespaces and backups', 'Namespaces, backup/restore, HTML export, ports and updates.'),
 }

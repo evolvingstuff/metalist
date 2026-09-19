@@ -2,6 +2,8 @@
 
 ## Enforced client-state and exception contract
 
+- AI chat preserves the current edit session across mouse, context-menu, and keyboard interactions. Send captures the current note ID, saves through `CommandGate` without deselecting, and then sends the required `selected_note_id` (empty when none). Failed saves prevent submission. Explicit reference navigation still follows the normal save/navigation flow. The server validates selection against the authoritative visible view, then freezes its entire containing top-level tree with per-node tags, parent links, and an edited-node marker. Authoritative search membership and privacy filtering apply to every node; UI reveal/edit state cannot override either restriction. Browser-supplied note content is not trusted.
+
 `app/static/js/modules/application-state.js` exports the single `ApplicationState` owner. `ModeContext`, modal controllers, preferences, usage, reminders, request caches, timers, and module-level UI records register their state there. Controller properties are getter/setter accessors into owned records; they are not independent backing stores. DOM nodes, promises, callbacks, and other platform resources remain opaque references.
 
 - `createFields` and `own` install strict property and collection setters. Equal scalar or structurally equal record writes throw. Duplicate map/set insertion, absent deletion, and empty clears throw. Controller schemas cannot acquire undeclared fields after construction.

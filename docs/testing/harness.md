@@ -222,9 +222,12 @@ Run 34887017802 at 89361930 stopped in the Ubuntu build unit suite: the live-pro
 ## Opt-in prompt regressions
 
 See [evals/README.md](../../evals/README.md) for exporting input/output pairs,
-constructing recorded or synthetic cases, and explicitly running baseline and
-candidate prompts. Every live case runs ten times; reports preserve all outcomes
-and errors and compare percentage correct without a 100% gate. Output cases use
+constructing fixed scenarios, and explicitly evaluating current production prompts
+and context builders. Live cases default to five trials and four concurrent requests. Prefix-grouped
+scheduling primes each shared prefix with a scored call before overlap; trials
+within each case remain sequential. Reports include actual cached-token usage, outcomes
+and errors. Incorrect answers exit 1; provider/judge errors exit 2. Compare saved
+before/after reports with unchanged scenarios and expectations. Output cases use
 an explicitly configured Instructor judge. Ordinary test commands never run this
 live suite.
 
@@ -232,7 +235,8 @@ live suite.
 HTTP provider, covering retry pairs, multi-turn retention, session isolation,
 partial/cancelled output, and the authenticated no-cache endpoint.
 `test_prompt_regressions.py` checks expectation matching, independent repetitions,
-judge criteria, candidate substitution, schema drift, export-to-case drafts,
+judge criteria, propagation of current prompts/builders/catalogs/schemas, failure
+exit status, export-to-case drafts,
 comparison, and skill instruction lifetime without provider calls.
 `browser-ai-history-regressions.mjs` checks the authenticated empty-history endpoint
 and the export button's downloaded JSON for a simulated multi-turn history. It is
@@ -268,7 +272,7 @@ still enforces permissions, scope, and tool limits. Synthetic conversations and
 expected actions were not changed. Both the removal-only run and the final prompt
 run scored **240/240 correct, zero incorrect, zero errors** with `gpt-5.6-luna`,
 thinking off, 24 cases × 10 repetitions. This is a sample, not a guarantee of
-future accuracy. Final frozen fixture prompts match the evaluated candidate.
+future accuracy. The measured results describe the then-current prompts; v2 cases now rebuild current production requests.
 The original run was 218/240 correct, 15 incorrect, and 7 validation errors.
 Full local reports: `/tmp/metalist-luna-synthetic-live-20260917/`,
 `/tmp/metalist-luna-no-keyword-routing-20260917/`, and
@@ -336,3 +340,16 @@ repeated composer clicks before and after closing an agent-opened password
 generator. Pointer release, cancellation and blur consume the height snapshot;
 the strict state checks remain enabled. The user confirmed manual testing before
 the feature commit.
+
+
+## Selective LLM prompt regressions
+
+For prompt or skill changes, use `python -m evals run ... --changed-since <report>`
+with all candidate case paths. Every request is rebuilt from current production
+code; only changed/new cases are sent to the model, five times by default. A skill
+edit affects only cases actually loading that skill. Shared prompt/schema/builder
+changes select their affected cases automatically. Dry-run first to inspect the
+selection without API calls. Partial reports preserve unchanged historical results
+and their source paths; historical failures retain failing exit codes. The new
+report can serve as the next baseline. Use a full run for execution/provider
+changes outside prepared requests. See `evals/README.md` for commands and limits.

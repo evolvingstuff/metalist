@@ -74,7 +74,9 @@ class InvestigationState:
     def snapshot(self) -> ScopedSearchSnapshot:
         return self._snapshot
 
-    def retain_root_prefix_within_token_budget(self) -> RootPrefixRetention:
+    def retain_root_prefix_within_token_budget(self, *, reserved_approximate_tokens: int) -> RootPrefixRetention:
+        assert 0 <= reserved_approximate_tokens <= self._settings.max_page_approximate_tokens
+        scope_token_limit = self._settings.max_page_approximate_tokens - reserved_approximate_tokens
         if self._retention_was_applied:
             raise RuntimeError("Evidence root-prefix retention may run only once")
         self._retention_was_applied = True
@@ -87,7 +89,7 @@ class InvestigationState:
                 note_ids=note_ids_by_root_id[root_id],
             )
             if retained_token_count + root_token_count > (
-                self._settings.max_page_approximate_tokens
+                scope_token_limit
             ):
                 break
             retained_root_ids.append(root_id)
@@ -102,7 +104,7 @@ class InvestigationState:
                 "The first complete result tree requires approximately "
                 f"{first_root_tokens:,} tokens, exceeding the configured single "
                 "evidence payload limit of "
-                f"{self._settings.max_page_approximate_tokens:,} tokens"
+                f"{scope_token_limit:,} tokens after reserving selected-note context"
             )
         retained_root_ids_tuple = tuple(retained_root_ids)
         retained_root_id_set = set(retained_root_ids_tuple)

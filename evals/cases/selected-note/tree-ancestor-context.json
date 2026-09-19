@@ -1,0 +1,80 @@
+{
+  "schema_version": 2,
+  "id": "selected-note-tree-ancestor-context",
+  "description": "What is the overall research goal that gives this note context?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "What is the overall research goal that gives this note context?"
+        }
+      ],
+      "context": {
+        "stage": "respond",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 12,
+          "matching_result_tree_count": 5
+        },
+        "selected_note": {
+          "status": "available",
+          "note_id": "00000000-0000-4000-8000-000000000003",
+          "tree_notes": [
+            {
+              "note_id": "00000000-0000-4000-8000-000000000001",
+              "parent_id": "",
+              "content_text": "Research collection: compare memory savings and quality tradeoffs for language models running on phones.",
+              "tags": "research on-device"
+            },
+            {
+              "note_id": "00000000-0000-4000-8000-000000000002",
+              "parent_id": "00000000-0000-4000-8000-000000000001",
+              "content_text": "https://example.test/paper-a",
+              "tags": "arxiv shared-kv"
+            },
+            {
+              "note_id": "00000000-0000-4000-8000-000000000003",
+              "parent_id": "00000000-0000-4000-8000-000000000002",
+              "content_text": "The study shares key and value projections. It reduces KV-cache memory by 50% with a 3.1% increase in perplexity. Sharing projections complements head sharing.",
+              "tags": "abstract experiment"
+            },
+            {
+              "note_id": "00000000-0000-4000-8000-000000000004",
+              "parent_id": "00000000-0000-4000-8000-000000000001",
+              "content_text": "https://example.test/paper-b",
+              "tags": "arxiv quantization"
+            },
+            {
+              "note_id": "00000000-0000-4000-8000-000000000005",
+              "parent_id": "00000000-0000-4000-8000-000000000004",
+              "content_text": "This study quantizes the cache instead of sharing projections. It reduces KV-cache memory by 25% with a 1% increase in perplexity.",
+              "tags": "abstract baseline"
+            }
+          ]
+        },
+        "basis": "the selected note and its supplied containing tree"
+      },
+      "max_output_tokens": 1024,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "ancestor",
+            "instruction": "Use the ancestor collection heading to identify the goal: comparing memory savings and quality tradeoffs for language models running on phones. Do not claim the parent context is unavailable."
+          }
+        ],
+        "reference_facts": "[{\"note_id\": \"00000000-0000-4000-8000-000000000001\", \"parent_id\": \"\", \"content_text\": \"Research collection: compare memory savings and quality tradeoffs for language models running on phones.\", \"tags\": \"research on-device\"}, {\"note_id\": \"00000000-0000-4000-8000-000000000002\", \"parent_id\": \"00000000-0000-4000-8000-000000000001\", \"content_text\": \"https://example.test/paper-a\", \"tags\": \"arxiv shared-kv\"}, {\"note_id\": \"00000000-0000-4000-8000-000000000003\", \"parent_id\": \"00000000-0000-4000-8000-000000000002\", \"content_text\": \"The study shares key and value projections. It reduces KV-cache memory by 50% with a 3.1% increase in perplexity. Sharing projections complements head sharing.\", \"tags\": \"abstract experiment\"}, {\"note_id\": \"00000000-0000-4000-8000-000000000004\", \"parent_id\": \"00000000-0000-4000-8000-000000000001\", \"content_text\": \"https://example.test/paper-b\", \"tags\": \"arxiv quantization\"}, {\"note_id\": \"00000000-0000-4000-8000-000000000005\", \"parent_id\": \"00000000-0000-4000-8000-000000000004\", \"content_text\": \"This study quantizes the cache instead of sharing projections. It reduces KV-cache memory by 25% with a 1% increase in perplexity.\", \"tags\": \"abstract baseline\"}]"
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic full-tree selected-note regression; URL parent and substantive children"
+  }
+}

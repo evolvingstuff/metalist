@@ -21,7 +21,7 @@ POST /api2/ai/chat + AgentScopeDescriptor
   → select provider and verify its runtime/credential
   → Instructor route: respond | investigate_current_scope | tag_proposals | metalist_help
       respond:
-        stream final prose without note content
+        stream final prose, including the selected note when available
       investigate_current_scope:
         activate scoped-investigation skill
         walk complete root trees in canonical order
@@ -68,8 +68,45 @@ questions. Clicking another AI reference replaces that temporary reference query
 ordinary references followed inside notes retain their separate stacked navigation
 behavior.
 
-Only true matches are evidence. An ancestor retained solely to preserve a path is a
-contentless structural object. Search-redacted content never enters the snapshot.
+Chat interactions preserve the current edit session. Send first saves the latest
+draft without deselecting it, then supplies a required `selected_note_id` (empty
+when no note is selected). After checking authoritative visible-view membership,
+the server freezes the permitted portions of the containing top-level tree:
+ancestors, siblings, and descendants, including collapsed notes. Search-redacted
+branches are excluded using the server's visible-view membership, even if a user
+has temporarily revealed or selected them for editing. Blacklisted and password
+branches are independently excluded. Each permitted node carries its complete
+text, direct tags, parent ID, and an `is_selected` marker identifying the edited
+node. Unrelated top-level trees are not added through selection. The same disclosure
+policy removes private branches before serialization, token sizing, or citations.
+Shared agent text extraction also includes already-cached URL titles alongside
+their URLs, labeled as metadata rather than fetched page content. This applies to
+selected trees, broader investigation, and tagging inputs. It reads only the
+in-memory successful-title cache after note disclosure filtering; it never starts
+a URL fetch, rewrites stored notes, or attaches titles from excluded notes. Titles
+are frozen with the note text and counted in the evidence budget. A title on a
+parent URL remains associated with that parent for citations.
+A note selected in a temporary reference view is checked against that visible
+view; its containing tree is supplied separately without replacing the originating
+search scope. The whole selected tree counts toward the evidence token budget;
+an oversized tree fails visibly before provider calls rather than being clipped.
+
+`SELECTED_NOTE_CONTEXT` accompanies routing and final generation. The model uses
+selection, conversation, and the request together to infer the intended target;
+there is no keyword or singular/plural routing rule. `has_selection` distinguishes
+no selection from a selected but unavailable note. Unavailable selections expose
+only status, selection presence, and a reason: blacklisted, not whitelisted,
+password protected, search redacted, or not found. Restrictions inherited from
+ancestors also apply; reasons never expose the matching rule, note ID, tags, or
+content. The AI explains the restriction without suggesting reselection or pasting
+blocked content as a workaround. Each Send replaces prior selection
+context. This adds no note editing or child-creation capability.
+
+For broader search investigation, only true matches are evidence. An ancestor
+retained solely to preserve a search path is a contentless structural object.
+The separately supplied selected tree can include nonmatching ancestors retained
+as visible search context, but never search-redacted relatives. Both search and
+privacy restrictions apply before content, tags, or citation IDs are serialized.
 The snapshot stores frozen records, not live note handles, so edits and navigation
 cannot alter an in-flight request.
 
@@ -132,15 +169,21 @@ tokens are obsolete. They are ignored and removed during normal preference write
 
 ## Routing and Prompts
 
-The route sees canonical conversation history plus a content-free block containing
+The route sees canonical conversation history, the disclosure-safe selected tree
+when available, and a content-free block containing
 the exact current user request, user search, scope kind/label, sort/date state, and
-note/root counts. It does not serialize note content to choose a route.
+note/root counts. It does not serialize the broader result content to choose a route.
 
-`respond` is for conversation that needs no fresh note evidence. The model
+`respond` is for conversation or answers supported by the supplied selected tree.
+Every supplied tree node is an allowed citation source; answers cite the actual
+supporting child, sibling, or ancestor. The model
 interprets the request and conversation to choose investigation or a tag operation.
 Instructor validates supported action names, required fields, and field types;
 no keyword classifier, prompt signal, or rationale-text heuristic overrides the
 model decision. Execution still enforces permissions, scope, and tool limits.
+Selected-note evidence must fit the configured evidence token limit before any
+provider request; broader investigation reserves that cost before retaining its
+root prefix. Selection remains available even when its root is beyond that prefix.
 Action regression expectations measure whether the selected action was appropriate.
 
 The packaged scoped skill describes one authoritative payload and direct final

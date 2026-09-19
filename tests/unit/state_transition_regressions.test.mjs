@@ -49,6 +49,8 @@ function chatHarness(events) {
     const bulk = bulkHarness();
     const dependencies = {
         ApplicationState, stateValuesEqual,
+        CommandGate: {isBusy: () => false},
+        ModeContext: {isEditing: false},
         window: {
             setInterval: () => { const id = ++nextTimer; timers.add(id); return id; },
             clearInterval: id => timers.delete(id),

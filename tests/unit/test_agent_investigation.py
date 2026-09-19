@@ -104,7 +104,7 @@ def test_single_payload_contains_full_nested_notes_without_per_note_limit() -> N
         snapshot=_snapshot(oversized_first_root=False),
         settings=AgentRetrievalSettings(max_page_approximate_tokens=24_000),
     )
-    retention = state.retain_root_prefix_within_token_budget()
+    retention = state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
     payload = state.current_scope_payload()
 
     assert retention.retained_root_ids == ("a", "b", "c")
@@ -121,7 +121,7 @@ def test_token_budget_keeps_only_a_leading_prefix_of_complete_roots() -> None:
         snapshot=_snapshot(oversized_first_root=False),
         settings=AgentRetrievalSettings(max_page_approximate_tokens=500),
     )
-    retention = state.retain_root_prefix_within_token_budget()
+    retention = state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
     payload = state.current_scope_payload()
 
     assert retention.retained_root_ids == ("a", "b")
@@ -137,7 +137,7 @@ def test_first_root_larger_than_budget_fails_instead_of_splitting_it() -> None:
         settings=AgentRetrievalSettings(max_page_approximate_tokens=500),
     )
     with pytest.raises(ValueError, match="first complete result tree"):
-        state.retain_root_prefix_within_token_budget()
+        state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
 
 
 def test_payload_requires_exactly_one_prior_retention_pass() -> None:
@@ -147,9 +147,9 @@ def test_payload_requires_exactly_one_prior_retention_pass() -> None:
     )
     with pytest.raises(RuntimeError, match="Retain"):
         state.current_scope_payload()
-    state.retain_root_prefix_within_token_budget()
+    state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
     with pytest.raises(RuntimeError, match="only once"):
-        state.retain_root_prefix_within_token_budget()
+        state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
 
 
 @pytest.mark.parametrize('root_count', [1000, 2000])
@@ -167,5 +167,5 @@ def test_root_retention_visits_structure_once(root_count, monkeypatch):
                        notes_by_id=notes, tree_nodes_by_id=nodes)
     monkeypatch.setattr(investigation, 'estimate_cached_root_tree_tokens', lambda **kwargs: 1)
     state = InvestigationState.start(snapshot=snapshot, settings=AgentRetrievalSettings(max_page_approximate_tokens=24000))
-    assert state.retain_root_prefix_within_token_budget().retained_root_ids == roots
+    assert state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0).retained_root_ids == roots
     assert nodes.visits == root_count

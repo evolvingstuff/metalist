@@ -1068,6 +1068,7 @@ function handleContextMenu(event) {
     if (element.closest('.ai-chat-message-assistant[data-message-id]')) {
         return;
     }
+    if (element.closest('#ai-chat-panel')) return;
 
     const priorityTarget = resolvePriorityContextMenuTarget(element, {
         isInLeftRail: isInLeftTabRail(event),

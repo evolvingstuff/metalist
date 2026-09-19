@@ -106,6 +106,58 @@ class FrozenScopedTreeNode:
 
 
 @dataclass(frozen=True, slots=True)
+class SelectedTreeNote:
+    note_id: str
+    parent_id: str
+    content_text: str
+    tags: str
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedNoteContext:
+    status: Literal["none", "available", "unavailable"]
+    note_id: str
+    tree_notes: tuple[SelectedTreeNote, ...]
+    unavailable_reason: str = ""
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.tree_notes, tuple)
+        if self.status == "unavailable":
+            assert self.unavailable_reason in {"not_found", "search_redacted", "blacklisted", "password_protected", "not_whitelisted", "unspecified"}
+        else:
+            assert self.unavailable_reason == ""
+        if self.status != "available":
+            assert self.status in {"none", "unavailable"}
+            assert self.note_id == "" and self.tree_notes == ()
+            return
+        assert self.tree_notes and self.tree_notes[0].parent_id == ""
+        seen = set()
+        for index, note in enumerate(self.tree_notes):
+            assert note.note_id and note.note_id not in seen
+            assert index == 0 or note.parent_id in seen
+            seen.add(note.note_id)
+        assert self.note_id in seen
+
+    def as_payload(self) -> dict[str, object]:
+        if self.status != "available":
+            payload = {"status": self.status, "has_selection": self.status != "none"}
+            if self.status == "unavailable":
+                payload["reason"] = self.unavailable_reason
+            return payload
+        return {"status": self.status, "has_selection": True, "note_id": self.note_id,
+                "root_note_id": self.tree_notes[0].note_id,
+                "tree_notes": [{"note_id": note.note_id, "parent_id": note.parent_id,
+                    "content_text": note.content_text, "tags": note.tags,
+                    "is_selected": note.note_id == self.note_id} for note in self.tree_notes]}
+
+    @property
+    def reference_note_ids(self) -> tuple[str, ...]:
+        if self.status == "available":
+            return tuple(note.note_id for note in self.tree_notes)
+        return ()
+
+
+@dataclass(frozen=True, slots=True)
 class ScopedSearchSnapshot:
     run_id: str
     session_key: str
@@ -115,6 +167,7 @@ class ScopedSearchSnapshot:
     ordered_note_ids: tuple[str, ...]
     notes_by_id: Mapping[str, FrozenScopedNote]
     tree_nodes_by_id: Mapping[str, FrozenScopedTreeNode]
+    selected_note: SelectedNoteContext = SelectedNoteContext("none", "", ())
 
     @property
     def note_count(self) -> int:
@@ -146,6 +199,9 @@ class ScopedSearchSnapshotFactory:
         run_id: str,
         session_key: str,
         privacy_boundary: CloudPrivacyBoundary,
+        selected_note_id: str,
+        authoritative_active_search_query: str,
+        authoritative_active_sort_mode: str,
     ) -> ScopedSearchSnapshot:
         if descriptor.search_query != authoritative_search_query:
             raise ValueError("Active tab search query changed before Send")
@@ -159,6 +215,14 @@ class ScopedSearchSnapshotFactory:
             sort_mode=descriptor.sort_mode,
             is_untagged_view=descriptor.scope_kind == "untagged",
         )
+        selected_view = resolved
+        if selected_note_id and descriptor.active_tab_id != descriptor.scope_tab_id:
+            selected_view = self._view_scope_resolver(
+                search=authoritative_active_search_query,
+                sort_mode=authoritative_active_sort_mode,
+                is_untagged_view=False,
+            )
+        selected_note = self._freeze_selected_note(selected_note_id, selected_view, privacy_boundary)
         candidate_ids = set(resolved.matched_note_ids)
         hidden_candidate_ids = self._privacy_evaluator.hidden_note_ids(
             note_ids=tuple(candidate_ids),
@@ -232,7 +296,52 @@ class ScopedSearchSnapshotFactory:
             ordered_note_ids=ordered_note_ids,
             notes_by_id=MappingProxyType(frozen_notes),
             tree_nodes_by_id=MappingProxyType(tree_nodes),
+            selected_note=selected_note,
         )
+
+    def _freeze_selected_note(
+        self, note_id: str, visible_scope: ResolvedViewScope, boundary: CloudPrivacyBoundary,
+    ) -> SelectedNoteContext:
+        if note_id == "":
+            return SelectedNoteContext("none", "", ())
+        if not self._notes.has_note(note_id):
+            return SelectedNoteContext("unavailable", "", (), "not_found")
+        exclusion_reason = self._privacy_evaluator.exclusion_reason(note_id=note_id, boundary=boundary)
+        if exclusion_reason:
+            return SelectedNoteContext("unavailable", "", (), exclusion_reason)
+        if note_id not in visible_scope.allowed_note_ids:
+            return SelectedNoteContext("unavailable", "", (), "search_redacted")
+        tree_ids = self._selected_tree_note_ids(self._root_note_id(note_id), visible_scope.allowed_note_ids)
+        if note_id not in tree_ids:
+            return SelectedNoteContext("unavailable", "", (), "search_redacted")
+        hidden_ids = self._privacy_evaluator.hidden_note_ids(note_ids=tree_ids, boundary=boundary)
+        tree_notes = []
+        for tree_id in tree_ids:
+            if tree_id in hidden_ids:
+                continue
+            record = self._notes.get_note(tree_id)
+            content_text, is_redacted = extract_note_text_for_agent(content_html=record.content, tags=record.tags)
+            assert not is_redacted, "Selected tree must pass the disclosure boundary"
+            parent_id = ""
+            if record.parent_id is not None:
+                parent_id = record.parent_id
+            tree_notes.append(SelectedTreeNote(tree_id, parent_id, content_text, record.tags))
+        return SelectedNoteContext("available", note_id, tuple(tree_notes))
+
+    def _selected_tree_note_ids(self, root_id: str, allowed_note_ids: frozenset[str]) -> tuple[str, ...]:
+        ordered = []
+        seen = set()
+        stack = [root_id]
+        while stack:
+            note_id = stack.pop()
+            assert note_id not in seen, "Hierarchy cycle in selected tree"
+            seen.add(note_id)
+            # UI reveal/edit state cannot admit a search-excluded branch.
+            if note_id not in allowed_note_ids:
+                continue
+            ordered.append(note_id)
+            stack.extend(reversed(self._notes.get_children(note_id)))
+        return tuple(ordered)
 
     def _freeze_tree_nodes(
         self,

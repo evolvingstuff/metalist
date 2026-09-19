@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 
 import pytest
 from pydantic import ValidationError
 
+from app.services import snapshot as view_snapshot
+from app.services.agent.actions import RespondAction
+from app.services.agent.context import AgentContextBuilder
+from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.cloud_privacy import CloudPrivacyBoundary
 from app.services.agent.cloud_privacy import CloudPrivacyEvaluator
 from app.services.agent.cloud_privacy import CloudPrivacyPolicy
@@ -12,6 +17,8 @@ from app.services.agent.cloud_privacy import EMPTY_CLOUD_PRIVACY_POLICY
 from app.services.agent.scope import AgentScopeDescriptor
 from app.services.agent.scope import ScopedSearchSnapshotFactory
 from app.services.note_store import NoteRecord
+from app.services.link_titles import link_title_store
+from app.services.search_index import SearchIndex, SearchRecord
 from app.services.snapshot import ResolvedViewScope
 
 
@@ -172,6 +179,253 @@ def test_scope_descriptor_requires_all_flat_fields() -> None:
         AgentScopeDescriptor.model_validate(payload)
 
 
+@pytest.mark.parametrize("selected_id,expected", [
+    ("", "none"), ("match", "available"), ("secret", "unavailable"),
+    ("secret-child", "unavailable"), ("gray", "unavailable"), ("missing", "unavailable"),
+])
+def test_selected_note_is_frozen_and_privacy_filtered(selected_id, expected) -> None:
+    notes = _FakeNotes()
+    ids = frozenset({"match", "secret", "secret-child"})
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids | {"root"},
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        authoritative_active_search_query="useful-tag",
+        authoritative_active_sort_mode="normal",
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(),
+        selected_note_id=selected_id,
+    )
+    selected = snapshot.selected_note
+    assert selected.status == expected
+    if expected == "available":
+        notes.records["match"] = replace(notes.records["match"], content="Changed later")
+        assert next(n for n in selected.tree_notes if n.note_id == "match").content_text == "lorem ipsum evidence"
+        assert selected.reference_note_ids == ("root", "match")
+    else:
+        payload = {"status": expected, "has_selection": selected_id != ""}
+        if expected == "unavailable":
+            payload["reason"] = {"secret": "password_protected", "secret-child": "password_protected",
+                "gray": "search_redacted", "missing": "not_found"}[selected_id]
+        assert selected.as_payload() == payload
+        assert selected.reference_note_ids == ()
+
+
+def test_selected_note_in_reference_view_does_not_expand_origin_scope() -> None:
+    notes = _FakeNotes()
+    def resolve(*, search, **kwargs):
+        ids = frozenset({"gray" if search == "gray" else "match"})
+        return ResolvedViewScope(filter_active=True, allowed_note_ids=ids | {"root"},
+            matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, resolve).freeze(
+        descriptor=_descriptor().model_copy(update={"active_tab_id": "reference-tab"}),
+        authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="gray", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(),
+        selected_note_id="gray",
+    )
+    assert snapshot.ordered_note_ids == ("match",)
+    assert snapshot.selected_note.note_id == "gray"
+    assert next(n for n in snapshot.selected_note.tree_notes if n.note_id == "gray").content_text == "gray bar text"
+    assert snapshot.selected_note.reference_note_ids == ("root", "gray")
+
+
+@pytest.mark.parametrize("restriction", ["search", "blacklist"])
+def test_cached_titles_are_frozen_with_parent_and_never_read_for_excluded_notes(monkeypatch, restriction):
+    notes = _FakeNotes()
+    notes.records["root"] = replace(notes.records["root"], content="https://example.test/paper")
+    notes.records["gray"] = replace(notes.records["gray"], content="https://private.test/hidden")
+    titles = {"https://example.test/paper": "Do Transformers Need Three Projections?"}
+    lookups = []
+    def lookup(url):
+        assert url != "https://private.test/hidden", "Excluded URL cannot reach the title cache"
+        lookups.append(url)
+        return titles[url]
+    monkeypatch.setattr(link_title_store, "get_ok_title", lookup)
+    ids = frozenset({"root", "match"})
+    boundary = _local_privacy_boundary()
+    if restriction == "blacklist":
+        ids |= {"gray"}
+        boundary = _cloud_privacy_boundary(CloudPrivacyPolicy(whitelist_tags=(), whitelist_phrases=(),
+            blacklist_tags=("gray-exclusive",), blacklist_phrases=()))
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids,
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id="match")
+    assert lookups
+    payload = snapshot.selected_note.as_payload()
+    assert "Do Transformers Need Three Projections?" in str(payload)
+    assert "Do Transformers Need Three Projections?" in snapshot.notes_by_id["root"].content_text
+    assert payload["note_id"] == "match"
+    assert "private.test" not in str(payload)
+    titles["https://example.test/paper"] = "Changed after Send"
+    assert snapshot.selected_note.as_payload() == payload
+
+
+def test_selected_note_respects_cloud_blacklist() -> None:
+    notes = _FakeNotes()
+    ids = frozenset({"match"})
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids | {"root"},
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    policy = CloudPrivacyPolicy(whitelist_tags=(), whitelist_phrases=(),
+        blacklist_tags=("useful-tag",), blacklist_phrases=())
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        authoritative_active_search_query="useful-tag",
+        authoritative_active_sort_mode="normal",
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=_cloud_privacy_boundary(policy),
+        selected_note_id="match",
+    )
+    assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": "blacklisted"}
+
+
+@pytest.mark.parametrize("tags,phrases,whitelist,reason", [
+    (("project-foo",), (), (), "blacklisted"),
+    ((), ("root heading",), (), "blacklisted"),
+    ((), (), ("unmatched",), "not_whitelisted"),
+    (("useful-tag",), (), ("unmatched",), "blacklisted"),
+])
+def test_selected_block_reason_includes_ancestors_without_exposing_rule(tags, phrases, whitelist, reason):
+    notes = _FakeNotes()
+    ids = frozenset(notes.records)
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids,
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    boundary = _cloud_privacy_boundary(CloudPrivacyPolicy(whitelist_tags=whitelist, whitelist_phrases=(),
+        blacklist_tags=tags, blacklist_phrases=phrases))
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id="match")
+    assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": reason}
+    assert snapshot.selected_note.reference_note_ids == ()
+
+
+@pytest.mark.parametrize("selected_id", ["root", "match", "gray"])
+@pytest.mark.parametrize("restriction", ["search", "blacklist"])
+def test_selected_tree_never_discloses_redacted_children_even_when_selected(selected_id, restriction):
+    notes = _FakeNotes()
+    notes.records["gray-child"] = replace(notes.records["gray"], id="gray-child", parent_id="gray",
+        content="HIDDEN_DESCENDANT_CONTENT", tags="hidden-descendant-tag")
+    notes.children.update({"gray": ["gray-child"], "gray-child": []})
+    allowed = frozenset(notes.records)
+    boundary = _local_privacy_boundary()
+    if restriction == "search":
+        # Revealing/editing a gray placeholder does not alter server membership.
+        allowed -= {"gray", "gray-child"}
+    else:
+        boundary = _cloud_privacy_boundary(CloudPrivacyPolicy(whitelist_tags=(), whitelist_phrases=(),
+            blacklist_tags=("gray-exclusive",), blacklist_phrases=()))
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=allowed,
+        matched_note_ids=allowed, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id=selected_id)
+    payload = snapshot.selected_note.as_payload()
+    if selected_id == "gray":
+        assert payload == {"status": "unavailable", "has_selection": True,
+            "reason": "blacklisted" if restriction == "blacklist" else "search_redacted"}
+        assert snapshot.selected_note.reference_note_ids == ()
+    else:
+        assert [node["note_id"] for node in payload["tree_notes"]] == ["root", "match"]
+        assert [node["note_id"] for node in payload["tree_notes"] if node["is_selected"]] == [selected_id]
+        assert snapshot.selected_note.reference_note_ids == ("root", "match")
+    for withheld in ("gray", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
+        assert withheld not in str(payload)
+    builder = AgentContextBuilder()
+    route = builder.build_scoped_route_messages(canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
+        prompts=DEFAULT_AGENT_PROMPTS, snapshot=snapshot)
+    final = builder.append_final_request(messages=route, action=RespondAction(kind="respond", basis="supplied context"),
+        prompts=DEFAULT_AGENT_PROMPTS, current_user_request="Summarize the selected note.",
+        reference_note_ids=snapshot.selected_note.reference_note_ids)
+    for messages in (route, final):
+        for withheld in ("gray-child", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
+            assert withheld not in str(messages)
+
+
+@pytest.mark.parametrize("search", ["useful-tag", "-gray-exclusive", '-"gray bar text"'])
+@pytest.mark.parametrize("selected_id", ["root", "match", "gray"])
+def test_selection_respects_real_search_membership(monkeypatch, search, selected_id):
+    notes = _FakeNotes()
+    index = SearchIndex()
+    index.rebuild([SearchRecord(note_id=note.id, content_text=note.content, tags=note.tags,
+        tag_terms=note.tag_terms) for note in notes.records.values()],
+        raw_tag_terms_by_id={note.id: note.tag_terms for note in notes.records.values()},
+        progress_update=lambda _: None, progress_interval=1000)
+    monkeypatch.setattr(view_snapshot, "note_store", notes)
+    monkeypatch.setattr(view_snapshot, "search_index", index)
+    snapshot = _factory(notes, view_snapshot.resolve_view_scope_membership).freeze(
+        descriptor=_descriptor().model_copy(update={"search_query": search, "label": search}),
+        authoritative_search_query=search, authoritative_sort_mode="normal",
+        authoritative_active_search_query=search, authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(), selected_note_id=selected_id)
+    if selected_id == "gray":
+        assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": "search_redacted"}
+    else:
+        assert snapshot.selected_note.reference_note_ids == ("root", "match")
+        assert [node["note_id"] for node in snapshot.selected_note.as_payload()["tree_notes"] if node["is_selected"]] == [selected_id]
+
+
+@pytest.mark.parametrize("selected_id", ["root", "match"])
+def test_selected_note_includes_entire_containing_tree_and_highlights_editing_node(selected_id):
+    notes = _FakeNotes()
+    notes.records["match"] = replace(notes.records["match"], content="<p>https://example.test/paper</p>", is_collapsed=True)
+    notes.records["abstract"] = replace(notes.records["gray"], id="abstract", parent_id="match",
+        content="<p>Shared projections reduce cache memory by half.</p>", tags="abstract", tag_terms=frozenset({"abstract"}))
+    notes.records["detail"] = replace(notes.records["gray"], id="detail", parent_id="abstract",
+        content="<p>Quality decreases by 3.1 percent.</p>", tags="measurement", tag_terms=frozenset({"measurement"}))
+    notes.children.update({"match": ["abstract"], "abstract": ["detail"], "detail": []})
+    notes.records["unrelated-root"] = replace(notes.records["root"], id="unrelated-root", content="UNRELATED_CONTENT")
+    notes.children["unrelated-root"] = []
+    ids = frozenset({"match"})
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=frozenset(notes.records),
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(), selected_note_id=selected_id)
+    payload = snapshot.selected_note.as_payload()
+    assert payload["root_note_id"] == "root" and payload["note_id"] == selected_id
+    assert [node["note_id"] for node in payload["tree_notes"]] == ["root", "match", "abstract", "detail", "gray"]
+    by_id = {node["note_id"]: node for node in payload["tree_notes"]}
+    assert by_id["root"]["content_text"] == "Root heading"
+    assert by_id["root"]["tags"] == "project-foo"
+    assert by_id["abstract"]["content_text"] == "Shared projections reduce cache memory by half."
+    assert by_id["detail"]["parent_id"] == "abstract"
+    assert by_id["detail"]["tags"] == "measurement"
+    assert by_id["match"]["tags"] == "rare-tag useful-tag"
+    assert by_id["gray"]["content_text"] == "gray bar text"
+    assert [node["note_id"] for node in payload["tree_notes"] if node["is_selected"]] == [selected_id]
+    assert snapshot.selected_note.reference_note_ids == ("root", "match", "abstract", "detail", "gray")
+    assert "UNRELATED_CONTENT" not in str(payload)
+    assert snapshot.ordered_note_ids == ("match",)
+    notes.records["abstract"] = replace(notes.records["abstract"], content="Changed after Send")
+    assert snapshot.selected_note.as_payload() == payload
+
+
+@pytest.mark.parametrize("cloud_policy", [False, True])
+def test_selected_subtree_omits_password_and_cloud_excluded_branches(cloud_policy):
+    notes = _FakeNotes()
+    ids = frozenset(notes.records)
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids,
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    boundary = _local_privacy_boundary()
+    if cloud_policy:
+        boundary = _cloud_privacy_boundary(CloudPrivacyPolicy(whitelist_tags=(), whitelist_phrases=(),
+            blacklist_tags=("gray-exclusive",), blacklist_phrases=()))
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
+        run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id="root")
+    payload = snapshot.selected_note.as_payload()
+    expected = ["root", "match", "gray"]
+    if cloud_policy:
+        expected = ["root", "match"]
+    assert [node["note_id"] for node in payload["tree_notes"]] == expected
+    assert "secret" not in str(payload) and "credential" not in str(payload)
+
+
 def test_scope_descriptor_requires_originating_scope_tab() -> None:
     payload = _descriptor().model_dump()
     del payload["scope_tab_id"]
@@ -200,6 +454,9 @@ def test_frozen_scope_uses_matches_not_render_only_ancestors_or_gray_bars() -> N
     factory = _factory(notes, lambda **_arguments: resolved)
 
     snapshot = factory.freeze(
+        selected_note_id="",
+        authoritative_active_search_query="useful-tag",
+        authoritative_active_sort_mode="normal",
         descriptor=_descriptor(),
         authoritative_search_query="useful-tag",
         authoritative_sort_mode="normal",
@@ -239,6 +496,9 @@ def test_frozen_scope_excludes_protected_notes_and_their_tags() -> None:
     factory = _factory(notes, lambda **_arguments: resolved)
 
     snapshot = factory.freeze(
+        selected_note_id="",
+        authoritative_active_search_query="useful-tag",
+        authoritative_active_sort_mode="normal",
         descriptor=descriptor,
         authoritative_search_query="",
         authoritative_sort_mode="normal",
@@ -280,6 +540,9 @@ def test_frozen_cloud_scope_filters_notes_before_counts_and_tree_payload() -> No
     )
 
     snapshot = factory.freeze(
+        selected_note_id="",
+        authoritative_active_search_query="useful-tag",
+        authoritative_active_sort_mode="normal",
         descriptor=descriptor,
         authoritative_search_query="",
         authoritative_sort_mode="normal",
@@ -304,6 +567,9 @@ def test_frozen_scope_rejects_stale_client_view_state() -> None:
 
     with pytest.raises(ValueError, match="search query changed before Send"):
         factory.freeze(
+            selected_note_id="",
+            authoritative_active_search_query="useful-tag",
+            authoritative_active_sort_mode="normal",
             descriptor=_descriptor(),
             authoritative_search_query="different-tag",
             authoritative_sort_mode="normal",

@@ -107,7 +107,7 @@ class ScopedRouteEnvelope(BaseModel):
         ...,
         description=(
             "metalist_help for MetaList product questions or opening menus, with relevant help_topics; "
-            "respond for other requests answerable without the user's notes; "
+            "respond for requests answerable from the supplied selected note tree alone or without note evidence; "
             "investigate_current_scope only when the answer depends on evidence "
             "inside the frozen active MetaList result scope. "
             "tag_proposals ONLY for an explicit current user request to generate, "

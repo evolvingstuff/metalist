@@ -227,6 +227,7 @@ export async function streamAiChat({
     settings,
     message,
     scope,
+    selectedNoteId,
     showDiagnostics,
     onEvent,
     signal,
@@ -242,6 +243,9 @@ export async function streamAiChat({
     }
     if (typeof showDiagnostics !== 'boolean') {
         throw new Error('streamAiChat requires boolean showDiagnostics');
+    }
+    if (typeof selectedNoteId !== 'string') {
+        throw new Error('streamAiChat requires selectedNoteId string (empty when no note is selected)');
     }
     if (typeof onEvent !== 'function') {
         throw new Error('streamAiChat requires onEvent');
@@ -260,6 +264,7 @@ export async function streamAiChat({
             show_diagnostics: showDiagnostics,
             message,
             scope,
+            selected_note_id: selectedNoteId,
         }),
         signal,
     });

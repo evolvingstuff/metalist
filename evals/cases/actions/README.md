@@ -46,15 +46,13 @@ The three `tag_proposals` suboperations (generate/accept/remove), scope, and tag
 filter are selected by a later inference call and are not asserted by this
 routing-only suite. We can add separate synthetic cases for that decision.
 
-Baseline uses the frozen instructions in each case. Candidate replaces the
-main system prompt from its production file. The inline routing instruction
-and response schema remain frozen; changes to those require explicit fixture
-review. No current case expects unimplemented settings/menu actions.
+Every case uses current production system instructions, routing/context builders,
+help catalogs, and response schemas. Scenario conversations, scope metadata, and
+expected actions remain fixed. Compare saved reports before and after prompt changes.
 
 Live verification after removing intent heuristics (2026-09-17): all 24 cases
 passed 10/10 using gpt-5.6-luna, thinking off, with zero validation errors. Both
-the removal-only and final system-prompt runs scored 240/240. The frozen prompts
-now match the final evaluated version. These sample results do not guarantee
+the removal-only and final system-prompt runs scored 240/240. Those results describe the prompts evaluated on that date. These sample results do not guarantee
 future perfect accuracy. See `docs/testing/harness.md` for report locations.
 
 The five-run help-enabled results are in [help/RESULTS.md](../help/RESULTS.md). They preserve topic-expectation failures separately from schema validation errors.

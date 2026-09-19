@@ -24,6 +24,11 @@ Search queries are a whitespace-separated list of **terms** and optional `OR`
 operators. Terms next to each other form an implicit-AND clause; `OR` separates
 clauses.
 
+When explaining a query, split at unquoted uppercase `OR` first and describe each
+clause separately. Count clauses separately from terms: `OR` is a separator, not
+a term or an extra clause. A quoted phrase is one text term, regardless of how
+many words it contains. For example, `A B OR C` has two clauses and three terms.
+
 ### OR Operator
 - Only exact uppercase, unquoted `OR` is an operator.
 - Every clause must contain at least one term, so leading, trailing, and

@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "id": "selected-note-access-none",
+  "description": "Explain selected-note availability: none",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Can you read this note?"
+        }
+      ],
+      "context": {
+        "stage": "respond",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 12,
+          "matching_result_tree_count": 5
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "basis": "current selection availability"
+      },
+      "max_output_tokens": 512,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "availability",
+            "instruction": "No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note."
+          }
+        ],
+        "reference_facts": "No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note. No note content, title, tags, or ID was supplied."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "User reported misleading unavailable response for selected blacklisted note; content-free synthetic fixture."
+  }
+}

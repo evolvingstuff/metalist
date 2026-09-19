@@ -158,6 +158,7 @@ class AiChatRequest(BaseModel):
     show_diagnostics: bool
     message: str = Field(..., max_length=32_000)
     scope: AgentScopeDescriptor
+    selected_note_id: str = Field(..., max_length=128, pattern=r"^(?:\S+)?$")
 
     @field_validator("model")
     @classmethod
@@ -641,6 +642,11 @@ def stream_ai_chat(
     authoritative_sort_mode = tab_state_store.get_sort_mode(
         tab_id=payload.scope.scope_tab_id
     )
+    active_search_query = authoritative_search_query
+    active_sort_mode = authoritative_sort_mode
+    if payload.selected_note_id and payload.scope.active_tab_id != payload.scope.scope_tab_id:
+        active_search_query = tab_state_store.get_search_query(tab_id=authoritative_active_tab_id)
+        active_sort_mode = tab_state_store.get_sort_mode(tab_id=authoritative_active_tab_id)
     frozen_scope = scoped_search_snapshot_factory.freeze(
         descriptor=payload.scope,
         authoritative_search_query=authoritative_search_query,
@@ -648,6 +654,9 @@ def stream_ai_chat(
         run_id=str(uuid4()),
         session_key=session_key,
         privacy_boundary=privacy_boundary,
+        selected_note_id=payload.selected_note_id,
+        authoritative_active_search_query=active_search_query,
+        authoritative_active_sort_mode=active_sort_mode,
     )
     tagging_run = TaggingRun(token=token, snapshot=frozen_scope, preferences=preferences, sync_uuid=get_current_sync_uuid(),
         batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider))

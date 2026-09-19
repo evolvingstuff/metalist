@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "id": "selected-note-unrelated-question",
+  "description": "What is the capital of France?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "What is the capital of France?"
+        }
+      ],
+      "context": {
+        "stage": "route",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 12,
+          "matching_result_tree_count": 5
+        },
+        "selected_note": {
+          "status": "available",
+          "note_id": "orchard-note",
+          "content_text": "I planted three apple trees in April. Two survived the summer.",
+          "tags": "garden"
+        }
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "kind": "respond"
+          }
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic selected-note scenario"
+  }
+}

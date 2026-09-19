@@ -5,9 +5,11 @@ saved settings or notes. Defaults below do not establish their current values.
 
 MetaList uses OpenAI; Ollama/local model support has been removed. AI agent
 settings (also found by searching AI, LLM, or OpenAI in the menu) configures the
-API key, model, maximum approximate evidence tokens, and tagging batch token
-window. The defaults are gpt-5.6-luna, 500,000 evidence tokens and 100,000 tagging
-batch tokens. Evidence limit accepts 500–500,000. Evidence/context and tagging
+API key, model, **Maximum approximate evidence tokens**, and tagging batch token
+window. **Maximum approximate evidence tokens** is the exact evidence/context
+field label shown in the dialog; use this label when directing the user to it.
+The defaults are gpt-5.6-luna, 500,000 evidence tokens and 100,000 tagging
+batch tokens. The evidence field accepts 500–500,000. Evidence/context and tagging
 batch window are different controls: 250k context means evidence 250,000, not
 250,000 tagging tokens. Composer controls can change model and thinking level.
 
@@ -43,6 +45,13 @@ undo/redo and create no bulk undo entry. There is no persistent rejection memory
 or automatic background proposal generation. Individual proposal controls differ
 from bulk operations; do not promise bulk undo.
 
+Accepting a proposal converts it to an accepted tag. Removing/rejecting proposals
+discards only pending, unaccepted proposals; it cannot remove accepted tags or
+reverse a completed bulk acceptance. Do not offer proposal removal as a workaround
+for missing bulk undo. Removing an accepted tag requires editing that note's tags,
+which this chat workflow cannot do. An explanation of these limits does not itself
+request opening the proposal-management dialog.
+
 Manage tag proposals opens the bulk acceptance/removal form. Tagging prompt and
 vocabulary opens instruction/vocabulary settings. Agent prompts shows packaged
 system/final/tool prompts and registered skills, supports namespace overrides,
@@ -56,7 +65,8 @@ session retains them. Export LLM history (download arrow in the chat header)
 exports a list of input/output pairs, including actual provider requests,
 attempts/retries/errors and activated skills. It makes no additional model call.
 Agent Debug shows the latest run. The separate opt-in regression suite lives in
-the source repo, excluded from PyPI; cases run ten times and report percentages.
+the source repo, excluded from PyPI; cases default to five trials with up to four
+concurrent requests and report percentages and cached-token usage.
 Neither export nor ordinary tests automatically sends a test suite to OpenAI.
 
 The estimated spend display uses provider usage, tracks new/cached input, cache

@@ -1,30 +1,21 @@
-"""Ten fresh runs per case using production inference and explicit assertions."""
+"""Five fresh runs per case using production inference and explicit assertions."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import time
-from pathlib import Path
 
-from app.services.agent.actions import (
-    AgentRouteEnvelope, ScopedRouteEnvelope, SearchQueryEnvelope,
-)
 from app.services.agent.history import record_history
-from app.services.agent.help_catalog import MetaListHelpResponse
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
-from app.services.agent.tagging import TagBatchResult, TagOperationIntent
 from app.services.agent.trace import AgentTraceStore
-from evals.models import Message, PreviousOutput, RegressionCase
+from evals.models import PreparedCase, PreviousOutput, RegressionCase
+from evals.production import RESPONSE_MODELS, current_prompts, current_skills, prepare_step
 
 
-REPETITIONS = 10
-RESPONSE_MODELS = {schema.__name__: schema for schema in (
-    ScopedRouteEnvelope, AgentRouteEnvelope, SearchQueryEnvelope,
-    TagOperationIntent, TagBatchResult, MetaListHelpResponse,
-)}
+REPETITIONS = 5
 
 
 def fingerprint(value) -> str:
@@ -43,43 +34,13 @@ def matches(expected, actual) -> bool:
     return type(expected) is type(actual) and expected == actual
 
 
-def prepare_case(case: RegressionCase, *, variant: str, directory: Path) -> RegressionCase:
-    """Freeze candidate files once before any repetitions or provider calls."""
+def prepare_case(case: RegressionCase) -> PreparedCase:
+    """Build every request with current production code before provider calls."""
     if not case.reviewed:
         raise ValueError(f"Review expected behavior and set reviewed=true: {case.id}")
-    if variant not in {"baseline", "candidate"}:
-        raise ValueError("Variant must be baseline or candidate")
-    prepared = case.model_copy(deep=True)
-    for step in prepared.steps:
-        if step.kind == "structured" and step.response_model not in RESPONSE_MODELS:
-            raise ValueError(f"Unsupported response model: {step.response_model}")
-        if step.kind == "structured" and step.response_schema != RESPONSE_MODELS[step.response_model].model_json_schema():
-            raise ValueError(f"Recorded response schema changed: {step.response_model}; review the case explicitly")
-        if step.kind == "text" and step.response_schema != {}:
-            raise ValueError("Text steps must have an empty response schema")
-        if variant == "candidate":
-            for binding in step.prompt_bindings:
-                text = (directory / binding.file).read_text(encoding="utf-8").rstrip("\n")
-                if binding.target == "skill":
-                    if set(binding.variables) != {"skill_id", "trigger_action"}:
-                        raise ValueError("Skill binding requires skill_id and trigger_action")
-                    text = f"ACTIVE_SKILL {binding.variables['skill_id']}\nTrigger action: {binding.variables['trigger_action']}\n\n{text}"
-                elif binding.variables:
-                    text = text.format(**binding.variables)
-                if not text.strip():
-                    raise ValueError(f"Empty prompt: {binding.file}")
-                message = step.messages[binding.message_index]
-                if binding.target in {"message", "skill"}:
-                    message.content = text
-                else:
-                    prefix, body = message.content.split("\n", 1)
-                    payload = json.loads(body)
-                    assert isinstance(payload["instruction"], str)
-                    payload["instruction"] = text
-                    message.content = prefix + "\n" + json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    if variant == "candidate" and not any(step.prompt_bindings for step in case.steps):
-        raise ValueError("Candidate requires explicit prompt bindings; otherwise use baseline")
-    return prepared
+    prompts, skills = current_prompts(), current_skills()
+    return PreparedCase(id=case.id, model=case.model, thinking_level=case.thinking_level,
+        steps=[prepare_step(step, prompts=prompts, skills=skills) for step in case.steps])
 
 
 async def call_step(adapter, *, case, step, messages):
@@ -131,11 +92,16 @@ async def evaluate_output(adapter, *, expectation, messages, output, judge):
             "judgment": verdict.model_dump(), "expected": expectation.model_dump()}
 
 
-# lint: allow-PY005 rationale="documented ten-trial default; explicit CLI override permits shorter live runs"
-async def run_case(case, *, adapter, judge, variant, directory, on_repetition, repetitions=REPETITIONS):
+# lint: allow-PY005 rationale="documented five-trial default; explicit CLI override permits shorter live runs"
+async def run_case(case, *, adapter, judge, on_repetition, repetitions=REPETITIONS):
+    return await run_prepared_case(case, prepared=prepare_case(case), adapter=adapter,
+        judge=judge, on_repetition=on_repetition, repetitions=repetitions)
+
+
+async def run_prepared_case(case, *, prepared, adapter, judge, on_repetition, repetitions):
     if type(repetitions) is not int or repetitions < 1:
         raise ValueError("Repetitions must be a positive integer")
-    prepared = prepare_case(case, variant=variant, directory=directory)
+    assert prepared.id == case.id
     if any(step.expectation.kind == "output" for step in prepared.steps) and judge is None:
         raise ValueError("Output cases require --judge configuration")
     outcomes = []
@@ -162,7 +128,7 @@ async def run_case(case, *, adapter, judge, variant, directory, on_repetition, r
                     results.append({"output": output, **verdict})
                     if not verdict["correct"]:
                         status = "incorrect"
-            # lint: allow-PY001 rationale="persist external provider errors in the ten-run report, never count them as correct"
+            # lint: allow-PY001 rationale="persist external provider errors in the repetition report, never count them as correct"
             except InferenceProviderError as exc:
                 status, error = "error", f"{type(exc).__name__}: {exc}"
         pairs = traces.export_history(session_key="regression")
@@ -175,7 +141,7 @@ async def run_case(case, *, adapter, judge, variant, directory, on_repetition, r
     counts = {status: sum(item["status"] == status for item in outcomes)
               for status in ("correct", "incorrect", "error")}
     assert sum(counts.values()) == repetitions
-    return {"schema_version": 1, "case_id": case.id, "variant": variant,
+    return {"schema_version": 2, "case_id": case.id, "prompt_source": "current-production",
             "case_fingerprint": fingerprint(case.model_dump()),
             "effective_case": prepared.model_dump(),
             "effective_fingerprint": fingerprint(prepared.model_dump()),

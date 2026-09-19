@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from types import MappingProxyType
+
+import pytest
 
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
@@ -18,6 +21,7 @@ from app.services.agent.scope import AgentScopeDescriptor
 from app.services.agent.scope import FrozenScopedNote
 from app.services.agent.scope import FrozenScopedTreeNode
 from app.services.agent.scope import ScopedSearchSnapshot
+from app.services.agent.scope import SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 
@@ -103,6 +107,7 @@ class _FakeInference:
     def __init__(self, *, route_kind: str) -> None:
         self.route_kind = route_kind
         self.final_messages: list[dict[str, str]] = []
+        self.route_messages: list[dict[str, str]] = []
 
     async def inspect_context_window(
         self,
@@ -129,6 +134,7 @@ class _FakeInference:
         on_progress,
     ) -> InferenceResponse:
         del thinking_level
+        self.route_messages = messages
         payload = {
             "kind": self.route_kind,
             "help_topics": [],
@@ -284,6 +290,42 @@ def test_direct_response_does_not_send_note_content() -> None:
     serialized_messages = json.dumps(inference.final_messages)
     assert "ROOT_ALPHA" not in serialized_messages
     assert "CHILD_ALPHA" not in serialized_messages
+
+
+@pytest.mark.parametrize("route", ["respond", "investigate_current_scope"])
+def test_selected_note_reaches_routing_and_final_without_narrowing_scope(route) -> None:
+    inference = _FakeInference(route_kind=route)
+    snapshot = replace(_snapshot(large_tail=False), selected_note=SelectedNoteContext(
+        "available", "child-a", (SelectedTreeNote("parent", "", "PARENT_CONTEXT", "parent-tag"),
+            SelectedTreeNote("child-a", "parent", "CURRENT_SELECTED_CONTENT", "selected-tag"),
+            SelectedTreeNote("abstract", "child-a", "ABSTRACT_CONTENT", "abstract-tag"),
+            SelectedTreeNote("sibling", "parent", "SIBLING_CONTEXT", "sibling-tag"))))
+    _events(inference=inference, snapshot=snapshot,
+        message="Can you explain the relevant parts?", token_limit=24_000)
+    for messages in (inference.route_messages, inference.final_messages):
+        contexts = [json.loads(m["content"].split("\n", 1)[1]) for m in messages
+                    if m["content"].startswith("SELECTED_NOTE_CONTEXT\n")]
+        assert len(contexts) == 1
+        assert [n["note_id"] for n in contexts[0]["selected_note"]["tree_notes"] if n["is_selected"]] == ["child-a"]
+        assert all(text in json.dumps(contexts[0]) for text in ("PARENT_CONTEXT", "CURRENT_SELECTED_CONTENT", "ABSTRACT_CONTENT", "SIBLING_CONTEXT"))
+        assert contexts[0]["selected_note"]["note_id"] == "child-a"
+    if route == "respond":
+        assert "ROOT_ALPHA" not in json.dumps(inference.final_messages)
+    else:
+        assert "ROOT_ALPHA" in json.dumps(inference.final_messages)
+        assert "TAIL" in json.dumps(inference.final_messages)
+
+
+def test_selected_note_over_budget_is_not_sent_to_provider() -> None:
+    inference = _FakeInference(route_kind="respond")
+    snapshot = replace(_snapshot(large_tail=False), selected_note=SelectedNoteContext(
+        "available", "child-a", (SelectedTreeNote("parent", "", "PARENT", ""),
+            SelectedTreeNote("child-a", "parent", "https://example.test/paper", ""),
+            SelectedTreeNote("abstract", "child-a", "LARGE " * 1000, ""))))
+    with pytest.raises(Exception, match="selected note tree exceeds"):
+        _events(inference=inference, snapshot=snapshot, message="Explain", token_limit=500)
+    assert inference.route_messages == []
+    assert inference.final_messages == []
 
 
 def test_model_can_respond_to_request_prohibiting_note_inspection() -> None:
