@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from io import StringIO
+import os
+import subprocess
 
 from app.security.authenticated_logging import EncryptedLogSink
 from app.security.authenticated_logging import EncryptedTextStream
@@ -45,7 +47,19 @@ def test_encrypted_log_file_is_owner_only(tmp_path: Path) -> None:
     sink.write("record")
     sink.close()
 
-    assert log_path.stat().st_mode & 0o777 == 0o600
+    if os.name == "nt":
+        acl = subprocess.run(
+            ["icacls", str(log_path)],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=30,
+        ).stdout.casefold()
+        assert "everyone:" not in acl
+        assert "builtin\\users:" not in acl
+        assert "authenticated users:" not in acl
+    else:
+        assert log_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_authenticated_stdout_stream_never_writes_plaintext() -> None:

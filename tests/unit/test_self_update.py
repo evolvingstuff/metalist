@@ -11,6 +11,14 @@ import app.services.self_update as self_update
 
 @pytest.fixture(autouse=True)
 def _isolate_update_backups(monkeypatch, tmp_path: Path) -> None:
+    actual_is_file = self_update.Path.is_file
+
+    def _platform_file_exists(path: Path) -> bool:
+        if path.as_posix() == "/bin/sh":
+            return True
+        return actual_is_file(path)
+
+    monkeypatch.setattr(self_update.Path, "is_file", _platform_file_exists)
     monkeypatch.setattr(self_update, "_prepare_update", lambda *, uv_executable, target_version, environ: [
         uv_executable, "tool", "install", "--force", "--offline", "--python", "/base/python3.14",
         "--compile-bytecode", f"metalist=={target_version}",

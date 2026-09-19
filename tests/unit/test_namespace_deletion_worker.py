@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-import signal
 from types import SimpleNamespace
 
 import app.services.namespace_deletion_worker as namespace_deletion_worker
 
 
+def _select_posix_process_control(monkeypatch) -> tuple[int, int]:
+    terminate_signal = 15
+    kill_signal = 9
+    monkeypatch.setattr(namespace_deletion_worker.sys, "platform", "linux")
+    monkeypatch.setattr(namespace_deletion_worker.signal, "SIGTERM", terminate_signal)
+    monkeypatch.setattr(namespace_deletion_worker.signal, "SIGKILL", kill_signal, raising=False)
+    return terminate_signal, kill_signal
+
+
 def test_stop_process_sends_sigterm_before_sigkill(monkeypatch) -> None:
+    terminate_signal, _ = _select_posix_process_control(monkeypatch)
     wait_results = iter([False, True])
     sent_signals: list[int] = []
 
@@ -23,10 +32,11 @@ def test_stop_process_sends_sigterm_before_sigkill(monkeypatch) -> None:
 
     namespace_deletion_worker._stop_process(pid=1234)
 
-    assert sent_signals == [signal.SIGTERM]
+    assert sent_signals == [terminate_signal]
 
 
 def test_stop_process_escalates_to_sigkill(monkeypatch) -> None:
+    terminate_signal, kill_signal = _select_posix_process_control(monkeypatch)
     wait_results = iter([False, False, True])
     sent_signals: list[int] = []
 
@@ -43,7 +53,26 @@ def test_stop_process_escalates_to_sigkill(monkeypatch) -> None:
 
     namespace_deletion_worker._stop_process(pid=1234)
 
-    assert sent_signals == [signal.SIGTERM, signal.SIGKILL]
+    assert sent_signals == [terminate_signal, kill_signal]
+
+
+def test_stop_process_uses_windows_process_control(monkeypatch) -> None:
+    stopped_pids: list[int] = []
+    monkeypatch.setattr(namespace_deletion_worker.sys, "platform", "win32")
+    monkeypatch.setattr(
+        namespace_deletion_worker,
+        "stop_windows_process",
+        lambda *, pid: stopped_pids.append(pid),
+    )
+    monkeypatch.setattr(
+        namespace_deletion_worker,
+        "_wait_for_process_exit",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("POSIX wait must not run")),
+    )
+
+    namespace_deletion_worker._stop_process(pid=1234)
+
+    assert stopped_pids == [1234]
 
 
 def test_is_process_running_treats_zombie_as_not_running(monkeypatch) -> None:

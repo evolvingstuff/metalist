@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tomllib
+import sys
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 from app.config import VERSION
 from app.version import __version__

@@ -285,11 +285,12 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
 
 def test_run_backup_rejects_when_no_namespaces_are_selected(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     with pytest.raises(backups_route.HTTPException) as excinfo:
         backups_route.run_backup(
             payload=backups_route.BackupSettingsUpdateRequest.model_construct(
-                folder_path="/tmp/backups",
+                folder_path=str(tmp_path / "backups"),
                 selected_namespaces=[],
                 retention_count=30,
             ),

@@ -107,7 +107,8 @@ def test_text_partial_failure_and_running_export_are_preserved(monkeypatch):
 def test_cancelled_structured_stream_keeps_partial_response(monkeypatch):
     class InterruptedStream(httpx.AsyncByteStream):
         async def __aiter__(self):
-            yield f'data: {json.dumps(chunk('{"kind":"res', None, None))}\n\n'.encode()
+            partial_chunk = chunk('{"kind":"res', None, None)
+            yield f'data: {json.dumps(partial_chunk)}\n\n'.encode()
             raise asyncio.CancelledError()
 
     adapter = install_transport(monkeypatch, lambda request: httpx.Response(

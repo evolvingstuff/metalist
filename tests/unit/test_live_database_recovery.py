@@ -106,8 +106,12 @@ def test_originally_absent_sidecar_is_removed_on_rollback(tmp_path):
     change = LiveDatabaseRecovery(notes)
     change.begin()
     files = tmp_path / 'fixture.metalist.files.db'
-    with sqlite3.connect(files) as connection:
+    connection = sqlite3.connect(files)
+    try:
         connection.execute('CREATE TABLE marker(value TEXT)')
+        connection.commit()
+    finally:
+        connection.close()
     change.rollback()
     assert notes.exists()
     assert not files.exists()

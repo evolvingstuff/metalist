@@ -196,10 +196,13 @@ def test_converter_creates_current_encrypted_database_with_launch_profile(tmp_pa
     namespace_directory = fresh_home / "MetaList" / "namespaces" / "default"
     namespace_directory.mkdir(parents=True)
     file_database_path = namespace_directory / "default.metalist.files.db"
-    with sqlite3.connect(file_database_path) as connection:
+    connection = sqlite3.connect(file_database_path)
+    try:
         connection.execute("CREATE TABLE stale_sound_payload (ciphertext BLOB NOT NULL)")
         connection.execute("INSERT INTO stale_sound_payload (ciphertext) VALUES (?)", (b"old-key",))
         connection.commit()
+    finally:
+        connection.close()
     environ = os.environ.copy()
     environ["HOME"] = str(fresh_home)
     environ["METALIST_DATA_DIRECTORY"] = str(fresh_home / "MetaList")

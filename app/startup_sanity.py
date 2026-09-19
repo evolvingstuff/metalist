@@ -72,7 +72,7 @@ class _RouteDecorator:
 
 
 def _path_rel(project_root: Path, path: Path) -> str:
-    return os.path.relpath(path, project_root)
+    return path.relative_to(project_root).as_posix()
 
 
 def _suppressed(lines: list[str], lineno: int, rule_id: str) -> bool:

@@ -165,7 +165,7 @@ def discover_typescript_source_paths(project_root: Path) -> list[Path]:
 
 
 def _path_rel(project_root: Path, path: Path) -> str:
-    return os.path.relpath(path, project_root)
+    return path.relative_to(project_root).as_posix()
 
 
 def _codeframe(lines: list[str], lineno: int, col: int, context_lines: int) -> str:
