@@ -72,5 +72,15 @@ is redirected to the test index), extracts and runs the repair ZIP, verifies the
 upgrade/backups/restarts, and exercises Edge login afterward. Edge covers ordinary
 encrypted login and deliberately removes the stored tab ID after a successful
 login response to verify hydration still completes with the original identity.
-The new Windows checks have not run for this uncommitted candidate; the repair
+The first candidate run failed during the newly covered password creation before
+reaching the repair launcher. The corrected matrix has not run yet; the repair
 launcher must not be presented as Windows-validated yet.
+
+The first Windows Edge run reached password creation and exposed `OSError: [Errno
+9] Bad file descriptor` while flushing a recovery image. `_sync_file` had opened
+the owned file read-only; Windows' CRT rejects `fsync`/`_commit` on that descriptor.
+It now opens the same existing file as `r+b`, which grants the required descriptor
+access without truncating or changing its bytes. A regression forces the flush
+through a writable-descriptor check. The complete Python and JavaScript suites and
+startup gates now run symmetrically on all 15 OS/Python matrix legs; Edge and the
+repair launcher remain additional Windows checks.

@@ -25,6 +25,20 @@ def read_marker(path):
         return connection.execute('SELECT value FROM marker').fetchone()[0]
 
 
+def test_file_sync_uses_a_windows_compatible_writable_descriptor(tmp_path, monkeypatch):
+    path = tmp_path / 'durable.db'
+    path.write_bytes(b'durable contents')
+    actual_fsync = live_recovery.os.fsync
+
+    def require_writable_descriptor(descriptor):
+        os.write(descriptor, b'')
+        actual_fsync(descriptor)
+
+    monkeypatch.setattr(live_recovery.os, 'fsync', require_writable_descriptor)
+    live_recovery._sync_file(path)
+    assert path.read_bytes() == b'durable contents'
+
+
 @pytest.mark.parametrize('stage', ['pending', 'committed', 'before_cleanup'])
 def test_process_exit_recovers_all_or_keeps_complete_commit(tmp_path, stage):
     notes, files = make_pair(tmp_path)

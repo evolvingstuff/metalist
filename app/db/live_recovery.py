@@ -44,7 +44,10 @@ def _sync_directory(path: Path) -> None:
 
 
 def _sync_file(path: Path) -> None:
-    with path.open('rb') as handle:
+    # Windows' CRT rejects fsync/_commit on a read-only descriptor with EBADF.
+    # These are live or recovery files owned by this transaction, so open them
+    # without truncation using a descriptor that every supported OS can flush.
+    with path.open('r+b') as handle:
         os.fsync(handle.fileno())
 
 
