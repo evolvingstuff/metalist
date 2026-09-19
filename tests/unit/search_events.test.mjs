@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 function createStorage() {
     const entries = new Map();
@@ -280,6 +281,7 @@ test('fresh search input resets the active tab sort without losing the typed que
     sortedTabState.tabs[activeTabId].sortMode = 'updated';
     ModeContext.hydrateTabState(sortedTabState, { emitUpdate: false });
     sessionStorage.setItem('metalist_tab_id', 'search-events-test');
+    initializeSessionIdentity();
 
     const requests = [];
     globalThis.fetch = async (url, options) => {

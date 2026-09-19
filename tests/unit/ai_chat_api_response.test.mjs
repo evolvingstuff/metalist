@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 
 function createSessionStorage(tabId) {
@@ -18,6 +19,7 @@ test('AI session API reports a non-JSON server failure as an HTTP error', async 
     const originalFetch = globalThis.fetch;
     const originalSessionStorage = globalThis.sessionStorage;
     globalThis.sessionStorage = createSessionStorage('tab-ai-error');
+    initializeSessionIdentity();
     globalThis.fetch = async () => new Response('Internal Server Error', {
         status: 500,
         headers: { 'content-type': 'text/plain; charset=utf-8' },

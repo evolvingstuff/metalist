@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 class FakeClassList {
     constructor() {
@@ -220,6 +221,7 @@ function installReminderSurfaceDom(t, options = {}) {
         },
         setItem() {},
     };
+    initializeSessionIdentity();
     globalThis.window = {
         setTimeout(callback, delay) {
             if (typeof callback === 'function' && delay === 240) {

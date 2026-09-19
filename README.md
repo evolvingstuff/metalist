@@ -12,6 +12,14 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.7.2
+
+- Login, hydration, and workspace requests share one initialized browser-tab identity. Losing the `sessionStorage` copy while opening the workspace no longer causes the reported missing-tab-ID crash. The external trigger for that storage loss remains unconfirmed.
+- AI chat preserves the edited note and includes its permitted tree, tags, and cached URL titles. Search redaction and cloud privacy restrictions apply to every node; blocked selections expose only their availability reason.
+- Added on-demand AI help and menu actions, privacy previews, and Copy Response throughout assistant message bubbles. OpenAI is the supported inference provider.
+- LLM regressions use current production prompts, default to five trials with cache-aware parallel scheduling, and can run only cases affected by prompt or skill changes.
+- Improved Grammarly edit preservation and search suggestions that match the complete active clause.
+
 ## Changes in 0.6.3
 
 - Restored HTTPS connection reuse and aligned the pending accept queue with the existing worker capacity, so a browser’s six-connection startup burst is admitted.

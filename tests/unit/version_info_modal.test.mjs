@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 const storage = new Map([['metalist_tab_id', 'version-test-tab']]);
 globalThis.sessionStorage = {
     getItem: key => storage.has(key) ? storage.get(key) : null,
     setItem: (key, value) => storage.set(key, value),
 };
+initializeSessionIdentity();
 const {VersionInfoModal} = await import('../../app/static/js/modules/modals/version-info-modal.js');
 const {ModeContextInstance} = await import('../../app/static/js/modules/mode-manager/mode-context.js');
 

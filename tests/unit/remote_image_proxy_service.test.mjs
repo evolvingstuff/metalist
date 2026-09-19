@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 function installTestDom(t) {
     const originalWindow = globalThis.window;
@@ -90,6 +91,7 @@ function installTestDom(t) {
             return sessionEntries.has(key) ? sessionEntries.get(key) : null;
         },
     };
+    initializeSessionIdentity();
     globalThis.URL = {
         createObjectURL() {
             return 'blob:remote-image';

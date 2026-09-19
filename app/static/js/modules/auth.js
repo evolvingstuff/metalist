@@ -5,7 +5,7 @@ import { closeAllFloatingNotes } from './mode-manager/services/floating-note-ser
  * Authentication module for handling login/logout and password management
  */
 import { CONFIG } from './config.js';
-import { createUuid } from './uuid.js';
+import { initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
 import { ReminderSurface } from './reminder-surface-service.js';
 import { AiChatPanel } from './ai-chat/ai-chat-panel-controller.js';
@@ -26,7 +26,6 @@ export const Auth = {
     _forcingLogout: false,
     _currentNamespace: null,
     _loginNamespaceRequestId: 0,
-    _tabId: null,
     _startupIntroPromise: null,
     _startupIntroResolved: false,
     _loadingStartedAt: null,
@@ -41,7 +40,7 @@ export const Auth = {
      * Returns true if OK to proceed with app initialization
      */
     async init() {
-        this._ensureTabId();
+        initializeSessionIdentity();
         clearLegacyAuthStorage();
         this.setupEventListeners();
         if (this._isStartupIntroEnabled()) {
@@ -69,7 +68,7 @@ export const Auth = {
         }
 
         const headers = {};
-        headers['X-Metalist-Tab-Id'] = this._tabId;
+        headers['X-Metalist-Tab-Id'] = getRequiredTabId();
 
         const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
         if (!response.ok) {
@@ -109,7 +108,7 @@ export const Auth = {
         const response = await fetch(CONFIG.API.AUTH.SESSION, {
             method: 'POST',
             headers: {
-                'X-Metalist-Tab-Id': this._tabId
+                'X-Metalist-Tab-Id': getRequiredTabId()
             }
         });
 
@@ -563,7 +562,7 @@ export const Auth = {
         this._showHydrationUI();
 
         const headers = {
-            'X-Metalist-Tab-Id': this._tabId,
+            'X-Metalist-Tab-Id': getRequiredTabId(),
         };
 
         const startResponse = await fetch(CONFIG.API.AUTH.HYDRATE, {
@@ -716,7 +715,7 @@ export const Auth = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Metalist-Tab-Id': this._tabId,
+                    'X-Metalist-Tab-Id': getRequiredTabId(),
                 },
                 body: JSON.stringify({ password })
             });
@@ -818,7 +817,7 @@ export const Auth = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Metalist-Tab-Id': this._tabId,
+                'X-Metalist-Tab-Id': getRequiredTabId(),
             }
         }).finally(() => {
             this.clearSessionState();
@@ -885,18 +884,6 @@ export const Auth = {
         });
 
     },
-
-    _ensureTabId() {
-        if (this._tabId) {
-            return;
-        }
-        let tabId = sessionStorage.getItem('metalist_tab_id');
-        if (!tabId) {
-            tabId = createUuid();
-            sessionStorage.setItem('metalist_tab_id', tabId);
-        }
-        this._tabId = tabId;
-    }
 };
 
 // Make showLoginModal available globally for API client

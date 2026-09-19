@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 import { PreferencesStore } from '../../app/static/js/modules/command-palette/preferences-store.js';
 import { UsageStore } from '../../app/static/js/modules/command-palette/usage-store.js';
@@ -27,6 +28,7 @@ test('PreferencesStore.removeMany persists one snapshot without the selected key
     globalThis.sessionStorage = {
         getItem: (key) => key === 'metalist_tab_id' ? 'test-tab' : null,
     };
+    initializeSessionIdentity();
     globalThis.fetch = async (_url, options) => {
         persistedBodies.push(JSON.parse(options.body));
         return new Response(JSON.stringify({ preferences: options.body }), {
@@ -68,6 +70,7 @@ test('PreferencesStore updates new prompt keys and removes superseded keys atomi
     globalThis.sessionStorage = {
         getItem: (key) => key === 'metalist_tab_id' ? 'test-tab' : null,
     };
+    initializeSessionIdentity();
     globalThis.fetch = async (_url, options) => {
         const body = JSON.parse(options.body);
         persistedBodies.push(body);

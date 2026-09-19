@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 
 
 function createStorage(initialEntries = {}) {
@@ -58,6 +59,7 @@ test('legacy storage containing only the retired performance overlay is cleared 
 test('buildSessionHeaders includes the tab id and optional content type', async () => {
     const restoreGlobals = installBrowserStorage();
     globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-123');
+    initializeSessionIdentity();
 
     const { buildSessionHeaders } = await import('../../app/static/js/modules/session-auth.js');
 
@@ -75,7 +77,8 @@ test('buildSessionHeaders includes the tab id and optional content type', async 
 
 test('client-state API helpers call the database-backed auth endpoints', async () => {
     const restoreGlobals = installBrowserStorage();
-    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-456');
+    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-123');
+    initializeSessionIdentity();
 
     const requests = [];
     globalThis.fetch = async (url, options) => {
@@ -118,14 +121,14 @@ test('client-state API helpers call the database-backed auth endpoints', async (
     assert.equal(requests[0].url, '/api2/auth/client-state');
     assert.equal(requests[0].options.method, 'GET');
     assert.deepEqual(requests[0].options.headers, {
-        'X-Metalist-Tab-Id': 'tab-456',
+        'X-Metalist-Tab-Id': 'tab-123',
     });
 
     assert.equal(requests[1].url, '/api2/auth/client-state/preferences');
     assert.equal(requests[1].options.method, 'PUT');
     assert.deepEqual(requests[1].options.headers, {
         'Content-Type': 'application/json',
-        'X-Metalist-Tab-Id': 'tab-456',
+        'X-Metalist-Tab-Id': 'tab-123',
     });
     assert.equal(
         requests[1].options.body,
@@ -136,7 +139,7 @@ test('client-state API helpers call the database-backed auth endpoints', async (
     assert.equal(requests[2].options.method, 'PUT');
     assert.deepEqual(requests[2].options.headers, {
         'Content-Type': 'application/json',
-        'X-Metalist-Tab-Id': 'tab-456',
+        'X-Metalist-Tab-Id': 'tab-123',
     });
     assert.equal(
         requests[2].options.body,
@@ -157,7 +160,8 @@ test('client-state API helpers call the database-backed auth endpoints', async (
 
 test('client-state API reports a server failure without parsing an HTML error page as JSON', async () => {
     const restoreGlobals = installBrowserStorage();
-    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-500');
+    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-123');
+    initializeSessionIdentity();
     globalThis.fetch = async () => new Response('<html>Server error</html>', {
         status: 500,
         headers: {
@@ -177,7 +181,8 @@ test('client-state API reports a server failure without parsing an HTML error pa
 
 test('client-state API identifies an expired authenticated session', async () => {
     const restoreGlobals = installBrowserStorage();
-    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-expired');
+    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-123');
+    initializeSessionIdentity();
     globalThis.fetch = async () => new Response(
         JSON.stringify({ detail: 'Authentication required' }),
         {

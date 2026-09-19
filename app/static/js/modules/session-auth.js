@@ -1,9 +1,30 @@
-export function getRequiredTabId() {
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (typeof tabId !== 'string' || tabId.length === 0) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
+import { ApplicationState } from './application-state.js';
+import { createUuid } from './uuid.js';
+
+const sessionIdentity = ApplicationState.createFields('session-auth', {tabId: null});
+
+export function initializeSessionIdentity() {
+    if (sessionIdentity.tabId !== null) {
+        return;
     }
-    return tabId;
+    let tabId = sessionStorage.getItem('metalist_tab_id');
+    if (tabId === null || tabId === '') {
+        tabId = createUuid();
+        sessionStorage.setItem('metalist_tab_id', tabId);
+    }
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('Invalid browser tab identity');
+    }
+    // Storage preserves identity across reloads; the initialized page owns it
+    // for all requests. Losing/changing storage cannot rotate a logged-in ID.
+    sessionIdentity.tabId = tabId;
+}
+
+export function getRequiredTabId() {
+    if (sessionIdentity.tabId === null) {
+        throw new Error('Browser session identity has not been initialized');
+    }
+    return sessionIdentity.tabId;
 }
 
 

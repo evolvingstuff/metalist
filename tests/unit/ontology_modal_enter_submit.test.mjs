@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { initializeSessionIdentity } from '../../app/static/js/modules/session-auth.js';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 
 
@@ -21,6 +22,7 @@ for (const operation of ['refreshTagSearch', 'setFocusTag']) {
         globalThis.document = { getElementById: () => null };
         t.after(() => { globalThis.document = originalDocument; browserSessionValues.delete('metalist_tab_id'); });
         browserSessionValues.set('metalist_tab_id', 'test-tab');
+        initializeSessionIdentity();
         t.mock.method(globalThis, 'fetch', async () => ({ok:false, json:async () => ({detail:'Request rejected'})}));
         const modal = new OntologyModal();
         const state = ApplicationState.createFields(`ontology-error-${operation}`, {error:null});
