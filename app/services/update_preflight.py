@@ -16,6 +16,7 @@ from app.services.namespace_switcher import NamespaceLaunchProcess
 from app.services.namespace_switcher import _stop_failed_namespace_launch
 from app.services.namespace_switcher import _wait_for_namespace_ready
 from app.services.windows_process_control import stop_process_tree as stop_windows_process_tree
+from app.services.update_installer import resolve_update_installer
 
 
 def _run_checked(command: list[str], *, environ: Mapping[str, str], directory: Path) -> str:
@@ -92,6 +93,9 @@ def prepare_update(*, uv_executable: str, target_version: str,
     python = str(Path(sys._base_executable).resolve())
     if not Path(python).is_file():
         raise RuntimeError("The current base Python interpreter is missing; MetaList was not stopped")
+    uv_executable = resolve_update_installer(
+        uv_executable=uv_executable, platform_name=sys.platform, environ=environ,
+    )
     print(f"Checking MetaList v{target_version} installation and startup with Python {sys.version.split()[0]}...", flush=True)
     with TemporaryDirectory(prefix="metalist-update-check-") as temporary:
         directory = Path(temporary)

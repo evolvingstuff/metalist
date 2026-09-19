@@ -40,6 +40,27 @@ Every third-party Action now uses the full commit obtained from its official rep
 
 ## Updating dependencies
 
+### Windows update installer
+
+`app/services/update_installer.py` pins official [uv 0.12.17](https://github.com/astral-sh/uv/releases/tag/0.12.17)
+Windows x86_64, aarch64, and i686 release archives and extracted `uv.exe` files by
+SHA-256. Archive hashes were compared with the official release asset digests;
+binary hashes were computed from those verified archives. Only `uv.exe` is read
+from each archive. The minimum compatible existing version is 0.12.13, whose
+[upstream change](https://github.com/astral-sh/uv/pull/18713) replaced temporary
+Windows PE-resource editing with in-memory editing. Existing newer installers
+are used unchanged. This avoids the reported operation; it does not establish
+which software denied that operation on the affected computer.
+
+This optional Windows download is separate from the Python dependency lock and
+must be reviewed when changing the pinned version, official URLs, or either hash.
+The old uv pin remains in CI intentionally, so Windows update tests exercise
+automatic selection. The recovery test also pins the published MetaList 0.7.1
+wheel URL and SHA-256 in `scripts/smoke_self_update.py`; it uses the actual old
+updater code rather than substituting the candidate's updater.
+
+### Locked Python and browser dependencies
+
 1. Review maintainer release notes/advisories and change the relevant exact requirement in `pyproject.toml`. Resolve with `uv lock`; review the resulting graph changes. Runtime dependencies, developer extras, and release tools have distinct roles.
 2. Regenerate both exports (uv version is pinned in the release group):
 

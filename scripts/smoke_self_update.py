@@ -1,7 +1,8 @@
 """Run the real updater against a local release index and disposable uv installation.
 
-The old-version fixture contains the candidate's updater, so this tests the update
-mechanism being released, not an already-published updater we cannot change.
+The ordinary old-version fixture contains the candidate's updater. The Windows
+repair variant uses the published 0.7.1 wheel, changing only its release-metadata
+URL to our disposable index, and invokes the extracted standalone repair ZIP.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.request import urlopen
 import zipfile
 
 import httpx
@@ -33,27 +35,43 @@ _SMOKE_SPEC = importlib.util.spec_from_file_location("installed_smoke", Path(__f
 assert _SMOKE_SPEC is not None and _SMOKE_SPEC.loader is not None
 smoke = importlib.util.module_from_spec(_SMOKE_SPEC)
 _SMOKE_SPEC.loader.exec_module(smoke)
+_REPAIR_SPEC = importlib.util.spec_from_file_location("repair_archive", Path(__file__).with_name("build_windows_update_repair.py"))
+assert _REPAIR_SPEC is not None and _REPAIR_SPEC.loader is not None
+repair_archive = importlib.util.module_from_spec(_REPAIR_SPEC)
+_REPAIR_SPEC.loader.exec_module(repair_archive)
+REPAIR_BASELINE_VERSION = "0.7.1"
+REPAIR_BASELINE_URL = "https://files.pythonhosted.org/packages/05/a1/11778f70740ff305d47c2e194b267f3ec6e57f0db0b2c25a19f7072ec47e/metalist-0.7.1-py3-none-any.whl"
+REPAIR_BASELINE_SHA256 = "3e14d8d0d16408e4092cbf10a37432c0c19c71a8bc1867e9a67bacc7fe7d8137"
 
 
-def _old_version_fixture(wheel: Path, directory: Path, metadata_url: str) -> Path:
+def _old_version_fixture(wheel: Path, directory: Path, metadata_url: str, *, repair: bool) -> Path:
     version = importlib.metadata.version("metalist")
-    with zipfile.ZipFile(wheel) as archive:
+    fixture_version = "0.0.0"
+    wheel_body = wheel.read_bytes()
+    if repair:
+        with urlopen(REPAIR_BASELINE_URL, timeout=120) as response:
+            wheel_body = response.read()
+        assert hashlib.sha256(wheel_body).hexdigest() == REPAIR_BASELINE_SHA256
+        version = fixture_version = REPAIR_BASELINE_VERSION
+    with zipfile.ZipFile(io.BytesIO(wheel_body)) as archive:
         members = {name: archive.read(name) for name in archive.namelist() if not name.endswith("/RECORD")}
-    members = {name.replace(f"metalist-{version}", "metalist-0.0.0"): body for name, body in members.items()}
-    metadata = "metalist-0.0.0.dist-info/METADATA"
-    members[metadata] = members[metadata].replace(f"Version: {version}\n".encode(), b"Version: 0.0.0\n", 1)
-    members["app/version.py"] = b'__version__ = "0.0.0"\n'
+    if not repair:
+        members = {name.replace(f"metalist-{version}", f"metalist-{fixture_version}"): body for name, body in members.items()}
+        metadata = f"metalist-{fixture_version}.dist-info/METADATA"
+        members[metadata] = members[metadata].replace(f"Version: {version}\n".encode(), b"Version: 0.0.0\n", 1)
+        members["app/version.py"] = b'__version__ = "0.0.0"\n'
     updater = "app/services/self_update.py"
+    assert members[updater].count(b'https://pypi.org/pypi/metalist/json') == 1
     members[updater] = members[updater].replace(b'https://pypi.org/pypi/metalist/json', metadata_url.encode())
     record = io.StringIO(newline="")
     writer = csv.writer(record)
     for name, body in members.items():
         digest = base64.urlsafe_b64encode(hashlib.sha256(body).digest()).rstrip(b"=").decode()
         writer.writerow((name, "sha256=" + digest, len(body)))
-    record_name = "metalist-0.0.0.dist-info/RECORD"
+    record_name = f"metalist-{fixture_version}.dist-info/RECORD"
     writer.writerow((record_name, "", ""))
     members[record_name] = record.getvalue().encode()
-    fixture = directory / "metalist-0.0.0-py3-none-any.whl"
+    fixture = directory / f"metalist-{fixture_version}-py3-none-any.whl"
     with zipfile.ZipFile(fixture, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, body in members.items():
             archive.writestr(name, body)
@@ -78,11 +96,25 @@ def _has_updated_namespace(*, port: int, namespace: str, version: str) -> bool:
     return status["namespace"] == namespace and status["version"] == version
 
 
-def run(wheel: Path) -> None:
+def _repair_command(directory: Path) -> list[str]:
+    assert sys.platform == "win32", "Repair launcher requires Windows"
+    archive_path = directory / "repair.zip"
+    repair_archive.build_repair_archive(archive_path)
+    extracted = directory / "Repair MetaList"
+    with zipfile.ZipFile(archive_path) as archive:
+        archive.extractall(extracted)  # The archive was built from this checkout above.
+    return ["cmd.exe", "/d", "/c", str(extracted / "Repair-MetaList.cmd")]
+
+
+def run(wheel: Path, *, repair: bool) -> None:
     assert sys.flags.isolated, "Use python -I"
+    assert not repair or sys.platform == "win32", "Repair launcher requires Windows"
     uv = shutil.which("uv")
     assert uv is not None
     version = importlib.metadata.version("metalist")
+    old_version = "0.0.0"
+    if repair:
+        old_version = REPAIR_BASELINE_VERSION
     wheel_body = wheel.read_bytes()
     digest = hashlib.sha256(wheel_body).hexdigest()
 
@@ -128,8 +160,14 @@ def run(wheel: Path) -> None:
             UV_INDEX=index_url + "/simple", METALIST_DATA_DIRECTORY=str(directory / "data"),
             METALIST_ENVIRONMENT="production", PYTHONUNBUFFERED="1", PYTHONUTF8="1", TEST_MODE="0",
         )
-        fixture = _old_version_fixture(wheel, directory, index_url + "/pypi/metalist/json")
+        fixture = _old_version_fixture(wheel, directory, index_url + "/pypi/metalist/json", repair=repair)
         executable = directory / "bin" / ("metalist.exe" if os.name == "nt" else "metalist")
+        environment["PATH"] = str(executable.parent) + os.pathsep + environment["PATH"]
+        if sys.platform == "win32":
+            environment["LOCALAPPDATA"] = str(directory / "local-app-data")
+        update_command = [str(executable), "update"]
+        if repair:
+            update_command = _repair_command(directory)
         profiles = smoke._profiles_with_free_ports()
         log_path = directory / "update.log"
         with log_path.open("w", encoding="utf-8") as log:
@@ -143,12 +181,14 @@ def run(wheel: Path) -> None:
                 tls_context = ssl.create_default_context(cafile=str(certificate))
                 for namespace, port, https_port in profiles:
                     smoke._verify_namespace(host="127.0.0.1", namespace=namespace, http_port=port, https_port=https_port,
-                                            version="0.0.0", tls_context=tls_context)
+                                            version=old_version, tls_context=tls_context)
                 lan_host = smoke._verify_remembered_network_settings(
                     executable=executable, environment=environment, directory=directory,
-                    profiles=profiles, version='0.0.0', tls_context=tls_context, log=log)
-                subprocess.run([str(executable), "update"], env=environment, cwd=directory, stdout=log,
-                               stderr=subprocess.STDOUT, check=True, timeout=600)
+                    profiles=profiles, version=old_version, tls_context=tls_context, log=log)
+                subprocess.run(update_command, env=environment, cwd=directory, stdout=log,
+                               stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=True, timeout=600)
+                if sys.platform == "win32":
+                    assert list((directory / "local-app-data/MetaList/update-tools").glob("uv-*/uv.exe")), "Old uv must be replaced for the update"
                 deadline = time.monotonic() + 300
                 while time.monotonic() < deadline:
                     ready = 0
@@ -170,6 +210,8 @@ def run(wheel: Path) -> None:
                 python = scripts / ("python.exe" if os.name == "nt" else "python")
                 identity = subprocess.check_output([str(python), "-I", "-c", "import sys,json; print(json.dumps(list(sys.version_info[:2])))"], text=True)
                 assert json.loads(identity) == list(sys.version_info[:2]), identity
+                if repair:
+                    smoke._verify_edge_startup(directory=directory, certificate=certificate, host=lan_host, profiles=profiles)
                 print(f"Real uv update, backups, offline installation, interpreter preservation, and two-namespace restart passed on {sys.platform} Python {sys.version.split()[0]}.")
             finally:
                 log.flush()
@@ -182,5 +224,8 @@ def run(wheel: Path) -> None:
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 2, "Expected built wheel path"
-    run(Path(sys.argv[1]).resolve())
+    assert len(sys.argv) in (2, 3), "Expected built wheel path and optional --repair"
+    is_repair = len(sys.argv) == 3
+    if is_repair:
+        assert sys.argv[2] == "--repair"
+    run(Path(sys.argv[1]).resolve(), repair=is_repair)

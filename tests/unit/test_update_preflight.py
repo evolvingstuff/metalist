@@ -9,6 +9,33 @@ import pytest
 from app.services import update_preflight
 
 
+@pytest.fixture(autouse=True)
+def isolate_installer_selection(monkeypatch):
+    monkeypatch.setattr(update_preflight, "resolve_update_installer", lambda **kwargs: kwargs["uv_executable"])
+
+
+def test_windows_update_uses_compatible_installer_before_any_package_install(monkeypatch):
+    calls = []
+    monkeypatch.setattr(update_preflight.sys, "platform", "win32")
+    monkeypatch.setattr(update_preflight, "resolve_update_installer",
+                        lambda **kwargs: "verified-fixed-uv", raising=False)
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[:3] == ["old-uv", "tool", "install"]:
+            raise RuntimeError("Failed to update Windows PE resources: uv-trampoline.exe: Access is denied")
+        if "-c" in command:
+            return json.dumps([list(sys.version_info[:2]), "0.7.2"])
+        if "freeze" in command:
+            return "metalist==0.7.2\nhttpx==0.28.1\n"
+        return ""
+
+    monkeypatch.setattr(update_preflight, "_run_checked", run)
+    monkeypatch.setattr(update_preflight, "_probe_candidate", lambda **kwargs: None)
+    command = update_preflight.prepare_update(uv_executable="old-uv", target_version="0.7.2", environ={})
+    assert calls[0][0] == command[0] == "verified-fixed-uv"
+
+
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
 def test_preflight_pins_current_python_isolates_tools_and_freezes_tested_dependencies(monkeypatch, platform):
     calls = []

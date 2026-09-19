@@ -133,13 +133,13 @@ jobs:
         run: python -I "${{ github.workspace }}/scripts/smoke_installed_package.py"
 
       - name: Set up Node for required Edge validation
-        if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
+        if: matrix.os == 'windows-latest' && (matrix.python-version == '3.12' || matrix.python-version == '3.13')
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
       - name: Install locked Edge driver without install scripts
-        if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
+        if: matrix.os == 'windows-latest' && (matrix.python-version == '3.12' || matrix.python-version == '3.13')
         run: npm ci --prefix scripts/browser-validation --ignore-scripts --no-audit --no-fund
 
       - name: Require actual Edge startup over non-loopback HTTPS
@@ -167,6 +167,24 @@ jobs:
           wheels = list((root / 'dist').glob('*.whl'));
           assert len(wheels) == 1;
           subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0])])"
+
+      - name: Test Windows repair launcher from published MetaList 0.7.1
+        if: matrix.os == 'windows-latest' && matrix.python-version == '3.13'
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python -I -c "import os, pathlib, subprocess, sys;
+          root = pathlib.Path(os.environ['GITHUB_WORKSPACE']);
+          wheels = list((root / 'dist').glob('*.whl'));
+          assert len(wheels) == 1;
+          subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0]), '--repair'])"
+
+      - name: Preserve Edge results after Windows repair upgrade
+        if: always() && matrix.os == 'windows-latest' && matrix.python-version == '3.13'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: edge-after-repair-upgrade
+          path: ${{ runner.temp }}/metalist-edge-results/
+          if-no-files-found: error
 
   publish:
     needs: [build, smoke]

@@ -38,3 +38,39 @@ The standalone storage audit reads live namespace databases and reports metadata
 ## Release and platform limits
 
 Local macOS tests cover injected storage errors, interrupted processes, rollback, actual browser restore/restart, and archive immutability. They do not simulate physical power loss or establish Windows/Linux behavior. Every release candidate still requires the exact-commit platform matrix described in [release controls](supply-chain.md#release-validation).
+
+## Windows updater PE-resource failure
+
+The September 19 report failed during uv's disposable candidate installation:
+`Failed to update Windows PE resources: ...uv-trampoline.exe: Access is denied`.
+The updater had not stopped live namespaces or changed the installed package.
+This is separate from the preceding missing-tab-identity login failure, whose
+original trigger remains unconfirmed. A denied file operation does not identify
+which Windows component denied it.
+
+`app/services/update_installer.py` selects a private, verified uv 0.12.17 when
+Windows has uv older than 0.12.13. The official upstream change replaced temporary
+PE-resource editing with in-memory editing. The same selected executable performs
+both preflight and the final offline install. Cache files live under
+`%LOCALAPPDATA%\MetaList\update-tools`, outside namespace backups. Archive and
+executable SHA-256 values must match before execution; cached executables are
+verified again on reuse. Download, verification, and version failures abort before
+MetaList is stopped. See [installer provenance](supply-chain.md#windows-update-installer).
+
+An old installed updater cannot gain this fix merely by publishing a new wheel.
+Build a standalone repair ZIP with `.venv/bin/python scripts/build_windows_update_repair.py <new-output.zip>`.
+After extraction, `Repair-MetaList.cmd` locates the existing tool's Python and runs
+the same production installer-selection module. It prepends the verified uv only
+to the child updater's PATH, then invokes the existing `metalist update`. Existing
+preflight, backup, shutdown, installation, and restart behavior remain in charge.
+It requires neither administrator privileges nor changes to security settings.
+
+Validation: unit coverage checks installer selection, failure propagation,
+checksum rejection, and the child environment. The required Windows/Python 3.13
+CI leg installs the hash-pinned published 0.7.1 wheel (only its release-metadata URL
+is redirected to the test index), extracts and runs the repair ZIP, verifies the
+upgrade/backups/restarts, and exercises Edge login afterward. Edge covers ordinary
+encrypted login and deliberately removes the stored tab ID after a successful
+login response to verify hydration still completes with the original identity.
+The new Windows checks have not run for this uncommitted candidate; the repair
+launcher must not be presented as Windows-validated yet.
