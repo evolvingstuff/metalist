@@ -76,17 +76,11 @@ def schedule_self_update(
             message=message,
         )
 
-    uv_executable = shutil.which("uv")
-    if uv_executable is None:
-        raise RuntimeError("uv executable was not found on PATH; MetaList was not stopped")
-
     if platform_name == "win32":
         _resolve_windows_powershell()
     elif not Path("/bin/sh").is_file():
         raise RuntimeError("/bin/sh is required for MetaList self-update; MetaList was not stopped")
-    install_command = _prepare_update(
-        uv_executable=uv_executable, target_version=target_version, environ=environ,
-    )
+    install_command = _prepare_update(target_version=target_version, environ=environ)
     updater_command: list[str]
     updater_options: dict[str, object]
     if platform_name == "win32":

@@ -12,6 +12,10 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Current development
+
+- Updates use a private, checksum-verified uv release on Windows, macOS, and Linux. The updater does not execute a user-installed uv, and it revalidates both the cached official archive and extracted executable before each use.
+
 ## Changes in 0.7.3
 
 - Windows updates use a private verified uv release when an older installer is vulnerable to the reported PE-resource access-denied failure. A standalone repair ZIP can bootstrap installations whose existing updater cannot update itself.
@@ -116,7 +120,7 @@ metalist update
 ```
 The updater checks the installed version against the latest PyPI release first. If MetaList is already current, it reports the installed version and leaves all running namespaces untouched. When an update is available, it checks installer prerequisites and uses uv to install the candidate into a disposable tool environment with the current base Python interpreter. It checks dependencies and starts a temporary namespace to verify HTTP readiness, version, and runtime assets. A failed preflight leaves the current installation and running namespaces unchanged. After preflight succeeds, it stops running namespaces, and creates and verifies a new backup of every namespace before installation can begin. Each archive includes the complete notes/settings database, the attachments database when present, and any legacy search-history database. Locked namespaces are backed up with their encrypted data and key metadata intact, without requiring a password.
 
-On Windows, the updater checks uv before installing packages. Versions older than 0.12.13 use a temporary PE-resource editing operation that can fail with `uv-trampoline.exe: Access is denied`. This checkout selects a private, checksum-verified uv 0.12.17 for those installations, keeping the same installer through preflight and final installation. It does not replace global uv. Already-installed MetaList releases retain their own updater code; the standalone repair launcher described in [recovery](docs/security/recovery.md#windows-updater-pe-resource-failure) supplies the compatible installer to that existing updater.
+MetaList downloads its own checksum-verified uv 0.12.17 archive for the current operating system, architecture, and Linux C library. The verified archive and extracted executable are stored in the operating system's user cache; every update verifies the archive against its pinned upstream SHA-256 and the executable against the verified archive before use. That same executable performs both preflight and final installation. MetaList does not execute or replace the user's global uv. Download, verification, platform-selection, or version failures occur before any namespace is stopped. Already-installed releases retain their own updater code; the standalone repair launcher described in [recovery](docs/security/recovery.md#windows-updater-pe-resource-failure) supplies this managed installer to an older Windows updater.
 
 Backups are saved to `~/MetaList/namespaces/<namespace>/backups/<namespace>-<timestamp>.metalist-backup.tar.gz`; the updater prints each verified path. Existing backups remain unchanged and are not pruned. If any backup fails, the update aborts with the current installation intact; run `metalist` to restart the stopped servers after resolving the failure.
 

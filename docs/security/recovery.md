@@ -48,14 +48,16 @@ This is separate from the preceding missing-tab-identity login failure, whose
 original trigger remains unconfirmed. A denied file operation does not identify
 which Windows component denied it.
 
-`app/services/update_installer.py` selects a private, verified uv 0.12.17 when
-Windows has uv older than 0.12.13. The official upstream change replaced temporary
-PE-resource editing with in-memory editing. The same selected executable performs
-both preflight and the final offline install. Cache files live under
-`%LOCALAPPDATA%\MetaList\update-tools`, outside namespace backups. Archive and
-executable SHA-256 values must match before execution; cached executables are
-verified again on reuse. Download, verification, and version failures abort before
-MetaList is stopped. See [installer provenance](supply-chain.md#windows-update-installer).
+`app/services/update_installer.py` always selects MetaList's private, verified uv
+0.12.17 on Windows, macOS, and Linux; it never executes the user's global uv. The
+official upstream Windows change replaced temporary PE-resource editing with
+in-memory editing. The same managed executable performs both preflight and the
+final offline install. Cache files live under `%LOCALAPPDATA%\MetaList\update-tools`
+on Windows, `~/Library/Caches/MetaList/update-tools` on macOS, and the XDG user
+cache on Linux, outside namespace backups. The official archive must match its
+pinned upstream SHA-256, and the executable must match the verified archive before
+every use. Download, verification, platform-selection, and exact-version failures
+abort before MetaList is stopped. See [installer provenance](supply-chain.md#managed-update-installer).
 
 An old installed updater cannot gain this fix merely by publishing a new wheel.
 Build a standalone repair ZIP with `.venv/bin/python scripts/build_windows_update_repair.py <new-output.zip>`.

@@ -44,6 +44,23 @@ REPAIR_BASELINE_URL = "https://files.pythonhosted.org/packages/05/a1/11778f70740
 REPAIR_BASELINE_SHA256 = "3e14d8d0d16408e4092cbf10a37432c0c19c71a8bc1867e9a67bacc7fe7d8137"
 
 
+def _path_without_uv(path_value: str) -> str:
+    retained = []
+    if os.name == "nt":
+        executable_name = "uv.exe"
+    else:
+        executable_name = "uv"
+    for directory_text in path_value.split(os.pathsep):
+        assert directory_text != "", "Release smoke PATH entries must be explicit"
+        if (Path(directory_text) / executable_name).is_file():
+            continue
+        retained.append(directory_text)
+    assert retained, "Release smoke requires a PATH after removing global uv"
+    filtered = os.pathsep.join(retained)
+    assert shutil.which("uv", path=filtered) is None
+    return filtered
+
+
 def _old_version_fixture(wheel: Path, directory: Path, metadata_url: str, *, repair: bool) -> Path:
     version = importlib.metadata.version("metalist")
     fixture_version = "0.0.0"
@@ -161,6 +178,10 @@ def run(wheel: Path, *, repair: bool) -> None:
             UV_INDEX=index_url + "/simple", METALIST_DATA_DIRECTORY=str(directory / "data"),
             METALIST_ENVIRONMENT="production", PYTHONUNBUFFERED="1", PYTHONUTF8="1", TEST_MODE="0",
         )
+        if sys.platform == "linux":
+            environment["XDG_CACHE_HOME"] = str(directory / "cache")
+        elif sys.platform == "darwin":
+            environment["HOME"] = str(directory / "home")
         fixture = _old_version_fixture(wheel, directory, index_url + "/pypi/metalist/json", repair=repair)
         executable = directory / "bin" / ("metalist.exe" if os.name == "nt" else "metalist")
         environment["PATH"] = str(executable.parent) + os.pathsep + environment["PATH"]
@@ -175,6 +196,8 @@ def run(wheel: Path, *, repair: bool) -> None:
             try:
                 subprocess.run([uv, "tool", "install", "--python", sys._base_executable, str(fixture)],
                                env=environment, cwd=launch_directory, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
+                if not repair:
+                    environment["PATH"] = _path_without_uv(environment["PATH"])
                 smoke._seed_namespaces(directory=launch_directory, environment=environment, profiles=profiles)
                 subprocess.run([str(executable)], env=environment, cwd=launch_directory, stdout=log,
                                stderr=subprocess.STDOUT, check=True, timeout=300)
@@ -189,7 +212,18 @@ def run(wheel: Path, *, repair: bool) -> None:
                 subprocess.run(update_command, env=environment, cwd=launch_directory, stdout=log,
                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=True, timeout=600)
                 if sys.platform == "win32":
-                    assert list((directory / "local-app-data/MetaList/update-tools").glob("uv-*/uv.exe")), "Old uv must be replaced for the update"
+                    managed_installers = list(
+                        (directory / "local-app-data/MetaList/update-tools").glob("uv-*/uv.exe")
+                    )
+                elif sys.platform == "darwin":
+                    managed_installers = list(
+                        (directory / "home/Library/Caches/MetaList/update-tools").glob("uv-*/uv")
+                    )
+                else:
+                    managed_installers = list(
+                        (directory / "cache/metalist/update-tools").glob("uv-*/uv")
+                    )
+                assert managed_installers, "The update must use MetaList's managed uv"
                 deadline = time.monotonic() + 300
                 while time.monotonic() < deadline:
                     ready = 0

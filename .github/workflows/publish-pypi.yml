@@ -180,7 +180,7 @@ jobs:
           path: ${{ runner.temp }}/metalist-browser-results/
           if-no-files-found: error
 
-      - name: Install pinned uv for real self-update validation
+      - name: Install pinned fixture uv for real self-update validation
         working-directory: ${{ runner.temp }}
         run: python -I -m pip install --require-hashes --no-deps -r "${{ github.workspace }}/requirements/updater.txt"
 

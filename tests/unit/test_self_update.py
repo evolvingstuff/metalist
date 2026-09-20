@@ -19,8 +19,8 @@ def _isolate_update_backups(monkeypatch, tmp_path: Path) -> None:
         return actual_is_file(path)
 
     monkeypatch.setattr(self_update.Path, "is_file", _platform_file_exists)
-    monkeypatch.setattr(self_update, "_prepare_update", lambda *, uv_executable, target_version, environ: [
-        uv_executable, "tool", "install", "--force", "--offline", "--python", "/base/python3.14",
+    monkeypatch.setattr(self_update, "_prepare_update", lambda *, target_version, environ: [
+        "/managed/uv", "tool", "install", "--force", "--offline", "--python", "/base/python3.14",
         "--compile-bytecode", f"metalist=={target_version}",
     ])
     def _unexpected_backup(**kwargs):
@@ -86,7 +86,7 @@ def test_schedule_posix_self_update_stops_servers_then_hands_off_to_shell(
     command, kwargs = popen_calls[0]
     assert command[:2] == [str(Path("/bin/sh")), "-c"]
     assert "kill -0 4321" in command[2]
-    assert "/opt/homebrew/bin/uv tool install --force --offline --python /base/python3.14 --compile-bytecode metalist==0.3.13" in command[2]
+    assert "/managed/uv tool install --force --offline --python /base/python3.14 --compile-bytecode metalist==0.3.13" in command[2]
     assert "/Users/example/.local/bin/metalist" in command[2]
     assert "MetaList updated to v0.3.13." in command[2]
     assert kwargs["start_new_session"] is True
@@ -145,6 +145,7 @@ def test_schedule_windows_self_update_uses_external_powershell_console(
         "-Command",
     ]
     assert "Get-Process -Id 9876" in command[5]
+    assert "& '/managed/uv'" in command[5]
     assert "'tool' 'install' '--force' '--offline' '--python' '/base/python3.14' '--compile-bytecode' 'metalist==0.3.13'" in command[5]
     assert "metalist.exe" in command[5]
     assert "MetaList updated to v0.3.13." in command[5]
@@ -268,23 +269,27 @@ def test_backup_programming_errors_propagate_without_being_reclassified(
     assert caught.value is programming_error
 
 
-def test_schedule_self_update_refuses_to_stop_servers_without_uv(monkeypatch) -> None:
+def test_schedule_self_update_does_not_require_global_uv(
+    monkeypatch, successful_backups,
+) -> None:
     monkeypatch.setattr(self_update, "_fetch_latest_pypi_version", lambda: "0.3.13")
     monkeypatch.setattr(self_update.shutil, "which", lambda command: None)
+    monkeypatch.setattr(self_update, "stop_all_namespace_processes_for_update", lambda: 1)
+    launches = []
     monkeypatch.setattr(
-        self_update,
-        "stop_all_namespace_processes_for_update",
-        lambda: (_ for _ in ()).throw(AssertionError("servers must remain running")),
+        self_update.subprocess, "Popen", lambda command, **kwargs: launches.append(command),
     )
 
-    with pytest.raises(RuntimeError, match="uv executable was not found"):
-        self_update.schedule_self_update(
-            current_version="0.3.12",
-            metalist_executable="/Users/example/.local/bin/metalist",
-            current_pid=os.getpid(),
-            platform_name="linux",
-            environ={},
-        )
+    result = self_update.schedule_self_update(
+        current_version="0.3.12",
+        metalist_executable="/Users/example/.local/bin/metalist",
+        current_pid=os.getpid(),
+        platform_name="linux",
+        environ={},
+    )
+    assert result.update_scheduled is True
+    assert len(launches) == 1
+    assert "/managed/uv" in launches[0][2]
 
 
 def test_schedule_posix_self_update_refuses_to_stop_servers_without_shell(monkeypatch) -> None:

@@ -40,24 +40,28 @@ Every third-party Action now uses the full commit obtained from its official rep
 
 ## Updating dependencies
 
-### Windows update installer
+### Managed update installer
 
 `app/services/update_installer.py` pins official [uv 0.12.17](https://github.com/astral-sh/uv/releases/tag/0.12.17)
-Windows x86_64, aarch64, and i686 release archives and extracted `uv.exe` files by
-SHA-256. Archive hashes were compared with the official release asset digests;
-binary hashes were computed from those verified archives. Only `uv.exe` is read
-from each archive. The minimum compatible existing version is 0.12.13, whose
-[upstream change](https://github.com/astral-sh/uv/pull/18713) replaced temporary
-Windows PE-resource editing with in-memory editing. Existing newer installers
-are used unchanged. This avoids the reported operation; it does not establish
-which software denied that operation on the affected computer.
+archives for supported Windows, macOS, and Linux target triples by SHA-256. The
+hashes match the official release's `sha256.sum`. Only the target archive's exact
+`uv`/`uv.exe` member is read. The verified archive remains in MetaList's private
+user cache; the extracted executable must equal those trusted bytes before every
+use and must report exactly 0.12.17. The user's global uv is neither executed nor
+replaced. Windows uv 0.12.13 contained the
+[upstream change](https://github.com/astral-sh/uv/pull/18713) that replaced temporary
+PE-resource editing with in-memory editing; the pinned 0.12.17 includes that fix.
+This avoids the reported operation but does not establish which software denied it
+on the affected computer.
 
-This optional Windows download is separate from the Python dependency lock and
-must be reviewed when changing the pinned version, official URLs, or either hash.
-The old uv pin remains in CI intentionally, so Windows update tests exercise
-automatic selection. The recovery test also pins the published MetaList 0.7.1
-wheel URL and SHA-256 in `scripts/smoke_self_update.py`; it uses the actual old
-updater code rather than substituting the candidate's updater.
+This required updater download is separate from the Python dependency lock and
+must be reviewed when changing the pinned version, official URLs, target coverage,
+or archive hashes. Release smoke tests isolate the managed cache and require its
+executable on every operating system; the older hash-locked fixture uv only creates
+the disposable starting installation and is removed from `PATH` before an ordinary
+update begins. The recovery test also pins the published
+MetaList 0.7.1 wheel URL and SHA-256 in `scripts/smoke_self_update.py`; it uses the
+actual old updater code rather than substituting the candidate's updater.
 
 ### Locked Python and browser dependencies
 
