@@ -261,7 +261,7 @@ def _browser_candidates(*, browser_name: str) -> list[Path]:
             if (executable := shutil.which(name)) is not None]
 
 
-def _verify_browser_startup(*, directory: Path, certificate: Path, host: str,
+def _verify_browser_startup(*, certificate: Path, host: str,
                             profiles: list[tuple[str, int, int]], browser_name: str,
                             use_https: bool) -> None:
     assert os.environ['RUNNER_ENVIRONMENT'] == 'github-hosted', 'Release browser validation requires a disposable GitHub-hosted runner'
@@ -292,8 +292,11 @@ def _verify_browser_startup(*, directory: Path, certificate: Path, host: str,
             urls = [f'https://{host}:{https_port}' for _, _, https_port in profiles]
         else:
             urls = [f'http://{host}:{http_port}' for _, http_port, _ in profiles]
+        # Browser helper processes can outlive the Node controller briefly on
+        # Windows. Keep their inherited working directory outside the disposable
+        # installed-package fixture so that delay cannot block fixture cleanup.
         subprocess.run([node, str(script), browser_name, str(executable), str(output_directory), *urls],
-                       cwd=directory, check=True, timeout=240)
+                       cwd=script.parent, check=True, timeout=240)
         diagnostics['passed'] = True
     finally:
         try:
@@ -376,12 +379,12 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -
                     profiles=profiles, version=distribution.version, tls_context=tls_context, log=log)
                 for browser_name in browsers:
                     _verify_browser_startup(
-                        directory=directory, certificate=certificate, host='127.0.0.1', profiles=profiles,
+                        certificate=certificate, host='127.0.0.1', profiles=profiles,
                         browser_name=browser_name, use_https=False,
                     )
                 for browser_name in https_browsers:
                     _verify_browser_startup(
-                        directory=directory, certificate=certificate, host=browser_host, profiles=profiles,
+                        certificate=certificate, host=browser_host, profiles=profiles,
                         browser_name=browser_name, use_https=True,
                     )
                 is_successful = True

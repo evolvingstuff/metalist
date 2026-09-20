@@ -213,11 +213,11 @@ def run(wheel: Path, *, repair: bool) -> None:
                 if repair:
                     for browser_name in ('chrome', 'firefox'):
                         smoke._verify_browser_startup(
-                            directory=directory, certificate=certificate, host='127.0.0.1', profiles=profiles,
+                            certificate=certificate, host='127.0.0.1', profiles=profiles,
                             browser_name=browser_name, use_https=False,
                         )
                     smoke._verify_browser_startup(
-                        directory=directory, certificate=certificate, host=lan_host, profiles=profiles,
+                        certificate=certificate, host=lan_host, profiles=profiles,
                         browser_name='edge', use_https=True,
                     )
                 print(f"Real uv update, backups, offline installation, interpreter preservation, and two-namespace restart passed on {sys.platform} Python {sys.version.split()[0]}.")
