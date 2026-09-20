@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 from pathlib import Path
 import tarfile
 from types import SimpleNamespace
@@ -71,24 +72,22 @@ def test_unsupported_installer_target_fails_loudly(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("platform_name", "environ", "suffix"),
+    ("platform_name", "directory_variable", "relative_parts"),
     [
-        ("win32", {"LOCALAPPDATA": "/private/windows-cache"}, "MetaList/update-tools"),
-        ("darwin", {"HOME": "/private/home"}, "Library/Caches/MetaList/update-tools"),
-        (
-            "linux", {"XDG_CACHE_HOME": "/private/xdg"},
-            "private/xdg/metalist/update-tools",
-        ),
-        ("linux", {"HOME": "/private/home"}, "private/home/.cache/metalist/update-tools"),
+        ("win32", "LOCALAPPDATA", ("MetaList", "update-tools")),
+        ("darwin", "HOME", ("Library", "Caches", "MetaList", "update-tools")),
+        ("linux", "XDG_CACHE_HOME", ("metalist", "update-tools")),
+        ("linux", "HOME", (".cache", "metalist", "update-tools")),
     ],
 )
 def test_managed_installer_uses_operating_system_user_cache(
-    platform_name, environ, suffix,
+    tmp_path, platform_name, directory_variable, relative_parts,
 ):
+    user_directory = tmp_path / directory_variable.casefold()
     cache_root = update_installer._installer_cache_root(
-        platform_name=platform_name, environ=environ,
+        platform_name=platform_name, environ={directory_variable: str(user_directory)},
     )
-    assert cache_root.as_posix().endswith(suffix)
+    assert cache_root == user_directory.joinpath(*relative_parts)
 
 
 @pytest.mark.parametrize("platform_name", ["win32", "darwin", "linux"])
@@ -142,12 +141,22 @@ def test_posix_tar_archive_installs_executable_with_private_permissions(monkeypa
     })
     monkeypatch.setattr(update_installer, "_installer_target", lambda platform_name: target)
     monkeypatch.setattr(update_installer, "_download_installer_archive", lambda name: archive_body)
+    real_chmod = update_installer.os.chmod
+    chmod_calls = []
+
+    def record_chmod(path, mode):
+        chmod_calls.append((Path(path), mode))
+        real_chmod(path, mode)
+
+    monkeypatch.setattr(update_installer.os, "chmod", record_chmod)
     selected = Path(update_installer._managed_installer(
         platform_name="darwin", environ={"HOME": str(tmp_path)},
     ))
     assert selected.read_bytes() == binary
     assert selected.name == "uv"
-    assert selected.stat().st_mode & 0o777 == 0o700
+    assert (selected, 0o700) in chmod_calls
+    if os.name != "nt":
+        assert selected.stat().st_mode & 0o777 == 0o700
 
 
 def test_bad_download_never_publishes_or_executes_installer(
