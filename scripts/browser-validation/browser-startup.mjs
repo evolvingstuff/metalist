@@ -31,8 +31,18 @@ async function checkPage(context, origin, coldRun) {
   const page = await context.newPage();
   const errors = [];
   const scripts = new Set();
+  let navigationInProgress = false;
   page.on('pageerror', error => errors.push(`JavaScript: ${error.message}`));
-  page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
+  page.on('requestfailed', request => {
+    const errorText = request.failure()?.errorText;
+    const isCanceledByNavigation = navigationInProgress
+      && ['NS_BINDING_ABORTED', 'net::ERR_ABORTED'].includes(errorText);
+    if (isCanceledByNavigation) {
+      diagnostics.push({origin, coldRun, ignoredNavigationCancellation: request.url(), errorText});
+      return;
+    }
+    errors.push(`${request.url()}: ${errorText}`);
+  });
   page.on('response', response => {
     const responseUrl = new URL(response.url());
     // A delivered 503 from this optional check is the documented PyPI-outage result.
@@ -48,9 +58,15 @@ async function checkPage(context, origin, coldRun) {
   try {
     for (let reload = 0; reload < 3; reload += 1) {
       scripts.clear();
-      if (reload === 0) await page.goto(origin, {waitUntil: 'domcontentloaded', timeout: 30000});
-      else await page.reload({waitUntil: 'domcontentloaded', timeout: 30000});
-      await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
+      errors.length = 0;
+      navigationInProgress = true;
+      try {
+        if (reload === 0) await page.goto(origin, {waitUntil: 'domcontentloaded', timeout: 30000});
+        else await page.reload({waitUntil: 'domcontentloaded', timeout: 30000});
+        await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
+      } finally {
+        navigationInProgress = false;
+      }
       await page.waitForNetworkIdle({idleTime: 500, timeout: 30000});
       assert(scripts.size > 20, `Expected a real module graph, received ${scripts.size} script URLs`);
       assert.deepEqual(errors, [], `Startup failed for ${origin}`);
