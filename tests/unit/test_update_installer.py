@@ -1,6 +1,7 @@
 import hashlib
 import io
 from pathlib import Path
+import tarfile
 from types import SimpleNamespace
 import zipfile
 
@@ -10,128 +11,230 @@ from app.services import update_installer
 from scripts.build_windows_update_repair import build_repair_archive
 
 
-@pytest.fixture
-def installer_fixture(monkeypatch, tmp_path):
-    binary = b"verified installer fixture"
+def _archive(*, member_name: str, binary: bytes, archive_format: str) -> bytes:
     stream = io.BytesIO()
-    with zipfile.ZipFile(stream, "w") as archive:
-        archive.writestr("uv.exe", binary)
-    archive_body = stream.getvalue()
-    monkeypatch.setattr(update_installer, "WINDOWS_INSTALLERS", {"x86_64": (
-        hashlib.sha256(archive_body).hexdigest(), hashlib.sha256(binary).hexdigest(),
-    )})
-    monkeypatch.setattr(update_installer, "_windows_architecture", lambda: "x86_64")
+    if archive_format == "zip":
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr(member_name, binary)
+    else:
+        with tarfile.open(fileobj=stream, mode="w:gz") as archive:
+            member = tarfile.TarInfo(member_name)
+            member.size = len(binary)
+            archive.addfile(member, io.BytesIO(binary))
+    return stream.getvalue()
+
+
+@pytest.fixture
+def managed_installer_fixture(monkeypatch, tmp_path):
+    binary = b"verified installer fixture"
+    archive_body = _archive(member_name="uv.exe", binary=binary, archive_format="zip")
+    target = "x86_64-pc-windows-msvc"
+    asset_name = f"uv-{target}.zip"
+    monkeypatch.setattr(update_installer, "INSTALLER_ARCHIVE_SHA256", {
+        target: hashlib.sha256(archive_body).hexdigest(),
+    })
+    monkeypatch.setattr(update_installer, "_installer_target", lambda platform_name: target)
     downloads = []
 
-    def download(architecture):
-        downloads.append(architecture)
+    def download(name):
+        downloads.append(name)
         return archive_body
 
     monkeypatch.setattr(update_installer, "_download_installer_archive", download)
-    return {"LOCALAPPDATA": str(tmp_path), "PATH": "original-path"}, binary, downloads
+    environ = {"LOCALAPPDATA": str(tmp_path), "PATH": "original-path"}
+    return environ, binary, archive_body, asset_name, downloads
 
 
-def test_old_windows_installer_is_replaced_privately_before_use(monkeypatch, installer_fixture):
-    environ, binary, downloads = installer_fixture
-    calls = []
+@pytest.mark.parametrize(
+    ("platform_name", "machine", "libc_name", "expected"),
+    [
+        ("win32", "AMD64", "", "x86_64-pc-windows-msvc"),
+        ("win32", "ARM64", "", "aarch64-pc-windows-msvc"),
+        ("darwin", "x86_64", "", "x86_64-apple-darwin"),
+        ("darwin", "arm64", "", "aarch64-apple-darwin"),
+        ("linux", "x86_64", "glibc", "x86_64-unknown-linux-gnu"),
+        ("linux", "aarch64", "musl", "aarch64-unknown-linux-musl"),
+    ],
+)
+def test_installer_target_matches_operating_system_architecture_and_libc(
+    monkeypatch, platform_name, machine, libc_name, expected,
+):
+    monkeypatch.setattr(update_installer.platform, "machine", lambda: machine)
+    monkeypatch.setattr(update_installer.platform, "libc_ver", lambda: (libc_name, "fixture"))
+    assert update_installer._installer_target(platform_name) == expected
 
-    def run(command, **kwargs):
-        assert command[1:] == ["--version"]
-        calls.append(command[0])
-        version = update_installer.INSTALLER_VERSION
-        if command[0] == "old-uv":
-            version = "0.11.23"
-        return SimpleNamespace(stdout=f"uv {version} (fixture 2026-09-19)\n")
 
-    monkeypatch.setattr(update_installer.subprocess, "run", run)
-    selected = update_installer.resolve_update_installer(
-        uv_executable="old-uv", platform_name="win32", environ=environ,
+def test_unsupported_installer_target_fails_loudly(monkeypatch):
+    monkeypatch.setattr(update_installer.platform, "machine", lambda: "mips64")
+    with pytest.raises(RuntimeError, match="Unsupported .* updater platform"):
+        update_installer._installer_target("linux")
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "environ", "suffix"),
+    [
+        ("win32", {"LOCALAPPDATA": "/private/windows-cache"}, "MetaList/update-tools"),
+        ("darwin", {"HOME": "/private/home"}, "Library/Caches/MetaList/update-tools"),
+        (
+            "linux", {"XDG_CACHE_HOME": "/private/xdg"},
+            "private/xdg/metalist/update-tools",
+        ),
+        ("linux", {"HOME": "/private/home"}, "private/home/.cache/metalist/update-tools"),
+    ],
+)
+def test_managed_installer_uses_operating_system_user_cache(
+    platform_name, environ, suffix,
+):
+    cache_root = update_installer._installer_cache_root(
+        platform_name=platform_name, environ=environ,
     )
-    assert Path(selected).read_bytes() == binary
-    assert calls == ["old-uv", selected]
-    assert downloads == ["x86_64"]
+    assert cache_root.as_posix().endswith(suffix)
+
+
+@pytest.mark.parametrize("platform_name", ["win32", "darwin", "linux"])
+def test_update_always_selects_managed_verified_installer(monkeypatch, platform_name):
+    monkeypatch.setattr(
+        update_installer, "_managed_installer",
+        lambda **kwargs: f"managed-{platform_name}-uv",
+    )
+    monkeypatch.setattr(
+        update_installer, "_installer_version",
+        lambda executable, environ: tuple(
+            int(part) for part in update_installer.INSTALLER_VERSION.split(".")
+        ),
+    )
+    assert update_installer.resolve_update_installer(
+        platform_name=platform_name, environ={"PATH": "user-tools"},
+    ) == f"managed-{platform_name}-uv"
+
+
+def test_managed_installer_downloads_once_and_revalidates_cached_bytes(
+    monkeypatch, managed_installer_fixture,
+):
+    environ, binary, archive_body, asset_name, downloads = managed_installer_fixture
+    monkeypatch.setattr(
+        update_installer.subprocess, "run",
+        lambda command, **kwargs: SimpleNamespace(
+            stdout=f"uv {update_installer.INSTALLER_VERSION} (fixture)\n",
+        ),
+    )
+    selected = Path(update_installer.resolve_update_installer(
+        platform_name="win32", environ=environ,
+    ))
+    assert selected.read_bytes() == binary
+    assert next(selected.parent.glob("*.zip")).read_bytes() == archive_body
+    assert downloads == [asset_name]
     assert environ["PATH"] == "original-path"
-    assert update_installer._managed_windows_installer(environ) == selected
-    assert downloads == ["x86_64"], "A verified cached installer needs no redownload"
+    assert update_installer.resolve_update_installer(
+        platform_name="win32", environ=environ,
+    ) == str(selected)
+    assert downloads == [asset_name]
 
 
-@pytest.mark.parametrize("version", [(0, 12, 13), (0, 12, 17), (1, 0, 0)])
-def test_fixed_windows_installer_is_used_without_downloading(monkeypatch, version):
-    monkeypatch.setattr(update_installer, "_installer_version", lambda *args: version)
-    monkeypatch.setattr(update_installer, "_managed_windows_installer", lambda *args: pytest.fail("unexpected download"))
-    assert update_installer.resolve_update_installer(uv_executable="installed-uv", platform_name="win32", environ={}) == "installed-uv"
+def test_posix_tar_archive_installs_executable_with_private_permissions(monkeypatch, tmp_path):
+    binary = b"posix uv fixture"
+    target = "aarch64-apple-darwin"
+    archive_body = _archive(
+        member_name=f"uv-{target}/uv", binary=binary, archive_format="tar",
+    )
+    monkeypatch.setattr(update_installer, "INSTALLER_ARCHIVE_SHA256", {
+        target: hashlib.sha256(archive_body).hexdigest(),
+    })
+    monkeypatch.setattr(update_installer, "_installer_target", lambda platform_name: target)
+    monkeypatch.setattr(update_installer, "_download_installer_archive", lambda name: archive_body)
+    selected = Path(update_installer._managed_installer(
+        platform_name="darwin", environ={"HOME": str(tmp_path)},
+    ))
+    assert selected.read_bytes() == binary
+    assert selected.name == "uv"
+    assert selected.stat().st_mode & 0o777 == 0o700
 
 
-@pytest.mark.parametrize("platform_name", ["darwin", "linux"])
-def test_non_windows_update_keeps_existing_installer(monkeypatch, platform_name):
-    monkeypatch.setattr(update_installer.subprocess, "run", lambda *args, **kwargs: pytest.fail("unexpected probe"))
-    assert update_installer.resolve_update_installer(uv_executable="uv", platform_name=platform_name, environ={}) == "uv"
-
-
-def test_bad_download_never_publishes_or_executes_installer(monkeypatch, installer_fixture):
-    environ, _, _ = installer_fixture
-    monkeypatch.setattr(update_installer, "_download_installer_archive", lambda arch: b"altered archive")
+def test_bad_download_never_publishes_or_executes_installer(
+    monkeypatch, managed_installer_fixture,
+):
+    environ, _, _, _, _ = managed_installer_fixture
+    monkeypatch.setattr(
+        update_installer, "_download_installer_archive", lambda name: b"altered archive",
+    )
     with pytest.raises(RuntimeError, match="Downloaded update installer failed checksum"):
-        update_installer._managed_windows_installer(environ)
+        update_installer._managed_installer(platform_name="win32", environ=environ)
     assert not list(Path(environ["LOCALAPPDATA"]).rglob("uv.exe"))
 
 
-def test_binary_checksum_is_checked_even_when_archive_checksum_matches(monkeypatch, installer_fixture):
-    environ, _, _ = installer_fixture
-    archive_digest, _ = update_installer.WINDOWS_INSTALLERS["x86_64"]
-    monkeypatch.setitem(update_installer.WINDOWS_INSTALLERS, "x86_64", (archive_digest, "0" * 64))
-    with pytest.raises(RuntimeError, match="executable failed checksum"):
-        update_installer._managed_windows_installer(environ)
-    assert not list(Path(environ["LOCALAPPDATA"]).rglob("uv.exe"))
+def test_tampered_cached_archive_is_rejected(managed_installer_fixture):
+    environ, _, _, _, _ = managed_installer_fixture
+    selected = Path(update_installer._managed_installer(
+        platform_name="win32", environ=environ,
+    ))
+    archive_path = next(selected.parent.glob("*.zip"))
+    archive_path.write_bytes(b"tampered archive")
+    with pytest.raises(RuntimeError, match="Cached update installer archive failed checksum"):
+        update_installer._managed_installer(platform_name="win32", environ=environ)
 
 
-def test_managed_installer_must_report_the_pinned_version(monkeypatch, installer_fixture):
-    environ, _, _ = installer_fixture
-    versions = iter(((0, 11, 23), (0, 12, 16)))
-    monkeypatch.setattr(update_installer, "_installer_version", lambda *args: next(versions))
-    with pytest.raises(RuntimeError, match="wrong version"):
-        update_installer.resolve_update_installer(uv_executable="old-uv", platform_name="win32", environ=environ)
-
-
-def test_tampered_cached_binary_is_rejected(installer_fixture):
-    environ, _, _ = installer_fixture
-    path = Path(update_installer._managed_windows_installer(environ))
-    path.write_bytes(b"tampered executable")
+def test_tampered_cached_binary_is_rejected(managed_installer_fixture):
+    environ, _, _, _, _ = managed_installer_fixture
+    selected = Path(update_installer._managed_installer(
+        platform_name="win32", environ=environ,
+    ))
+    selected.write_bytes(b"tampered executable")
     with pytest.raises(RuntimeError, match="Cached update installer failed checksum"):
-        update_installer._managed_windows_installer(environ)
+        update_installer._managed_installer(platform_name="win32", environ=environ)
 
 
-def test_download_failure_propagates_before_any_installer_is_published(monkeypatch, installer_fixture):
-    environ, _, _ = installer_fixture
+def test_managed_installer_must_report_the_pinned_version(
+    monkeypatch, managed_installer_fixture,
+):
+    environ, _, _, _, _ = managed_installer_fixture
+    monkeypatch.setattr(update_installer, "_installer_version", lambda *args: (0, 12, 16))
+    with pytest.raises(RuntimeError, match="wrong version"):
+        update_installer.resolve_update_installer(platform_name="win32", environ=environ)
 
-    def unavailable(architecture):
+
+def test_download_failure_propagates_before_any_installer_is_published(
+    monkeypatch, managed_installer_fixture,
+):
+    environ, _, _, _, _ = managed_installer_fixture
+
+    def unavailable(asset_name):
         raise OSError("network unavailable")
 
     monkeypatch.setattr(update_installer, "_download_installer_archive", unavailable)
     with pytest.raises(OSError, match="network unavailable"):
-        update_installer._managed_windows_installer(environ)
+        update_installer._managed_installer(platform_name="win32", environ=environ)
     assert not list(Path(environ["LOCALAPPDATA"]).rglob("uv.exe"))
 
 
-@pytest.mark.parametrize("stdout", ["", "uv not-a-version", "uv 0.12.13-dev"])
+@pytest.mark.parametrize("stdout", ["", "uv not-a-version", "uv 0.12.17-dev"])
 def test_unverifiable_version_is_rejected(monkeypatch, stdout):
-    monkeypatch.setattr(update_installer.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=stdout))
+    monkeypatch.setattr(
+        update_installer.subprocess, "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=stdout),
+    )
     with pytest.raises(RuntimeError, match="Cannot verify"):
         update_installer._installer_version("uv", {})
 
 
-def test_recovery_runs_existing_updater_with_fixed_installer_on_child_path(monkeypatch, tmp_path):
+def test_recovery_runs_existing_updater_with_managed_installer_on_child_path(
+    monkeypatch, tmp_path,
+):
     selected = str(tmp_path / "fixed" / "uv.exe")
     monkeypatch.setattr(update_installer, "sys", SimpleNamespace(platform="win32"))
     monkeypatch.setattr(update_installer.shutil, "which", lambda command: "/existing/" + command)
     monkeypatch.setattr(update_installer, "resolve_update_installer", lambda **kwargs: selected)
     monkeypatch.setenv("PATH", "/original/path")
     calls = []
-    monkeypatch.setattr(update_installer.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        update_installer.subprocess, "run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
     update_installer.repair_windows_update()
     assert calls[0][0] == (["/existing/metalist", "update"],)
     assert calls[0][1]["check"] is True
-    assert calls[0][1]["env"]["PATH"].startswith(str(Path(selected).parent) + update_installer.os.pathsep)
+    assert calls[0][1]["env"]["PATH"].startswith(
+        str(Path(selected).parent) + update_installer.os.pathsep,
+    )
     assert update_installer.os.environ["PATH"] == "/original/path"
 
 
@@ -143,7 +246,10 @@ def test_recovery_does_not_continue_after_installer_failure(monkeypatch):
         raise RuntimeError("checksum failed")
 
     monkeypatch.setattr(update_installer, "resolve_update_installer", broken_installer)
-    monkeypatch.setattr(update_installer.subprocess, "run", lambda *args, **kwargs: pytest.fail("must not run updater"))
+    monkeypatch.setattr(
+        update_installer.subprocess, "run",
+        lambda *args, **kwargs: pytest.fail("must not run updater"),
+    )
     with pytest.raises(RuntimeError, match="checksum failed"):
         update_installer.repair_windows_update()
 
@@ -153,9 +259,15 @@ def test_repair_archive_contains_current_production_resolver_and_launcher(tmp_pa
     build_repair_archive(archive_path)
     root = Path(__file__).resolve().parents[2]
     with zipfile.ZipFile(archive_path) as archive:
-        assert set(archive.namelist()) == {"Repair-MetaList.cmd", "update_installer.py", "README.txt"}
-        assert archive.read("update_installer.py") == (root / "app/services/update_installer.py").read_bytes()
-        assert archive.read("Repair-MetaList.cmd") == (root / "scripts/Repair-MetaList.cmd").read_bytes()
+        assert set(archive.namelist()) == {
+            "Repair-MetaList.cmd", "update_installer.py", "README.txt",
+        }
+        assert archive.read("update_installer.py") == (
+            root / "app/services/update_installer.py"
+        ).read_bytes()
+        assert archive.read("Repair-MetaList.cmd") == (
+            root / "scripts/Repair-MetaList.cmd"
+        ).read_bytes()
     original_archive = archive_path.read_bytes()
     with pytest.raises(FileExistsError):
         build_repair_archive(archive_path)

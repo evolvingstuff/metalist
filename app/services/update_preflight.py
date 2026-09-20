@@ -87,15 +87,12 @@ def _probe_candidate(*, python: str, executable: str, directory: Path,
         _stop_failed_namespace_launch(process=process)
 
 
-def prepare_update(*, uv_executable: str, target_version: str,
-                   environ: Mapping[str, str]) -> list[str]:
+def prepare_update(*, target_version: str, environ: Mapping[str, str]) -> list[str]:
     # A tool environment is replaced during install: pin its external base interpreter.
     python = str(Path(sys._base_executable).resolve())
     if not Path(python).is_file():
         raise RuntimeError("The current base Python interpreter is missing; MetaList was not stopped")
-    uv_executable = resolve_update_installer(
-        uv_executable=uv_executable, platform_name=sys.platform, environ=environ,
-    )
+    uv_executable = resolve_update_installer(platform_name=sys.platform, environ=environ)
     print(f"Checking MetaList v{target_version} installation and startup with Python {sys.version.split()[0]}...", flush=True)
     with TemporaryDirectory(prefix="metalist-update-check-") as temporary:
         directory = Path(temporary)

@@ -1,8 +1,8 @@
 # Testing Status
 
-## Required compatibility gates (added 2026-09-14; not yet run)
+## Required compatibility gates
 
-[Compatibility rules and release gates](compatibility-gates.md) define the concrete contracts refactors must preserve. The installed-wheel matrix checks every JS/CSS/JSON/icon asset through repeated concurrent HTTP and verified HTTPS transfers, including connection reuse. On Python 3.12, the actual Chrome and Firefox executables on Windows, macOS, and Linux run the same installed-application startup, encrypted-login, logout, and session-storage-loss scenario. Windows additionally runs that scenario in Edge over non-loopback certificate-verified HTTPS. Windows/Python 3.13 repeats all three browsers after the repair upgrade. Browser errors, stage diagnostics, and screenshots are retained in CI. The expanded cross-browser matrix has not passed yet and blocks the next release until it does.
+[Compatibility rules and release gates](compatibility-gates.md) define the concrete contracts refactors must preserve. The installed-wheel matrix checks every JS/CSS/JSON/icon asset through repeated concurrent HTTP and verified HTTPS transfers, including connection reuse. On Python 3.12, the actual Chrome and Firefox executables on Windows, macOS, and Linux run the same installed-application startup, encrypted-login, logout, and session-storage-loss scenario. Windows additionally runs that scenario in Edge over non-loopback certificate-verified HTTPS. Windows/Python 3.13 repeats all three browsers after the repair upgrade. Browser errors, stage diagnostics, and screenshots are retained in CI. The complete expanded matrix and publish job passed for v0.7.3 in workflow run 35518909114. Every later release still requires a fresh successful run for its exact commit.
 
 Current validation includes the full isolated Python suite, Node unit tests, Python/JS startup gates, real HTTP/TLS integration tests, a focused Puppeteer browser smoke, and installed-wheel platform checks. Historical results below retain their original dates and counts.
 

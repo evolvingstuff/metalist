@@ -11,10 +11,10 @@ from app.services import update_preflight
 
 @pytest.fixture(autouse=True)
 def isolate_installer_selection(monkeypatch):
-    monkeypatch.setattr(update_preflight, "resolve_update_installer", lambda **kwargs: kwargs["uv_executable"])
+    monkeypatch.setattr(update_preflight, "resolve_update_installer", lambda **kwargs: "managed-uv")
 
 
-def test_windows_update_uses_compatible_installer_before_any_package_install(monkeypatch):
+def test_update_uses_managed_installer_before_any_package_install(monkeypatch):
     calls = []
     monkeypatch.setattr(update_preflight.sys, "platform", "win32")
     monkeypatch.setattr(update_preflight, "resolve_update_installer",
@@ -32,7 +32,7 @@ def test_windows_update_uses_compatible_installer_before_any_package_install(mon
 
     monkeypatch.setattr(update_preflight, "_run_checked", run)
     monkeypatch.setattr(update_preflight, "_probe_candidate", lambda **kwargs: None)
-    command = update_preflight.prepare_update(uv_executable="old-uv", target_version="0.7.2", environ={})
+    command = update_preflight.prepare_update(target_version="0.7.2", environ={})
     assert calls[0][0] == command[0] == "verified-fixed-uv"
 
 
@@ -56,8 +56,8 @@ def test_preflight_pins_current_python_isolates_tools_and_freezes_tested_depende
     monkeypatch.setattr(update_preflight, "_run_checked", run)
     monkeypatch.setattr(update_preflight, "_probe_candidate", lambda **kwargs: probes.append(kwargs))
     environ = {"PATH": "/tools", "UV_TOOL_DIR": "/real/tools", "UV_TOOL_BIN_DIR": "/real/bin"}
-    install = update_preflight.prepare_update(uv_executable="uv", target_version="0.6.2", environ=environ)
-    assert install == ["uv", "tool", "install", "--force", "--offline", "--python", base_python,
+    install = update_preflight.prepare_update(target_version="0.6.2", environ=environ)
+    assert install == ["managed-uv", "tool", "install", "--force", "--offline", "--python", base_python,
                        "--compile-bytecode", "metalist==0.6.2", "--with", "httpx==0.28.1"]
     assert calls[0][0][calls[0][0].index("--python") + 1] == base_python
     assert len(probes) == 1
@@ -75,7 +75,7 @@ def test_preflight_rejects_interpreter_drift_before_startup(monkeypatch):
     monkeypatch.setattr(update_preflight, "_run_checked", run)
     monkeypatch.setattr(update_preflight, "_probe_candidate", lambda **kwargs: pytest.fail("must reject interpreter drift"))
     with pytest.raises(RuntimeError, match="changed Python"):
-        update_preflight.prepare_update(uv_executable="uv", target_version="0.6.2", environ={})
+        update_preflight.prepare_update(target_version="0.6.2", environ={})
 
 
 @pytest.mark.parametrize("startup_fails", [False, True])
