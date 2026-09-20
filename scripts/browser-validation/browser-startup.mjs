@@ -4,9 +4,18 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
-const [browserName, executablePath, outputDirectory, ...origins] = process.argv.slice(2);
+const [
+  browserName, executablePath, outputDirectory,
+  coldRunsText, reloadsText, validateLoginText, ...origins
+] = process.argv.slice(2);
 assert(['chrome', 'firefox', 'edge'].includes(browserName), `Unsupported release browser: ${browserName}`);
 assert(executablePath && outputDirectory && origins.length === 2, 'Expected browser, executable path, output directory, and two namespace URLs');
+assert(/^\d+$/.test(coldRunsText) && Number(coldRunsText) >= 1, 'Cold runs must be a positive integer');
+assert(/^\d+$/.test(reloadsText) && Number(reloadsText) >= 1, 'Reloads must be a positive integer');
+assert(['0', '1'].includes(validateLoginText), 'Encrypted-login validation must be 0 or 1');
+const coldRuns = Number(coldRunsText);
+const reloads = Number(reloadsText);
+const validateEncryptedLogin = validateLoginText === '1';
 const protocols = new Set(origins.map(origin => new URL(origin).protocol));
 assert.equal(protocols.size, 1, 'Both browser namespaces must use the same transport');
 const [protocol] = protocols;
@@ -60,7 +69,7 @@ async function checkPage(context, origin, coldRun) {
   });
   await page.setCacheEnabled(false);
   try {
-    for (let reload = 0; reload < 3; reload += 1) {
+    for (let reload = 0; reload < reloads; reload += 1) {
       scripts.clear();
       errors.length = 0;
       navigationInProgress = true;
@@ -194,7 +203,7 @@ async function checkEncryptedLogin(context, origin) {
 }
 
 try {
-  for (let coldRun = 0; coldRun < 3; coldRun += 1) {
+  for (let coldRun = 0; coldRun < coldRuns; coldRun += 1) {
     const context = await browser.createBrowserContext();
     try {
       const outcomes = await Promise.allSettled(origins.map(origin => checkPage(context, origin, coldRun)));
@@ -203,14 +212,18 @@ try {
       await context.close();
     }
   }
-  const loginContext = await browser.createBrowserContext();
-  try {
-    await checkEncryptedLogin(loginContext, origins[0]);
-  } finally {
-    await loginContext.close();
+  if (validateEncryptedLogin) {
+    const loginContext = await browser.createBrowserContext();
+    try {
+      await checkEncryptedLogin(loginContext, origins[0]);
+    } finally {
+      await loginContext.close();
+    }
   }
-  console.log(`PASS ${browserName}: two installed namespaces, three cold sessions, and three uncached loads each`);
-  console.log(`PASS ${browserName}: encrypted login, hydration, logout, and storage loss during login`);
+  console.log(`PASS ${browserName}: two installed namespaces, ${coldRuns} cold sessions, and ${reloads} uncached loads each`);
+  if (validateEncryptedLogin) {
+    console.log(`PASS ${browserName}: encrypted login, hydration, logout, and storage loss during login`);
+  }
 } finally {
   await writeFile(join(outputDirectory, 'startup-results.json'), JSON.stringify({browserName, version, diagnostics}, null, 2));
   await browser.close();

@@ -28,8 +28,6 @@ logs/
 package-lock.json
 !scripts/browser-validation/package-lock.json
 node_modules/
-# Symlinked agents config
-AGENTS.md
 # Symlinked claude compatibility stub
 CLAUDE.md
 # Auto-generated project summary (created by SUMMARIZE command)

@@ -250,10 +250,12 @@ def run(wheel: Path, *, repair: bool) -> None:
                         smoke._verify_browser_startup(
                             certificate=certificate, host='127.0.0.1', profiles=profiles,
                             browser_name=browser_name, use_https=False,
+                            cold_runs=1, reloads=2, validate_encrypted_login=True,
                         )
                     smoke._verify_browser_startup(
                         certificate=certificate, host=lan_host, profiles=profiles,
                         browser_name='edge', use_https=True,
+                        cold_runs=1, reloads=2, validate_encrypted_login=True,
                     )
                 print(f"Real uv update, backups, offline installation, interpreter preservation, and two-namespace restart passed on {sys.platform} Python {sys.version.split()[0]}.")
             finally:
@@ -262,6 +264,10 @@ def run(wheel: Path, *, repair: bool) -> None:
                 try:
                     smoke._stop_namespace_children(executable=executable, profiles=profiles)
                 finally:
+                    if repair:
+                        smoke._preserve_browser_server_diagnostics(
+                            startup_log=log_path, data_directory=directory / 'data',
+                        )
                     index.shutdown()
                     thread.join(timeout=5)
 
