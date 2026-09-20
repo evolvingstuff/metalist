@@ -74,8 +74,8 @@ browser covers ordinary encrypted login and deliberately removes the stored tab 
 after a successful login response to verify hydration still completes with the
 original identity. Chrome over loopback HTTP matches the affected user's actual
 browser and access route; Edge retains the additional certificate-verified LAN HTTPS
-coverage. The corrected matrix has not run yet; the repair launcher must not be
-presented as Windows-validated yet.
+coverage. The release workflow blocks publication until this complete matrix passes
+for the exact candidate commit.
 
 The first Windows Edge run reached password creation and exposed `OSError: [Errno
 9] Bad file descriptor` while flushing a recovery image. `_sync_file` had opened

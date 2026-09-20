@@ -12,6 +12,11 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.7.3
+
+- Windows updates use a private verified uv release when an older installer is vulnerable to the reported PE-resource access-denied failure. A standalone repair ZIP can bootstrap installations whose existing updater cannot update itself.
+- Release candidates now run the complete test and installed-package matrix on Windows, macOS, and Linux across Python 3.10–3.14. Real Chrome and Firefox exercise repeated cold loads and encrypted login on every operating system; Windows also checks Edge over verified LAN HTTPS and the repair path from a published older release.
+
 ## Changes in 0.7.2
 
 - Login, hydration, and workspace requests share one initialized browser-tab identity. Losing the `sessionStorage` copy while opening the workspace no longer causes the reported missing-tab-ID crash. The external trigger for that storage loss remains unconfirmed.
