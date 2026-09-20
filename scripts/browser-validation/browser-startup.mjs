@@ -22,6 +22,10 @@ const browser = await puppeteer.launch({
   executablePath,
   headless: true,
   browser: browserName === 'firefox' ? 'firefox' : 'chrome',
+  // Hosted Windows images may configure a system proxy that intermittently
+  // intercepts private-LAN URLs. These origins are the local test server and
+  // must be exercised directly; Firefox already bypasses local addresses.
+  args: browserName === 'firefox' ? [] : ['--no-proxy-server'],
 });
 const version = await browser.version();
 console.log(`Release browser: ${browserName}; executable: ${executablePath}; version: ${version}`);
