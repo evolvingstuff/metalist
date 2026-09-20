@@ -264,6 +264,10 @@ def run(wheel: Path, *, repair: bool) -> None:
                 try:
                     smoke._stop_namespace_children(executable=executable, profiles=profiles)
                 finally:
+                    if repair:
+                        smoke._preserve_browser_server_diagnostics(
+                            startup_log=log_path, data_directory=directory / 'data',
+                        )
                     index.shutdown()
                     thread.join(timeout=5)
 
