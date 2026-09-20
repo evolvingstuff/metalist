@@ -232,33 +232,67 @@ def _verify_namespace(*, host: str, namespace: str, http_port: int, https_port: 
         assert b"<!doctype html" in _request(port, "/", host=host, use_https=use_https, tls_context=tls_context).lower()
 
 
-def _verify_edge_startup(*, directory: Path, certificate: Path, host: str, profiles: list[tuple[str, int, int]]) -> None:
-    assert os.name == 'nt', 'Edge release validation must run on Windows'
-    assert os.environ['RUNNER_ENVIRONMENT'] == 'github-hosted', 'Edge trust setup requires a disposable GitHub-hosted runner'
-    output_directory = Path(os.environ['RUNNER_TEMP']) / 'metalist-edge-results'
+def _browser_candidates(*, browser_name: str) -> list[Path]:
+    assert browser_name in {'chrome', 'firefox', 'edge'}, browser_name
+    if os.name == 'nt':
+        relative_paths = {
+            'chrome': 'Google/Chrome/Application/chrome.exe',
+            'firefox': 'Mozilla Firefox/firefox.exe',
+            'edge': 'Microsoft/Edge/Application/msedge.exe',
+        }
+        return [
+            Path(os.environ[environment_name]) / relative_paths[browser_name]
+            for environment_name in ('ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA')
+            if environment_name in os.environ
+        ]
+    if sys.platform == 'darwin':
+        application_paths = {
+            'chrome': '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            'firefox': '/Applications/Firefox.app/Contents/MacOS/firefox',
+            'edge': '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+        }
+        return [Path(application_paths[browser_name])]
+    executable_names = {
+        'chrome': ('google-chrome', 'google-chrome-stable'),
+        'firefox': ('firefox',),
+        'edge': ('microsoft-edge', 'microsoft-edge-stable'),
+    }
+    return [Path(executable) for name in executable_names[browser_name]
+            if (executable := shutil.which(name)) is not None]
+
+
+def _verify_browser_startup(*, directory: Path, certificate: Path, host: str,
+                            profiles: list[tuple[str, int, int]], browser_name: str,
+                            use_https: bool) -> None:
+    assert os.environ['RUNNER_ENVIRONMENT'] == 'github-hosted', 'Release browser validation requires a disposable GitHub-hosted runner'
+    assert not use_https or os.name == 'nt', 'Browser HTTPS trust setup is currently implemented for Windows'
+    output_directory = Path(os.environ['RUNNER_TEMP']) / 'metalist-browser-results' / browser_name
     output_directory.mkdir(parents=True, exist_ok=True)
-    diagnostics = {'stage': 'locating browser', 'passed': False}
+    diagnostics = {'browser': browser_name, 'transport': 'https' if use_https else 'http',
+                   'stage': 'locating browser', 'passed': False}
     trusted = False
     try:
-        edge_paths = [Path(os.environ[name]) / 'Microsoft/Edge/Application/msedge.exe'
-                      for name in ('ProgramFiles(x86)', 'ProgramFiles', 'LOCALAPPDATA') if name in os.environ]
-        installed_edge_paths = [path for path in edge_paths if path.is_file()]
-        assert installed_edge_paths, 'Required Microsoft Edge executable is missing'
-        executable = installed_edge_paths[0]
+        installed_browser_paths = [path for path in _browser_candidates(browser_name=browser_name) if path.is_file()]
+        assert installed_browser_paths, f'Required {browser_name} executable is missing'
+        executable = installed_browser_paths[0]
         node = shutil.which('node')
-        assert node is not None, 'Required Node runtime for Edge validation is missing'
+        assert node is not None, 'Required Node runtime for browser validation is missing'
         certificate_der = ssl.PEM_cert_to_DER_cert(certificate.read_text(encoding='ascii'))
         thumbprint = hashlib.sha1(certificate_der, usedforsecurity=False).hexdigest()
-        # The ephemeral hosted Windows VM runs as administrator. Its machine
-        # store avoids the interactive confirmation required by the user store.
-        diagnostics['stage'] = 'trusting generated certificate'
-        subprocess.run(['certutil', '-addstore', 'Root', str(certificate)],
-                       stdin=subprocess.DEVNULL, check=True, timeout=30)
-        trusted = True
-        diagnostics['stage'] = 'running Edge startup checks'
-        script = Path(__file__).resolve().parent / 'browser-validation' / 'edge-startup.mjs'
-        urls = [f'https://{host}:{https_port}' for _, _, https_port in profiles]
-        subprocess.run([node, str(script), str(executable), str(output_directory), *urls],
+        if use_https:
+            # The ephemeral hosted Windows VM runs as administrator. Its machine
+            # store avoids the interactive confirmation required by the user store.
+            diagnostics['stage'] = 'trusting generated certificate'
+            subprocess.run(['certutil', '-addstore', 'Root', str(certificate)],
+                           stdin=subprocess.DEVNULL, check=True, timeout=30)
+            trusted = True
+        diagnostics['stage'] = f'running {browser_name} startup checks'
+        script = Path(__file__).resolve().parent / 'browser-validation' / 'browser-startup.mjs'
+        if use_https:
+            urls = [f'https://{host}:{https_port}' for _, _, https_port in profiles]
+        else:
+            urls = [f'http://{host}:{http_port}' for _, http_port, _ in profiles]
+        subprocess.run([node, str(script), browser_name, str(executable), str(output_directory), *urls],
                        cwd=directory, check=True, timeout=240)
         diagnostics['passed'] = True
     finally:
@@ -295,7 +329,7 @@ def _verify_remembered_network_settings(*, executable: Path, environment: dict[s
     return host
 
 
-def smoke_installed_package(*, require_edge: bool) -> None:
+def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     assert sys.flags.isolated, "Run with python -I to exclude the source checkout"
     distribution = importlib.metadata.distribution("metalist")
@@ -313,11 +347,6 @@ def smoke_installed_package(*, require_edge: bool) -> None:
         and key not in {"TEST_MODE", "API_PREFIX", "V1_API_PREFIX", "SQL_TRACE", "STARTUP_ANIMATION_ENABLED"}
     }
     environment.update(TEST_MODE="0", METALIST_ENVIRONMENT="production", PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-    browser_host = '127.0.0.1'
-    if require_edge:
-        browser_host = socket.gethostbyname(socket.gethostname())
-        assert not browser_host.startswith('127.'), 'Edge gate requires a non-loopback IPv4 address'
-        environment.update(METALIST_HOST='0.0.0.0', METALIST_ALLOWED_HOSTS=browser_host, METALIST_LAN_IP=browser_host)
     profiles = _profiles_with_free_ports()
     with tempfile.TemporaryDirectory(prefix="metalist-installed-smoke-") as temporary_directory:
         directory = Path(temporary_directory)
@@ -345,8 +374,16 @@ def smoke_installed_package(*, require_edge: bool) -> None:
                 browser_host = _verify_remembered_network_settings(
                     executable=executable, environment=environment, directory=directory,
                     profiles=profiles, version=distribution.version, tls_context=tls_context, log=log)
-                if require_edge:
-                    _verify_edge_startup(directory=directory, certificate=certificate, host=browser_host, profiles=profiles)
+                for browser_name in browsers:
+                    _verify_browser_startup(
+                        directory=directory, certificate=certificate, host='127.0.0.1', profiles=profiles,
+                        browser_name=browser_name, use_https=False,
+                    )
+                for browser_name in https_browsers:
+                    _verify_browser_startup(
+                        directory=directory, certificate=certificate, host=browser_host, profiles=profiles,
+                        browser_name=browser_name, use_https=True,
+                    )
                 is_successful = True
             finally:
                 if process.poll() is None:
@@ -369,5 +406,7 @@ def smoke_installed_package(*, require_edge: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--edge', action='store_true', help='Require real Edge startup over a non-loopback HTTPS address')
-    smoke_installed_package(require_edge=parser.parse_args().edge)
+    parser.add_argument('--browser', action='append', choices=('chrome', 'firefox', 'edge'), default=[])
+    parser.add_argument('--https-browser', action='append', choices=('chrome', 'firefox', 'edge'), default=[])
+    arguments = parser.parse_args()
+    smoke_installed_package(browsers=arguments.browser, https_browsers=arguments.https_browser)

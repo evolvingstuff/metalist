@@ -69,12 +69,13 @@ Validation: unit coverage checks installer selection, failure propagation,
 checksum rejection, and the child environment. The required Windows/Python 3.13
 CI leg installs the hash-pinned published 0.7.1 wheel (only its release-metadata URL
 is redirected to the test index), extracts and runs the repair ZIP, verifies the
-upgrade/backups/restarts, and exercises Edge login afterward. Edge covers ordinary
-encrypted login and deliberately removes the stored tab ID after a successful
-login response to verify hydration still completes with the original identity.
-The first candidate run failed during the newly covered password creation before
-reaching the repair launcher. The corrected matrix has not run yet; the repair
-launcher must not be presented as Windows-validated yet.
+upgrade/backups/restarts, and exercises Chrome, Firefox, and Edge afterward. Each
+browser covers ordinary encrypted login and deliberately removes the stored tab ID
+after a successful login response to verify hydration still completes with the
+original identity. Chrome over loopback HTTP matches the affected user's actual
+browser and access route; Edge retains the additional certificate-verified LAN HTTPS
+coverage. The corrected matrix has not run yet; the repair launcher must not be
+presented as Windows-validated yet.
 
 The first Windows Edge run reached password creation and exposed `OSError: [Errno
 9] Bad file descriptor` while flushing a recovery image. `_sync_file` had opened

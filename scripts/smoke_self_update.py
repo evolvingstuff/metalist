@@ -211,7 +211,15 @@ def run(wheel: Path, *, repair: bool) -> None:
                 identity = subprocess.check_output([str(python), "-I", "-c", "import sys,json; print(json.dumps(list(sys.version_info[:2])))"], text=True)
                 assert json.loads(identity) == list(sys.version_info[:2]), identity
                 if repair:
-                    smoke._verify_edge_startup(directory=directory, certificate=certificate, host=lan_host, profiles=profiles)
+                    for browser_name in ('chrome', 'firefox'):
+                        smoke._verify_browser_startup(
+                            directory=directory, certificate=certificate, host='127.0.0.1', profiles=profiles,
+                            browser_name=browser_name, use_https=False,
+                        )
+                    smoke._verify_browser_startup(
+                        directory=directory, certificate=certificate, host=lan_host, profiles=profiles,
+                        browser_name='edge', use_https=True,
+                    )
                 print(f"Real uv update, backups, offline installation, interpreter preservation, and two-namespace restart passed on {sys.platform} Python {sys.version.split()[0]}.")
             finally:
                 log.flush()

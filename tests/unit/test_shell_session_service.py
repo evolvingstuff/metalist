@@ -6,6 +6,7 @@ import sys
 import subprocess
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -87,8 +88,11 @@ def _wait_for_status(
 
 
 def test_resolve_shell_command_prefers_login_shell_for_bash(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(shell_session_service.os, "name", "posix", raising=False)
-    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setattr(
+        shell_session_service,
+        "os",
+        SimpleNamespace(name="posix", environ={"SHELL": "/bin/bash"}),
+    )
 
     command = shell_session_service._resolve_shell_command(script_text="echo hello")
 

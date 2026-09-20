@@ -80,7 +80,7 @@ jobs:
     name: Smoke (${{ matrix.os }}, Python ${{ matrix.python-version }})
     needs: build
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -146,6 +146,10 @@ jobs:
           assert len(wheels) == 1, wheels;
           subprocess.check_call([sys.executable, '-I', '-m', 'pip', 'install', '--no-deps', str(wheels[0])])"
 
+      - name: Install locked release-browser driver without install scripts
+        if: matrix.python-version == '3.12' || (matrix.os == 'windows-latest' && matrix.python-version == '3.13')
+        run: npm ci --prefix scripts/browser-validation --ignore-scripts --no-audit --no-fund
+
       - name: Check installed dependencies
         working-directory: ${{ runner.temp }}
         run: python -I -m pip check
@@ -154,21 +158,26 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: python -I "${{ github.workspace }}/scripts/smoke_installed_package.py"
 
-      - name: Install locked Edge driver without install scripts
-        if: matrix.os == 'windows-latest' && (matrix.python-version == '3.12' || matrix.python-version == '3.13')
-        run: npm ci --prefix scripts/browser-validation --ignore-scripts --no-audit --no-fund
+      - name: Require actual Chrome and Firefox startup and encrypted login
+        if: matrix.python-version == '3.12'
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python -I "${{ github.workspace }}/scripts/smoke_installed_package.py"
+          --browser chrome --browser firefox
 
       - name: Require actual Edge startup over non-loopback HTTPS
         if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
         working-directory: ${{ runner.temp }}
-        run: python -I "${{ github.workspace }}/scripts/smoke_installed_package.py" --edge
+        run: >-
+          python -I "${{ github.workspace }}/scripts/smoke_installed_package.py"
+          --https-browser edge
 
-      - name: Preserve Edge startup results and failure screenshots
-        if: always() && matrix.os == 'windows-latest' && matrix.python-version == '3.12'
+      - name: Preserve release-browser results and failure screenshots
+        if: always() && matrix.python-version == '3.12'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: edge-https-startup
-          path: ${{ runner.temp }}/metalist-edge-results/
+          name: release-browser-startup-${{ runner.os }}
+          path: ${{ runner.temp }}/metalist-browser-results/
           if-no-files-found: error
 
       - name: Install pinned uv for real self-update validation
@@ -194,12 +203,12 @@ jobs:
           assert len(wheels) == 1;
           subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0]), '--repair'])"
 
-      - name: Preserve Edge results after Windows repair upgrade
+      - name: Preserve browser results after Windows repair upgrade
         if: always() && matrix.os == 'windows-latest' && matrix.python-version == '3.13'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: edge-after-repair-upgrade
-          path: ${{ runner.temp }}/metalist-edge-results/
+          name: release-browsers-after-repair-upgrade
+          path: ${{ runner.temp }}/metalist-browser-results/
           if-no-files-found: error
 
   publish:
