@@ -114,9 +114,9 @@ if TEST_MODE:
     # Delete existing test.db if it exists
     if test_database_path.exists():
         test_database_path.unlink()
-        print("🧪 Deleted existing test.db")
+        print("Deleted existing test.db")
 
-    print("🧪 Running in TEST MODE - using test.db")
+    print("Running in TEST MODE - using test.db")
 else:
     # Use production database
     DEFAULT_DB_PATH = str(resolve_default_database_path())

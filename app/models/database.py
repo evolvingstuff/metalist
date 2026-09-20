@@ -124,15 +124,8 @@ class SafeSession:
         _configure_sql_logging(anchor)
         cls._memory_anchor = anchor
         print("\n" + "=" * 50)
-        print(
-            """
-🧪 SWITCHING TO TEST MODE 🧪
-┌──────────────────────────┐
-│   IN-MEMORY DATABASE     │
-│  *All Data is Temporary  │
-└──────────────────────────┘
-        """
-        )
+        print("TEST MODE: IN-MEMORY DATABASE")
+        print("All data is temporary")
         print("=" * 50 + "\n")
         return {"status": "ok", "message": "Using in-memory database"}
 
@@ -159,15 +152,7 @@ class SafeSession:
         _configure_sql_logging(conn)
         conn.close()
         print("\n" + "=" * 50)
-        print(
-            """
-📝 RETURNING TO PRODUCTION MODE 📝
-┌──────────────────────────┐
-│      PROD DATABASE       │
-│                          │
-└──────────────────────────┘
-        """
-        )
+        print("PRODUCTION MODE: FILE DATABASE")
         print("=" * 50 + "\n")
         return {"status": "ok", "message": "Using file database"}
 

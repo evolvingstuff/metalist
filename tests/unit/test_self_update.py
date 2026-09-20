@@ -84,7 +84,7 @@ def test_schedule_posix_self_update_stops_servers_then_hands_off_to_shell(
     assert result.update_scheduled is True
     assert len(popen_calls) == 1
     command, kwargs = popen_calls[0]
-    assert command[:2] == ["/bin/sh", "-c"]
+    assert command[:2] == [str(Path("/bin/sh")), "-c"]
     assert "kill -0 4321" in command[2]
     assert "/opt/homebrew/bin/uv tool install --force --offline --python /base/python3.14 --compile-bytecode metalist==0.3.13" in command[2]
     assert "/Users/example/.local/bin/metalist" in command[2]
