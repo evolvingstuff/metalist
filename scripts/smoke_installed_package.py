@@ -353,15 +353,19 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -
     profiles = _profiles_with_free_ports()
     with tempfile.TemporaryDirectory(prefix="metalist-installed-smoke-") as temporary_directory:
         directory = Path(temporary_directory)
+        # Namespace children inherit the launcher's working directory. Keep that
+        # directory outside the disposable fixture so a briefly exiting Windows
+        # child cannot retain a handle that blocks fixture deletion.
+        launch_directory = directory.parent
         data_directory = directory / "Données MetaList"
         environment["METALIST_DATA_DIRECTORY"] = str(data_directory)
         environment["METALIST_SELF_EXECUTABLE"] = str(executable)
-        _seed_namespaces(directory=directory, environment=environment, profiles=profiles)
+        _seed_namespaces(directory=launch_directory, environment=environment, profiles=profiles)
         _assert_ports_are_free(profiles)
         log_path = directory / "startup.log"
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
-                [str(executable)], cwd=directory, env=environment,
+                [str(executable)], cwd=launch_directory, env=environment,
                 stdout=log, stderr=subprocess.STDOUT,
             )
             is_successful = False
@@ -375,7 +379,7 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -
                     _verify_installed_assets(static_directory=installed_app.parent / 'static', http_port=http_port,
                                              https_port=https_port, tls_context=tls_context)
                 browser_host = _verify_remembered_network_settings(
-                    executable=executable, environment=environment, directory=directory,
+                    executable=executable, environment=environment, directory=launch_directory,
                     profiles=profiles, version=distribution.version, tls_context=tls_context, log=log)
                 for browser_name in browsers:
                     _verify_browser_startup(

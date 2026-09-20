@@ -147,6 +147,7 @@ def run(wheel: Path, *, repair: bool) -> None:
 
     with tempfile.TemporaryDirectory(prefix="metalist-update-smoke-") as temporary, ThreadingHTTPServer(("127.0.0.1", 0), Index) as index:
         directory = Path(temporary)
+        launch_directory = directory.parent
         index_url = f"http://127.0.0.1:{index.server_port}"
         thread = threading.Thread(target=index.serve_forever, daemon=True)
         thread.start()
@@ -173,9 +174,9 @@ def run(wheel: Path, *, repair: bool) -> None:
         with log_path.open("w", encoding="utf-8") as log:
             try:
                 subprocess.run([uv, "tool", "install", "--python", sys._base_executable, str(fixture)],
-                               env=environment, cwd=directory, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
-                smoke._seed_namespaces(directory=directory, environment=environment, profiles=profiles)
-                subprocess.run([str(executable)], env=environment, cwd=directory, stdout=log,
+                               env=environment, cwd=launch_directory, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
+                smoke._seed_namespaces(directory=launch_directory, environment=environment, profiles=profiles)
+                subprocess.run([str(executable)], env=environment, cwd=launch_directory, stdout=log,
                                stderr=subprocess.STDOUT, check=True, timeout=300)
                 certificate = directory / 'data/certs/metalist-cert.pem'
                 tls_context = ssl.create_default_context(cafile=str(certificate))
@@ -183,9 +184,9 @@ def run(wheel: Path, *, repair: bool) -> None:
                     smoke._verify_namespace(host="127.0.0.1", namespace=namespace, http_port=port, https_port=https_port,
                                             version=old_version, tls_context=tls_context)
                 lan_host = smoke._verify_remembered_network_settings(
-                    executable=executable, environment=environment, directory=directory,
+                    executable=executable, environment=environment, directory=launch_directory,
                     profiles=profiles, version=old_version, tls_context=tls_context, log=log)
-                subprocess.run(update_command, env=environment, cwd=directory, stdout=log,
+                subprocess.run(update_command, env=environment, cwd=launch_directory, stdout=log,
                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=True, timeout=600)
                 if sys.platform == "win32":
                     assert list((directory / "local-app-data/MetaList/update-tools").glob("uv-*/uv.exe")), "Old uv must be replaced for the update"
