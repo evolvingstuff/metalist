@@ -263,9 +263,13 @@ def _browser_candidates(*, browser_name: str) -> list[Path]:
 
 def _verify_browser_startup(*, certificate: Path, host: str,
                             profiles: list[tuple[str, int, int]], browser_name: str,
-                            use_https: bool) -> None:
+                            use_https: bool, cold_runs: int, reloads: int,
+                            validate_encrypted_login: bool) -> None:
     assert os.environ['RUNNER_ENVIRONMENT'] == 'github-hosted', 'Release browser validation requires a disposable GitHub-hosted runner'
     assert not use_https or os.name == 'nt', 'Browser HTTPS trust setup is currently implemented for Windows'
+    assert cold_runs >= 1
+    assert reloads >= 1
+    assert isinstance(validate_encrypted_login, bool)
     output_directory = Path(os.environ['RUNNER_TEMP']) / 'metalist-browser-results' / browser_name
     output_directory.mkdir(parents=True, exist_ok=True)
     diagnostics = {'browser': browser_name, 'transport': 'https' if use_https else 'http',
@@ -295,7 +299,14 @@ def _verify_browser_startup(*, certificate: Path, host: str,
         # Browser helper processes can outlive the Node controller briefly on
         # Windows. Keep their inherited working directory outside the disposable
         # installed-package fixture so that delay cannot block fixture cleanup.
-        subprocess.run([node, str(script), browser_name, str(executable), str(output_directory), *urls],
+        if validate_encrypted_login:
+            validate_login_text = '1'
+        else:
+            validate_login_text = '0'
+        subprocess.run([
+            node, str(script), browser_name, str(executable), str(output_directory),
+            str(cold_runs), str(reloads), validate_login_text, *urls,
+        ],
                        cwd=script.parent, check=True, timeout=240)
         diagnostics['passed'] = True
     finally:
@@ -332,7 +343,24 @@ def _verify_remembered_network_settings(*, executable: Path, environment: dict[s
     return host
 
 
-def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -> None:
+def _preserve_browser_server_diagnostics(*, startup_log: Path, data_directory: Path) -> None:
+    results_directory = Path(os.environ['RUNNER_TEMP']) / 'metalist-browser-results' / 'server-logs'
+    results_directory.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(startup_log, results_directory / 'startup.log')
+    source_logs = data_directory / 'logs'
+    if not source_logs.is_dir():
+        (results_directory / 'server-logs-unavailable.txt').write_text(
+            f'Backend log directory was not created: {source_logs}\n', encoding='utf-8',
+        )
+        return
+    for source_log in sorted(source_logs.glob('*.log')):
+        assert source_log.is_file()
+        shutil.copyfile(source_log, results_directory / source_log.name)
+
+
+def smoke_installed_package(*, browsers: list[str], https_browsers: list[str],
+                            browser_cold_runs: int, browser_reloads: int,
+                            validate_browser_login: bool) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     assert sys.flags.isolated, "Run with python -I to exclude the source checkout"
     distribution = importlib.metadata.distribution("metalist")
@@ -385,11 +413,15 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -
                     _verify_browser_startup(
                         certificate=certificate, host='127.0.0.1', profiles=profiles,
                         browser_name=browser_name, use_https=False,
+                        cold_runs=browser_cold_runs, reloads=browser_reloads,
+                        validate_encrypted_login=validate_browser_login,
                     )
                 for browser_name in https_browsers:
                     _verify_browser_startup(
                         certificate=certificate, host=browser_host, profiles=profiles,
                         browser_name=browser_name, use_https=True,
+                        cold_runs=browser_cold_runs, reloads=browser_reloads,
+                        validate_encrypted_login=validate_browser_login,
                     )
                 is_successful = True
             finally:
@@ -403,11 +435,17 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str]) -
                     process.wait(timeout=10)
                 if not is_successful:
                     _dump_failed_namespace_stacks(executable=executable, profiles=profiles, data_directory=data_directory)
-                log.flush()
-                print(log_path.read_text(encoding="utf-8", errors="replace"))
-                for child_log in sorted((data_directory / "logs").glob("namespace-*.log")):
-                    print(child_log.read_text(encoding="utf-8", errors="replace"))
-                _stop_namespace_children(executable=executable, profiles=profiles)
+                try:
+                    _stop_namespace_children(executable=executable, profiles=profiles)
+                finally:
+                    log.flush()
+                    print(log_path.read_text(encoding="utf-8", errors="replace"))
+                    for child_log in sorted((data_directory / "logs").glob("namespace-*.log")):
+                        print(child_log.read_text(encoding="utf-8", errors="replace"))
+                    if browsers or https_browsers:
+                        _preserve_browser_server_diagnostics(
+                            startup_log=log_path, data_directory=data_directory,
+                        )
     print(f"Installed MetaList {distribution.version} CLI and two HTTP/HTTPS namespaces passed on {sys.platform}, Python {sys.version.split()[0]}.")
 
 
@@ -415,5 +453,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--browser', action='append', choices=('chrome', 'firefox', 'edge'), default=[])
     parser.add_argument('--https-browser', action='append', choices=('chrome', 'firefox', 'edge'), default=[])
+    parser.add_argument('--browser-cold-runs', type=int, required=True)
+    parser.add_argument('--browser-reloads', type=int, required=True)
+    parser.add_argument('--skip-browser-login', action='store_true')
     arguments = parser.parse_args()
-    smoke_installed_package(browsers=arguments.browser, https_browsers=arguments.https_browser)
+    assert arguments.browser_cold_runs >= 1
+    assert arguments.browser_reloads >= 1
+    smoke_installed_package(
+        browsers=arguments.browser, https_browsers=arguments.https_browser,
+        browser_cold_runs=arguments.browser_cold_runs,
+        browser_reloads=arguments.browser_reloads,
+        validate_browser_login=not arguments.skip_browser_login,
+    )

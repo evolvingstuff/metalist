@@ -205,6 +205,114 @@ def test_proxy_streams_binary_body_strips_hop_headers_and_preserves_head(transpo
         client.close()
 
 
+def test_proxy_retries_one_bodyless_get_after_upstream_reset(monkeypatch):
+    connections = []
+    statuses = []
+
+    class Connection:
+        def __init__(self):
+            self.is_closed = False
+            connections.append(self)
+
+        def putrequest(self, *args, **kwargs):
+            return None
+
+        def putheader(self, *args):
+            return None
+
+        def endheaders(self):
+            return None
+
+        def getresponse(self):
+            if len(connections) == 1:
+                raise ConnectionResetError("transient upstream reset")
+            headers = Message()
+            headers["Content-Length"] = "0"
+            return SimpleNamespace(
+                status=204, reason="No Content", headers=headers,
+                getheaders=lambda: list(headers.items()),
+                getheader=headers.get, length=0,
+            )
+
+        def close(self):
+            self.is_closed = True
+
+    monkeypatch.setattr(
+        http.client, "HTTPConnection", lambda *args, **kwargs: Connection(),
+    )
+    handler_type = make_proxy_handler(
+        backend_host="127.0.0.1", backend_port=1,
+        forward_headers=_build_https_proxy_forward_headers,
+    )
+    handler = object.__new__(handler_type)
+    handler.headers = Message()
+    handler.headers["Host"] = "localhost"
+    handler.command, handler.path = "GET", "/api2/notes/tab-state"
+    handler.client_address = ("127.0.0.1", 1)
+    handler.close_connection = False
+    handler.send_response = lambda status, reason: statuses.append(status)
+    handler.send_header = lambda *args: None
+    handler.end_headers = lambda: None
+    handler.send_error = lambda status, reason: statuses.append(status)
+    handler.wfile = BytesIO()
+
+    handler._proxy()
+
+    assert statuses == [204]
+    assert len(connections) == 2
+    assert all(connection.is_closed for connection in connections)
+
+
+def test_proxy_does_not_replay_post_and_logs_sanitized_failure(monkeypatch, caplog):
+    connections = []
+    statuses = []
+
+    class Connection:
+        def __init__(self):
+            self.is_closed = False
+            connections.append(self)
+
+        def putrequest(self, *args, **kwargs):
+            return None
+
+        def putheader(self, *args):
+            return None
+
+        def endheaders(self):
+            return None
+
+        def getresponse(self):
+            raise ConnectionResetError("private transport details")
+
+        def close(self):
+            self.is_closed = True
+
+    monkeypatch.setattr(
+        http.client, "HTTPConnection", lambda *args, **kwargs: Connection(),
+    )
+    handler_type = make_proxy_handler(
+        backend_host="127.0.0.1", backend_port=1,
+        forward_headers=_build_https_proxy_forward_headers,
+    )
+    handler = object.__new__(handler_type)
+    handler.headers = Message()
+    handler.headers["Host"] = "localhost"
+    handler.headers["Content-Length"] = "0"
+    handler.command, handler.path = "POST", "/api2/notes/tab-state"
+    handler.client_address = ("127.0.0.1", 1)
+    handler.close_connection = False
+    handler.send_error = lambda status, reason: statuses.append((status, reason))
+
+    with caplog.at_level("ERROR", logger="app.https_proxy"):
+        handler._proxy()
+
+    assert statuses == [(502, "Upstream transport failed")]
+    assert len(connections) == 1
+    assert connections[0].is_closed
+    assert "ConnectionResetError" in caplog.text
+    assert "private transport details" not in caplog.text
+
+
 def test_multipart_limit_without_content_length_closes_spooled_files(monkeypatch):
     created = []
     original = formparsers.SpooledTemporaryFile

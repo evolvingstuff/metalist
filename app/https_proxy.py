@@ -2,6 +2,7 @@
 
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import logging
 from threading import BoundedSemaphore
 import time
 from app.upload_limits import MAX_UPLOAD_REQUEST_BYTES
@@ -12,6 +13,8 @@ IDLE_TIMEOUT_SECONDS = 60
 MAX_REQUEST_SECONDS = 30 * 60
 HOP_HEADERS = frozenset({'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
                          'te', 'trailer', 'trailers', 'transfer-encoding', 'upgrade'})
+RETRYABLE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+LOGGER = logging.getLogger(__name__)
 
 
 class BoundedProxyServer(ThreadingHTTPServer):
@@ -48,6 +51,39 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
     class ProxyHandler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
 
+        def _request_upstream(self, *, headers, content_length: int, deadline: float):
+            attempts = 1
+            if self.command in RETRYABLE_METHODS and content_length == 0:
+                attempts = 2
+            for attempt in range(attempts):
+                connection = http.client.HTTPConnection(
+                    backend_host, backend_port, timeout=IDLE_TIMEOUT_SECONDS,
+                )
+                # lint: allow-PY001 rationale="retry a bodyless safe request after an expected transient upstream transport failure"
+                try:
+                    connection.putrequest(
+                        self.command, self.path, skip_host=True, skip_accept_encoding=True,
+                    )
+                    for key, value in headers.items():
+                        connection.putheader(key, value)
+                    connection.endheaders()
+                    remaining = content_length
+                    while remaining:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError('Proxy request deadline exceeded')
+                        chunk = self.rfile.read(min(CHUNK_BYTES, remaining))
+                        if not chunk:
+                            raise ConnectionError('Incomplete request body')
+                        connection.send(chunk)
+                        remaining -= len(chunk)
+                    return connection, connection.getresponse()
+                # lint: allow-PY001 rationale="retry once, then re-raise the expected upstream transport failure"
+                except (OSError, http.client.HTTPException):
+                    connection.close()
+                    if attempt + 1 == attempts:
+                        raise
+            raise AssertionError('Upstream request attempts were not exhausted')
+
         def _proxy(self):
             # Preserve the browser's HTTP/1.1 connection across module requests.
             # Chunked response framing and the socket timeout bound each transfer.
@@ -78,24 +114,24 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
             headers = forward_headers(incoming_headers=self.headers.items(), client_ip=self.client_address[0])
             headers = {key: value for key, value in headers.items() if key.casefold() not in connection_tokens | HOP_HEADERS}
             headers['Connection'] = 'close'
-            connection = http.client.HTTPConnection(backend_host, backend_port, timeout=IDLE_TIMEOUT_SECONDS)
             deadline = time.monotonic() + MAX_REQUEST_SECONDS
+            # lint: allow-PY001 rationale="translate the final external upstream transport failure into a sanitized gateway response"
+            try:
+                connection, response = self._request_upstream(
+                    headers=headers, content_length=remaining, deadline=deadline,
+                )
+            # lint: allow-PY001 rationale="return a sanitized gateway error after retrying an expected upstream transport failure"
+            except (OSError, http.client.HTTPException) as error:
+                self.close_connection = True
+                LOGGER.error(
+                    'HTTPS proxy upstream transport failed method=%s backend=%s:%s error=%s',
+                    self.command, backend_host, backend_port, type(error).__name__,
+                )
+                self.send_error(502, 'Upstream transport failed')
+                return
             response_started = False
             # lint: allow-PY001 rationale="close upstream on client disconnect or expected transport failure without disclosing exception details"
             try:
-                connection.putrequest(self.command, self.path, skip_host=True, skip_accept_encoding=True)
-                for key, value in headers.items():
-                    connection.putheader(key, value)
-                connection.endheaders()
-                while remaining:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError('Proxy request deadline exceeded')
-                    chunk = self.rfile.read(min(CHUNK_BYTES, remaining))
-                    if not chunk:
-                        raise ConnectionError('Incomplete request body')
-                    connection.send(chunk)
-                    remaining -= len(chunk)
-                response = connection.getresponse()
                 self.send_response(response.status, response.reason)
                 response_tokens = {part.strip().casefold() for value in response.headers.get_all('Connection', []) for part in value.split(',')}
                 for key, value in response.getheaders():
@@ -125,9 +161,13 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
                     self.wfile.write(b'0\r\n\r\n')
                     self.wfile.flush()
             # lint: allow-PY001 rationale="terminate a disconnected or failed external HTTP transport; emit only a sanitized upstream error"
-            except (OSError, http.client.HTTPException):
+            except (OSError, http.client.HTTPException) as error:
                 # A partial request/response cannot be reused for another request.
                 self.close_connection = True
+                LOGGER.error(
+                    'HTTPS proxy response transport failed method=%s backend=%s:%s error=%s',
+                    self.command, backend_host, backend_port, type(error).__name__,
+                )
                 if not response_started:
                     self.send_error(502, 'Upstream transport failed')
             finally:
