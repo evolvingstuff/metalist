@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import threading
 from uuid import UUID, uuid4
 
 from app.data_directory import resolve_data_directory
@@ -26,6 +27,9 @@ else:
 
 class AppUpdateRejected(ValueError):
     """An update cannot be started in this installation or job state."""
+
+
+_JOB_THREAD_LOCK = threading.Lock()
 
 
 def update_executable() -> Path:
@@ -165,24 +169,23 @@ def _release_update_job_locked(job_id: str) -> None:
 def _job_lock():
     directory = jobs_directory()
     directory.mkdir(parents=True, exist_ok=True)
-    # Stable cross-process lock: all namespaces share this installation's update admission.
-    with (directory / 'admission.lock').open('a+b') as handle:
-        if os.name == 'nt':
-            if handle.tell() == 0:
-                handle.write(b'0')
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
+    # Threads share process-owned POSIX locks, so serialize them before taking
+    # the stable cross-process lock shared by all namespaces.
+    with _JOB_THREAD_LOCK:
+        with (directory / 'admission.lock').open('a+b') as handle:
             if os.name == 'nt':
                 handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
             else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if os.name == 'nt':
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def create_update_job(target_version: str) -> dict[str, object]:

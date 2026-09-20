@@ -67,8 +67,29 @@ def test_internal_update_check_errors_propagate(installation, monkeypatch):
 def test_concurrent_namespaces_cannot_start_two_updates(installation):
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(app_updates.create_update_job, '0.6.3') for _ in range(4)]
+    exceptions = [future.exception() for future in futures]
     assert sum(future.exception() is None for future in futures) == 1
-    assert all(future.exception() is None or isinstance(future.exception(), app_updates.AppUpdateRejected) for future in futures)
+    assert all(error is None or isinstance(error, app_updates.AppUpdateRejected) for error in exceptions), exceptions
+
+
+def test_windows_admission_lock_does_not_write_shared_byte_before_locking(monkeypatch, tmp_path):
+    lock_path = tmp_path / 'jobs' / 'admission.lock'
+    lock_calls = []
+
+    def locking(file_descriptor, mode, byte_count):
+        assert file_descriptor >= 0
+        assert byte_count == 1
+        lock_calls.append((mode, lock_path.read_bytes()))
+
+    windows_locking = SimpleNamespace(LK_LOCK=1, LK_UNLCK=2, locking=locking)
+    monkeypatch.setattr(app_updates, 'jobs_directory', lambda: tmp_path / 'jobs')
+    monkeypatch.setattr(app_updates, 'os', SimpleNamespace(name='nt'))
+    monkeypatch.setattr(app_updates, 'msvcrt', windows_locking, raising=False)
+
+    with app_updates._job_lock():
+        assert lock_path.read_bytes() == b''
+
+    assert lock_calls == [(windows_locking.LK_LOCK, b''), (windows_locking.LK_UNLCK, b'')]
 
 
 def test_worker_pins_reviewed_release_and_retains_admission_through_install(installation, monkeypatch):
