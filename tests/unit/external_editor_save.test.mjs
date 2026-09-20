@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../../app/static/js/modules/mode-manager/actions/content-actions.js', import.meta.url), 'utf8')
-    .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+    .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
 
 function harness() {
     const saves = [];

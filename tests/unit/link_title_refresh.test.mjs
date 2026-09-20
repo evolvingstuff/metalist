@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const source = readFileSync(new URL(
     '../../app/static/js/modules/mode-manager/services/polling-service.js', import.meta.url,
-), 'utf8').replace(/^import .*;\n/gm, '').replace(/^export /gm, '')
+), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')
     .replace("await import('../actions/ui-actions.js')", 'await loadUiActions()');
 
 test('completed titles defer during editing and request a guaranteed refresh afterward', async () => {

@@ -42,7 +42,7 @@ function harness() {
         applyFloatingNoteRect() {}, hydrateImageFilePreviews() {}, ensureAnchorsOpenInNewTabs() {},
         hydrateRemoteImageProxies() {}, queueMermaidDiagramRendering: async () => {},
     };
-    const build = new Function(...Object.keys(dependencies), source.replace(/^import .*;\n/gm, '').replace(/^export /gm, '')
+    const build = new Function(...Object.keys(dependencies), source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')
         + '\nreturn {openFloatingNote, closeFloatingNote, closeAllFloatingNotes, refreshFloatingNotes};');
     return {service: build(...Object.values(dependencies)), requests, elements, intervals};
 }

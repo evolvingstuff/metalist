@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const source = readFileSync(new URL(
     '../../app/static/js/modules/mode-manager/services/link-title-prefetch-service.js', import.meta.url,
-), 'utf8').replace(/^import .*;\n/gm, '').replace('export async function', 'async function');
+), 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export async function', 'async function');
 
 function harness() {
     let now = 0;
