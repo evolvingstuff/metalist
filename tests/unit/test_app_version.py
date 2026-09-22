@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 if sys.version_info >= (3, 11):
@@ -13,7 +14,8 @@ from app.version import __version__
 
 
 def test_application_version_has_one_runtime_source() -> None:
-    assert VERSION == __version__ == "0.7.4"
+    assert VERSION == __version__
+    assert re.fullmatch(r"\d+\.\d+\.\d+", VERSION)
 
 
 def test_packaging_reads_dynamic_application_version() -> None:

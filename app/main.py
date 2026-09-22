@@ -38,6 +38,7 @@ from app.services.search_history import search_history_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.security.http_headers import apply_security_headers
+from app.security.http_error_diagnostics import describe_server_exception
 from app.security.request_boundary import RequestBoundaryMiddleware
 from app.security.request_boundary import resolve_allowed_request_hosts
 from app.security.validation_errors import summarize_validation_errors
@@ -148,6 +149,18 @@ async def request_validation_error(request: Request, exc: RequestValidationError
 @app.exception_handler(OntologyParseError)
 async def handle_ontology_parse_error(request: Request, exc: OntologyParseError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_server_error(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "diagnostic": describe_server_exception(exc),
+        },
+        headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+    )
 
 _startup_timing_enabled = True
 

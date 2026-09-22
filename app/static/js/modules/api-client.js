@@ -7,6 +7,7 @@ import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-servi
 import { CommandGate } from './mode-manager/services/command-gate-service.js';
 import { buildSessionHeaders } from './session-auth.js';
 import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
+import { describeApiFailure } from './api-error-diagnostics.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -125,7 +126,7 @@ export const NotesAPI = {
             if (!response.ok) {
                 // Use centralized error handling
                 ErrorHandler.handleApiError(null, response);
-                throw new HttpRequestError(`API call failed: ${response.status} ${response.statusText}`);
+                throw new HttpRequestError(await describeApiFailure(response));
             }
 
             const data = await response.json();

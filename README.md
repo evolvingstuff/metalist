@@ -12,6 +12,11 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.7.5
+
+- Unexpected API 500 errors now show the exception class and MetaList source line in the browser, without exposing note contents, exception messages, or local filesystem paths.
+- A local release command validates the exact cross-platform CI matrix, publishes only its tested artifacts, then verifies the public PyPI package in a clean installation.
+
 ## Changes in 0.7.4
 
 - Updates use a private, checksum-verified uv release on Windows, macOS, and Linux. The updater does not execute a user-installed uv, and it revalidates both the cached official archive and extracted executable before each use.

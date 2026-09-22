@@ -280,6 +280,9 @@ recording decrypted user data:
 - Persistent exception diagnostics retain the exception type and traceback frame
   locations, not the exception message or local values. Uvicorn's raw access log
   is disabled because request targets can contain searches.
+- Unexpected API 500 responses show the exception class and last application
+  source line in the browser. They omit exception messages, local values, note
+  content, and absolute filesystem paths; responses are marked no-store.
 - Browser API/state debug logging is disabled by default. If enabled for
   development, it reports only request/response structure; shared mode logging
   discards caller-provided state and payload objects, and direct console calls do

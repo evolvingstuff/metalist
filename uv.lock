@@ -1038,7 +1038,7 @@ name = "importlib-metadata"
 version = "9.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6f/7e/1e7e8dc30634b93ebb3d58a3dea569ad146e656218d3960ab04f62047b29/importlib_metadata-9.0.1.tar.gz", hash = "sha256:ab830580bc0ef3db61ce8fae716389e5462b67e033018bab6d8f80ef17172f99", size = 59124, upload-time = "2026-08-28T15:30:34.646Z" }
 wheels = [
@@ -1382,6 +1382,8 @@ dev = [
 release = [
     { name = "build" },
     { name = "pip-audit" },
+    { name = "requests" },
+    { name = "rich" },
     { name = "setuptools" },
     { name = "uv" },
     { name = "wheel" },
@@ -1421,6 +1423,8 @@ provides-extras = ["dev"]
 release = [
     { name = "build", specifier = "==1.6.1" },
     { name = "pip-audit", specifier = "==2.10.1" },
+    { name = "requests", specifier = "==2.34.2" },
+    { name = "rich", specifier = "==14.3.4" },
     { name = "setuptools", specifier = "==83.0.0" },
     { name = "uv", specifier = "==0.11.23" },
     { name = "wheel", specifier = "==0.48.0" },
