@@ -5,8 +5,8 @@ does not call an LLM and does not ask a sequence of release questions. Supplying
 the version on the command line authorizes that one release attempt.
 
 Prepare the release on a feature branch, including the version change in
-`app/version.py`. Cross-platform changes must pass their feature-branch checks
-before merge. After review and testing, merge it to `main` and push `main`.
+`app/version.py`. Use focused checks while developing. After review and human
+testing, merge it to `main` and push `main`; that push runs the full matrix once.
 The automatic **Publish to PyPI** main workflow must pass for that exact commit.
 Then run:
 

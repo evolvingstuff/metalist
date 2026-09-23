@@ -60,6 +60,9 @@ def test_required_matrix_is_symmetric_and_publish_is_event_specific() -> None:
 
 def test_release_driver_matrix_matches_workflow_source() -> None:
     workflow = (SCRIPT.parents[1] / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    assert '    branches:\n      - "main"\n' in workflow
+    assert '    tags:\n      - "v*"\n' in workflow
+    assert "  pull_request:" not in workflow
     system_matrix = "os: [ubuntu-latest, macos-latest, windows-latest]"
     python_matrix = 'python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]'
     assert workflow.count(system_matrix) == 3
@@ -71,7 +74,7 @@ def test_release_driver_matrix_matches_workflow_source() -> None:
         "Windows Edge HTTPS",
     ):
         assert workflow.count(f"label: {label}") == 2
-    assert workflow.count("if: ${{ !startsWith(github.ref, 'refs/tags/v') }}") == 5
+    assert workflow.count("if: ${{ github.ref == 'refs/heads/main' }}") == 6
     assert "run-id: ${{ steps.validation.outputs.run_id }}" in workflow
     assert "python scripts/resolve_release_validation.py" in workflow
 

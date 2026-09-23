@@ -61,12 +61,12 @@ Existing backup files are immutable recovery artifacts.
 - A tag workflow must reuse the exact successful main-run distribution artifact after independently checking all required main-job conclusions and artifact provenance. It must not rebuild the distribution or rerun the cross-platform matrix on the tag. The release driver must verify the published PyPI files against that main-run artifact and perform a clean public install.
 - This gate does not authorize git tagging, pushing, or publishing; existing user-permission requirements still apply.
 
-### CRITICAL: Validate Cross-Platform Changes Before Merge
+### CRITICAL: Run the Full Release Matrix Once, on Main
 
-- Changes to launchers, installers, self-update, packaging, process control, networking, browser startup, CI, or operating-system-specific behavior must pass the applicable Windows, macOS, and Linux feature-branch workflow before `COMMIT FEATURE` merges them.
-- Push the exact feature commit only with the user's git permission, wait for every applicable job, and investigate every failure. Do not merge first and use the main-branch release run as initial cross-platform testing.
-- Never rerun a failed job merely to obtain green status. Preserve its logs/artifacts, identify the cause, and either fix it or document why the failure does not exercise the changed contract. A rerun may confirm a diagnosis, but it does not erase the original failure.
-- Feature-branch success does not replace the separate exact-commit release matrix required after merge and before tagging.
+- Do focused checks during feature development; do not require the full Windows, macOS, and Linux release matrix on feature branches or duplicate it locally. A push to `main` is the sole automatic release-candidate matrix run; manual and scheduled checks may run on `main` but cannot replace that push run as release evidence.
+- After review and the required human testing, merge and push `main`. Treat its exact-commit matrix as the release gate. Never create a PyPI release tag until every required main job passes and the tested distribution artifact is available.
+- If main validation fails, preserve the logs/artifacts, identify the cause, fix it in a new commit, and validate that new commit on main. Never rerun a failed job merely to obtain green status; a rerun may confirm a diagnosis but does not erase the original failure.
+- A tag push checks the successful exact-commit main run and publishes its tested artifact without rerunning the matrix. Do not add a second full matrix on feature branches or tags.
 
 ### CRITICAL: Always Ask Before Git Operations
 **NEVER perform ANY git operations that modify the repository without explicit user permission.** When the user approves a modifying git command, execute it once using the shell tool with `with_escalated_permissions=true` so the harness shows the Proposed Command dialog for confirmation. If the user already granted permission for that specific command, run it—do not re-ask repeatedly.
