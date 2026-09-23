@@ -12,6 +12,11 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.8.0
+
+- Error diagnostics now record safe request IDs, exception types, and source locations through Loguru; full tracebacks are available only in authenticated encrypted logs.
+- Releases run the full cross-platform matrix once on the `main` push. The tag publishes those exact tested distributions without rerunning the matrix.
+
 ## Changes in 0.7.5
 
 - Unexpected API 500 errors now show the exception class and MetaList source line in the browser, without exposing note contents, exception messages, or local filesystem paths.
