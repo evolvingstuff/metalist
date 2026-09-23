@@ -38,11 +38,18 @@ def test_server_exception_diagnostic_hides_external_paths():
 
 def test_real_application_500_contains_data_free_diagnostic(tmp_path):
     script = '''
+import re
+import logging
 from fastapi.testclient import TestClient
 from app.main import app
 from app.config import API_PREFIX
 from app.services.tokens import token_service
 from app.api.routes import notes as notes_module
+
+logging.getLogger("diagnostic-fixture").error(
+    "Safe logging bridge fixture",
+    exc_info=(ValueError, ValueError("PRIVATE_NOTE_CONTENT"), None),
+)
 
 exec(compile('def broken_view():\\n    raise ValueError("PRIVATE_NOTE_CONTENT")', notes_module.__file__, 'exec'))
 
@@ -52,10 +59,11 @@ headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Orig
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     response = client.get(API_PREFIX + "/diagnostic-fixture", headers=headers)
 assert response.status_code == 500, (response.status_code, response.text)
-assert response.json() == {
-    "detail": "Internal server error",
-    "diagnostic": {"errorType": "ValueError", "codeLocation": "app/api/routes/notes.py:2"},
-}, response.text
+assert response.json()["detail"] == "Internal server error"
+diagnostic = response.json()["diagnostic"]
+assert diagnostic["errorType"] == "ValueError", response.text
+assert diagnostic["codeLocation"] == "app/api/routes/notes.py:2", response.text
+assert re.fullmatch("[0-9a-f]{8}", diagnostic["requestId"]), response.text
 assert response.headers["Cache-Control"] == "no-store, private"
 assert "PRIVATE_NOTE_CONTENT" not in response.text
 '''
@@ -68,3 +76,5 @@ assert "PRIVATE_NOTE_CONTENT" not in response.text
         timeout=30,
     )
     assert result.returncode == 0, result.stderr[-3000:]
+    assert "Safe logging bridge fixture error_type=ValueError frames=[]" in result.stdout
+    assert "PRIVATE_NOTE_CONTENT" not in result.stdout + result.stderr

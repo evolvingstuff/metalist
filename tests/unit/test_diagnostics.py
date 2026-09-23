@@ -1,10 +1,44 @@
 from io import StringIO
 
 import pytest
+from loguru import logger
 
 from app.security.authenticated_logging import decrypt_log_record
 from app.security.authenticated_logging import decrypt_log_records
 from app.services import diagnostics
+
+
+def test_unexpected_error_keeps_exception_text_out_of_plaintext_log() -> None:
+    records = []
+    sink_id = logger.add(records.append, level="ERROR")
+    try:
+        with pytest.raises(TypeError) as captured:
+            raise TypeError("PRIVATE_NOTE_CONTENT")
+        diagnostics.log_unexpected_exception(
+            context="HTTP request", exception=captured.value,
+            request_id="a1b2c3d4", level="ERROR",
+        )
+    finally:
+        logger.remove(sink_id)
+    assert len(records) == 1
+    assert records[0].record["exception"] is None
+    assert "PRIVATE_NOTE_CONTENT" not in str(records[0])
+    assert "error_type=TypeError" in str(records[0])
+    assert records[0].record["extra"]["request_id"] == "a1b2c3d4"
+
+
+def test_asyncio_error_uses_the_same_safe_loguru_boundary() -> None:
+    records = []
+    sink_id = logger.add(records.append, level="ERROR")
+    try:
+        with pytest.raises(RuntimeError) as captured:
+            raise RuntimeError("PRIVATE_NOTE_CONTENT")
+        diagnostics._handle_asyncio_exception(None, {"exception": captured.value})
+    finally:
+        logger.remove(sink_id)
+    assert len(records) == 1
+    assert "error_type=RuntimeError" in str(records[0])
+    assert "PRIVATE_NOTE_CONTENT" not in str(records[0])
 
 
 def test_recycle_direct_append_log_file_keeps_tail_for_oversized_log(
@@ -145,6 +179,12 @@ def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
     encrypted_path = diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
     try:
         print(secret)
+        with pytest.raises(TypeError) as captured:
+            raise TypeError(secret)
+        diagnostics.log_unexpected_exception(
+            context="HTTP request", exception=captured.value,
+            request_id="", level="ERROR",
+        )
         assert diagnostics._authenticated_log_sink is not None
         diagnostics._authenticated_log_sink.write(secret)
     finally:
@@ -160,5 +200,9 @@ def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
     ]
     assert secret in stdout_records
     assert secret in decrypt_log_records(path=encrypted_path, dek=dek)
+    assert any(
+        "TypeError: " + secret in record
+        for record in decrypt_log_records(path=encrypted_path, dek=dek)
+    )
     assert diagnostics.sys.stdout is plaintext_stdout
     assert diagnostics.sys.stderr is plaintext_stderr

@@ -134,16 +134,33 @@ def validate_jobs(jobs: list[dict[str, object]], *, is_tag: bool) -> None:
     if duplicates:
         raise ReleaseError(f"Workflow returned duplicate jobs: {duplicates}")
     actual = {str(job["name"]): str(job["conclusion"]) for job in jobs}
-    publish_conclusion = "skipped"
     if is_tag:
-        publish_conclusion = "success"
-    expected = expected_jobs(publish_conclusion=publish_conclusion)
+        if "publish" not in actual:
+            raise ReleaseError("Tag workflow did not create a publication job")
+        publication = actual["publish"]
+        del actual["publish"]
+        if publication != "success" or any(conclusion != "skipped" for conclusion in actual.values()):
+            raise ReleaseError(
+                "Tag workflow must publish from the validated main artifact without rerunning checks: "
+                f"publish={publication}; other jobs={actual}"
+            )
+        expected_skipped_prefixes = (
+            "build", "Python (", "JavaScript and sanity (", "Package and update (",
+            "Browser smoke (", "Browser soak (",
+        )
+        if len(actual) != len(expected_skipped_prefixes) or any(
+            sum(name.startswith(prefix) for name in actual) != 1
+            for prefix in expected_skipped_prefixes
+        ):
+            raise ReleaseError(f"Tag workflow did not skip exactly the six validation jobs: {actual}")
+        return
+    expected = expected_jobs(publish_conclusion="skipped")
     if actual != expected:
         missing = sorted(set(expected) - set(actual))
         extra = sorted(set(actual) - set(expected))
         wrong = sorted(name for name in expected.keys() & actual.keys() if actual[name] != expected[name])
         raise ReleaseError(
-            "Release job matrix did not match the required 43 jobs. "
+            "Main release job matrix did not match the required 43 jobs. "
             f"Missing={missing}; extra={extra}; wrong conclusions="
             f"{[(name, actual[name], expected[name]) for name in wrong]}"
         )
@@ -414,6 +431,8 @@ def wait_for_workflow(
                         if job["conclusion"] not in {"success", "skipped"}
                     ]
                     raise ReleaseError(f"{label.capitalize()} failed: {failures}")
+                if not is_tag and run["run_attempt"] != 1:
+                    raise ReleaseError("Main validation was rerun; create a new candidate commit")
                 validate_jobs(jobs, is_tag=is_tag)
                 return run
             time.sleep(POLL_SECONDS)
@@ -454,6 +473,22 @@ def wait_for_pypi(*, version: str, console: Console) -> dict[str, object]:
                 raise ReleaseError(f"PyPI returned HTTP {response.status_code} for {version}")
             time.sleep(POLL_SECONDS)
     raise ReleaseError(f"Timed out waiting for metalist {version} on PyPI")
+
+
+def wait_for_pypi_install_index(*, version: str, console: Console) -> None:
+    deadline = time.monotonic() + PYPI_TIMEOUT_SECONDS
+    filename = f"metalist-{version}-py3-none-any.whl"
+    with Progress(
+        SpinnerColumn(), TextColumn("{task.description}"), TimeElapsedColumn(), console=console
+    ) as progress:
+        progress.add_task(f"Waiting for metalist {version} in the PyPI install index", total=None)
+        while time.monotonic() < deadline:
+            response = requests.get("https://pypi.org/simple/metalist/", timeout=30)
+            response.raise_for_status()
+            if filename in response.text:
+                return
+            time.sleep(POLL_SECONDS)
+    raise ReleaseError(f"Timed out waiting for metalist {version} in the PyPI install index")
 
 
 def command_to_log(command: list[str], *, directory: Path, log_path: Path) -> None:
@@ -523,16 +558,17 @@ def release(version: str, *, console: Console) -> None:
         client, commit=commit, branch="main", is_tag=False, console=console,
     )
     console.print(f"[green]✓[/green] Exact main matrix passed: {main_run['html_url']}")
+    artifact = client.artifact(run_id=int(main_run["id"]), name="pypi-distributions")
+    archive = client.download_artifact(artifact_id=int(artifact["id"]))
+    ci_hashes = artifact_hashes(archive, version=version)
+    console.print("[green]✓[/green] Exact main distribution artifact is available")
     ensure_remote_tag(
         root, tag=tag, commit=commit, already_remote=already_remote, console=console,
     )
     tag_run = wait_for_workflow(
         client, commit=commit, branch=tag, is_tag=True, console=console,
     )
-    console.print(f"[green]✓[/green] Tag matrix and publication passed: {tag_run['html_url']}")
-    artifact = client.artifact(run_id=int(tag_run["id"]), name="pypi-distributions")
-    archive = client.download_artifact(artifact_id=int(artifact["id"]))
-    ci_hashes = artifact_hashes(archive, version=version)
+    console.print(f"[green]✓[/green] Tag publication passed: {tag_run['html_url']}")
     pypi_payload = wait_for_pypi(version=version, console=console)
     public_hashes = pypi_hashes(pypi_payload, version=version)
     if ci_hashes != public_hashes:
@@ -540,6 +576,7 @@ def release(version: str, *, console: Console) -> None:
             f"PyPI files differ from the tested GitHub artifact: CI={ci_hashes}; PyPI={public_hashes}"
         )
     console.print("[green]✓[/green] PyPI wheel and source distribution match tested CI artifacts")
+    wait_for_pypi_install_index(version=version, console=console)
     log_path = verify_clean_install(
         root, version=version, run_id=int(tag_run["id"]), console=console,
     )

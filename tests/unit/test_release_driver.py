@@ -20,19 +20,30 @@ SPEC.loader.exec_module(release)
 
 
 def successful_jobs(*, is_tag: bool) -> list[dict[str, str]]:
-    conclusion = "skipped"
     if is_tag:
-        conclusion = "success"
+        return [
+            {"name": name, "conclusion": conclusion, "status": "completed"}
+            for name, conclusion in (
+                ("build", "skipped"),
+                ("Python (${{ matrix.os }}, ${{ matrix.python-version }})", "skipped"),
+                ("JavaScript and sanity (${{ matrix.os }})", "skipped"),
+                ("Package and update (${{ matrix.os }}, ${{ matrix.python-version }})", "skipped"),
+                ("Browser smoke (${{ matrix.label }})", "skipped"),
+                ("Browser soak (${{ matrix.label }})", "skipped"),
+                ("publish", "success"),
+            )
+        ]
     return [
         {"name": name, "conclusion": expected, "status": "completed"}
-        for name, expected in release.expected_jobs(publish_conclusion=conclusion).items()
+        for name, expected in release.expected_jobs(publish_conclusion="skipped").items()
     ]
 
 
 def test_required_matrix_is_symmetric_and_publish_is_event_specific() -> None:
     main = release.expected_jobs(publish_conclusion="skipped")
-    tag = release.expected_jobs(publish_conclusion="success")
-    assert len(main) == len(tag) == 43
+    tag = successful_jobs(is_tag=True)
+    assert len(main) == 43
+    assert len(tag) == 7
     assert {name for name in main if name.startswith("Python (")} == {
         f"Python ({system}, {version})"
         for system in release.SUPPORTED_SYSTEMS
@@ -44,7 +55,7 @@ def test_required_matrix_is_symmetric_and_publish_is_event_specific() -> None:
         for version in release.SUPPORTED_PYTHONS
     }
     assert main["publish"] == "skipped"
-    assert tag["publish"] == "success"
+    assert [job["name"] for job in tag if job["conclusion"] == "success"] == ["publish"]
 
 
 def test_release_driver_matrix_matches_workflow_source() -> None:
@@ -60,6 +71,9 @@ def test_release_driver_matrix_matches_workflow_source() -> None:
         "Windows Edge HTTPS",
     ):
         assert workflow.count(f"label: {label}") == 2
+    assert workflow.count("if: ${{ !startsWith(github.ref, 'refs/tags/v') }}") == 5
+    assert "run-id: ${{ steps.validation.outputs.run_id }}" in workflow
+    assert "python scripts/resolve_release_validation.py" in workflow
 
 
 @pytest.mark.parametrize("is_tag", [False, True])
@@ -82,6 +96,13 @@ def test_incomplete_or_failed_matrix_blocks_release(mutation: str) -> None:
         release.validate_jobs(jobs, is_tag=True)
 
 
+def test_tag_validation_rejects_repeated_main_matrix() -> None:
+    jobs = successful_jobs(is_tag=False)
+    jobs[-1]["conclusion"] = "success"
+    with pytest.raises(release.ReleaseError, match="without rerunning checks"):
+        release.validate_jobs(jobs, is_tag=True)
+
+
 def test_run_selection_requires_exact_commit_branch_event_and_workflow() -> None:
     valid = {
         "id": 12,
@@ -95,6 +116,35 @@ def test_run_selection_requires_exact_commit_branch_event_and_workflow() -> None
     assert release.select_run([wrong, valid], commit="abc", branch="v1.2.3") == valid
     with pytest.raises(release.ReleaseError, match="No Publish to PyPI push run"):
         release.select_run([wrong], commit="abc", branch="v1.2.3")
+
+
+def test_release_driver_rejects_rerun_before_tagging() -> None:
+    run = {
+        "id": 12,
+        "head_sha": "abc",
+        "head_branch": "main",
+        "event": "push",
+        "name": release.WORKFLOW_NAME,
+        "path": f".github/workflows/{release.WORKFLOW}",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 2,
+    }
+
+    class Client:
+        def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
+            assert branch == "main"
+            return [run]
+
+        def jobs(self, *, run_id: int) -> list[dict[str, object]]:
+            assert run_id == 12
+            return successful_jobs(is_tag=False)
+
+    console = release.Console(file=StringIO(), force_terminal=False)
+    with pytest.raises(release.ReleaseError, match="was rerun"):
+        release.wait_for_workflow(
+            Client(), commit="abc", branch="main", is_tag=False, console=console,
+        )
 
 
 def distribution_zip(version: str, files: dict[str, bytes]) -> bytes:
@@ -154,6 +204,21 @@ def test_pypi_hashes_reject_duplicate_filenames() -> None:
 def test_distribution_artifact_rejects_missing_or_extra_files(files: dict[str, bytes]) -> None:
     with pytest.raises(release.ReleaseError, match="unexpected files"):
         release.artifact_hashes(distribution_zip("1.2.3", files), version="1.2.3")
+
+
+def test_clean_install_waits_for_pypi_index_propagation(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = iter(("metalist-1.2.2-py3-none-any.whl", "metalist-1.2.3-py3-none-any.whl"))
+    requests = []
+
+    def get_page(url: str, *, timeout: int) -> SimpleNamespace:
+        requests.append((url, timeout))
+        return SimpleNamespace(text=next(pages), raise_for_status=lambda: None)
+
+    monkeypatch.setattr(release.requests, "get", get_page)
+    monkeypatch.setattr(release.time, "sleep", lambda seconds: None)
+    console = release.Console(file=StringIO(), force_terminal=False)
+    release.wait_for_pypi_install_index(version="1.2.3", console=console)
+    assert requests == [("https://pypi.org/simple/metalist/", 30)] * 2
 
 
 def test_version_file_must_be_one_exact_assignment(tmp_path: Path) -> None:

@@ -116,6 +116,42 @@ def authenticated_logging_is_active() -> bool:
     return _authenticated_logging_active
 
 
+def log_unexpected_exception(
+    *, context: str, exception: BaseException, request_id: str, level: str,
+) -> None:
+    """Keep plaintext diagnostics data-free; retain full traces in encrypted logs."""
+    if context == "":
+        raise ValueError("Exception context must not be empty")
+    if level not in {"ERROR", "CRITICAL"}:
+        raise ValueError(f"Unsupported unexpected-exception level: {level}")
+    logger.bind(request_id=request_id).log(
+        level,
+        "[diagnostics] unexpected {context} exception "
+        "error_type={error_type} frames={frames}",
+        context=context,
+        error_type=type(exception).__name__,
+        frames=traceback_frame_summary(exception.__traceback__),
+    )
+    write_encrypted_exception_trace(
+        context=context, exception=exception, request_id=request_id,
+    )
+
+
+def write_encrypted_exception_trace(
+    *, context: str, exception: BaseException, request_id: str,
+) -> None:
+    """Write exception messages only to the authenticated encrypted sink."""
+    with _authenticated_logging_lock:
+        if not _authenticated_logging_active:
+            return
+        if _authenticated_log_sink is None:
+            raise RuntimeError("Authenticated logging is active without an encrypted sink")
+        formatted = "".join(traceback.format_exception(exception))
+        _authenticated_log_sink.write(
+            f"[diagnostics] {context} request_id={request_id}\n{formatted}"
+        )
+
+
 def _disable_plaintext_fault_logging() -> None:
     if hasattr(signal, "SIGUSR1"):
         faulthandler.unregister(signal.SIGUSR1)
@@ -397,22 +433,20 @@ def _direct_append_log_recycler_loop() -> None:
 
 
 def _log_unhandled_exception(exc_type, exc_value, exc_traceback) -> None:
-    logger.critical(
-        "[diagnostics] unhandled process exception error_type={error_type} frames={frames}",
-        error_type=exc_type.__name__,
-        frames=traceback_frame_summary(exc_traceback),
+    log_unexpected_exception(
+        context="process", exception=exc_value, request_id="", level="CRITICAL",
     )
 
 
 def _log_unhandled_thread_exception(args: threading.ExceptHookArgs) -> None:
     if args.thread is None:
         raise RuntimeError("Thread exception hook missing thread")
-    logger.critical(
-        "[diagnostics] unhandled thread exception thread={thread_name} "
-        "error_type={error_type} frames={frames}",
-        thread_name=args.thread.name,
-        error_type=args.exc_type.__name__,
-        frames=traceback_frame_summary(args.exc_traceback),
+    exception = args.exc_value
+    if exception is None:
+        raise RuntimeError("Thread exception hook missing exception")
+    log_unexpected_exception(
+        context=f"thread {args.thread.name}", exception=exception,
+        request_id="", level="CRITICAL",
     )
 
 
@@ -475,13 +509,13 @@ class TrackedRequest:
             ended_at=time.perf_counter(),
         )
         if exc_type is not None:
-            logger.error(
-                "[diagnostics] request crashed request_id={request_id} "
-                "duration={duration:.2f} ms error_type={error_type} frames={frames}",
+            if exc is None:
+                raise RuntimeError("Tracked request exited with an exception type but no exception")
+            log_unexpected_exception(
+                context=f"request after {duration_ms:.2f} ms",
+                exception=exc,
                 request_id=self._request_id,
-                duration=duration_ms,
-                error_type=exc_type.__name__,
-                frames=traceback_frame_summary(exc_traceback),
+                level="ERROR",
             )
         return False
 
@@ -697,10 +731,8 @@ def _handle_asyncio_exception(
 ) -> None:
     exception = context.get("exception")
     if isinstance(exception, BaseException):
-        logger.error(
-            "[diagnostics] unhandled asyncio exception error_type={error_type} frames={frames}",
-            error_type=type(exception).__name__,
-            frames=traceback_frame_summary(exception.__traceback__),
+        log_unexpected_exception(
+            context="asyncio task", exception=exception, request_id="", level="ERROR",
         )
         return
     logger.error(

@@ -53,8 +53,11 @@ from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_runtime_guard import start_namespace_runtime_guard
 from app.services.diagnostics import configure_process_diagnostics
 from app.services.diagnostics import allow_plaintext_diagnostics
+from app.services.diagnostics import log_unexpected_exception
 from app.services.diagnostics import start_asyncio_diagnostics
 from app.services.diagnostics import track_request
+from app.services.diagnostics import write_encrypted_exception_trace
+from app.security.sensitive_logging import traceback_frame_summary
 from app.api.request_auth import clear_auth_cookie
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
@@ -103,13 +106,20 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        error_type = ""
-        if record.exc_info is not None:
-            error_type = f" error_type={record.exc_info[0].__name__}"
+        error_detail = ""
+        if record.exc_info is not None and record.exc_info[0] is not None:
+            error_detail = (
+                f" error_type={record.exc_info[0].__name__} "
+                f"frames={traceback_frame_summary(record.exc_info[2])}"
+            )
         logger.opt(depth=depth).log(
             level,
-            f"{record.getMessage()}{error_type}",
+            f"{record.getMessage()}{error_detail}",
         )
+        if record.exc_info is not None and record.exc_info[1] is not None:
+            write_encrypted_exception_trace(
+                context="standard logging", exception=record.exc_info[1], request_id="",
+            )
 
 
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
@@ -153,11 +163,18 @@ async def handle_ontology_parse_error(request: Request, exc: OntologyParseError)
 
 @app.exception_handler(Exception)
 async def handle_unexpected_server_error(request: Request, exc: Exception):
+    request_id = request.scope.get("state", {}).get("diagnostic_request_id", "")
+    log_unexpected_exception(
+        context="HTTP request", exception=exc, request_id=request_id, level="ERROR",
+    )
+    diagnostic = describe_server_exception(exc)
+    if request_id:
+        diagnostic["requestId"] = request_id
     return JSONResponse(
         status_code=500,
         content={
             "detail": "Internal server error",
-            "diagnostic": describe_server_exception(exc),
+            "diagnostic": diagnostic,
         },
         headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
     )
@@ -361,6 +378,7 @@ async def redirect_remote_http_to_https(request: Request, call_next):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     request_id = uuid.uuid4().hex[:8]
+    request.state.diagnostic_request_id = request_id
     handler = request.scope.get("endpoint")
     handler_name = getattr(handler, "__qualname__", "unknown")
 

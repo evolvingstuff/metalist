@@ -249,8 +249,9 @@ connection.
 
 ### Sensitive Telemetry
 
-Runtime logs and browser diagnostics describe application structure without
-recording decrypted user data:
+Plaintext runtime logs and browser diagnostics describe application structure
+without recording decrypted user data. Authenticated encrypted logs may contain
+full exception messages and tracebacks to diagnose failures:
 
 - Before an encrypted namespace is unlocked, persistent startup diagnostics are
   plaintext because no DEK exists in memory and decrypted vault data is not
@@ -261,6 +262,11 @@ recording decrypted user data:
   namespace DEK using a domain-separated HKDF logging key and a fresh random
   nonce. Plaintext Loguru sinks are filtered out and plaintext fault logging is
   disabled for the unlocked interval.
+- Unexpected errors always record safe exception types and source frames through
+  Loguru. Full exception text and traceback are written directly to the encrypted
+  sink only while unlocked; they may contain note content and must be handled as
+  private data. A short request ID in HTTP 500 responses identifies the matching
+  server record without exposing the exception message to the browser.
 - Logout returns to plaintext startup diagnostics only after decrypted runtime
   stores and the session key have been purged. Password removal and backup
   restore close the encrypted diagnostic session after their sensitive work.

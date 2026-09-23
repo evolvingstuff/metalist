@@ -2,7 +2,7 @@
 
 ## Required compatibility gates
 
-[Compatibility rules and release gates](compatibility-gates.md) define the concrete contracts refactors must preserve. `Publish to PyPI` builds one distribution pair, then runs independent Python compatibility, per-OS JavaScript/sanity, installed-package/update, browser-smoke, and browser-soak jobs. Chrome and Firefox cover every OS; Windows also covers Edge over non-loopback verified HTTPS and the published-version repair path. Browser errors, stage diagnostics, and screenshots are retained without diagnostic upload creating secondary failures. The complete previous matrix and publish job passed for v0.7.3 in workflow run 35518909114. Every later release still requires a fresh successful run for its exact commit.
+[Compatibility rules and release gates](compatibility-gates.md) define the concrete contracts refactors must preserve. `Publish to PyPI` builds one distribution pair, then runs independent Python compatibility, per-OS JavaScript/sanity, installed-package/update, browser-smoke, and browser-soak jobs. Chrome and Firefox cover every OS; Windows also covers Edge over non-loopback verified HTTPS. Browser errors, stage diagnostics, and screenshots are retained without diagnostic upload creating secondary failures. Each release requires a successful exact-commit main matrix; the tag job checks that run and publishes its tested artifacts without rerunning the matrix.
 
 Current validation includes the full isolated Python suite, Node unit tests, Python/JS startup gates, real HTTP/TLS integration tests, a focused Puppeteer browser smoke, and installed-wheel platform checks. Historical results below retain their original dates and counts.
 

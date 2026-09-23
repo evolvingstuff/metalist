@@ -1,5 +1,6 @@
 const ERROR_TYPE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CODE_LOCATION = /^(?:app(?:\/[A-Za-z_][A-Za-z0-9_]*)+\.py:\d+|external)$/;
+const REQUEST_ID = /^[a-f0-9]{8}$/;
 
 export async function describeApiFailure(response) {
     const base = `API call failed: ${response.status} ${response.statusText}`;
@@ -12,5 +13,8 @@ export async function describeApiFailure(response) {
     if (!ERROR_TYPE.test(diagnostic?.errorType) || !CODE_LOCATION.test(diagnostic?.codeLocation)) {
         return base;
     }
-    return `${base} (${diagnostic.errorType} at ${diagnostic.codeLocation})`;
+    const requestId = REQUEST_ID.test(diagnostic.requestId)
+        ? `, request ${diagnostic.requestId}`
+        : '';
+    return `${base} (${diagnostic.errorType} at ${diagnostic.codeLocation}${requestId})`;
 }

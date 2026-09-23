@@ -58,6 +58,7 @@ Existing backup files are immutable recovery artifacts.
 - Use the successful release-validation workflow run for that exact commit as evidence (MetaList: `Publish to PyPI`). Pending, skipped, canceled, failed, or unavailable platform results block release tagging; a local test run or a successful older commit is insufficient.
 - If code, dependencies, packaging, or release configuration changes after validation, rerun the full matrix for the new commit before tagging. Do not create the tag first and rely on its subsequent workflow to discover failures.
 - The publishing job must also require every platform check to pass and must publish the same distribution artifacts that were tested. Manual dispatch must not bypass these checks.
+- A tag workflow must reuse the exact successful main-run distribution artifact after independently checking all required main-job conclusions and artifact provenance. It must not rebuild the distribution or rerun the cross-platform matrix on the tag. The release driver must verify the published PyPI files against that main-run artifact and perform a clean public install.
 - This gate does not authorize git tagging, pushing, or publishing; existing user-permission requirements still apply.
 
 ### CRITICAL: Validate Cross-Platform Changes Before Merge
