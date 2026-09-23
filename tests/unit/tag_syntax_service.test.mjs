@@ -92,6 +92,17 @@ test('normalizeTagBarInput strips illegal assignment separators and invalid tag 
     assert.equal(normalizeTagBarInput('abc=<script>'), 'abc=script');
 });
 
+test('sanitizeTagBarInput removes incomplete meta tags and conflicting scoped renderers', () => {
+    assert.equal(analyzeTagBarInput('topic @ @red').sanitizedText, 'topic @red');
+    assert.equal(analyzeTagBarInput('[@] {@ topic}').sanitizedText, '{topic}');
+    assert.equal(analyzeTagBarInput('{topic @json @csv @bold}').sanitizedText, '{topic @json @bold}');
+    assert.equal(analyzeTagBarInput('topic {{@ ').sanitizedText, 'topic');
+    assert.equal(analyzeTagBarInput('topic @cvs @csv @size=0 @size=2.0').sanitizedText, 'topic @csv @size=2.0');
+    assert.equal(analyzeTagBarInput('{topic @cvs @csv}').sanitizedText, '{topic @csv}');
+    assert.equal(analyzeTagBarInput('@password @LaTeX @size=0.4').sanitizedText, '@password @LaTeX @size=0.4');
+    assert.equal(analyzeTagBarInput('@json @csv topic').sanitizedText, '@json topic');
+});
+
 test('exact uppercase OR is reserved and cannot be saved as a tag', () => {
     const reserved = analyzeTagBarInput('alpha OR beta');
     assert.equal(reserved.isValid, false);

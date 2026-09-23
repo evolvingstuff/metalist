@@ -150,6 +150,25 @@ def _state_for(
     )
 
 
+def test_view_state_renders_note_with_bare_at_tag_without_blocking_other_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, "<div>First note</div>", "@"),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "<div>Second note</div>", ""),
+    }
+
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: [HOST_ID, TARGET_ID]},
+    )
+
+    assert "First note" in state.payloads[HOST_ID]["content"]
+    assert state.payloads[HOST_ID]["tags"] == "@"
+    assert "Second note" in state.payloads[TARGET_ID]["content"]
+
+
 def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"<div>blah ![[{TARGET_ID}]] yada</div>", ""),

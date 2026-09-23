@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import random
+import re
 import sqlite3
 import pytest
 
@@ -7,6 +10,7 @@ from app.db.schema import initialize_schema
 from app.services import content_formatting as content_formatting_module
 from app.services.link_titles import link_title_store
 from app.services.content_formatting import find_list_style
+from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
 from app.services.content_formatting import remove_added_style_tags
@@ -55,6 +59,63 @@ def test_format_note_content_for_view_no_matching_tag_keeps_delimiters() -> None
     html = "<div>{{hello}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="")
     assert rendered == html
+
+
+@pytest.mark.parametrize("tags", ["@", "topic @", "[@]", "{@ topic}", "{{@ "])
+def test_view_preserves_note_with_bare_at_tag(tags: str) -> None:
+    html = "<div>Note content</div>"
+
+    assert format_note_content_for_view(content_html=html, tags=tags) == html
+
+
+def test_view_preserves_note_when_ontology_implies_bare_at_tag(monkeypatch) -> None:
+    rules = parse_rules_text(text="topic => @", filename="ontology_rules.txt")
+    ontology = compile_rules(rules=rules, filename="ontology_rules.txt")
+    monkeypatch.setattr(content_formatting_module, "get_ontology_if_ready", lambda: ontology)
+
+    assert format_note_content_for_view(
+        content_html="<div>Note content</div>", tags="topic",
+    ) == "<div>Note content</div>"
+
+
+def test_unformat_preserves_bare_at_tag() -> None:
+    assert remove_added_style_tags("@ @red") == ("@", frozenset())
+
+
+def test_tag_bar_known_meta_tags_match_server_renderer_catalog() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "app/static/js/modules/mode-manager/services/tag-syntax-service.js"
+    ).read_text(encoding="utf-8")
+    catalog = source.split("const KNOWN_META_TAGS = new Set([", 1)[1].split("]);", 1)[0]
+    browser_terms = set(re.findall(r"'(@[^']+)'", catalog))
+    server_terms = {
+        term.casefold() for term in list_known_meta_tag_terms()
+        if not term.casefold().startswith("@size=")
+    }
+
+    assert browser_terms == server_terms
+
+
+def test_view_uses_first_of_conflicting_scoped_renderers() -> None:
+    rendered = format_note_content_for_view(
+        content_html='<div>{"name": "MetaList"}</div>',
+        tags="{@json @csv}",
+    )
+
+    assert "meta-json" in rendered
+    assert "meta-csv" not in rendered
+
+
+def test_malformed_tag_bar_text_cannot_block_view_rendering() -> None:
+    generator = random.Random(71)
+    characters = "@[]{}()/*;=+-_abcdefghijklmnopqrstuvwxyz0123456789 \t"
+    for _ in range(1000):
+        tags = "".join(generator.choice(characters) for _ in range(generator.randrange(1, 50)))
+        rendered = format_note_content_for_view(
+            content_html="<div>Note content</div>", tags=tags,
+        )
+        assert "Note content" in rendered
 
 
 def test_format_note_content_for_view_autolinks_plain_http_url() -> None:

@@ -328,7 +328,7 @@ def remove_formatting_scope_delimiters(
 def _is_removable_formatting_tag(token: str) -> bool:
     if not isinstance(token, str):
         raise TypeError(f"token must be a string, got {type(token)}")
-    if not token.startswith("@"):
+    if not token.startswith("@") or token == "@":
         return False
     tag_name = _canonical_meta_tag_name(token[1:].casefold())
     if tag_name in _REMOVABLE_FORMATTING_TAGS:
@@ -822,7 +822,7 @@ def _add_implied_meta_tags(*, tags: str, config: MetaTagConfig) -> MetaTagConfig
         implied_terms = ontology.infer_implication_only(base_tags=source_terms)
         implied_meta_tags: Set[str] = set()
         for term in implied_terms:
-            if not term.startswith("@"):
+            if not term.startswith("@") or term == "@":
                 continue
             tag_name = _canonical_meta_tag_name(term[1:].casefold())
             if _is_formatting_meta_tag_name(tag_name):
@@ -1230,7 +1230,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
     for token in tokens:
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is None:
-            if not base.startswith("@"):
+            if not base.startswith("@") or base == "@":
                 continue
             tag_name = _canonical_meta_tag_name(base[1:].casefold())
             if not _is_formatting_meta_tag_name(tag_name):
@@ -1248,7 +1248,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         key = (opener, depth)
         wrappers_to_consume.add(key)
         for inner in inner_tokens:
-            if not inner.startswith("@"):
+            if not inner.startswith("@") or inner == "@":
                 continue
             tag_name = _canonical_meta_tag_name(inner[1:].casefold())
             if not _is_formatting_meta_tag_name(tag_name):
@@ -1257,9 +1257,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
                     if key in scoped_renderers:
                         existing = scoped_renderers[key]
                     if existing is not None and existing != tag_name:
-                        raise ValueError(
-                            f"Wrapper {key} has conflicting scoped renderers: {existing} vs {tag_name}"
-                        )
+                        continue
                     scoped_renderers[key] = tag_name
                 continue
             if key not in scoped:

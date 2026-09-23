@@ -4,6 +4,8 @@
 - Each note has a tag string (`notes.tags`) that round-trips through the view snapshot (`snapshot.notes[*].tags`).
 - The tag bar editor enforces a small grammar in the browser so invalid characters/sequences are removed as you type.
 - When leaving the tag bar (Tab toggle or click-away) the input is **sanitized**: incomplete/broken items are removed.
+- A lone `@` or unknown meta tag such as `@cvs` is removed on sanitization, including inside a closed wrapper. An unfinished wrapper such as `{{@ ` is also removed. If multiple renderer meta tags target the same note or wrapper (for example `@json @csv` or `{@json @csv}`), the first renderer is kept and later conflicting renderers are removed. Other valid tags remain.
+- Previously saved tags with these forms do not block note rendering; editing and saving the tag bar applies the cleanup without changing note content.
 - When tags are shown in the note list, one line of tags shares the note's existing row height; the row grows only when its tags wrap onto additional lines.
 
 ## Whitespace + Tokens

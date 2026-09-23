@@ -28,6 +28,28 @@ const TAG_WRAPPER_PAIRS = new Map([
     ['(', ')'],
 ]);
 const TAG_WRAPPER_CHARS = new Set(['[', ']', '{', '}', '(', ')']);
+const SCOPED_RENDERER_TAGS = new Set(['@markdown', '@latex', '@json', '@csv', '@shell']);
+const KNOWN_META_TAGS = new Set([
+    '@footnote', '@monospace', '@heading', '@red', '@green', '@blue', '@grey',
+    '@highlighter', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
+    '@list-bulleted', '@list-numbered', '@username', '@password', '@email',
+    '@todo', '@done', '@markdown', '@llm', '@latex', '@shell', '@json', '@csv',
+]);
+
+function isSupportedMetaTag(term) {
+    if (typeof term !== 'string') {
+        throw new Error('isSupportedMetaTag requires string');
+    }
+    if (!term.startsWith('@')) {
+        return true;
+    }
+    const folded = term.toLowerCase();
+    if (KNOWN_META_TAGS.has(folded)) {
+        return true;
+    }
+    return /^@size=(?:\d+(?:\.\d*)?|\.\d+)$/.test(folded)
+        && /[1-9]/.test(folded.slice('@size='.length));
+}
 
 function isAsciiPrintable(char) {
     if (typeof char !== 'string' || char.length === 0) {
@@ -515,8 +537,10 @@ export function analyzeTagBarInput(rawInput) {
 
     const sanitizedSegments = [];
     const normalizedSegments = [];
+    let globalRenderer = null;
     for (const segment of segments) {
         normalizedSegments.push(segment.text);
+        let sanitizedToken = segment.text;
         if (segment.type === 'token') {
             const wrapperInfo = analyzeUnclosedWrapperTokenInfo(segment.text);
             if (wrapperInfo) {
@@ -530,8 +554,42 @@ export function analyzeTagBarInput(rawInput) {
                 hasReservedOrTag = true;
                 continue;
             }
+            if (closedWrapperInfo) {
+                let scopedRenderer = null;
+                const retainedTerms = tagTerms.filter((term) => {
+                    if (!isSupportedMetaTag(term)) {
+                        return false;
+                    }
+                    const renderer = term.toLowerCase();
+                    if (!SCOPED_RENDERER_TAGS.has(renderer)) {
+                        return true;
+                    }
+                    if (scopedRenderer !== null && scopedRenderer !== renderer) {
+                        return false;
+                    }
+                    scopedRenderer = renderer;
+                    return true;
+                });
+                if (retainedTerms.length === 0) {
+                    continue;
+                }
+                const opener = segment.text[0];
+                const prefix = opener.repeat(closedWrapperInfo.depth);
+                const suffix = TAG_WRAPPER_PAIRS.get(opener).repeat(closedWrapperInfo.depth);
+                sanitizedToken = `${prefix}${retainedTerms.join(' ')}${suffix}`;
+            } else if (!isSupportedMetaTag(segment.text)) {
+                continue;
+            } else {
+                const renderer = segment.text.toLowerCase();
+                if (SCOPED_RENDERER_TAGS.has(renderer)) {
+                    if (globalRenderer !== null && globalRenderer !== renderer) {
+                        continue;
+                    }
+                    globalRenderer = renderer;
+                }
+            }
         }
-        sanitizedSegments.push(segment.text);
+        sanitizedSegments.push(sanitizedToken);
     }
 
     const sanitizedText = sanitizedSegments.join(' ').trim();

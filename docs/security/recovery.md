@@ -68,16 +68,11 @@ preflight, backup, shutdown, installation, and restart behavior remain in charge
 It requires neither administrator privileges nor changes to security settings.
 
 Validation: unit coverage checks installer selection, failure propagation,
-checksum rejection, and the child environment. The required Windows/Python 3.13
-CI leg installs the hash-pinned published 0.7.1 wheel (only its release-metadata URL
-is redirected to the test index), extracts and runs the repair ZIP, verifies the
-upgrade/backups/restarts, and exercises Chrome, Firefox, and Edge afterward. Each
-browser covers ordinary encrypted login and deliberately removes the stored tab ID
-after a successful login response to verify hydration still completes with the
-original identity. Chrome over loopback HTTP matches the affected user's actual
-browser and access route; Edge retains the additional certificate-verified LAN HTTPS
-coverage. The release workflow blocks publication until this complete matrix passes
-for the exact candidate commit.
+checksum rejection, and the child environment. The one-time published 0.7.1
+repair validation has been retired because the affected installation has moved
+to a current version. Clean installed-package and managed-uv updater validation
+remain required on every release matrix leg. Separate browser jobs continue to
+cover Chrome and Firefox on all supported systems and Edge on Windows.
 
 The first Windows Edge run reached password creation and exposed `OSError: [Errno
 9] Bad file descriptor` while flushing a recovery image. `_sync_file` had opened
@@ -85,5 +80,5 @@ the owned file read-only; Windows' CRT rejects `fsync`/`_commit` on that descrip
 It now opens the same existing file as `r+b`, which grants the required descriptor
 access without truncating or changing its bytes. A regression forces the flush
 through a writable-descriptor check. The complete Python and JavaScript suites and
-startup gates now run symmetrically on all 15 OS/Python matrix legs; Edge and the
-repair launcher remain additional Windows checks.
+startup gates now run symmetrically on all 15 OS/Python matrix legs; Edge remains
+an additional Windows check.

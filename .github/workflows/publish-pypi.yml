@@ -149,14 +149,6 @@ jobs:
             requirements/runtime.txt
             requirements/updater.txt
 
-      - name: Set up Node for Windows repair validation
-        if: matrix.os == 'windows-latest' && matrix.python-version == '3.13'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: scripts/browser-validation/package-lock.json
-
       - name: Download the single verified distribution build
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -186,10 +178,6 @@ jobs:
           assert len(wheels) == 1, wheels;
           subprocess.check_call([sys.executable, '-I', '-m', 'pip', 'install', '--no-deps', str(wheels[0])])"
 
-      - name: Install locked browser driver for Windows repair validation
-        if: matrix.os == 'windows-latest' && matrix.python-version == '3.13'
-        run: npm ci --prefix scripts/browser-validation --ignore-scripts --no-audit --no-fund
-
       - name: Check installed dependencies
         working-directory: ${{ runner.temp }}
         run: python -I -m pip check
@@ -212,24 +200,6 @@ jobs:
           wheels = list((root / 'dist').glob('*.whl'));
           assert len(wheels) == 1;
           subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0])])"
-
-      - name: Test Windows repair launcher from published MetaList 0.7.1
-        if: matrix.os == 'windows-latest' && matrix.python-version == '3.13'
-        working-directory: ${{ runner.temp }}
-        run: >-
-          python -I -c "import os, pathlib, subprocess, sys;
-          root = pathlib.Path(os.environ['GITHUB_WORKSPACE']);
-          wheels = list((root / 'dist').glob('*.whl'));
-          assert len(wheels) == 1;
-          subprocess.check_call([sys.executable, '-I', str(root / 'scripts/smoke_self_update.py'), str(wheels[0]), '--repair'])"
-
-      - name: Preserve Windows repair diagnostics
-        if: always() && matrix.os == 'windows-latest' && matrix.python-version == '3.13'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-browsers-after-repair-upgrade
-          path: ${{ runner.temp }}/metalist-browser-results/
-          if-no-files-found: warn
 
   browser-smoke:
     name: Browser smoke (${{ matrix.label }})
