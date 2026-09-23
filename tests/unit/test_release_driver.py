@@ -9,6 +9,8 @@ import zipfile
 
 import pytest
 
+from app.version import __version__
+
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/release.py"
 SPEC = importlib.util.spec_from_file_location("release_driver", SCRIPT)
@@ -156,11 +158,17 @@ def test_distribution_artifact_rejects_missing_or_extra_files(files: dict[str, b
 
 def test_version_file_must_be_one_exact_assignment(tmp_path: Path) -> None:
     (tmp_path / "app").mkdir()
-    (tmp_path / "app/version.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "app/version.py").write_text(
+        '"""Application version."""\n\n__version__ = "1.2.3"\n', encoding="utf-8"
+    )
     assert release.read_version(tmp_path) == "1.2.3"
     (tmp_path / "app/version.py").write_text('__version__ = "1.2.3"\nOTHER = True\n', encoding="utf-8")
     with pytest.raises(release.ReleaseError, match="exactly one"):
         release.read_version(tmp_path)
+
+
+def test_release_driver_accepts_actual_application_version_file() -> None:
+    assert release.read_version(SCRIPT.parents[1]) == __version__
 
 
 def configure_preflight(

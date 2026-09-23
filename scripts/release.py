@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
@@ -83,11 +84,28 @@ def git_output(root: Path, *arguments: str) -> str:
 
 
 def read_version(root: Path) -> str:
-    text = (root / "app/version.py").read_text(encoding="utf-8")
-    match = re.fullmatch(r'__version__\s*=\s*["\'](\d+\.\d+\.\d+)["\']\s*', text)
-    if match is None:
+    source = (root / "app/version.py").read_text(encoding="utf-8")
+    statements = ast.parse(source).body
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        statements = statements[1:]
+    if len(statements) != 1 or not isinstance(statements[0], ast.Assign):
         raise ReleaseError("app/version.py must contain exactly one semantic __version__ assignment")
-    return match.group(1)
+    assignment = statements[0]
+    if (
+        len(assignment.targets) != 1
+        or not isinstance(assignment.targets[0], ast.Name)
+        or assignment.targets[0].id != "__version__"
+        or not isinstance(assignment.value, ast.Constant)
+        or not isinstance(assignment.value.value, str)
+        or re.fullmatch(r"\d+\.\d+\.\d+", assignment.value.value) is None
+    ):
+        raise ReleaseError("app/version.py must contain exactly one semantic __version__ assignment")
+    return assignment.value.value
 
 
 def expected_jobs(*, publish_conclusion: str) -> dict[str, str]:
