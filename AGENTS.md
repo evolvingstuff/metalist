@@ -63,7 +63,7 @@ Existing backup files are immutable recovery artifacts.
 
 ### CRITICAL: Run the Full Release Matrix Once, on Main
 
-- Do focused checks during feature development; do not require the full Windows, macOS, and Linux release matrix on feature branches or duplicate it locally. A push to `main` is the sole automatic release-candidate matrix run; manual and scheduled checks may run on `main` but cannot replace that push run as release evidence.
+- Do focused checks during feature development; do not require the full Windows, macOS, and Linux release matrix on feature branches or duplicate it locally. A push to `main` is the sole automatic release-candidate matrix run; an explicit manual check on `main` cannot replace that push run as release evidence. Do not schedule duplicate full-matrix runs for unchanged code or share a canceling concurrency group across event types.
 - After review and the required human testing, merge and push `main`. Treat its exact-commit matrix as the release gate. Never create a PyPI release tag until every required main job passes and the tested distribution artifact is available.
 - If main validation fails, preserve the logs/artifacts, identify the cause, fix it in a new commit, and validate that new commit on main. Never rerun a failed job merely to obtain green status; a rerun may confirm a diagnosis but does not erase the original failure.
 - A tag push checks the successful exact-commit main run and publishes its tested artifact without rerunning the matrix. Do not add a second full matrix on feature branches or tags.

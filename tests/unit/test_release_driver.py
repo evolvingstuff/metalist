@@ -63,6 +63,8 @@ def test_release_driver_matrix_matches_workflow_source() -> None:
     assert '    branches:\n      - "main"\n' in workflow
     assert '    tags:\n      - "v*"\n' in workflow
     assert "  pull_request:" not in workflow
+    assert "  schedule:" not in workflow
+    assert "${{ github.event_name }}-${{ github.ref }}" in workflow
     system_matrix = "os: [ubuntu-latest, macos-latest, windows-latest]"
     python_matrix = 'python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]'
     assert workflow.count(system_matrix) == 3
