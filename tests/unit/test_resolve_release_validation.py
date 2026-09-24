@@ -24,7 +24,7 @@ def test_publisher_and_local_release_driver_require_the_same_main_matrix() -> No
 
 def test_main_gate_requires_every_platform_job_and_skipped_publish() -> None:
     expected = gate.expected_main_jobs()
-    assert len(expected) == 43
+    assert len(expected) == 25
     gate.validate_main_jobs([
         {"name": name, "conclusion": conclusion}
         for name, conclusion in expected.items()

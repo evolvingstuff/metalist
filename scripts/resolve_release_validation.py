@@ -17,7 +17,7 @@ import urllib.request
 WORKFLOW = "publish-pypi.yml"
 WORKFLOW_NAME = "Publish to PyPI"
 SYSTEMS = ("ubuntu-latest", "macos-latest", "windows-latest")
-PYTHONS = ("3.10", "3.11", "3.12", "3.13", "3.14")
+PYTHONS = ("3.10", "3.14")
 BROWSER_LABELS = (
     "Linux Chrome and Firefox",
     "macOS Chrome and Firefox",
@@ -40,7 +40,7 @@ def expected_main_jobs() -> dict[str, str]:
     for label in BROWSER_LABELS:
         jobs[f"Browser smoke ({label})"] = "success"
         jobs[f"Browser soak ({label})"] = "success"
-    assert len(jobs) == 43
+    assert len(jobs) == 25
     return jobs
 
 

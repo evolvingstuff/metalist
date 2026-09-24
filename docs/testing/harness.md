@@ -159,7 +159,7 @@ F17/F18 local result (2026-09-12): **1,421 Python tests**, **628 Node tests**, s
 - User-tested floating windows and UI refinements are merged into `main` at `5ab527cf`. The release candidate updates the authoritative version and version regression to 0.6.0 and adds release notes in README.
 - Feature validation passed **1,460 Python tests**, **710 JavaScript tests**, and startup gates (**395 Python / 182 JS files**). The release version tests also pass after the bump. Disposable browser checks covered floating-window navigation, dragging/resizing, live updates, passwords, searches/tabs, deletion/undo, and login/logout; targeted light/dark checks verified steady read-only hover borders.
 - Local macOS/Python 3.12.3 release validation passed: wheel and source distribution build, **435 runtime files** verified in both archives, packaged agent-resource imports, clean installation with hash-verified runtime dependencies, `pip check`, and installed CLI/two-namespace HTTP/HTTPS startup outside the checkout. Lock exports, vendor checksums/licenses, and Action pins passed. Disposable artifacts and logs: `/tmp/metalist-release-060-o4z4nz28/`.
-- Release tagging requires a successful `Publish to PyPI` build and complete Windows/macOS/Linux × Python 3.10–3.14 matrix for the exact pushed candidate commit. Local validation does not replace that gate.
+- Release tagging requires a successful `Publish to PyPI` build and complete Windows/macOS/Linux matrix at the Python 3.10 and 3.14 endpoints for the exact pushed candidate commit. Local validation does not replace that gate.
 
 ## State lifecycle regression audit (2026-09-13)
 

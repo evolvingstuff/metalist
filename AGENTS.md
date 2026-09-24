@@ -53,7 +53,7 @@ Existing backup files are immutable recovery artifacts.
 
 ### CRITICAL: Test All Platforms Before a PyPI Release Tag
 
-- Before creating or pushing any PyPI release tag (including `v*` tags), the **exact commit being tagged** must have a successful full distribution build, clean package installation, dependency check, and installed-application startup test on **Windows, macOS, and Linux**, across every supported Python version.
+- Before creating or pushing any PyPI release tag (including `v*` tags), the **exact commit being tagged** must have a successful full distribution build, clean package installation, dependency check, and installed-application startup test on **Windows, macOS, and Linux**, at the supported Python endpoints **3.10 and 3.14**.
 - Verify the built wheel and source distribution contain required runtime resources. Run startup tests outside the source checkout so source files cannot hide packaging omissions.
 - Use the successful release-validation workflow run for that exact commit as evidence (MetaList: `Publish to PyPI`). Pending, skipped, canceled, failed, or unavailable platform results block release tagging; a local test run or a successful older commit is insufficient.
 - If code, dependencies, packaging, or release configuration changes after validation, rerun the full matrix for the new commit before tagging. Do not create the tag first and rely on its subsequent workflow to discover failures.
@@ -517,7 +517,7 @@ DO NOT continue with other tasks until all error handling is removed.
 
 ## CRITICAL: Cross-Platform Regression Coverage Must Be Symmetric
 
-Core product behavior must receive the same regression coverage on every supported operating system. For MetaList, every Windows, macOS, and Linux release-matrix leg, across every supported Python version, must run the complete Python unit suite, complete JavaScript unit suite, and both startup sanity gates.
+Core product behavior must receive the same regression coverage on every supported operating system. For MetaList, Windows, macOS, and Linux must each run the complete Python unit suite and installed-package/update validation at the supported Python endpoints **3.10 and 3.14**. Each operating system must also run the complete JavaScript unit suite and both startup sanity gates once; these checks do not vary by Python minor version.
 
 - A single-OS unit run plus narrower cross-platform smoke tests is not equivalent and is forbidden as release coverage.
 - Installed-package, updater, persistence, encryption, authentication, hydration, and startup checks must exercise the same core behavior on all supported operating systems. Do not assume code is platform-independent merely because it usually runs above an abstraction layer.

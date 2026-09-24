@@ -18,12 +18,12 @@ The command requires a clean `main` checkout exactly synchronized with
 `origin/main`, the requested version in `app/version.py`, and GitHub credentials
 available through `GITHUB_TOKEN` or the configured git credential helper. It:
 
-1. waits for the exact main commit's complete 43-job release matrix;
-2. requires every Windows, macOS, and Linux job and every supported Python
-   version, including all browser smoke and soak jobs;
+1. waits for the exact main commit's complete 25-job release matrix;
+2. requires Python 3.10 and 3.14 on Windows, macOS, and Linux, including all
+   browser smoke and soak jobs;
 3. creates and pushes the annotated version tag only after that matrix passes;
 4. waits for the tag's publication-only GitHub Trusted Publishing job; that job
-   independently checks the exact main run's 43 conclusions and downloads its
+   independently checks the exact main run's 25 conclusions and downloads its
    tested distribution artifact, without repeating the matrix;
 5. downloads the same main-run wheel and source distribution and compares their
    SHA-256 hashes with the public PyPI files; and

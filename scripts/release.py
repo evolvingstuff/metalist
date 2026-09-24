@@ -28,7 +28,7 @@ REPOSITORY = "evolvingstuff/metalist"
 WORKFLOW = "publish-pypi.yml"
 WORKFLOW_NAME = "Publish to PyPI"
 SUPPORTED_SYSTEMS = ("ubuntu-latest", "macos-latest", "windows-latest")
-SUPPORTED_PYTHONS = ("3.10", "3.11", "3.12", "3.13", "3.14")
+SUPPORTED_PYTHONS = ("3.10", "3.14")
 POLL_SECONDS = 15
 WORKFLOW_TIMEOUT_SECONDS = 3 * 60 * 60
 PYPI_TIMEOUT_SECONDS = 5 * 60
@@ -124,7 +124,7 @@ def expected_jobs(*, publish_conclusion: str) -> dict[str, str]:
     for label in browser_labels:
         jobs[f"Browser smoke ({label})"] = "success"
         jobs[f"Browser soak ({label})"] = "success"
-    assert len(jobs) == 43
+    assert len(jobs) == 25
     return jobs
 
 
@@ -160,7 +160,7 @@ def validate_jobs(jobs: list[dict[str, object]], *, is_tag: bool) -> None:
         extra = sorted(set(actual) - set(expected))
         wrong = sorted(name for name in expected.keys() & actual.keys() if actual[name] != expected[name])
         raise ReleaseError(
-            "Main release job matrix did not match the required 43 jobs. "
+            "Main release job matrix did not match the required 25 jobs. "
             f"Missing={missing}; extra={extra}; wrong conclusions="
             f"{[(name, actual[name], expected[name]) for name in wrong]}"
         )

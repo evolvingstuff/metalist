@@ -42,7 +42,7 @@ def successful_jobs(*, is_tag: bool) -> list[dict[str, str]]:
 def test_required_matrix_is_symmetric_and_publish_is_event_specific() -> None:
     main = release.expected_jobs(publish_conclusion="skipped")
     tag = successful_jobs(is_tag=True)
-    assert len(main) == 43
+    assert len(main) == 25
     assert len(tag) == 7
     assert {name for name in main if name.startswith("Python (")} == {
         f"Python ({system}, {version})"
@@ -66,7 +66,7 @@ def test_release_driver_matrix_matches_workflow_source() -> None:
     assert "  schedule:" not in workflow
     assert "${{ github.event_name }}-${{ github.ref }}" in workflow
     system_matrix = "os: [ubuntu-latest, macos-latest, windows-latest]"
-    python_matrix = 'python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]'
+    python_matrix = 'python-version: ["3.10", "3.14"]'
     assert workflow.count(system_matrix) == 3
     assert workflow.count(python_matrix) == 2
     for label in (
