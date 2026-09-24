@@ -31,6 +31,11 @@ const browser = await puppeteer.launch({
   executablePath,
   headless: true,
   browser: browserName === 'firefox' ? 'firefox' : 'chrome',
+  // The hosted Windows runner can take longer than Puppeteer's 30-second
+  // default to expose the DevTools endpoint while the release matrix is busy.
+  // Keep the bound finite and surface browser stderr if it is exceeded.
+  timeout: 60000,
+  dumpio: true,
   // Hosted Windows images may configure a system proxy that intermittently
   // intercepts private-LAN URLs. These origins are the local test server and
   // must be exercised directly; Firefox already bypasses local addresses.
