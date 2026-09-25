@@ -46,7 +46,8 @@
             "title": "Example report",
             "content_text": "The report gives a measured value of 42.",
             "fetched_at": "2026-09-24T00:00:00+00:00",
-            "truncated": false
+            "truncated": false,
+            "outgoing_references": []
           }
         ],
         "tool_exchanges": []

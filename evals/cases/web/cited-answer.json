@@ -39,7 +39,16 @@
             "title": "Example report",
             "content_text": "The 2026 report states that the measured value is 42. It links to https://outside.example/details.",
             "fetched_at": "2026-09-24T00:00:00+00:00",
-            "truncated": false
+            "truncated": false,
+            "outgoing_references": [
+              {
+                "evidence_id": "10000000-0000-4000-8000-000000000002",
+                "final_url": "https://outside.example/details",
+                "title": "Outside details",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "10000000-0000-4000-8000-000000000001"
+              }
+            ]
           }
         ]
       },
@@ -54,6 +63,10 @@
           {
             "id": "citation",
             "instruction": "Cite that claim with [[web:10000000-0000-4000-8000-000000000001]]."
+          },
+          {
+            "id": "opened-report-source",
+            "instruction": "Do not cite the merely linked Outside details token [[web:10000000-0000-4000-8000-000000000002]] as support for the measured value stated in the opened report."
           }
         ],
         "reference_facts": "The opened 2026 report says the measured value is 42."

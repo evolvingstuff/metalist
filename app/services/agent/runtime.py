@@ -56,6 +56,7 @@ from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_evidence import WebEvidenceCapacityError
+from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.web_fetch import fetch_web_pages
 from app.services.public_http import normalize_public_http_url
@@ -1516,7 +1517,8 @@ class AgentRuntime:
         if not isinstance(reference_web_evidence, tuple):
             raise TypeError("reference_web_evidence must be a tuple")
         reference_web_ids = tuple(
-            evidence.evidence_id for evidence in reference_web_evidence
+            reference.evidence_id
+            for reference in citation_references_for_pages(reference_web_evidence)
         )
         if len(set(reference_web_ids)) != len(reference_web_ids):
             raise ValueError("reference_web_evidence must be unique")

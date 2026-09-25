@@ -252,6 +252,15 @@ comparison, and skill instruction lifetime without provider calls.
 and the export button's downloaded JSON for a simulated multi-turn history. It is
 included in full smoke and selectable via `BROWSER_TEST_SUITE=ai-history`.
 
+Web output coverage includes a 30-item Hacker News list-page fixture and a direct
+article control. The list case requires a useful summary with at least eight
+distinct destination-link citations and checks every specifically named story
+against its exact `page_link` token. The article case requires body claims to cite
+the opened article instead of an incidental outgoing link. Both cases build through
+the current production skill, final prompt, context builder, and evidence catalog.
+The 2026-09-24 candidate scored 5/5 on each live case; the focused deterministic
+web/prompt/eval suite passed 208 tests with no skips.
+
 
 2026-09-17 prompt-suite validation: **1,517 Python tests passed, 7 skipped**;
 **728 JavaScript tests passed**; startup checks passed across **410 Python** and

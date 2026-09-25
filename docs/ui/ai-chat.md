@@ -49,7 +49,12 @@ pages can fail or be truncated without discarding successful siblings.
 Successful pages remain in bounded server-memory chat evidence for follow-up
 questions. Clear Chat, logout, a disclosure-boundary change, server restart, or
 runtime reset removes that evidence. Web claims use their own external reference
-links; responses can cite disclosed notes and web pages together.
+links; responses can cite disclosed notes and web pages together. A direct article
+summary references the opened article. For an aggregator, directory, index, or
+search-results summary, named items reference the visible destination links from
+that page instead of only the containing site. Those destination references do not
+mean MetaList opened or read the linked pages, and they do not make the links
+available to contextual browsing.
 
 ## Product help and menus
 

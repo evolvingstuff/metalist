@@ -11,7 +11,7 @@ from app.services.embedded_references import get_note_reference_preview
 from app.services.embedded_references import render_compact_note_reference_link
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.note_store import NoteStore
-from app.services.agent.web_evidence import WebPageEvidence
+from app.services.agent.web_evidence import WebCitationReference
 
 
 _UUID_DASH_CHARACTERS = "-‐‑‒–—−"
@@ -78,7 +78,7 @@ def render_ai_chat_markdown_to_html(
     *,
     notes: NoteStore,
     allowed_note_ids: tuple[str, ...],
-    allowed_web_evidence: tuple[WebPageEvidence, ...],
+    allowed_web_evidence: tuple[WebCitationReference, ...],
 ) -> str:
     _validate_allowed_note_ids(allowed_note_ids)
     web_evidence_by_id = _validate_allowed_web_evidence(allowed_web_evidence)
@@ -128,7 +128,7 @@ def render_ai_chat_streaming_markdown_to_html(
     markdown_text: str,
     *,
     allowed_note_ids: tuple[str, ...],
-    allowed_web_evidence: tuple[WebPageEvidence, ...],
+    allowed_web_evidence: tuple[WebCitationReference, ...],
 ) -> str:
     """Render partial response prose without exposing citation UI before completion."""
     _validate_allowed_note_ids(allowed_note_ids)
@@ -176,7 +176,7 @@ def sanitize_ai_chat_markdown_citations(
     *,
     notes: NoteStore,
     allowed_note_ids: tuple[str, ...],
-    allowed_web_evidence: tuple[WebPageEvidence, ...],
+    allowed_web_evidence: tuple[WebCitationReference, ...],
 ) -> str:
     """Keep only citations backed by notes retrieved during the current run."""
     if not isinstance(markdown_text, str) or markdown_text == "":
@@ -412,17 +412,17 @@ def _validate_allowed_note_ids(allowed_note_ids: tuple[str, ...]) -> None:
 
 
 def _validate_allowed_web_evidence(
-    evidence: tuple[WebPageEvidence, ...],
-) -> dict[str, WebPageEvidence]:
+    evidence: tuple[WebCitationReference, ...],
+) -> dict[str, WebCitationReference]:
     if not isinstance(evidence, tuple):
         raise TypeError("allowed_web_evidence must be a tuple")
-    by_id: dict[str, WebPageEvidence] = {}
-    for page in evidence:
-        if not isinstance(page, WebPageEvidence):
-            raise TypeError("allowed_web_evidence must contain WebPageEvidence")
-        if page.evidence_id in by_id:
+    by_id: dict[str, WebCitationReference] = {}
+    for reference in evidence:
+        if not isinstance(reference, WebCitationReference):
+            raise TypeError("allowed_web_evidence must contain WebCitationReference")
+        if reference.evidence_id in by_id:
             raise ValueError("allowed_web_evidence must be unique")
-        by_id[page.evidence_id] = page
+        by_id[reference.evidence_id] = reference
     return by_id
 
 
@@ -645,7 +645,7 @@ def _render_citation_marker(
 def _replace_web_citations(
     *,
     rendered_html: str,
-    evidence_by_id: dict[str, WebPageEvidence],
+    evidence_by_id: dict[str, WebCitationReference],
     starting_number: int,
 ) -> tuple[str, list[str]]:
     if starting_number < 1:
@@ -744,7 +744,7 @@ def _render_references_section(
     *,
     context: EmbedRenderContext,
     cited_web_ids: list[str],
-    evidence_by_id: dict[str, WebPageEvidence],
+    evidence_by_id: dict[str, WebCitationReference],
 ) -> str:
     if len(reference_groups) == 0 and len(cited_web_ids) == 0:
         raise ValueError("References section requires at least one citation")

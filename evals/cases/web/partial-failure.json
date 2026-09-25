@@ -38,7 +38,8 @@
             "title": "Example report",
             "content_text": "The 2026 report states that the measured value is 42. It links to https://outside.example/details.",
             "fetched_at": "2026-09-24T00:00:00+00:00",
-            "truncated": false
+            "truncated": false,
+            "outgoing_references": []
           }
         ],
         "tool_exchanges": [

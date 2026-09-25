@@ -1,0 +1,288 @@
+{
+  "schema_version": 2,
+  "id": "web-list-page-item-links",
+  "description": "A realistic aggregator summary cites every mentioned story with its actual outbound link instead of the aggregator homepage.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "can you summarize the front page of HackerNews right now?"
+        }
+      ],
+      "context": {
+        "stage": "web_respond",
+        "mode": "full",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 0,
+          "matching_result_tree_count": 0
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "basis": "the opened Hacker News front-page snapshot",
+        "web_evidence": [
+          {
+            "evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6",
+            "requested_url": "https://news.ycombinator.com/",
+            "final_url": "https://news.ycombinator.com/",
+            "title": "Hacker News",
+            "content_text": "Hacker News front page snapshot\n\n1. F-Droid 2.0 (https://f-droid.org/2026/09/24/f-droid-2.0-a-new-chapter-for-android-freedom.html) — 882 points; 248 comments; 8 hours ago.\n\n2. Show HN: Make cursed fonts like Times New Bastard (https://bastardica.mitpit.com) — 419 points; 58 comments; 6 hours ago.\n\n3. Show HN: Whiteboard (YC W26) – An open-source IDE for thoughtful software design (https://github.com/devdotfast/whiteboard) — 168 points; 75 comments; 6 hours ago.\n\n4. Why is the liver so weirdly regenerative? (https://dynomight.substack.com/p/liver) — 210 points; 135 comments; 6 hours ago.\n\n5. Fearless SIMD v1.0 (https://linebender.org/blog/fearless-simd-1-0/) — 160 points; 28 comments; 7 hours ago.\n\n6. 2DWillNeverDie (https://2dwillneverdie.com/) — 71 points; 7 comments; 4 hours ago.\n\n7. Rails World 2026 Opening Keynote [video] (https://www.youtube.com/watch?v=vDjW_dRyKXY) — 211 points; 226 comments; 6 hours ago.\n\n8. My weird new hobby: Wandering around Tokyo on Google Maps (https://ahmedhossamdev.com/writing/my-weird-new-hobby-wandering-around-tokyo/) — 190 points; 82 comments; 7 hours ago.\n\n9. Show HN: Koi.rest – watch some fish and regain your balance (https://koi.rest) — 101 points; 24 comments; 2 hours ago.\n\n10. Toyota is taking the Corolla electric (https://electrek.co/2026/09/23/toyota-best-selling-corolla-electric/) — 182 points; 263 comments; 9 hours ago.\n\n11. Using LLMs to trace alchemical knowledge and decode 17th century letters (https://resobscura.substack.com/p/ai-labs-need-to-start-funding-historical) — 49 points; 9 comments; 4 hours ago.\n\n12. GitLab Outage (https://status.gitlab.com/) — 32 points; 10 comments; 55 minutes ago.\n\n13. Back and shoulder surgery is often worse than useless (https://www.economist.com/leaders/2026/09/24/back-and-shoulder-surgery-is-often-worse-than-useless) — 35 points; 23 comments; 1 hour ago.\n\n14. California is chasing wealth that has feet (https://blog.landeconomics.org/p/california-is-chasing-wealth-that) — 103 points; 284 comments; 3 hours ago.\n\n15. Google’s Project Suncatcher to put ML infrastructure in space (https://blog.google/innovation-and-ai/models-and-research/google-research/google-project-suncatcher-facts/) — 86 points; 170 comments; 7 hours ago.\n\n16. Book review: Is parallel programming hard, and, if so, what can you do about it? (https://ahelwer.ca/post/2026-09-21-concurrency-textbook/) — 79 points; 22 comments; 7 hours ago.\n\n17. Stable (YC W20) Is Hiring Product Engineers (https://www.usestable.com/careers/product-engineer) — 5 hours ago.\n\n18. Sourcehut account takeover via build logs (XSS in ansi2html) (https://blog.arusekk.pl/posts/srht-account-takeover/) — 52 points; 9 comments; 4 hours ago.\n\n19. The Board Game of the Alpha Nerds (2014) (https://grantland.com/features/diplomacy-the-board-game-of-the-alpha-nerds/) — 36 points; 17 comments; 3 hours ago.\n\n20. Two-tier encryption in the UK (https://macanorak.com/two-tier-encryption-in-the-uk/) — 365 points; 362 comments; 13 hours ago.\n\n21. Motor Characterization for Small Running Robots (2016) (https://robot-daycare.com/posts/2016-01-06-motor-characterization-for-small-running-robots/) — 22 points; no comments shown; 3 hours ago.\n\n22. Security auditing in the age of (good enough) AI (https://blog.trailofbits.com/2026/09/18/auditing-in-the-age-of-good-enough-ai/) — 51 points; 2 comments; 4 hours ago.\n\n23. The forgotten battle of East Lansing (https://eastlansinginfo.news/the-forgotten-battle-of-east-lansing/) — 79 points; 12 comments; 7 hours ago.\n\n24. Geothermal heat map of US hot springs (https://www.soakingsprings.com/hot-springs/geothermal-map) — 77 points; 32 comments; 7 hours ago.\n\n25. Forging 1024-bit RSA signatures in nearly SNFS time [pdf] (https://eprint.iacr.org/2026/2131.pdf) — 45 points; 5 comments; 6 hours ago.\n\n26. International observers to investigate Swedish election fraud (https://www.tv4.se/artikel/37VDHaUBmbgXCIRAP1bR8f/internationell-valobservatoer-ska-foelja-upp-misstaenkta-valfusken) — 32 points; 16 comments; 3 hours ago.\n\n27. Early rogue AI agent activity and attempts to hack found on urlquery.net (https://transluce.org/agent-activity) — 235 points; 223 comments; 17 hours ago.\n\n28. WaveDigger: Dig into wireless signals to discover their physical locations (https://github.com/christianrowlands/wavedigger) — 87 points; 14 comments; 9 hours ago.\n\n29. Tutoring company tells parents to save their money and 'use AI instead' (https://www.afr.com/policy/health-and-education/tutoring-company-tell-parents-to-save-their-money-and-use-ai-instead-20260923-p60z0r) — 70 points; 115 comments; 8 hours ago.\n\n30. Opus 5.5 is good at explainer videos (https://launchvideo.io) — 109 points; 80 comments; 3 hours ago.",
+            "fetched_at": "2026-09-25T00:07:07+00:00",
+            "truncated": false,
+            "outgoing_references": [
+              {
+                "evidence_id": "b65842f2-7500-48ed-8df2-89a918bf9ee1",
+                "final_url": "https://f-droid.org/2026/09/24/f-droid-2.0-a-new-chapter-for-android-freedom.html",
+                "title": "F-Droid 2.0",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "2cb1d175-9a82-4489-9de1-17c07250f132",
+                "final_url": "https://bastardica.mitpit.com",
+                "title": "Show HN: Make cursed fonts like Times New Bastard",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "8c07b1db-e8a6-476a-b6e2-3641974ac6fb",
+                "final_url": "https://github.com/devdotfast/whiteboard",
+                "title": "Show HN: Whiteboard (YC W26) – An open-source IDE for thoughtful software design",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "a8a5d4b8-bd22-411c-8f37-56b89cbf5336",
+                "final_url": "https://dynomight.substack.com/p/liver",
+                "title": "Why is the liver so weirdly regenerative?",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "a082c27e-8b89-4c99-b1bf-d916991d7b6d",
+                "final_url": "https://linebender.org/blog/fearless-simd-1-0/",
+                "title": "Fearless SIMD v1.0",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "14e09754-c227-4989-a30d-02327cbbbed2",
+                "final_url": "https://2dwillneverdie.com/",
+                "title": "2DWillNeverDie",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "c96a2d7d-9e16-43a8-94eb-d28d4b205d6f",
+                "final_url": "https://www.youtube.com/watch?v=vDjW_dRyKXY",
+                "title": "Rails World 2026 Opening Keynote [video]",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "9d663cb1-863b-4c1d-b67d-f74ff027acd0",
+                "final_url": "https://ahmedhossamdev.com/writing/my-weird-new-hobby-wandering-around-tokyo/",
+                "title": "My weird new hobby: Wandering around Tokyo on Google Maps",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "65652f34-2768-4c46-af18-f5be1a638763",
+                "final_url": "https://koi.rest",
+                "title": "Show HN: Koi.rest – watch some fish and regain your balance",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "a39ab359-3bc9-4154-b7e2-57b21c4de5f5",
+                "final_url": "https://electrek.co/2026/09/23/toyota-best-selling-corolla-electric/",
+                "title": "Toyota is taking the Corolla electric",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "4c0b6fb8-eaeb-409f-b14e-92fbc98ea737",
+                "final_url": "https://resobscura.substack.com/p/ai-labs-need-to-start-funding-historical",
+                "title": "Using LLMs to trace alchemical knowledge and decode 17th century letters",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "75c788eb-f570-4262-b4be-1d397209839e",
+                "final_url": "https://status.gitlab.com/",
+                "title": "GitLab Outage",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "0bed3a2c-cdda-463e-be56-433ea44c76b4",
+                "final_url": "https://www.economist.com/leaders/2026/09/24/back-and-shoulder-surgery-is-often-worse-than-useless",
+                "title": "Back and shoulder surgery is often worse than useless",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "71ac7b69-3a5f-46de-9056-391a5714356e",
+                "final_url": "https://blog.landeconomics.org/p/california-is-chasing-wealth-that",
+                "title": "California is chasing wealth that has feet",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "de9febc0-07d2-4ca8-a81d-a5f55d1b631a",
+                "final_url": "https://blog.google/innovation-and-ai/models-and-research/google-research/google-project-suncatcher-facts/",
+                "title": "Google’s Project Suncatcher to put ML infrastructure in space",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "aac7793a-283c-4d08-b5a2-4c38887f40ac",
+                "final_url": "https://ahelwer.ca/post/2026-09-21-concurrency-textbook/",
+                "title": "Book review: Is parallel programming hard, and, if so, what can you do about it?",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "2e7ddeec-7fc7-4683-bef8-6f8e22245bdc",
+                "final_url": "https://www.usestable.com/careers/product-engineer",
+                "title": "Stable (YC W20) Is Hiring Product Engineers",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "3a45a14e-8169-4403-82ee-42d19730547c",
+                "final_url": "https://blog.arusekk.pl/posts/srht-account-takeover/",
+                "title": "Sourcehut account takeover via build logs (XSS in ansi2html)",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "5115c3a4-c7a1-4db7-85cb-c9f8a07fd4ed",
+                "final_url": "https://grantland.com/features/diplomacy-the-board-game-of-the-alpha-nerds/",
+                "title": "The Board Game of the Alpha Nerds (2014)",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "32a53ee7-16ad-4d2f-adb1-a4c3c53befe2",
+                "final_url": "https://macanorak.com/two-tier-encryption-in-the-uk/",
+                "title": "Two-tier encryption in the UK",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "023e9718-8047-4d9c-a987-a0c343c7e5bb",
+                "final_url": "https://robot-daycare.com/posts/2016-01-06-motor-characterization-for-small-running-robots/",
+                "title": "Motor Characterization for Small Running Robots (2016)",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "687796d3-65da-400b-9502-5cd390d98558",
+                "final_url": "https://blog.trailofbits.com/2026/09/18/auditing-in-the-age-of-good-enough-ai/",
+                "title": "Security auditing in the age of (good enough) AI",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "c490b310-f7ca-4174-b046-068e8fecb6d7",
+                "final_url": "https://eastlansinginfo.news/the-forgotten-battle-of-east-lansing/",
+                "title": "The forgotten battle of East Lansing",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "8e46b558-3065-4dc2-82d2-ce88b182e860",
+                "final_url": "https://www.soakingsprings.com/hot-springs/geothermal-map",
+                "title": "Geothermal heat map of US hot springs",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "a3f781b0-804c-45a9-942e-6007307073d1",
+                "final_url": "https://eprint.iacr.org/2026/2131.pdf",
+                "title": "Forging 1024-bit RSA signatures in nearly SNFS time [pdf]",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "d37c2591-6559-4542-afa8-db7dfa35b78f",
+                "final_url": "https://www.tv4.se/artikel/37VDHaUBmbgXCIRAP1bR8f/internationell-valobservatoer-ska-foelja-upp-misstaenkta-valfusken",
+                "title": "International observers to investigate Swedish election fraud",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "f24f61a9-265f-45f1-bbee-df3700ff2153",
+                "final_url": "https://transluce.org/agent-activity",
+                "title": "Early rogue AI agent activity and attempts to hack found on urlquery.net",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "68e78822-c3a5-4d01-8085-e4a9f993681c",
+                "final_url": "https://github.com/christianrowlands/wavedigger",
+                "title": "WaveDigger: Dig into wireless signals to discover their physical locations",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "9dfc82f5-88b8-41bf-bd3b-45fc3b51f27a",
+                "final_url": "https://www.afr.com/policy/health-and-education/tutoring-company-tell-parents-to-save-their-money-and-use-ai-instead-20260923-p60z0r",
+                "title": "Tutoring company tells parents to save their money and 'use AI instead'",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              },
+              {
+                "evidence_id": "ea90099b-4f43-43ca-9c73-0e46a857ec48",
+                "final_url": "https://launchvideo.io",
+                "title": "Opus 5.5 is good at explainer videos",
+                "source_kind": "page_link",
+                "source_page_evidence_id": "b31aaefc-f2b5-45c5-a03a-62798554f2f6"
+              }
+            ]
+          }
+        ]
+      },
+      "max_output_tokens": 1800,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+        {
+          "id": "useful-summary",
+          "instruction": "Give a readable summary rather than a raw link or token dump, name at least eight distinct stories from the 30-item front-page snapshot, and do not claim that any linked target was opened or read."
+        },
+          {
+            "id": "broad-link-coverage",
+            "instruction": "Use at least eight distinct page_link citation tokens from the supplied story mapping."
+          },
+        {
+          "id": "exact-item-links",
+          "instruction": "Every distinct story specifically named in the answer must have its corresponding page_link token somewhere in the answer, normally at its first substantive mention. Repeating an already cited story later does not require repeating its token. Never attach one story’s token to another story."
+        },
+        {
+          "id": "no-homepage-substitution",
+          "instruction": "The Hacker News homepage token [[web:b31aaefc-f2b5-45c5-a03a-62798554f2f6]] may support an aggregate claim about the page’s overall composition, but it must not be the only reference for any named story and must not replace that story’s page_link token elsewhere in the answer."
+        }
+        ],
+        "reference_facts": "The opened Hacker News front-page snapshot contains these exact story-link mappings:\n- F-Droid 2.0 — 882 points; 248 comments; 8 hours ago — [[web:b65842f2-7500-48ed-8df2-89a918bf9ee1]] opens https://f-droid.org/2026/09/24/f-droid-2.0-a-new-chapter-for-android-freedom.html\n- Show HN: Make cursed fonts like Times New Bastard — 419 points; 58 comments; 6 hours ago — [[web:2cb1d175-9a82-4489-9de1-17c07250f132]] opens https://bastardica.mitpit.com\n- Show HN: Whiteboard (YC W26) – An open-source IDE for thoughtful software design — 168 points; 75 comments; 6 hours ago — [[web:8c07b1db-e8a6-476a-b6e2-3641974ac6fb]] opens https://github.com/devdotfast/whiteboard\n- Why is the liver so weirdly regenerative? — 210 points; 135 comments; 6 hours ago — [[web:a8a5d4b8-bd22-411c-8f37-56b89cbf5336]] opens https://dynomight.substack.com/p/liver\n- Fearless SIMD v1.0 — 160 points; 28 comments; 7 hours ago — [[web:a082c27e-8b89-4c99-b1bf-d916991d7b6d]] opens https://linebender.org/blog/fearless-simd-1-0/\n- 2DWillNeverDie — 71 points; 7 comments; 4 hours ago — [[web:14e09754-c227-4989-a30d-02327cbbbed2]] opens https://2dwillneverdie.com/\n- Rails World 2026 Opening Keynote [video] — 211 points; 226 comments; 6 hours ago — [[web:c96a2d7d-9e16-43a8-94eb-d28d4b205d6f]] opens https://www.youtube.com/watch?v=vDjW_dRyKXY\n- My weird new hobby: Wandering around Tokyo on Google Maps — 190 points; 82 comments; 7 hours ago — [[web:9d663cb1-863b-4c1d-b67d-f74ff027acd0]] opens https://ahmedhossamdev.com/writing/my-weird-new-hobby-wandering-around-tokyo/\n- Show HN: Koi.rest – watch some fish and regain your balance — 101 points; 24 comments; 2 hours ago — [[web:65652f34-2768-4c46-af18-f5be1a638763]] opens https://koi.rest\n- Toyota is taking the Corolla electric — 182 points; 263 comments; 9 hours ago — [[web:a39ab359-3bc9-4154-b7e2-57b21c4de5f5]] opens https://electrek.co/2026/09/23/toyota-best-selling-corolla-electric/\n- Using LLMs to trace alchemical knowledge and decode 17th century letters — 49 points; 9 comments; 4 hours ago — [[web:4c0b6fb8-eaeb-409f-b14e-92fbc98ea737]] opens https://resobscura.substack.com/p/ai-labs-need-to-start-funding-historical\n- GitLab Outage — 32 points; 10 comments; 55 minutes ago — [[web:75c788eb-f570-4262-b4be-1d397209839e]] opens https://status.gitlab.com/\n- Back and shoulder surgery is often worse than useless — 35 points; 23 comments; 1 hour ago — [[web:0bed3a2c-cdda-463e-be56-433ea44c76b4]] opens https://www.economist.com/leaders/2026/09/24/back-and-shoulder-surgery-is-often-worse-than-useless\n- California is chasing wealth that has feet — 103 points; 284 comments; 3 hours ago — [[web:71ac7b69-3a5f-46de-9056-391a5714356e]] opens https://blog.landeconomics.org/p/california-is-chasing-wealth-that\n- Google’s Project Suncatcher to put ML infrastructure in space — 86 points; 170 comments; 7 hours ago — [[web:de9febc0-07d2-4ca8-a81d-a5f55d1b631a]] opens https://blog.google/innovation-and-ai/models-and-research/google-research/google-project-suncatcher-facts/\n- Book review: Is parallel programming hard, and, if so, what can you do about it? — 79 points; 22 comments; 7 hours ago — [[web:aac7793a-283c-4d08-b5a2-4c38887f40ac]] opens https://ahelwer.ca/post/2026-09-21-concurrency-textbook/\n- Stable (YC W20) Is Hiring Product Engineers — 5 hours ago — [[web:2e7ddeec-7fc7-4683-bef8-6f8e22245bdc]] opens https://www.usestable.com/careers/product-engineer\n- Sourcehut account takeover via build logs (XSS in ansi2html) — 52 points; 9 comments; 4 hours ago — [[web:3a45a14e-8169-4403-82ee-42d19730547c]] opens https://blog.arusekk.pl/posts/srht-account-takeover/\n- The Board Game of the Alpha Nerds (2014) — 36 points; 17 comments; 3 hours ago — [[web:5115c3a4-c7a1-4db7-85cb-c9f8a07fd4ed]] opens https://grantland.com/features/diplomacy-the-board-game-of-the-alpha-nerds/\n- Two-tier encryption in the UK — 365 points; 362 comments; 13 hours ago — [[web:32a53ee7-16ad-4d2f-adb1-a4c3c53befe2]] opens https://macanorak.com/two-tier-encryption-in-the-uk/\n- Motor Characterization for Small Running Robots (2016) — 22 points; no comments shown; 3 hours ago — [[web:023e9718-8047-4d9c-a987-a0c343c7e5bb]] opens https://robot-daycare.com/posts/2016-01-06-motor-characterization-for-small-running-robots/\n- Security auditing in the age of (good enough) AI — 51 points; 2 comments; 4 hours ago — [[web:687796d3-65da-400b-9502-5cd390d98558]] opens https://blog.trailofbits.com/2026/09/18/auditing-in-the-age-of-good-enough-ai/\n- The forgotten battle of East Lansing — 79 points; 12 comments; 7 hours ago — [[web:c490b310-f7ca-4174-b046-068e8fecb6d7]] opens https://eastlansinginfo.news/the-forgotten-battle-of-east-lansing/\n- Geothermal heat map of US hot springs — 77 points; 32 comments; 7 hours ago — [[web:8e46b558-3065-4dc2-82d2-ce88b182e860]] opens https://www.soakingsprings.com/hot-springs/geothermal-map\n- Forging 1024-bit RSA signatures in nearly SNFS time [pdf] — 45 points; 5 comments; 6 hours ago — [[web:a3f781b0-804c-45a9-942e-6007307073d1]] opens https://eprint.iacr.org/2026/2131.pdf\n- International observers to investigate Swedish election fraud — 32 points; 16 comments; 3 hours ago — [[web:d37c2591-6559-4542-afa8-db7dfa35b78f]] opens https://www.tv4.se/artikel/37VDHaUBmbgXCIRAP1bR8f/internationell-valobservatoer-ska-foelja-upp-misstaenkta-valfusken\n- Early rogue AI agent activity and attempts to hack found on urlquery.net — 235 points; 223 comments; 17 hours ago — [[web:f24f61a9-265f-45f1-bbee-df3700ff2153]] opens https://transluce.org/agent-activity\n- WaveDigger: Dig into wireless signals to discover their physical locations — 87 points; 14 comments; 9 hours ago — [[web:68e78822-c3a5-4d01-8085-e4a9f993681c]] opens https://github.com/christianrowlands/wavedigger\n- Tutoring company tells parents to save their money and 'use AI instead' — 70 points; 115 comments; 8 hours ago — [[web:9dfc82f5-88b8-41bf-bd3b-45fc3b51f27a]] opens https://www.afr.com/policy/health-and-education/tutoring-company-tell-parents-to-save-their-money-and-use-ai-instead-20260923-p60z0r\n- Opus 5.5 is good at explainer videos — 109 points; 80 comments; 3 hours ago — [[web:ea90099b-4f43-43ca-9c73-0e46a857ec48]] opens https://launchvideo.io\nThe opened-page token [[web:b31aaefc-f2b5-45c5-a03a-62798554f2f6]] opens only the Hacker News homepage."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "manual AI Chat failure exported on 2026-09-24",
+    "history_file": "metalist-llm-history-1790294904859.json",
+    "snapshot_story_count": 30
+  }
+}

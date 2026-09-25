@@ -131,6 +131,12 @@ selected-but-blocked explanations.
 Two cached-title cases store raw HTML and fixed cached URL/title pairs; current
 production text extraction formats that evidence on every run. These cases verify
 identifying a selected abstract's title from its parent URL and citing that parent.
+Web output cases distinguish an opened document from the visible labeled links it
+contains. `web-list-page-item-links` supplies a fixed 30-story list snapshot and
+requires at least eight distinct destination citations while checking every named
+story against its exact link token. `web-cited-answer` is the direct-article control:
+claims from the article body must cite the opened article rather than an incidental
+outgoing link.
 The v2 migration preserved all 133 original expectations. Historical measured
 results remain historical; they do not establish current prompt accuracy.
 

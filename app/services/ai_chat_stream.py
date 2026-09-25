@@ -15,7 +15,7 @@ from app.services.runtime_generation import register_current_task, unregister_ta
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.web_evidence import WebEvidenceStore
-from app.services.agent.web_evidence import WebPageEvidence
+from app.services.agent.web_evidence import WebCitationReference
 
 
 def event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
@@ -121,9 +121,9 @@ class ChatTurnStream:
             allowed_web_evidence=web_evidence,
         )}
 
-    def _reference_web_evidence(self) -> tuple[WebPageEvidence, ...]:
+    def _reference_web_evidence(self) -> tuple[WebCitationReference, ...]:
         return tuple(
-            self.web_evidence_store.get(
+            self.web_evidence_store.get_reference(
                 session_key=self.session_key,
                 evidence_id=evidence_id,
             )

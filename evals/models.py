@@ -118,6 +118,15 @@ class WebEvidenceFixture(StrictModel):
     content_text: str = Field(min_length=1)
     fetched_at: str = Field(min_length=1)
     truncated: bool
+    outgoing_references: list["WebCitationReferenceFixture"]
+
+
+class WebCitationReferenceFixture(StrictModel):
+    evidence_id: str = Field(min_length=1)
+    final_url: str = Field(min_length=1)
+    title: str
+    source_kind: Literal["page_link"]
+    source_page_evidence_id: str = Field(min_length=1)
 
 
 class WebToolExchangeFixture(StrictModel):

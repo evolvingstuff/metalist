@@ -82,6 +82,9 @@ takes effect on the next message.
 - Each successful page result carries a stable session evidence ID, requested URL,
   final URL, title, extracted content, retrieval time, and truncation state. Each
   page keeps explicit URL provenance.
+- HTML results also retain bounded, deduplicated visible labeled links as citable
+  `page_link` references. These references do not fetch their targets or expand the
+  contextual capability set.
 
 ### Conversation lifetime and citations
 
@@ -95,6 +98,9 @@ takes effect on the next message.
 - Extend the final-response evidence catalog and sanitizer to accept explicit web
   citation tokens alongside note citations. Render external references with the
   fetched title and final URL while preserving the existing note-reference behavior.
+- Use opened-page references for direct article/report summaries and the matching
+  destination-link references for named items summarized from aggregators, indexes,
+  directories, or search results.
 - Retain enough bounded web evidence for follow-ups. If the configured evidence
   budget cannot include every retained page, report exact included/omitted counts
   to the model and never imply complete coverage.

@@ -45,7 +45,8 @@
             "title": "External benchmark report",
             "content_text": "The external benchmark reports a 30% reduction in processing time.",
             "fetched_at": "2026-09-24T00:00:00+00:00",
-            "truncated": false
+            "truncated": false,
+            "outgoing_references": []
           }
         ]
       },

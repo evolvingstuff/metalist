@@ -433,6 +433,7 @@ def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeyp
             status="ok",
             title="Article",
             content_text="Verified page content",
+            outgoing_links=(("Linked report", "https://source.example/report"),),
             fetched_at="2026-09-24T00:00:00+00:00",
             truncated=False,
             error_kind="",
@@ -443,8 +444,17 @@ def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeyp
 
     assert calls == [["https://example.com/article"]]
     assert events[-1]["type"] == "done"
-    assert len(events[-1]["reference_web_ids"]) == 1
-    assert "web_reference_catalog" in inference.final_messages[-1]["content"]
+    assert len(events[-1]["reference_web_ids"]) == 2
+    final_payload = json.loads(
+        inference.final_messages[-1]["content"].split("\n", 1)[1]
+    )
+    assert [item["source_kind"] for item in final_payload["web_reference_catalog"]] == [
+        "opened_page",
+        "page_link",
+    ]
+    assert final_payload["web_reference_catalog"][1]["url"] == (
+        "https://source.example/report"
+    )
 
 
 def test_contextual_web_loop_blocks_undisclosed_url_without_network(monkeypatch) -> None:
@@ -491,6 +501,7 @@ def test_full_web_loop_opens_agent_proposed_url_outside_context(monkeypatch) -> 
             status="ok",
             title="Public quote",
             content_text="Current value: 42",
+            outgoing_links=(),
             fetched_at="2026-09-24T00:00:00+00:00",
             truncated=False,
             error_kind="",

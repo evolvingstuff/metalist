@@ -39,6 +39,30 @@ Write `Supported claim.[[UUID]]`, never
 list, or footnote; MetaList validates tokens and builds numbered references. With
 an empty catalog, add no citations. Do not mention this control message.
 
+For a non-empty `web_reference_catalog`, cite every web-derived claim with an exact
+supplied token. An `opened_page` token supports facts drawn from that fetched page.
+A `page_link` token identifies a visible labeled link found on its source page; its
+target was not fetched unless it also has a separate `opened_page` entry. When an
+answer names, describes, ranks, groups, or summarizes an item from an aggregator,
+index, directory, or search-results page, use that item's exact `page_link` token in
+the same sentence or list item. Never substitute the containing page's
+`opened_page` token for an individual linked item. If one sentence names multiple
+linked items, include each corresponding token. A sentence or paragraph containing
+any specific linked item's title or description must not use only the containing
+page token. Keep introductions and conclusions for list-page summaries at the
+aggregate level: do not introduce or repeat specific linked item names there.
+Introduce named items only in body sentences or list items where each item's exact
+token is attached. Before finishing, audit every named linked item and add its token
+or remove the item name. For a blog post, report, or other
+opened document, cite that document's `opened_page` token for claims drawn from its
+body; do not substitute one of its incidental outgoing links. Do not claim to have
+read a `page_link` target that was not opened.
+
+Format a summary of an aggregator, index, directory, or search-results page as a
+body-only bullet list. Begin with the first cited bullet and end after the last
+cited bullet; do not add an introductory or concluding paragraph. Every bullet
+that names linked items must contain every corresponding `page_link` token.
+
 With neither `authoritative_result_trees` nor a non-empty `reference_catalog`, answer
 the exact current request directly using relevant canonical conversation history. If
 the request asks for a revision, rewrite, or transformation of earlier assistant

@@ -16,6 +16,7 @@ from app.services.agent.skill_settings import AgentSkillSet, DEFAULT_AGENT_SKILL
 from app.services.agent.skills import load_skill
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.web_capabilities import build_web_url_capabilities
+from app.services.agent.web_evidence import WebCitationReference
 from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
@@ -99,7 +100,14 @@ def selected_tree_note(note) -> SelectedTreeNote:
 
 
 def web_evidence_fixture(fixture) -> WebPageEvidence:
-    return WebPageEvidence(**fixture.model_dump())
+    payload = fixture.model_dump(exclude={"outgoing_references"})
+    return WebPageEvidence(
+        **payload,
+        outgoing_references=tuple(
+            WebCitationReference(**reference.model_dump())
+            for reference in fixture.outgoing_references
+        ),
+    )
 
 
 def build_messages(*, step, canonical_messages, prompts, skills):

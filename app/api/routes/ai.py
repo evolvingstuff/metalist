@@ -264,7 +264,7 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
         markdown_text,
         notes=note_store,
         allowed_note_ids=allowed_note_ids,
-        allowed_web_evidence=web_evidence_store.available_for_ids(
+        allowed_web_evidence=web_evidence_store.available_references_for_ids(
             session_key=session_key,
             evidence_ids=find_web_citation_ids(markdown_text),
         ),
@@ -469,7 +469,7 @@ def get_ai_session(
                 message["content"],
                 notes=note_store,
                 allowed_note_ids=allowed_note_ids,
-                allowed_web_evidence=web_evidence_store.available_for_ids(
+                allowed_web_evidence=web_evidence_store.available_references_for_ids(
                     session_key=session_key,
                     evidence_ids=find_web_citation_ids(message["content"]),
                 ),

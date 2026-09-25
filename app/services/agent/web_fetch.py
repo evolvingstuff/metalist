@@ -32,6 +32,7 @@ MAX_WEB_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_WEB_PAGE_TEXT_CHARACTERS = 120_000
 MAX_WEB_BATCH_TEXT_CHARACTERS = 480_000
 MAX_WEB_PDF_PAGES = 100
+MAX_WEB_PAGE_OUTGOING_LINKS = 256
 WEB_FETCH_TIMEOUT_SECONDS = 10.0
 _WEB_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -55,6 +56,7 @@ class WebPageFetchResult:
     status: Literal["ok", "blocked", "failed", "unsupported"]
     title: str
     content_text: str
+    outgoing_links: tuple[tuple[str, str], ...]
     fetched_at: str
     truncated: bool
     error_kind: str
@@ -74,6 +76,22 @@ class WebPageFetchResult:
                 raise ValueError("Unsuccessful web fetch cannot include content")
             if self.error_kind == "":
                 raise ValueError("Unsuccessful web fetch requires error_kind")
+        if not isinstance(self.outgoing_links, tuple):
+            raise TypeError("Web fetch outgoing_links must be a tuple")
+        outgoing_urls: list[str] = []
+        for link in self.outgoing_links:
+            if not isinstance(link, tuple) or len(link) != 2:
+                raise TypeError("Web fetch outgoing link must be a (title, URL) tuple")
+            link_title, link_url = link
+            if not isinstance(link_title, str) or link_title == "":
+                raise ValueError("Web fetch outgoing link requires a title")
+            if normalize_public_http_url(link_url) != link_url:
+                raise ValueError("Web fetch outgoing link requires a normalized URL")
+            outgoing_urls.append(link_url)
+        if len(set(outgoing_urls)) != len(outgoing_urls):
+            raise ValueError("Web fetch outgoing links must have unique URLs")
+        if self.status != "ok" and self.outgoing_links:
+            raise ValueError("Unsuccessful web fetch cannot include outgoing links")
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +127,9 @@ class _ReadableHtmlParser(HTMLParser):
         self._title_parts: list[str] = []
         self._text_parts: list[str] = []
         self._metadata_title = ""
-        self._active_links: list[str] = []
+        self._active_links: list[tuple[str, list[str]]] = []
+        self._outgoing_links: list[tuple[str, str]] = []
+        self._outgoing_link_urls: set[str] = set()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         normalized_tag = tag.casefold()
@@ -148,7 +168,7 @@ class _ReadableHtmlParser(HTMLParser):
                     public_link = normalize_public_http_url(joined_link)
                     if public_link is not None:
                         normalized_link = public_link
-            self._active_links.append(normalized_link)
+            self._active_links.append((normalized_link, []))
         if normalized_tag in self._SUPPRESSED_TAGS:
             self._suppressed_depth += 1
             return
@@ -161,9 +181,17 @@ class _ReadableHtmlParser(HTMLParser):
         normalized_tag = tag.casefold()
         if normalized_tag == "a":
             if self._active_links:
-                normalized_link = self._active_links.pop()
+                normalized_link, label_parts = self._active_links.pop()
                 if normalized_link != "" and self._suppressed_depth == 0:
                     self._text_parts.append(f" ({normalized_link})")
+                    label = _clean_single_line("".join(label_parts), maximum=300)
+                    if (
+                        label != ""
+                        and normalized_link not in self._outgoing_link_urls
+                        and len(self._outgoing_links) < MAX_WEB_PAGE_OUTGOING_LINKS
+                    ):
+                        self._outgoing_links.append((label, normalized_link))
+                        self._outgoing_link_urls.add(normalized_link)
             return
         if normalized_tag == "title":
             self._inside_title = False
@@ -180,6 +208,8 @@ class _ReadableHtmlParser(HTMLParser):
             self._title_parts.append(data)
         elif self._suppressed_depth == 0:
             self._text_parts.append(data)
+            if self._active_links:
+                self._active_links[-1][1].append(data)
 
     @property
     def title(self) -> str:
@@ -191,6 +221,10 @@ class _ReadableHtmlParser(HTMLParser):
     @property
     def readable_text(self) -> str:
         return _normalize_readable_text("".join(self._text_parts))
+
+    @property
+    def outgoing_links(self) -> tuple[tuple[str, str], ...]:
+        return tuple(self._outgoing_links)
 
 
 def fetch_web_page(normalized_url: str) -> WebPageFetchResult:
@@ -234,7 +268,7 @@ def fetch_web_page(normalized_url: str) -> WebPageFetchResult:
                 status=status,
                 error_kind=downloaded.error_kind,
             )
-        title, content_text, extracted_truncated, extraction_error = _extract_web_content(
+        title, content_text, outgoing_links, extracted_truncated, extraction_error = _extract_web_content(
             content=downloaded.content,
             content_type=downloaded.content_type,
             encoding=downloaded.encoding,
@@ -253,6 +287,7 @@ def fetch_web_page(normalized_url: str) -> WebPageFetchResult:
             status="ok",
             title=title,
             content_text=content_text,
+            outgoing_links=outgoing_links,
             fetched_at=_utc_now_text(),
             truncated=any((downloaded.truncated, extracted_truncated)),
             error_kind="",
@@ -394,18 +429,24 @@ def _extract_web_content(
     content_type: str,
     encoding: str,
     base_url: str,
-) -> tuple[str, str, bool, str]:
+) -> tuple[str, str, tuple[tuple[str, str], ...], bool, str]:
     if normalize_public_http_url(base_url) != base_url:
         raise ValueError("Web content extraction requires a normalized public base URL")
     if content_type == "application/pdf":
-        return _extract_pdf_content(content)
+        title, text, truncated, error = _extract_pdf_content(content)
+        return title, text, (), truncated, error
     if content_type == "text/plain":
         text = _normalize_readable_text(_decode_web_text(content, encoding))
-        return _bounded_extracted_text(title="", text=text)
+        title, bounded_text, truncated, error = _bounded_extracted_text(title="", text=text)
+        return title, bounded_text, (), truncated, error
     assert content_type in {"text/html", "application/xhtml+xml"}
     parser = _ReadableHtmlParser(base_url=base_url)
     parser.feed(_decode_web_text(content, encoding))
-    return _bounded_extracted_text(title=parser.title, text=parser.readable_text)
+    title, text, truncated, error = _bounded_extracted_text(
+        title=parser.title,
+        text=parser.readable_text,
+    )
+    return title, text, parser.outgoing_links, truncated, error
 
 
 def _decode_web_text(content: bytes, encoding: str) -> str:
@@ -517,6 +558,7 @@ def _error_result(
         status=status,
         title="",
         content_text="",
+        outgoing_links=(),
         fetched_at=_utc_now_text(),
         truncated=False,
         error_kind=error_kind,

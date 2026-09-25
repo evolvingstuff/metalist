@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
-from app.services.agent.web_evidence import WebPageEvidence
+from app.services.agent.web_evidence import WebCitationReference
 
 
 NOTE_ID = "75193dae-9e05-4a4e-94bf-417ffde18957"
@@ -12,17 +12,16 @@ ROOT_NOTE_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_ROOT_NOTE_ID = "22222222-2222-4222-8222-222222222222"
 MISSING_ID = "99999999-9999-4999-9999-999999999999"
 WEB_ID = "33333333-3333-4333-8333-333333333333"
+WEB_LINK_ID = "44444444-4444-4444-8444-444444444444"
 
 
-def _web_evidence() -> WebPageEvidence:
-    return WebPageEvidence(
+def _web_evidence() -> WebCitationReference:
+    return WebCitationReference(
         evidence_id=WEB_ID,
-        requested_url="https://example.com/start",
         final_url="https://example.com/article",
         title="Example article",
-        content_text="Article evidence",
-        fetched_at="2026-09-24T00:00:00+00:00",
-        truncated=False,
+        source_kind="opened_page",
+        source_page_evidence_id=WEB_ID,
     )
 
 
@@ -398,6 +397,26 @@ def test_ai_chat_renderer_sanitizes_and_renders_web_citation() -> None:
     assert 'target="_blank" rel="noopener noreferrer"' in rendered
     assert "Example article" in rendered
     assert MISSING_ID not in rendered
+
+
+def test_ai_chat_renderer_uses_observed_page_link_as_reference_target() -> None:
+    reference = WebCitationReference(
+        evidence_id=WEB_LINK_ID,
+        final_url="https://articles.example/specific-story",
+        title="Specific story",
+        source_kind="page_link",
+        source_page_evidence_id=WEB_ID,
+    )
+
+    rendered = render_ai_chat_markdown_to_html(
+        f"The list includes Specific story. [[web:{WEB_LINK_ID}]]",
+        notes=FakeNotes(),
+        allowed_note_ids=(),
+        allowed_web_evidence=(reference,),
+    )
+
+    assert 'href="https://articles.example/specific-story"' in rendered
+    assert "Specific story" in rendered
 
 
 def test_ai_chat_renderer_preserves_bold_currency_with_web_citation() -> None:

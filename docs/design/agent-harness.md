@@ -244,6 +244,17 @@ bodies do not become contextual capabilities. The final response receives exact
 reload, copying an answer to a note, and mixed note/web reference rendering all
 use that same authorization scope.
 
+HTML extraction also records a bounded, deduplicated set of visible labeled links.
+Each receives a separate `page_link` reference whose URL and label came from the
+opened source page; this does not fetch the target or authorize it in contextual
+mode. The opened document remains an `opened_page` reference. Direct article or
+report summaries cite that opened document. Aggregator, index, directory, and
+search-result summaries use the relevant item `page_link` references, so the
+rendered References entries open the actual listed destinations. The browsing
+skill and final prompt require body-only cited bullets for those list summaries and
+forbid claims about an unopened target beyond its visible label and source-page
+metadata.
+
 ## Provider Details
 
 OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted

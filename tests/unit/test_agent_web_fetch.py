@@ -62,6 +62,13 @@ def test_html_parser_exposes_result_links_as_page_evidence() -> None:
         "(https://www.google.com/url?q=https%3A%2F%2Fmarkets.example%2FQQQ)"
         in parser.readable_text
     )
+    assert parser.outgoing_links == (
+        ("QQQ current price", "https://finance.example/quote/QQQ"),
+        (
+            "Second quote",
+            "https://www.google.com/url?q=https%3A%2F%2Fmarkets.example%2FQQQ",
+        ),
+    )
 
 
 def test_html_parser_ignores_malformed_external_links() -> None:
@@ -73,7 +80,7 @@ def test_html_parser_ignores_malformed_external_links() -> None:
 
 
 def test_extraction_tolerates_malformed_html_and_plain_text() -> None:
-    html_title, html_text, html_truncated, html_error = _extract_web_content(
+    html_title, html_text, html_links, html_truncated, html_error = _extract_web_content(
         content=b"<title>Broken</title><main><p>Still <b>readable<script>hidden",
         content_type="text/html",
         encoding="utf-8",
@@ -81,10 +88,11 @@ def test_extraction_tolerates_malformed_html_and_plain_text() -> None:
     )
     assert html_title == "Broken"
     assert html_text == "Still readable"
+    assert html_links == ()
     assert html_truncated is False
     assert html_error == ""
 
-    plain_title, plain_text, plain_truncated, plain_error = _extract_web_content(
+    plain_title, plain_text, plain_links, plain_truncated, plain_error = _extract_web_content(
         content=b"First line\r\n\r\n  Second   line  ",
         content_type="text/plain",
         encoding="utf-8",
@@ -92,16 +100,18 @@ def test_extraction_tolerates_malformed_html_and_plain_text() -> None:
     )
     assert plain_title == ""
     assert plain_text == "First line\n\nSecond line"
+    assert plain_links == ()
     assert plain_truncated is False
     assert plain_error == ""
 
-    _title, fallback_text, _truncated, fallback_error = _extract_web_content(
+    _title, fallback_text, fallback_links, _truncated, fallback_error = _extract_web_content(
         content="Café".encode(),
         content_type="text/plain",
         encoding="not-a-real-encoding",
         base_url="https://example.com/",
     )
     assert fallback_text == "Café"
+    assert fallback_links == ()
     assert fallback_error == ""
 
 
@@ -126,7 +136,7 @@ def test_pdf_extraction_reads_text_and_rejects_malformed_documents() -> None:
     output = BytesIO()
     writer.write(output)
 
-    title, text, truncated, error = _extract_web_content(
+    title, text, links, truncated, error = _extract_web_content(
         content=output.getvalue(),
         content_type="application/pdf",
         encoding="",
@@ -134,6 +144,7 @@ def test_pdf_extraction_reads_text_and_rejects_malformed_documents() -> None:
     )
     assert title == "PDF title"
     assert text == "Hello web PDF"
+    assert links == ()
     assert truncated is False
     assert error == ""
 
@@ -143,7 +154,7 @@ def test_pdf_extraction_reads_text_and_rejects_malformed_documents() -> None:
         encoding="",
         base_url="https://example.com/report.pdf",
     )
-    assert malformed == ("", "", False, "malformed_pdf")
+    assert malformed == ("", "", (), False, "malformed_pdf")
 
 
 def test_fetch_web_page_resolves_every_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,6 +233,7 @@ def test_batch_deduplicates_fetch_and_preserves_submitted_order(
             status="ok",
             title=url.rsplit("/", 1)[-1],
             content_text=f"Content for {url}",
+            outgoing_links=(),
             fetched_at="2026-09-24T00:00:00+00:00",
             truncated=False,
             error_kind="",
@@ -259,6 +271,7 @@ def test_batch_reports_invalid_url_without_losing_success(
             status="ok",
             title="Good",
             content_text="Readable",
+            outgoing_links=(),
             fetched_at="2026-09-24T00:00:00+00:00",
             truncated=False,
             error_kind="",
@@ -291,6 +304,7 @@ def test_batch_fetches_concurrently_with_a_four_request_ceiling(
                 status="ok",
                 title=url,
                 content_text="Readable",
+                outgoing_links=(),
                 fetched_at="2026-09-24T00:00:00+00:00",
                 truncated=False,
                 error_kind="",
