@@ -41,6 +41,13 @@ payload; this is distinct from readable database structure and container sizes.
 Without a namespace password, ordinary note/file payloads are plaintext at the
 MetaList layer. OS disk encryption is separate.
 
+Encryption provides confidentiality and per-value integrity: an encrypted value
+cannot be read, forged or altered without the key. It does not authenticate the
+database as a whole. Encrypted values are not bound to their table, column or
+row, and structural metadata is unauthenticated, so someone who can write the
+database can rearrange or roll back its contents without the password. See
+[database integrity](FUTURE-SECURITY-WORK.md#deferred-database-integrity).
+
 Backup creation copies SQLite snapshots without decrypting encrypted payloads
 or adding whole-archive encryption. Protected snapshot payloads remain encrypted;
 plaintext snapshots remain plaintext. The tar/gzip container's manifest and
@@ -451,7 +458,7 @@ swap, or filesystem snapshots.
 ### Strengths
 - **Strong Key Derivation**: Memory-hard Argon2id protects against brute force
 - **Future-Proof**: Stored KDF cost allows seamless security upgrades
-- **Authenticated Encryption**: AES-GCM prevents tampering and ensures integrity
+- **Authenticated Encryption**: AES-GCM rejects any forged or modified encrypted value
 - **Memory-Only KEK**: KEK never touches disk
 - **Unique Nonces**: Each encryption uses a fresh random nonce
 - **Defense in Depth**: Multiple layers (auth + encryption)
@@ -461,9 +468,8 @@ swap, or filesystem snapshots.
 **Protected Against:**
 - Database theft (encrypted notes, strong Argon2id)
 - Brute force attacks (configurable KDF costs)
-- Tampering (GCM authentication)
+- Forged or altered encrypted values (GCM authentication)
 - Rainbow tables (random salts)
-- Replay attacks (unique nonces)
 - Security obsolescence (upgradeable KDF costs)
 
 **Not Protected Against:**
@@ -473,6 +479,14 @@ swap, or filesystem snapshots.
   other client compromise while decrypted content is rendered.
 - A malicious local process or server administrator with access to application
   memory or executable code.
+- Rearranging or rolling back database contents by someone who can write the
+  database file but does not know the password. Encrypted values can be swapped
+  between notes or fields, replaced with older values, deleted or inserted, and
+  hierarchy, order, collapse state and timestamps can be changed; the result
+  decrypts normally. Because `@password` redaction depends on encrypted tags,
+  such changes could expose a protected note without redaction. The practical
+  exposure is restoring a modified database or backup copy from less trusted
+  storage; see [database integrity](FUTURE-SECURITY-WORK.md#deferred-database-integrity).
 - Weak passwords (use password strength requirements)
 
 ## Implementation Notes

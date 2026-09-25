@@ -1,8 +1,9 @@
 # Personal Knowledge System - Tag Ontology Reference
 
-Status: this document describes the long-term ontology design (including `#tag` and `~`).
+Status: this document describes the long-term ontology design (including `#tag`).
+Symmetric associations (`~`) were tried and dropped; they are not planned.
 
-For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no `~`, no negation), see:
+For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no negation), see:
 - `docs/design/ontology-rules-v1.md`
 
 ## Core Operators
@@ -11,11 +12,6 @@ For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no `~
 - **Asymmetric** relationship
 - Creates one-way logical connection
 - Example: `#programming => #technology`
-
-### Association (`~`)
-- **Symmetric** relationship
-- Creates bidirectional loose connection
-- Example: `#poker ~ #gambling` (implies `#gambling ~ #poker`)
 
 ### Equality (`=`)
 - **Syntactic sugar** for bidirectional implication
@@ -44,7 +40,6 @@ For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no `~
 ## Important Constraints
 
 ### Text and Regex Limitations
-- **Only in implications**, never associations
 - **Only on left-hand side** of implications
 - **Can be negated** with `-` prefix
 
@@ -52,7 +47,6 @@ For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no `~
 ✅ Valid:   "apple" => #fruit
 ✅ Valid:   -"spam" => #not-spam
 ✅ Valid:   /\d+/ => #number
-❌ Invalid: #fruit ~ "apple"
 ❌ Invalid: #fruit => "apple"
 ```
 
@@ -70,7 +64,7 @@ Expands to:
 - `#b => #c`
 - `#b => #d`
 
-This applies to all operators (`=>`, `~`, `=`).
+This applies to both operators (`=>` and `=`).
 
 ## Contexts
 
@@ -98,31 +92,6 @@ Expands to:
 - `("fruit" #organic) => #healthy`
 - `("fruit" #organic) => #nutritious`
 
-## Association Inheritance
-
-Associations propagate through implication chains:
-
-```
-#poker ~ #gambling
-#gambling ~ #probability  
-#probability => #math
-```
-
-Result: `#poker` is associated with `#math` through the chain.
-
-## Association Distance Search
-
-### Syntax
-- `~#tag` - associations at distance 1 or less
-- `~~#tag` - associations at distance 2 or less
-- `~~~#tag` - associations at distance 3 or less
-
-### Cumulative Nature
-`~~#tag` includes:
-- **Distance 0**: Direct matches to `#tag`
-- **Distance 1**: Direct associations 
-- **Distance 2**: Second-degree associations
-
 ## Chaining
 
 You can chain operators to create complex relationships:
@@ -137,15 +106,11 @@ Creates both:
 
 ### Complex Chain Example
 ```
-"Las Vegas" => #Las_Vegas ~ #gambling ~ #probability #statistics => #math = #mathematics => #logic
+#probability #statistics => #math = #mathematics => #logic
 ```
 
 Equivalent to:
 ```
-"Las Vegas" => #Las_Vegas
-#Las_Vegas ~ #gambling
-#gambling ~ #probability
-#gambling ~ #statistics
 #probability => #math
 #statistics => #math
 #math => #mathematics
@@ -159,8 +124,7 @@ Implementation status: **partial**.
 
 This document describes the planned ontology/implication search model.
 The current implementation includes v1 ontology **implication + matcher** rules
-and uses them to infer effective tags during search, but **association search**
-(`~`) is still future work. See:
+and uses them to infer effective tags during search. See:
 - Syntax: `docs/ui/search-syntax.md`
 - Current semantics: `docs/ui/search-semantics.md`
 - Rule language: `docs/design/ontology-rules-v1.md`
@@ -173,15 +137,9 @@ Returns:
 - Content directly tagged with `#tag`
 - Content that implies `#tag` (anything on LHS of `=> #tag`)
 
-### Association Search (`~#tag`, `~~#tag`, etc.)
-Returns associations at specified distance or less.
-
-**Note**: Associations are never included in direct tag searches - you must explicitly use the `~` operator.
-
 ## Key Properties
 
 - **Implications are asymmetric** (unless explicitly defined both ways)
-- **Associations are symmetric**
 - **Text/regex can only trigger implications, never be implied**
 - **Contexts enable disambiguation through co-occurrence**
 - **Chaining creates transitive relationships**

@@ -69,6 +69,54 @@ browser extensions, treating unexpected certificate changes as suspicious,
 locking MetaList when it is not in use, applying appropriate Windows crash-dump
 policy where required, and installing releases only from the expected project.
 
+## Deferred: Database Integrity
+
+Status: known limitation, deliberately not implemented (2026-09-25).
+
+AES-GCM authenticates each encrypted value on its own. It does not bind a value
+to its table, column or row, and hierarchy, order, collapse state and timestamps
+are stored unauthenticated. Someone who can write a namespace database but does
+not know the password can therefore swap encrypted values between notes or
+fields, restore older values, delete or insert rows, or change structure, and
+the result decrypts normally. `@password` redaction depends on the encrypted
+tags, so moving a protected note's content or tags could expose it without
+redaction in the UI or in AI requests.
+
+This is not addressed for the current deployment because:
+
+- Anyone who can write the live database on the host (by default under
+  `~/MetaList`) can normally also modify MetaList's code and capture the
+  password at the next login. No database check prevents that.
+- The remaining exposure is a database or backup copy kept somewhere less
+  trusted, such as a cloud folder or removable drive, and later restored.
+- A complete solution requires every write path to maintain integrity metadata
+  indefinitely. A missed path produces false tamper alarms against legitimate
+  data.
+
+Revisit this if the live database or backups are stored or synced by a service
+the user does not control, particularly a hosted sync tier.
+
+Design sketch if revisited:
+
+- Derive a separate integrity key from the DEK, for example with HKDF and a
+  versioned label. Password changes keep the DEK, so stored MACs remain valid.
+- Store an HMAC per row over the table name, row ID and every column, including
+  plaintext structural columns.
+- Keep one keyed aggregate of all row MACs plus a monotonically increasing
+  counter in `app_settings`. Update the row MAC, aggregate and counter in the
+  same SQLite transaction as the write.
+- Verify every row and the aggregate during unlock hydration, which already
+  reads every row. Refuse to load on a mismatch and report the affected rows.
+- Route all writes through one helper enforced by a startup sanity rule, and
+  cover the files database under the existing live-recovery journal.
+- No re-encryption is needed: a one-time pass at unlock computes the initial
+  MACs.
+
+Limits of that design: passwordless namespaces have no secret key and cannot
+use it, and replacing the entire database with an older copy that was valid at
+the time is not detected unless the latest counter is also kept outside the
+stored database.
+
 ## Low-Priority or Excessive Controls for the Current Deployment
 
 Unless the threat model changes, the following are not currently justified by
