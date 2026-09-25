@@ -116,12 +116,13 @@ def render_ai_chat_markdown_to_html(
     )
     if len(reference_groups) == 0 and len(cited_web_ids) == 0:
         return body_html
-    return f"{body_html}{_render_references_section(
+    references_html = _render_references_section(
         reference_groups,
         context=context,
         cited_web_ids=cited_web_ids,
         evidence_by_id=web_evidence_by_id,
-    )}"
+    )
+    return f"{body_html}{references_html}"
 
 
 def render_ai_chat_streaming_markdown_to_html(
