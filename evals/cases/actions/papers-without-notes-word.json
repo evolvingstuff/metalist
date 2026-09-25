@@ -35,7 +35,7 @@
         "kind": "action",
         "alternatives": [
           {
-            "kind": "investigate_current_scope"
+            "kind": "summarize_current_scope"
           }
         ]
       }

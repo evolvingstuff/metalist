@@ -140,6 +140,42 @@ def test_first_root_larger_than_budget_fails_instead_of_splitting_it() -> None:
         state.retain_root_prefix_within_token_budget(reserved_approximate_tokens=0)
 
 
+def test_complete_scope_batches_preserve_every_root_in_canonical_order() -> None:
+    state = InvestigationState.start(
+        snapshot=_snapshot(oversized_first_root=False),
+        settings=AgentRetrievalSettings(max_page_approximate_tokens=8_200),
+    )
+
+    plan = state.plan_complete_root_batches(reserved_approximate_tokens=0)
+
+    assert len(plan.batches) == 2
+    assert tuple(
+        root_id
+        for batch in plan.batches
+        for root_id in batch.result_tree_ids
+    ) == ("a", "b", "c")
+    assert tuple(
+        note_id
+        for batch in plan.batches
+        for note_id in batch.evidence_note_ids
+    ) == ("a", "a-child", "b", "c")
+    assert all(
+        batch.returned_approximate_token_count <= 8_200
+        for batch in plan.batches
+    )
+    assert plan.result_tree_count == 3
+    assert plan.note_count == 4
+
+
+def test_complete_scope_batching_rejects_any_indivisible_oversized_root() -> None:
+    state = InvestigationState.start(
+        snapshot=_snapshot(oversized_first_root=True),
+        settings=AgentRetrievalSettings(max_page_approximate_tokens=500),
+    )
+    with pytest.raises(ValueError, match="complete result tree a"):
+        state.plan_complete_root_batches(reserved_approximate_tokens=0)
+
+
 def test_payload_requires_exactly_one_prior_retention_pass() -> None:
     state = InvestigationState.start(
         snapshot=_snapshot(oversized_first_root=False),

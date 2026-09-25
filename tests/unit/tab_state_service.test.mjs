@@ -9,6 +9,7 @@ async function harness() {
     ), 'utf8').replace(/^import[\s\S]*?from '[^']+';\s*/gm, '').replace(/^export /gm, '');
     const requests = [];
     const polls = [];
+    const restoredReferenceTabs = [];
     let serverVersion = 1;
     const payload = {
         activeTabId: 'first', tabOrder: ['first', 'second'], version: 1,
@@ -34,6 +35,7 @@ async function harness() {
         CONFIG: { API: { NOTES: { TAB_STATE: '/tabs' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
+        restoreReferenceNavigationFromSession: (tabs) => restoredReferenceTabs.push(tabs),
         ErrorHandler: { handleApiError() {} }, HttpRequestError: Error,
         fetch: async (_endpoint, options) => {
             if (options.method === 'GET') return { ok: true, json: async () => structuredClone(payload) };
@@ -48,6 +50,8 @@ async function harness() {
         return { initializeTabStateService, persistTabStateSnapshot };`)(...Object.values(dependencies));
     await service.initializeTabStateService();
     assert.equal(polls.length, 1);
+    // Reference-tab labels are restored from the freshly loaded server tabs.
+    assert.deepEqual(restoredReferenceTabs, [payload.tabs]);
     return { service, requests, context, payload, window, poll: polls[0] };
 }
 

@@ -1,8 +1,15 @@
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
+// Reference tabs are ordinary server tabs whose search is a hidden note-ID query.
+// The navigation stack that hides that query is kept per browser tab in
+// sessionStorage so a reload keeps the "Reference source" label instead of
+// exposing raw IDs in the search field.
+const REFERENCE_NAVIGATION_STORAGE_KEY = 'metalist_reference_navigation_stack';
+
 const moduleState = ApplicationState.createFields('reference-source-navigation-service', {
     referenceNavigationStack: [],
+    hasRestoredFromSession: false,
 });
 
 
@@ -29,6 +36,79 @@ function copyOriginScope(originScope) {
     };
 }
 
+function copyReferenceNavigationEntry(entry) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error('Reference navigation stack entry must be an object');
+    }
+    for (const key of ['fromTabId', 'toTabId', 'referenceQuery']) {
+        if (typeof entry[key] !== 'string' || entry[key].length === 0) {
+            throw new Error(`Reference navigation stack entry missing ${key}`);
+        }
+    }
+    if (entry.viewKind !== 'source' && entry.viewKind !== 'backlinks') {
+        throw new Error('Reference navigation stack entry requires source or backlinks viewKind');
+    }
+    return {
+        fromTabId: entry.fromTabId,
+        toTabId: entry.toTabId,
+        referenceQuery: entry.referenceQuery,
+        originScope: copyOriginScope(entry.originScope),
+        viewKind: entry.viewKind,
+    };
+}
+
+function persistReferenceNavigationStack() {
+    sessionStorage.setItem(
+        REFERENCE_NAVIGATION_STORAGE_KEY,
+        JSON.stringify(moduleState.referenceNavigationStack),
+    );
+}
+
+export function parseStoredReferenceNavigationStack(rawValue) {
+    if (rawValue === null) {
+        return [];
+    }
+    if (typeof rawValue !== 'string') {
+        throw new Error('Stored reference navigation must be a string');
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+        throw new Error('Stored reference navigation must be a list');
+    }
+    return parsed.map(copyReferenceNavigationEntry);
+}
+
+/**
+ * Restore this browser tab's reference navigation after the server tab state loads.
+ *
+ * Keeps only entries whose tabs still exist and whose reference tab still runs the
+ * exact hidden query; any other search means the user already left that view.
+ */
+export function restoreReferenceNavigationFromSession(serverTabs) {
+    if (moduleState.hasRestoredFromSession) {
+        throw new Error('Reference navigation can be restored only once per page load');
+    }
+    if (!serverTabs || typeof serverTabs !== 'object' || Array.isArray(serverTabs)) {
+        throw new Error('Reference navigation restore requires server tabs');
+    }
+    if (moduleState.referenceNavigationStack.length !== 0) {
+        throw new Error('Reference navigation restore requires an empty in-memory stack');
+    }
+    moduleState.hasRestoredFromSession = true;
+    const storedEntries = parseStoredReferenceNavigationStack(
+        sessionStorage.getItem(REFERENCE_NAVIGATION_STORAGE_KEY),
+    );
+    for (const entry of storedEntries) {
+        const fromTab = serverTabs[entry.fromTabId];
+        const toTab = serverTabs[entry.toTabId];
+        if (fromTab === undefined || toTab === undefined) continue;
+        if (toTab.searchQuery !== entry.referenceQuery) continue;
+        moduleState.referenceNavigationStack.push(entry);
+    }
+    persistReferenceNavigationStack();
+    updateReferenceSourceIndicator();
+}
+
 function pruneReferenceNavigationStackToExistingTabs() {
     const tabOrder = ModeContext.tabOrder;
     if (!Array.isArray(tabOrder)) {
@@ -53,13 +133,23 @@ function pruneReferenceNavigationStackToExistingTabs() {
         if (writeIndex !== i) moduleState.referenceNavigationStack[writeIndex] = entry;
         writeIndex += 1;
     }
-    if (writeIndex < moduleState.referenceNavigationStack.length) moduleState.referenceNavigationStack.length = writeIndex;
+    if (writeIndex < moduleState.referenceNavigationStack.length) {
+        moduleState.referenceNavigationStack.length = writeIndex;
+        persistReferenceNavigationStack();
+    }
 }
 
 function findReferenceNavigationEntryIndexForActiveTab() {
-    const activeTabId = ModeContext.activeTabId;
+    return findReferenceNavigationEntryIndexForTab(ModeContext.activeTabId);
+}
+
+
+function findReferenceNavigationEntryIndexForTab(tabId) {
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('Reference navigation lookup requires tabId');
+    }
     for (let i = moduleState.referenceNavigationStack.length - 1; i >= 0; i -= 1) {
-        if (moduleState.referenceNavigationStack[i].toTabId === activeTabId) {
+        if (moduleState.referenceNavigationStack[i].toTabId === tabId) {
             return i;
         }
     }
@@ -69,6 +159,20 @@ function findReferenceNavigationEntryIndexForActiveTab() {
 export function isViewingReferenceSource() {
     pruneReferenceNavigationStackToExistingTabs();
     return findReferenceNavigationEntryIndexForActiveTab() !== -1;
+}
+
+
+/**
+ * Return the temporary view label for a server tab, or an empty string for an
+ * ordinary user search. Internal exact-note queries must never become tab labels
+ * or search-history entries.
+ */
+export function getReferenceNavigationLabelForTab(tabId) {
+    pruneReferenceNavigationStackToExistingTabs();
+    const entryIndex = findReferenceNavigationEntryIndexForTab(tabId);
+    if (entryIndex === -1) return '';
+    return moduleState.referenceNavigationStack[entryIndex].viewKind === 'backlinks'
+        ? 'Referenced by' : 'Reference source';
 }
 
 export function getActiveReferenceSourceQuery() {
@@ -119,9 +223,8 @@ export function updateReferenceSourceIndicator() {
     if (!(label instanceof HTMLElement)) {
         throw new Error('reference-source-indicator-label element missing');
     }
-    const entryIndex = findReferenceNavigationEntryIndexForActiveTab();
-    label.textContent = entryIndex !== -1 && moduleState.referenceNavigationStack[entryIndex].viewKind === 'backlinks'
-        ? 'Referenced by' : 'Reference source';
+    const referenceLabel = getReferenceNavigationLabelForTab(ModeContext.activeTabId);
+    label.textContent = referenceLabel === '' ? 'Reference source' : referenceLabel;
 }
 
 export function pushReferenceNavigationEntry(
@@ -150,6 +253,7 @@ export function pushReferenceNavigationEntry(
         originScope: copyOriginScope(originScope),
         viewKind,
     });
+    persistReferenceNavigationStack();
     updateReferenceSourceIndicator();
 }
 
@@ -171,6 +275,7 @@ export function replaceActiveReferenceNavigationQuery(referenceQuery, viewKind) 
         referenceQuery,
         viewKind,
     };
+    persistReferenceNavigationStack();
     updateReferenceSourceIndicator();
 }
 
@@ -185,6 +290,7 @@ export function popReferenceNavigationEntryForActiveTab() {
     if (!entry || typeof entry !== 'object') {
         throw new Error('Reference navigation stack entry must be an object');
     }
+    persistReferenceNavigationStack();
     updateReferenceSourceIndicator();
     return entry;
 }

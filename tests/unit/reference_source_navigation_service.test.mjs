@@ -62,6 +62,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     const {
         getActiveReferenceOriginScope,
         isViewingReferenceSource,
+        getReferenceNavigationLabelForTab,
         getActiveReferenceSourceQuery,
         popReferenceNavigationEntryForActiveTab,
         pushReferenceNavigationEntry,
@@ -89,6 +90,8 @@ test('nested reference source entries expose and dismiss one temporary context a
     }, { emitUpdate: false });
     pushReferenceNavigationEntry('original', 'source-1', 'uuid-1', originScope, 'backlinks');
     assert.equal(isViewingReferenceSource(), true);
+    assert.equal(getReferenceNavigationLabelForTab('original'), '');
+    assert.equal(getReferenceNavigationLabelForTab('source-1'), 'Referenced by');
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-1');
     assert.equal(label.textContent, 'Referenced by');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
@@ -104,6 +107,7 @@ test('nested reference source entries expose and dismiss one temporary context a
         tabOrder: ['original', 'source-1', 'source-2'],
     }, { emitUpdate: false });
     pushReferenceNavigationEntry('source-1', 'source-2', 'uuid-2', originScope, 'source');
+    assert.equal(getReferenceNavigationLabelForTab('source-2'), 'Reference source');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     replaceActiveReferenceNavigationQuery('uuid-3', 'source');
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-3');

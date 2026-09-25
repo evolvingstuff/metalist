@@ -758,7 +758,20 @@ async def acknowledge_menu_result(payload: MenuResult, token: Annotated[str, Dep
 class BulkAnswerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     question_id: str = Field(..., min_length=1)
-    value: Literal["existing", "new", "proceed", "cancel", "focus_existing", "focus_new", "focus_both"]
+    value: Literal[
+        "existing",
+        "new",
+        "proceed",
+        "cancel",
+        "focus_existing",
+        "focus_new",
+        "focus_both",
+        "prefix_focus_existing",
+        "prefix_focus_new",
+        "prefix_focus_both",
+        "summarize_all",
+        "use_prefix",
+    ]
 
 
 @router.post("/proposals/answer")

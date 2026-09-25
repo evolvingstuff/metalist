@@ -22,6 +22,8 @@ from app.services.agent.actions import ContextualWebActionEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.tagging import TagBatchResult, TagOperationIntent
+from app.services.agent.staged_summary import SummaryBatchResult
+from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
@@ -41,6 +43,8 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
         MetaListHelpResponse: 8_192,
         TagBatchResult: 8_192,
         TagOperationIntent: 1_024,
+        SummaryBatchResult: 8_192,
+        SummaryFindingsResult: 4_096,
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
@@ -66,6 +70,7 @@ class _PendingAttempt:
     reasoning_text: str
     response_metadata: dict[str, object]
     last_reported_output_tokens: int
+    partial_output: dict[str, object]
 
 
 class _InstructorTraceCapture:
@@ -91,6 +96,7 @@ class _InstructorTraceCapture:
                 reasoning_text="",
                 response_metadata={},
                 last_reported_output_tokens=0,
+                partial_output={},
             )
         )
 
@@ -263,6 +269,15 @@ class _InstructorTraceCapture:
             return 0
         return estimate_text_tokens(generated_text)
 
+    def record_partial(self, partial: BaseModel) -> None:
+        """Keep the latest parsed partial so output progress can preview it."""
+        if not isinstance(partial, BaseModel):
+            raise TypeError("Instructor partial output must be a Pydantic model")
+        self._current_attempt().partial_output = partial.model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+
     def record_completion_error(self, error: Exception, **metadata: object) -> None:
         del metadata
         self._record_error(error=error, failure_kind="Provider request failed")
@@ -359,6 +374,7 @@ class _InstructorTraceCapture:
                 duration_ms=attempt.duration_ms,
                 wire_request=dict(attempt.wire_request),
                 output_tokens_received=attempt.output_tokens_received,
+                partial_output=dict(attempt.partial_output),
             )
         )
 
@@ -522,6 +538,7 @@ async def _run_structured_attempt(
             timeout=_STRUCTURED_TIMEOUT_SECONDS,
             **request_options,
         ):
+            capture.record_partial(partial)
             last_partial = partial
         if last_partial is None:
             raise ValueError("Instructor stream returned no structured output")

@@ -132,6 +132,8 @@ The first structured call chooses:
   user's saved notes;
 - `investigate_current_scope` when the answer depends on evidence in the frozen
   result view;
+- `summarize_current_scope` when the user asks to summarize, compare, or synthesize
+  the complete frozen result scope;
 - `tag_proposals` for explicit requests to generate, accept, or remove proposals.
 
 The routing request also receives a content-free `ROUTE_SELECTION_REQUEST` block
@@ -145,6 +147,40 @@ leading prefix of complete trees that fits the selected provider's evidence-toke
 limit. It then sends that one nested payload directly to final response generation.
 There is no second evidence page, working summary, facet selection, tag-narrowing
 step, or source-rehydration pass.
+
+A complete-scope summary always asks for permission before any summary call. The
+dialog shows how many roots and evidence batches will be processed and the scope's
+size as a multiple of the evidence budget. Tag proposals ask the same single card,
+with the tag-focus selector (existing, new, or both) added above the buttons:
+"Tag all N", "Use first K only" when the scope exceeds the evidence budget, and
+Cancel (last and tinted red in both). If multiple
+batches are required, the user can summarize everything, use only the leading
+single-payload prefix, or cancel. Complete processing keeps every root tree intact,
+has no cap on the total number of batches, and runs at most four model requests at
+once. The first batch runs alone to seed provider caching; later batches run in
+parallel waves and are restored to original scope order before synthesis.
+The progress widget sits in the conversation immediately above the answer it is
+producing: earlier messages and the current request stay above it, and the final
+answer streams in below it. Its status line reports the total batch count and how
+many batches are complete, writing, and queued. As soon as a batch request starts,
+a compact card appears for it: a pulsing heading with a live finding and token
+count, and a fixed two-line window that streams the tail of the newest finding
+as the model writes it (a thin shimmer stands in until the first text arrives).
+When that batch completes, the same card collapses to one ellipsized line such as
+"✓ Batch 3 of 9 · 4 findings — first finding…". The full findings are not
+repeated in the widget. Cards stay in canonical batch-number order even when later
+batches finish first, and the scrollable stack follows the newest batches unless
+the user has scrolled up. Stream previews are throttled on the server, and the
+widget's Cancel button is never replaced while previews arrive. After every batch succeeds the status changes to writing the
+final answer, and the batch cards remain visible above it. When the user chooses
+the leading prefix (or cancels), the permission card closes before the answer
+streams rather than leaving disabled choices behind.
+
+If the verified batch findings are themselves too large for one synthesis call,
+MetaList condenses them through additional ordered stages until they fit. Exact
+root coverage and disclosed original-note citations are validated at each stage.
+The final answer appears only after every batch succeeds. Failure or cancellation
+stops outstanding work and never presents a partial result as complete.
 
 Every retained note carries its full disclosure-safe content. If a later root would
 overflow the limit, that root and every following root are omitted. The final model
@@ -280,8 +316,9 @@ notice; it is preserved but never applied until Save or Restore removes it.
   root, the query is `UUID1 OR UUID2`; normal search behavior preserves both paths
   and gray-redacts unrelated siblings.
 - Individual/all-reference navigation uses the temporary Reference source context,
-  leaves the visible search field empty, and provides the dismissible X to return
-  to the prior tab context.
+  leaves the visible search field empty, labels the temporary tab `Reference source`
+  instead of displaying its internal exact-note filter, excludes that filter from
+  search history, and provides the dismissible X to return to the prior tab context.
 - Common UUID dash substitutions are normalized programmatically. UUIDs in fenced
   code/existing links remain literal.
 - Right-click a completed answer and choose `Copy Response` to copy Markdown tagged
@@ -327,4 +364,4 @@ and final answers are included. Exporting makes no model call.
 Page reloads retain server-session history. Clear Chat, logout, and server restart
 clear it. The existing Agent Debug dialog and Copy all still concern the latest
 run. See [prompt regression authoring](../../evals/README.md) to turn an exported
-failure into a ten-run action or output-quality case.
+failure into a five-run action or output-quality case.

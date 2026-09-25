@@ -6,6 +6,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from './scroll-anchor-service.js';
 import { CommandGate } from './command-gate-service.js';
 import { buildSessionHeaders } from '../../session-auth.js';
+import { restoreReferenceNavigationFromSession } from './reference-source-navigation-service.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
@@ -40,6 +41,7 @@ function setTabStateVersionFromServer(version) {
 export async function initializeTabStateService() {
     const serverState = await fetchTabState();
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
+    restoreReferenceNavigationFromSession(serverState.tabs);
     setTabStateVersionFromServer(serverState.version);
     moduleState.lastSignature = serializeState(canonicalizeState(serverState));
     ModeContext.setTabStateUpdateHook(handleTabStateMutation);

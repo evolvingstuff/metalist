@@ -152,13 +152,21 @@ class ScopedRouteEnvelope(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["respond", "investigate_current_scope", "tag_proposals", "metalist_help"] = Field(
+    kind: Literal[
+        "respond",
+        "investigate_current_scope",
+        "summarize_current_scope",
+        "tag_proposals",
+        "metalist_help",
+    ] = Field(
         ...,
         description=(
             "metalist_help for MetaList product questions or opening menus, with relevant help_topics; "
             "respond for requests answerable from the supplied selected note tree alone or without note evidence; "
             "investigate_current_scope only when the answer depends on evidence "
-            "inside the frozen active MetaList result scope. "
+            "inside the frozen active MetaList result scope; "
+            "summarize_current_scope for an explicit broad or comprehensive summary "
+            "of that scope, so the application can stage complete coverage when needed. "
             "tag_proposals ONLY for an explicit current user request to generate, "
             "accept, reject, or remove tag proposals. Questions about tagging, "
             "hypotheticals, and unrelated requests must never select tag_proposals."

@@ -36,7 +36,6 @@ from app.services.agent.openai_inference import validate_openai_model
 _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.tagging.vocabulary": {"existing", "new"},
     "pref.ai.tagging.focus": {"existing", "new", "both"},
-    "pref.ai.prompt.tagging": "agent_system_prompt",
     "pref.show_backlinks": {"true", "false"},
     "pref.show_note_tags": {"true", "false"},
     "pref.show_tab_ui": {"true", "false"},

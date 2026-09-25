@@ -2,7 +2,12 @@ import { executeAgentMenuRequest } from './agent-menu-actions.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { isNetworkTransportError } from '../api-failure-classification-service.js';
-import { handleBulkEvent, closeBulkProgress } from './bulk-proposal-ui.js';
+import {
+    bulkProgressEndsAtCompletion,
+    closeBulkProgress,
+    handleBulkEvent,
+} from './bulk-proposal-ui.js';
+import { placeChatMessageElements } from './ai-chat-message-placement.js';
 import {
     AiApiError,
     acknowledgeAgentMenu,
@@ -150,6 +155,7 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'model_context',
     'scope',
     'investigate_current_scope',
+    'summarize_current_scope',
     'tag_proposals',
     'metalist_help',
     'evidence_selection',
@@ -208,6 +214,7 @@ class AiChatPanelController {
         this._initialized = false;
         this._messages = [];
         this._bulkPanel = null;
+        this._bulkPanelAnchorMessageId = '';
         this._expandedThinkingMessageIds = new Set();
         this._expandedReferenceMessageIds = new Set();
         this._showDiagnosticActivities = false;
@@ -1216,9 +1223,14 @@ class AiChatPanelController {
                         if (needsBulkPanel && this._bulkPanel === null) {
                             this._bulkPanel = document.createElement('div');
                             this._bulkPanel.className = 'ai-chat-message ai-chat-message-assistant ai-chat-operation-card';
+                            this._bulkPanelAnchorMessageId = assistantMessage.id;
                             this._elements.messages.append(this._bulkPanel);
                         }
                         handleBulkEvent(event, abortController, this._bulkPanel);
+                        if (event.type === 'bulk_complete' && bulkProgressEndsAtCompletion()) {
+                            await closeBulkProgress();
+                            this._removeBulkPanel();
+                        }
                     } else if (event.type === 'action_status') {
                         assistantMessage.activities.push({
                             sequence: assistantMessage.activities.length + 1,
@@ -1295,13 +1307,7 @@ class AiChatPanelController {
             }
         } finally {
             await closeBulkProgress();
-            if (this._bulkPanel !== null) {
-                this._bulkPanel.remove();
-                this._bulkPanel = null;
-            }
-            if (settings.provider === 'openai') {
-                await this._refreshOpenAiCostSnapshot();
-            }
+            if (this._bulkPanel !== null) this._removeBulkPanel();
             this._stopThinkingFeedback();
             if (this._activeChatAbortController !== abortController) {
                 throw new Error('AI chat abort controller changed during request');
@@ -1313,6 +1319,12 @@ class AiChatPanelController {
             this._activeChatCompletion = null;
             this._setBusy(false);
             resolveActiveChatCompletion();
+            // Refresh cost only after the chat is idle again: this network call can
+            // fail (for example while the server restarts), and failing before the
+            // busy reset left the composer silently ignoring every later Send.
+            if (settings.provider === 'openai') {
+                await this._refreshOpenAiCostSnapshot();
+            }
         }
         if (!wasCancelled && didStartChat) {
             await this._loadSession({ shouldScrollToBottom: false });
@@ -1434,6 +1446,15 @@ class AiChatPanelController {
         this._render({ shouldScrollToBottom: true });
     }
 
+    _removeBulkPanel() {
+        if (this._bulkPanel === null || this._bulkPanelAnchorMessageId === '') {
+            throw new Error('AI chat operation panel is not active');
+        }
+        this._bulkPanel.remove();
+        this._bulkPanel = null;
+        this._bulkPanelAnchorMessageId = '';
+    }
+
     _render({ shouldScrollToBottom }) {
         if (typeof shouldScrollToBottom !== 'boolean') {
             throw new Error('_render requires boolean scroll behavior');
@@ -1442,6 +1463,7 @@ class AiChatPanelController {
         for (const child of Array.from(this._elements.messages.children)) {
             if (child !== this._bulkPanel) child.remove();
         }
+        const renderedMessages = [];
         for (const message of this._messages) {
             validateMessage(message);
             const article = document.createElement('article');
@@ -1572,10 +1594,17 @@ class AiChatPanelController {
                 error.textContent = message.error;
                 article.appendChild(error);
             }
-            if (article.childElementCount > 0) {
-                this._elements.messages.insertBefore(article, this._bulkPanel);
-            }
+            renderedMessages.push({
+                messageId: message.id,
+                element: article.childElementCount > 0 ? article : null,
+            });
         }
+        placeChatMessageElements({
+            container: this._elements.messages,
+            renderedMessages,
+            operationPanel: this._bulkPanel,
+            operationAnchorMessageId: this._bulkPanelAnchorMessageId,
+        });
         this._elements.clear.disabled = (
             this._messages.length === 0 || this._isClearingSession
         );

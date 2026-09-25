@@ -141,8 +141,8 @@ test('chat panel markup has a resizer, transcript, thinking region, and composer
 
 test('tagging focus chooser restores the server-provided previous choice', () => {
     const source = readFileSync(BULK_PROPOSAL_UI_URL, 'utf8');
-    assert.match(source, /event\.default_value/);
-    assert.match(source, /select\.value\s*=\s*event\.default_value/);
+    assert.match(source, /createTagFocusSelect\(question\.focusDefault\)/);
+    assert.match(source, /select\.value = focusDefault/);
 });
 
 
@@ -390,6 +390,40 @@ test('chat accepts scoped-investigation lifecycle activities', () => {
     assert.match(controller, /activity\.duration_ms/);
     assert.match(controller, /Step duration/);
     assert.match(controller, /_formatActivityDuration/);
+});
+
+
+test('complete-scope summaries require an explicit choice and expose batch progress', () => {
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const bulkUi = readFileSync(BULK_PROPOSAL_UI_URL, 'utf8');
+    const routes = readFileSync(new URL('../../app/api/routes/ai.py', import.meta.url), 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+
+    assert.match(controller, /'summarize_current_scope'/);
+    // Choice labels and answer values are covered behaviorally in bulk_scope_question.test.mjs.
+    assert.match(bulkUi, /const question = describeScopeQuestion\(event\)/);
+    assert.match(bulkUi, /scopeAnswerValue\(event, 'prefix', selectedFocus\(\)\)/);
+    assert.match(bulkUi, /cleanCancel\.dataset\.answersQuestion = 'true'/);
+    assert.match(css, /\.ai-chat-tag-operation \.summary-cancel-btn/);
+    assert.match(bulkUi, /answer\('cancel'\)/);
+    assert.match(bulkUi, /classList\.add\('summary-cancel-btn'\)/);
+    assert.match(bulkUi, /querySelector\('\.form-actions'\)\.append\(cleanCancel\)/);
+    // Batch-card transitions and ordering are covered behaviorally in
+    // ai_chat_summary_progress.test.mjs; this only pins the wiring.
+    assert.match(bulkUi, /import \{ renderSummaryBatchPreview \} from '\.\/summary-batch-preview\.js'/);
+    assert.match(bulkUi, /renderSummaryBatchPreview\(stack, event\.summary_batch_preview\)/);
+    assert.match(bulkUi, /if \(wasFollowingNewest\) stack\.scrollTop = stack\.scrollHeight/);
+    assert.match(css, /\.summary-batch-ticker \{[^}]*height: 2\.7em;[^}]*overflow: hidden;/);
+    assert.match(css, /\.summary-batch-line \{[^}]*text-overflow: ellipsis;/);
+    assert.match(controller, /placeChatMessageElements\(\{/);
+    assert.match(controller, /this\._bulkPanelAnchorMessageId = assistantMessage\.id/);
+    assert.match(controller, /bulk_complete' && bulkProgressEndsAtCompletion\(\)/);
+    assert.doesNotMatch(controller, /insertBefore\(article, this\._bulkPanel\)/);
+    assert.match(css, /\.ai-chat-summary-operation \.summary-cancel-btn/);
+    assert.match(css, /\.ai-chat-summary-operation \.summary-batch-stack/);
+    assert.match(bulkUi, /moduleState\.active\.operation !== 'summary'/);
+    assert.match(routes, /"summarize_all"/);
+    assert.match(routes, /"use_prefix"/);
 });
 
 

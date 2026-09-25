@@ -44,7 +44,7 @@ provider, including judges and retries. See the
 # Validate all cases against current production code; no paid calls.
 .venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
   evals/cases/help/*.json evals/cases/selected-note/*.json \
-  evals/cases/web/*.json \
+  evals/cases/staged-summary/*.json evals/cases/web/*.json \
   --judge evals/judge.json --output /tmp/metalist-regressions-check
 
 # Record current performance before editing production prompts.
@@ -73,7 +73,7 @@ calls. No hand-maintained skill dependencies or frozen-prompt execution are used
 # Preview affected cases and why they were selected; no API calls.
 .venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
   evals/cases/help/*.json evals/cases/selected-note/*.json \
-  evals/cases/web/*.json \
+  evals/cases/staged-summary/*.json evals/cases/web/*.json \
   --judge evals/judge.json --changed-since /tmp/metalist-before/report.json \
   --output /tmp/metalist-affected-preview
 
@@ -137,6 +137,11 @@ requires at least eight distinct destination citations while checking every name
 story against its exact link token. `web-cited-answer` is the direct-article control:
 claims from the article body must cite the opened article rather than an incidental
 outgoing link.
+The staged-summary case builds one structured batch request and one final synthesis
+request through the current production system prompt, summary skill, context
+builders, and response schema. It checks supporting-note selection, preservation of
+fixed facts, original-note citation tokens, and complete-scope wording; deterministic
+tests verify application-owned exact root coverage.
 The v2 migration preserved all 133 original expectations. Historical measured
 results remain historical; they do not establish current prompt accuracy.
 
@@ -148,15 +153,16 @@ judge criteria count as errors. Do not revise expectations simply to pass a new 
 
 Each step has `conversation`, a tagged `context`, `max_output_tokens`, and
 `expectation`. Supported contexts are `route`, `help`, `respond`, `investigation`,
-`web_action`, and `web_respond`.
+`summary_batch`, `summary_final`, `web_action`, and `web_respond`.
 Scope metadata and selected-note state are explicit. Selection fixtures can provide
 a complete containing tree with required node IDs, parent IDs, content, and tags;
 production code derives the edited-node marker from the selected ID. Existing
 single-node scenarios remain fixed and use the same current tree serializer.
 Help contexts select topics;
-current skills and catalogs are assembled by production code. Investigation
-contexts supply fixed result trees and coverage IDs. A scenario never executes
-application actions or retrieves actual notes.
+current skills and catalogs are assembled by production code. Investigation and
+summary-batch contexts supply fixed result trees and coverage IDs; summary-final
+contexts supply verified structured findings with original supporting note IDs. A
+scenario never executes application actions or retrieves actual notes.
 
 Steps and repetitions are independent. To use a freshly generated earlier output,
 include `{"role":"assistant","from_step":0}` in a later step's conversation.

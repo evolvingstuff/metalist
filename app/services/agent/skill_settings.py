@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
 from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL, load_skill
 from app.services.agent.help_catalog import HELP_TOPICS
+from app.services.agent.tagging import TAGGING_PROMPT_KEY
 
 
 SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v7"
@@ -35,8 +36,16 @@ LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
 WEB_BROWSING_SKILL_ID = "web_browsing_v1"
 WEB_BROWSING_SKILL_PREFERENCE_KEY = "pref.ai.skill.web_browsing_v1"
+STAGED_SUMMARY_SKILL_ID = "staged_summary_v1"
+STAGED_SUMMARY_SKILL_PREFERENCE_KEY = "pref.ai.skill.staged_summary_v1"
+TAG_PROPOSALS_SKILL_ID = "tag_proposals_v1"
+# Tag suggestions keep their original preference key so prompts customized in
+# "Tagging prompt and vocabulary…" become this skill's override unchanged.
+TAG_PROPOSALS_SKILL_PREFERENCE_KEY = TAGGING_PROMPT_KEY
 AGENT_SKILL_PREFERENCE_KEYS = (
     SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
+    STAGED_SUMMARY_SKILL_PREFERENCE_KEY,
+    TAG_PROPOSALS_SKILL_PREFERENCE_KEY,
     WEB_BROWSING_SKILL_PREFERENCE_KEY,
     *(f"pref.ai.skill.help_{topic}_v1" for topic in HELP_TOPICS),
 )
@@ -125,6 +134,17 @@ def validate_agent_skill_content(value: str) -> str:
 DEFAULT_AGENT_SKILLS = AgentSkillSet(
     skills=(
         AgentSkill(
+            skill_id=STAGED_SUMMARY_SKILL_ID,
+            title="Summarize complete scope",
+            description=(
+                "Summarizes every permitted root tree through verified evidence "
+                "batches and a citation-preserving synthesis."
+            ),
+            trigger_action="summarize_current_scope",
+            preference_key=STAGED_SUMMARY_SKILL_PREFERENCE_KEY,
+            content=load_skill("staged-summary.md"),
+        ),
+        AgentSkill(
             skill_id=SCOPED_INVESTIGATION_SKILL_ID,
             title="Investigate current scope",
             description=(
@@ -137,6 +157,17 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             superseded_preference_keys=(
                 *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
             ),
+        ),
+        AgentSkill(
+            skill_id=TAG_PROPOSALS_SKILL_ID,
+            title="Suggest tags",
+            description=(
+                "Suggests classification tags for the visible notes through "
+                "validated, evidence-bounded batches."
+            ),
+            trigger_action="tag_proposals",
+            preference_key=TAG_PROPOSALS_SKILL_PREFERENCE_KEY,
+            content=load_skill("tag-proposals.md"),
         ),
         AgentSkill(
             skill_id=WEB_BROWSING_SKILL_ID,

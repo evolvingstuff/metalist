@@ -120,11 +120,18 @@ def test_cached_title_case_uses_current_production_extraction(monkeypatch):
     assert scenario.model_dump() == original
 
 
-def test_investigation_uses_current_builder_and_fixed_evidence():
+def test_investigation_uses_current_builder_and_fixed_evidence(monkeypatch):
+    original_loader = production.load_skill
+    monkeypatch.setattr(production, "load_skill", lambda name:
+        "Changed investigation skill" if name == "scoped-investigation.md" else original_loader(name))
     fixture = case("faithful-summary").model_dump()
     context = fixture["steps"][0]["context"]
     context.update(stage="investigation", result_trees=[], evidence_note_ids=[], result_tree_ids=[])
     prepared = prepare_case(RegressionCase.model_validate(fixture))
+    assert prepared.steps[0].messages[1].content == (
+        "ACTIVE_SKILL scoped_investigation_v7\nTrigger action: investigate_current_scope\n\n"
+        "Changed investigation skill"
+    )
     payload = json.loads(prepared.steps[0].messages[-1].content.split("\n", 1)[1])
     assert payload["authoritative_result_trees"] == []
     assert payload["frozen_scope"]["note_count"] == 0

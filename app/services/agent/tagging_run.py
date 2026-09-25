@@ -6,11 +6,13 @@ import asyncio
 import json
 
 from app.services.agent.tagging import (
-    DEFAULT_TAGGING_PROMPT, TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TAGGING_PROMPT_KEY,
-    TagBatch, TagBatchResult, TagOperationIntent, make_batch, partition_trees,
+    TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY,
+    TagBatch, TagBatchResult, TagOperationIntent, leading_tree_count_within_budget,
+    make_batch, partition_trees,
     shuffle_trees_for_batches, validate_proposals, tree_notes,
 )
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.context import format_active_skill
 from app.services.agent.token_estimation import estimate_message_tokens, estimate_input_tokens
 from app.services.agent.trace import agent_trace_store
 from app.services.bulk_operation import bulk_operation_guard
@@ -27,6 +29,7 @@ from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_propos
 
 
 _TAGGING_CORRECTION_ATTEMPTS = 3
+_TAGGING_PARALLEL_CONCURRENCY = 4
 
 
 def tagging_trees(snapshot):
@@ -114,6 +117,24 @@ async def infer_validated_batch(
 
 
 
+def _tag_scope_label(*, root_count, batch_count, budget_ratio, chooses_focus):
+    batches = f"{batch_count} tagging batch{'es' if batch_count != 1 else ''}"
+    if budget_ratio > 1:
+        label = (
+            f"This scope uses approximately {budget_ratio:.2f}× the evidence budget: its "
+            f"{root_count} root notes need {batches}. The UI stays locked; nothing is "
+            "applied until every batch succeeds."
+        )
+    else:
+        label = (
+            f"This scope contains {root_count} root notes and fits the evidence budget "
+            f"(approximately {budget_ratio:.2f}×); tagging reviews it in {batches}."
+        )
+    if chooses_focus:
+        label += " Choose which tags to suggest."
+    return label
+
+
 class TaggingRun:
     def __init__(self, *, token, snapshot, preferences, sync_uuid, batch_tokens):
         self.token = token
@@ -166,11 +187,12 @@ class TaggingRun:
                 note_ids = proposal_scope_ids(self.snapshot.descriptor)
                 if intent.scope == "namespace":
                     note_ids = tuple(store.list_note_ids())
-                async for event in self.apply(note_ids, intent.action, intent.tag_filter, {}):
+                async for event in self.apply(note_ids, intent.action, intent.tag_filter, {}, ""):
                     yield event
 
     async def generate(self, *, inference, run, focus):
-        trees = shuffle_trees_for_batches(tagging_trees(self.snapshot))
+        canonical_trees = tagging_trees(self.snapshot)
+        trees = shuffle_trees_for_batches(canonical_trees)
         if not trees:
             async for event in self.finish("There are no visible notes to review.", False, ()):
                 yield event
@@ -184,20 +206,40 @@ class TaggingRun:
             raise InferenceProviderError(str(exc)) from exc
         policy = self.preferences.get(TAGGING_POLICY_KEY, "")
         total_tokens = make_batch(trees).tokens
-        budget_confirmed = False
-        budget_explanation = (
-            f"This context uses approximately {total_tokens / budget:.2f}× the evidence budget. "
-            f"I will review all notes in {len(batches)} batches. The UI stays locked; "
-            "nothing is applied until every batch succeeds."
-        )
+        coverage_note = ""
         focus_was_selected = False
-        if focus == "unspecified":
-            default_focus = self.preferences.get(TAGGING_FOCUS_KEY, "existing")
+        # One card, like complete-scope summaries: the scope's size against the
+        # evidence budget, the tag focus (unless already fixed), and tag all /
+        # use the leading prefix that fits / cancel.
+        chooses_focus = focus == "unspecified"
+        over_budget = total_tokens > budget
+        if chooses_focus or over_budget:
+            prefix_root_count = 0
+            if over_budget:
+                prefix_root_count = leading_tree_count_within_budget(canonical_trees, budget)
+            default_focus = focus
+            all_choices = ("proceed",)
+            prefix_choices = ("use_prefix",)
+            if chooses_focus:
+                default_focus = self.preferences.get(TAGGING_FOCUS_KEY, "existing")
+                all_choices = ("focus_existing", "focus_new", "focus_both")
+                prefix_choices = ("prefix_focus_existing", "prefix_focus_new", "prefix_focus_both")
             assert default_focus in {"existing", "new", "both"}
+            if prefix_root_count == 0:
+                prefix_choices = ()
             question_id, answer = bulk_operation_guard.question(
-                ("focus_existing", "focus_new", "focus_both", "cancel"))
-            yield {"type": "bulk_question", "question_id": question_id, "kind": "focus",
-                   "label": "", "default_value": f"focus_{default_focus}"}
+                (*all_choices, *prefix_choices, "cancel"))
+            yield {"type": "bulk_question", "question_id": question_id,
+                   "kind": "tag_scope_confirmation",
+                   "label": _tag_scope_label(
+                       root_count=len(trees),
+                       batch_count=len(batches),
+                       budget_ratio=total_tokens / budget,
+                       chooses_focus=chooses_focus,
+                   ),
+                   "root_count": len(trees), "batch_count": len(batches),
+                   "prefix_root_count": prefix_root_count,
+                   "chooses_focus": chooses_focus, "focus": default_focus}
             choice = await answer
             if choice == "cancel":
                 async for event in self.finish(
@@ -205,9 +247,25 @@ class TaggingRun:
                 ):
                     yield event
                 return
-            focus = choice.removeprefix("focus_")
-            focus_was_selected = True
-            budget_confirmed = total_tokens > budget
+            uses_prefix = choice in prefix_choices
+            if chooses_focus:
+                focus = choice.removeprefix("prefix_").removeprefix("focus_")
+                focus_was_selected = True
+            else:
+                assert choice in {"proceed", "use_prefix"}
+            if uses_prefix:
+                assert 0 < prefix_root_count < len(canonical_trees)
+                coverage_note = (
+                    f"Reviewed only the first {prefix_root_count} of {len(canonical_trees)} "
+                    "root notes (the part that fits the evidence budget)."
+                )
+                trees = shuffle_trees_for_batches(canonical_trees[:prefix_root_count])
+                # lint: allow-PY001 rationale="report user-configured tagging batch overflow as an operation failure"
+                try:
+                    batches = partition_trees(trees, self.batch_tokens)
+                # lint: allow-PY001 rationale="the tagging batch window can legitimately be too small for one root"
+                except ValueError as exc:
+                    raise InferenceProviderError(str(exc)) from exc
         if policy == "existing" and focus in ("new", "both") and not focus_was_selected:
             async for event in self.finish(
                 "Your saved vocabulary setting allows existing tags only. To include new tags, "
@@ -235,32 +293,20 @@ class TaggingRun:
             validation_policy = "existing"
         if focus == "new":
             validation_policy = "new_only"
-        if total_tokens > budget and not budget_confirmed:
-            question_id, answer = bulk_operation_guard.question(("proceed", "cancel"))
-            yield {"type": "bulk_question", "question_id": question_id, "kind": "confirmation",
-                   "label": budget_explanation + " Proceed?"}
-            if await answer == "cancel":
-                async for event in self.finish(
-                    "Tagging cancelled. No proposals changed.", False, (),
-                ):
-                    yield event
-                return
         proposals = {}
         namespace_vocabulary = build_preferred_tag_case_map(
             search_index.list_explicit_tag_frequencies()
         )
         scope_note_ids = frozenset(self.snapshot.tree_nodes_by_id)
         namespace_note_ids = frozenset(store.list_note_ids())
-        completed_tokens = 0
         total_batch_tokens = sum(batch.tokens for batch in batches)
-        prior_batch_new_tags = {}
         context = await inference.inspect_context_window(base_url=run.base_url, model=run.selected_model)
-        for index, batch in enumerate(batches):
-            yield {"type": "bulk_progress", "committing": False,
-                   "label": f"Batch {index + 1} / {len(batches)}",
-                   "completed_tokens": completed_tokens, "total_tokens": total_batch_tokens}
+        tag_skill = run.skills.for_action("tag_proposals")
+
+        async def infer_batch(index, prior_batch_new_tags):
+            batch = batches[index]
             messages = [
-                {"role": "system", "content": self.preferences.get(TAGGING_PROMPT_KEY, DEFAULT_TAGGING_PROMPT)},
+                {"role": "system", "content": format_active_skill(tag_skill)},
                 {"role": "system", "content": (
                     "Suggest directly ONLY on note IDs in result_trees. The accepted_vocabulary is shared "
                     "across the entire disclosed search context. Return each note ID at most once. "
@@ -271,7 +317,7 @@ class TaggingRun:
                     "tags per note; no @ commands or formatting. Return an empty proposals array when "
                     "no tags are useful. Review every supplied note before deciding which notes need tags. "
                     "Do not return a tag already present in that note's tags or proposed_tags. "
-                    "prior_batch_new_tags contains new terms proposed earlier in this same atomic pass. "
+                    "prior_batch_new_tags contains new terms proposed in the cache-seeding first batch. "
                     "Reuse those terms when they fit, but do not treat them as accepted or required. "
                     "New tags should follow the separators and capitalization of "
                     "related accepted_vocabulary terms (dashes, underscores, CamelCase, etc.). "
@@ -279,7 +325,7 @@ class TaggingRun:
                 {"role": "user", "content": json.dumps({"request": run.current_user_request,
                     "tagging_mode": validation_policy,
                     "result_trees": batch.trees, "accepted_vocabulary": batch.vocabulary,
-                    "prior_batch_new_tags": tuple(prior_batch_new_tags.values())},
+                    "prior_batch_new_tags": prior_batch_new_tags},
                     ensure_ascii=False, separators=(",", ":"))},
             ]
             required_tokens = (estimate_message_tokens(messages)
@@ -297,22 +343,71 @@ class TaggingRun:
                 context.loaded_tokens,
                 namespace_vocabulary,
             )
-            assert not proposals.keys() & validated.keys()
-            proposals.update(validated)
-            for tags in validated.values():
+            return index, validated
+
+        completed_tokens = 0
+        prior_batch_new_tags = {}
+        batch_results = [None] * len(batches)
+        if batches:
+            yield {"type": "bulk_progress", "committing": False,
+                   "label": f"Batch 1 / {len(batches)}",
+                   "completed_tokens": completed_tokens, "total_tokens": total_batch_tokens}
+            first_index, first_result = await infer_batch(0, ())
+            assert first_index == 0
+            batch_results[0] = first_result
+            for tags in first_result.values():
                 for tag in tags:
                     key = tag.casefold()
                     if key not in namespace_vocabulary and key not in prior_batch_new_tags:
                         prior_batch_new_tags[key] = tag
-            completed_tokens += batch.tokens
+            completed_tokens += batches[0].tokens
             yield {"type": "bulk_progress", "committing": False,
-                   "label": f"Batch {index + 1} / {len(batches)}",
+                   "label": f"Completed 1 / {len(batches)} batches",
                    "completed_tokens": completed_tokens, "total_tokens": total_batch_tokens}
+        semaphore = asyncio.Semaphore(_TAGGING_PARALLEL_CONCURRENCY)
+
+        async def infer_remaining(index):
+            async with semaphore:
+                return await infer_batch(index, tuple(prior_batch_new_tags.values()))
+
+        tasks = [
+            asyncio.create_task(infer_remaining(index))
+            for index in range(1, len(batches))
+        ]
+        assert batches
+        completed_batches = 1
+        try:
+            for completed_task in asyncio.as_completed(tasks):
+                index, validated = await completed_task
+                if batch_results[index] is not None:
+                    raise RuntimeError("Tagging batch completed more than once")
+                batch_results[index] = validated
+                completed_batches += 1
+                completed_tokens += batches[index].tokens
+                yield {"type": "bulk_progress", "committing": False,
+                       "label": f"Completed {completed_batches} / {len(batches)} batches",
+                       "completed_tokens": completed_tokens, "total_tokens": total_batch_tokens}
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
         assert completed_tokens == total_batch_tokens
-        async for event in self.apply(tuple(self.snapshot.tree_nodes_by_id), "generate", "", proposals):
+        if any(result is None for result in batch_results):
+            raise RuntimeError("Tagging completed with missing batch results")
+        for validated in batch_results:
+            assert validated is not None
+            if proposals.keys() & validated.keys():
+                raise RuntimeError("Tagging batches returned overlapping note IDs")
+            proposals.update(validated)
+        async for event in self.apply(
+            tuple(self.snapshot.tree_nodes_by_id), "generate", "", proposals, coverage_note,
+        ):
             yield event
 
-    async def apply(self, note_ids, action, tag_filter, proposals):
+    async def apply(self, note_ids, action, tag_filter, proposals, coverage_note):
+        assert isinstance(coverage_note, str)
+        assert coverage_note == "" or action == "generate"
         self.validate_current()
         changes, count, affected_proposals = prepare_proposal_changes(
             note_ids,
@@ -328,6 +423,8 @@ class TaggingRun:
         apply_bulk_proposals(changes=changes, token=self.token)
         verb = {"generate": "Added", "accept": "Accepted", "remove": "Removed"}[action]
         message = f"{verb} {count} tag proposals across {len(changes)} notes."
+        if coverage_note:
+            message = f"{coverage_note} {message}"
         reference_note_ids = ()
         if action == "generate" and affected_proposals:
             tags_with_note_ids = {}

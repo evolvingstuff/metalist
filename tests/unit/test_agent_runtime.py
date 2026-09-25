@@ -260,6 +260,7 @@ def test_structured_progress_uses_only_current_action_purposes() -> None:
             "body": {"messages": [{"role": "user", "content": "Route"}]},
         },
         output_tokens_received=24,
+        partial_output={},
     )
     event = AgentRuntime._progress_status_event(
         progress,

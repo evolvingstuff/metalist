@@ -64,8 +64,12 @@ class StructuredInferenceProgress:
     duration_ms: float
     wire_request: dict[str, object]
     output_tokens_received: int
+    # Latest Instructor partial object for this attempt ({} until one is parsed).
+    partial_output: dict[str, object]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.partial_output, dict):
+            raise TypeError("Structured inference partial output must be an object")
         if (
             not isinstance(self.output_tokens_received, int)
             or isinstance(self.output_tokens_received, bool)

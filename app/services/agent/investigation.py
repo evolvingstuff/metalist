@@ -35,6 +35,16 @@ class RootPrefixRetention:
     dropped_root_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CompleteRootBatchPlan:
+    """Every visible root tree partitioned into ordered evidence payloads."""
+
+    batches: tuple[InvestigationEvidencePayload, ...]
+    note_count: int
+    result_tree_count: int
+    approximate_token_count: int
+
+
 class InvestigationState:
     """Run-local frozen scope reduced once to an ordered complete-root prefix."""
 
@@ -144,6 +154,89 @@ class InvestigationState:
             returned_approximate_token_count=token_count,
         )
 
+    def plan_complete_root_batches(
+        self,
+        *,
+        reserved_approximate_tokens: int,
+    ) -> CompleteRootBatchPlan:
+        """Partition the entire frozen scope without splitting a root tree."""
+        assert 0 <= reserved_approximate_tokens <= (
+            self._settings.max_page_approximate_tokens
+        )
+        batch_limit = (
+            self._settings.max_page_approximate_tokens
+            - reserved_approximate_tokens
+        )
+        note_ids_by_root_id = self._note_ids_by_root_id()
+        batches: list[InvestigationEvidencePayload] = []
+        batch_root_ids: list[str] = []
+        batch_token_count = 0
+        for root_id in self._snapshot.ordered_root_ids:
+            root_token_count = self._full_root_token_cost(
+                root_id=root_id,
+                note_ids=note_ids_by_root_id[root_id],
+            )
+            if root_token_count > batch_limit:
+                raise ValueError(
+                    f"The complete result tree {root_id} requires approximately "
+                    f"{root_token_count:,} tokens, exceeding the configured "
+                    f"per-batch evidence limit of {batch_limit:,} tokens"
+                )
+            if batch_root_ids and batch_token_count + root_token_count > batch_limit:
+                batches.append(self._payload_for_roots(tuple(batch_root_ids)))
+                batch_root_ids = []
+                batch_token_count = 0
+            batch_root_ids.append(root_id)
+            batch_token_count += root_token_count
+        if batch_root_ids:
+            batches.append(self._payload_for_roots(tuple(batch_root_ids)))
+        if any(
+            batch.returned_approximate_token_count > batch_limit
+            for batch in batches
+        ):
+            raise RuntimeError(
+                "Serialized complete-root batch exceeded its precomputed token budget"
+            )
+        planned_root_ids = tuple(
+            root_id for batch in batches for root_id in batch.result_tree_ids
+        )
+        planned_note_ids = tuple(
+            note_id for batch in batches for note_id in batch.evidence_note_ids
+        )
+        if planned_root_ids != self._snapshot.ordered_root_ids:
+            raise RuntimeError("Complete-root batching changed frozen root order")
+        if planned_note_ids != self._snapshot.ordered_note_ids:
+            raise RuntimeError("Complete-root batching changed frozen note order")
+        return CompleteRootBatchPlan(
+            batches=tuple(batches),
+            note_count=len(planned_note_ids),
+            result_tree_count=len(planned_root_ids),
+            approximate_token_count=sum(
+                batch.returned_approximate_token_count for batch in batches
+            ),
+        )
+
+    def _payload_for_roots(
+        self,
+        root_ids: tuple[str, ...],
+    ) -> InvestigationEvidencePayload:
+        root_id_set = set(root_ids)
+        note_ids = tuple(
+            note_id
+            for note_id in self._snapshot.ordered_note_ids
+            if self._snapshot.notes_by_id[note_id].root_note_id in root_id_set
+        )
+        result_trees = self._serialize_result_trees(
+            root_ids=root_ids,
+            note_ids=note_ids,
+        )
+        return InvestigationEvidencePayload(
+            evidence_note_ids=note_ids,
+            result_tree_ids=root_ids,
+            result_trees=result_trees,
+            returned_approximate_token_count=estimate_input_tokens(result_trees),
+        )
+
     def _note_ids_by_root_id(self) -> dict[str, list[str]]:
         note_ids_by_root_id: dict[str, list[str]] = {
             root_id: [] for root_id in self._snapshot.ordered_root_ids
@@ -179,6 +272,17 @@ class InvestigationState:
         )
 
     def _serialize_full_result_trees(self) -> tuple[dict[str, object], ...]:
+        return self._serialize_result_trees(
+            root_ids=self._retained_root_ids,
+            note_ids=self._retained_note_ids,
+        )
+
+    def _serialize_result_trees(
+        self,
+        *,
+        root_ids: tuple[str, ...],
+        note_ids: tuple[str, ...],
+    ) -> tuple[dict[str, object], ...]:
         serialized_by_id = {
             note_id: serialize_evidence_note_payload(
                 note_id=note.note_id,
@@ -188,11 +292,11 @@ class InvestigationState:
                 created_at=note.created_at,
                 updated_at=note.updated_at,
             )
-            for note_id in self._retained_note_ids
+            for note_id in note_ids
             for note in (self._snapshot.notes_by_id[note_id],)
         }
         return serialize_evidence_result_trees(
-            root_ids=self._retained_root_ids,
+            root_ids=root_ids,
             evidence_payloads_by_id=serialized_by_id,
             parent_id_by_id={
                 note_id: node.parent_id

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent.tagging import (
-    DEFAULT_TAGGING_PROMPT, TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TagBatchResult,
+    DEFAULT_TAGGING_PROMPT, TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TAGGING_PROMPT_KEY, TagBatchResult,
     TagOperationIntent, make_batch, partition_trees, shuffle_trees_for_batches,
     validate_proposals,
 )
@@ -18,6 +18,8 @@ import app.usecases.bulk_tag_proposals as mutations
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.bulk_operation import BulkOperationGuard, BulkOperationBusy
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
+from app.services.agent.skill_settings import resolve_agent_skill_set
 
 
 @pytest.fixture(autouse=True)
@@ -272,7 +274,7 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
         ),
     )
     monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: applied.append(kwargs))
-    run = SimpleNamespace(base_url="http://local", selected_model="test", current_user_request="Suggest tags here", retrieval_settings=SimpleNamespace(
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS, current_user_request="Suggest tags here", retrieval_settings=SimpleNamespace(
         max_page_approximate_tokens=max(make_batch((root,)).tokens for root in roots)))
 
     async def infer(inference, run, messages, model, on_progress):
@@ -297,15 +299,14 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
         async for event in operation.stream(inference=SimpleNamespace(inspect_context_window=inspect_context_window), run=run):
             if event["type"] == "bulk_question":
                 assert not applied
-                if event["kind"] == "focus":
-                    runs.bulk_operation_guard.answer(
-                        "session",
-                        event["question_id"],
-                        focus_answer,
-                    )
-                else:
-                    assert event["kind"] == "confirmation"
-                    runs.bulk_operation_guard.answer("session", event["question_id"], {"decline": "cancel", "success": "proceed", "failure": "proceed", "cancel": "proceed"}[outcome])
+                # Focus and scope are one card, answered once.
+                assert event["kind"] == "tag_scope_confirmation"
+                assert event["chooses_focus"] is True
+                runs.bulk_operation_guard.answer(
+                    "session",
+                    event["question_id"],
+                    focus_answer,
+                )
 
     if outcome == "failure":
         with pytest.raises(InferenceProviderError):
@@ -393,7 +394,7 @@ def test_generation_completion_lists_tags_with_clickable_note_references(monkeyp
         return [
             event
             async for event in operation.apply(
-                tuple(affected), "generate", "", affected,
+                tuple(affected), "generate", "", affected, "",
             )
         ]
 
@@ -435,7 +436,7 @@ def test_programmatic_proposal_changes_do_not_emit_cancelable_progress(monkeypat
     async def collect_events():
         return [
             event
-            async for event in operation.apply(("a",), action, "", {})
+            async for event in operation.apply(("a",), action, "", {}, "")
         ]
 
     events = asyncio.run(collect_events())
@@ -482,7 +483,7 @@ def test_programmatic_exact_tag_filter_preserves_other_proposals(monkeypatch, ac
 
 @pytest.mark.parametrize("choice,policy", [("focus_existing", "existing"), ("focus_new", "new"), ("focus_both", "new")])
 @pytest.mark.parametrize("over_budget", [False, True])
-def test_first_use_category_is_saved_with_one_question(monkeypatch, choice, policy, over_budget):
+def test_first_use_category_permission_reports_batch_size(monkeypatch, choice, policy, over_budget):
     roots = (tree("a", "accepted", ()),)
     if over_budget:
         roots = (*roots, tree("b", "accepted", ()))
@@ -494,6 +495,9 @@ def test_first_use_category_is_saved_with_one_question(monkeypatch, choice, poli
     monkeypatch.setattr(runs, "load_client_preferences", lambda **kwargs: {"pref.theme": "dark"})
     monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
     monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: None)
+    monkeypatch.setattr(runs.store, "list_note_ids", lambda: tuple(
+        root["note_id"] for root in roots
+    ))
     async def infer(*args):
         return SimpleNamespace(content='{"proposals":[]}')
     async def inspect(**kwargs):
@@ -503,24 +507,104 @@ def test_first_use_category_is_saved_with_one_question(monkeypatch, choice, poli
         session_key="session",
         tree_nodes_by_id={root["note_id"]: None for root in roots},
     )
-    run = SimpleNamespace(base_url="http://local", selected_model="test", current_user_request="Suggest tags",
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS, current_user_request="Suggest tags",
         retrieval_settings=SimpleNamespace(max_page_approximate_tokens=make_batch((roots[0],)).tokens))
     async def consume():
         operation = runs.TaggingRun(token="token", snapshot=snapshot, preferences={}, sync_uuid="sync", batch_tokens=run.retrieval_settings.max_page_approximate_tokens)
         with runs.bulk_operation_guard.acquire("session"):
             async for event in operation.generate(inference=SimpleNamespace(inspect_context_window=inspect), run=run, focus="unspecified"):
                 if event["type"] == "bulk_question":
-                    questions.append(event["kind"])
-                    assert event["label"] == ""
-                    assert event["default_value"] == "focus_existing"
+                    questions.append(event)
                     runs.bulk_operation_guard.answer("session", event["question_id"], choice)
     asyncio.run(consume())
-    assert questions == ["focus"]
+    assert len(questions) == 1
+    question = questions[0]
+    assert question["kind"] == "tag_scope_confirmation"
+    assert question["chooses_focus"] is True
+    assert question["focus"] == "existing"
+    assert question["root_count"] == len(roots)
+    assert question["label"].endswith("Choose which tags to suggest.")
+    if over_budget:
+        assert question["label"].startswith("This scope uses approximately ")
+        assert "× the evidence budget: its 2 root notes need " in question["label"]
+        assert "nothing is applied until every batch succeeds" in question["label"]
+        assert question["prefix_root_count"] == 1
+    else:
+        assert question["label"].startswith(
+            "This scope contains 1 root notes and fits the evidence budget (approximately "
+        )
+        assert question["prefix_root_count"] == 0
     assert saved == [{
         "pref.theme": "dark",
         TAGGING_POLICY_KEY: policy,
         TAGGING_FOCUS_KEY: choice.removeprefix("focus_"),
     }]
+
+
+def test_tagging_seeds_first_batch_then_runs_four_batches_concurrently(monkeypatch):
+    roots = tuple(tree(f"root-{index}", "accepted", ()) for index in range(7))
+    batch_tokens = make_batch((roots[0],)).tokens
+    active = 0
+    maximum_active = 0
+    starts = []
+
+    monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: None)
+    monkeypatch.setattr(runs.store, "list_note_ids", lambda: tuple(
+        root["note_id"] for root in roots
+    ))
+
+    async def infer(_inference, _run, messages, *_args):
+        nonlocal active, maximum_active
+        payload = json.loads(messages[-1]["content"])
+        root_id = payload["result_trees"][0]["note_id"]
+        starts.append((root_id, active))
+        active += 1
+        maximum_active = max(maximum_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return SimpleNamespace(content='{"proposals":[]}')
+
+    async def inspect(**kwargs):
+        return SimpleNamespace(loaded_tokens=1_000_000)
+
+    monkeypatch.setattr(runs, "infer_with_progress", infer)
+    snapshot = SimpleNamespace(
+        session_key="session",
+        tree_nodes_by_id={root["note_id"]: None for root in roots},
+    )
+    run = SimpleNamespace(
+        base_url="http://local", skills=DEFAULT_AGENT_SKILLS,
+        selected_model="test",
+        current_user_request="Suggest tags",
+        retrieval_settings=SimpleNamespace(max_page_approximate_tokens=1_000_000),
+    )
+
+    async def consume():
+        operation = runs.TaggingRun(
+            token="token",
+            snapshot=snapshot,
+            preferences={TAGGING_POLICY_KEY: "existing"},
+            sync_uuid="sync",
+            batch_tokens=batch_tokens,
+        )
+        with runs.bulk_operation_guard.acquire("session"):
+            return [
+                event
+                async for event in operation.generate(
+                    inference=SimpleNamespace(inspect_context_window=inspect),
+                    run=run,
+                    focus="existing",
+                )
+            ]
+
+    asyncio.run(consume())
+    assert starts[0] == ("root-0", 0)
+    assert starts[1][1] == 0
+    assert maximum_active == 4
+    assert len(starts) == len(roots)
 
 
 def test_new_only_rejects_existing_vocabulary_case_insensitively():
@@ -573,7 +657,7 @@ def test_every_generation_request_requires_focus_choice(monkeypatch, user_reques
         batch_tokens=1000,
     )
     run = SimpleNamespace(
-        base_url="http://local",
+        base_url="http://local", skills=DEFAULT_AGENT_SKILLS,
         selected_model="test",
         thinking_level="low",
         run_id="run",
@@ -612,7 +696,7 @@ def test_generation_focus_is_per_pass_and_respects_saved_policy(monkeypatch, pol
         return SimpleNamespace(loaded_tokens=1_000_000)
     monkeypatch.setattr(runs, "infer_with_progress", infer)
     snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
-    run = SimpleNamespace(base_url="http://local", selected_model="test", current_user_request="Suggest tags",
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS, current_user_request="Suggest tags",
         retrieval_settings=SimpleNamespace(max_page_approximate_tokens=make_batch(roots).tokens))
     async def consume():
         operation = runs.TaggingRun(token="token", snapshot=snapshot,
@@ -661,7 +745,7 @@ def test_broad_focus_choice_can_enable_new_tags_without_a_second_question(monkey
         return SimpleNamespace(loaded_tokens=1_000_000)
     monkeypatch.setattr(runs, "infer_with_progress", infer)
     snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
-    run = SimpleNamespace(base_url="http://local", selected_model="test",
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS,
         current_user_request="Suggest tags", retrieval_settings=SimpleNamespace(
             max_page_approximate_tokens=make_batch(roots).tokens))
 
@@ -676,8 +760,8 @@ def test_broad_focus_choice_can_enable_new_tags_without_a_second_question(monkey
                 focus="unspecified",
             ):
                 if event["type"] == "bulk_question":
-                    assert event["kind"] == "focus"
-                    assert event["default_value"] == "focus_existing"
+                    assert event["kind"] == "tag_scope_confirmation"
+                    assert event["focus"] == "existing"
                     runs.bulk_operation_guard.answer(
                         "session", event["question_id"], "focus_new",
                     )
@@ -702,7 +786,7 @@ def test_broad_focus_question_defaults_to_the_previous_exact_choice(monkeypatch)
     async def inspect(**kwargs):
         return SimpleNamespace(loaded_tokens=1_000_000)
     snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
-    run = SimpleNamespace(base_url="http://local", selected_model="test",
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS,
         current_user_request="Suggest tags", retrieval_settings=SimpleNamespace(
             max_page_approximate_tokens=make_batch(roots).tokens))
 
@@ -718,7 +802,7 @@ def test_broad_focus_question_defaults_to_the_previous_exact_choice(monkeypatch)
             )
             event = await anext(generator)
             assert event["type"] == "bulk_question"
-            assert event["default_value"] == "focus_both"
+            assert event["focus"] == "both"
             runs.bulk_operation_guard.answer(
                 "session", event["question_id"], "cancel",
             )
@@ -726,3 +810,206 @@ def test_broad_focus_question_defaults_to_the_previous_exact_choice(monkeypatch)
                 pass
 
     asyncio.run(consume())
+
+
+@pytest.mark.parametrize("answer", ["proceed", "use_prefix"])
+def test_over_budget_tagging_offers_all_roots_or_the_leading_prefix(monkeypatch, answer):
+    roots = tuple(tree(f"root-{index}", "accepted", ()) for index in range(3))
+    budget = make_batch(roots[:1]).tokens
+    assert make_batch(roots[:2]).tokens > budget
+    snapshot = SimpleNamespace(
+        session_key="session",
+        tree_nodes_by_id={root["note_id"]: None for root in roots},
+    )
+    monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
+    monkeypatch.setattr(runs.store, "list_note_ids", lambda: tuple(
+        root["note_id"] for root in roots
+    ))
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "load_client_preferences", lambda **kwargs: {})
+    monkeypatch.setattr(runs, "save_client_preferences", lambda **kwargs: None)
+    monkeypatch.setattr(
+        runs,
+        "prepare_proposal_changes",
+        lambda ids, action, tag, proposals: (
+            dict(proposals),
+            sum(len(tags) for tags in proposals.values()),
+            dict(proposals),
+        ),
+    )
+    applied = []
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: applied.append(kwargs))
+    reviewed_note_ids = []
+
+    async def infer(inference, run, messages, model, on_progress):
+        batch = json.loads(messages[2]["content"])
+        note_ids = [root["note_id"] for root in batch["result_trees"]]
+        reviewed_note_ids.extend(note_ids)
+        return SimpleNamespace(content=TagBatchResult(proposals=[
+            {"note_id": note_id, "tags": ["fresh"]} for note_id in note_ids
+        ]).model_dump_json())
+
+    monkeypatch.setattr(runs, "infer_with_progress", infer)
+
+    async def inspect(**kwargs):
+        return SimpleNamespace(loaded_tokens=1_000_000)
+
+    run = SimpleNamespace(base_url="http://local", selected_model="test", skills=DEFAULT_AGENT_SKILLS,
+        current_user_request="Suggest tags",
+        retrieval_settings=SimpleNamespace(max_page_approximate_tokens=budget))
+    questions = []
+    texts = []
+
+    async def consume():
+        operation = runs.TaggingRun(token="token", snapshot=snapshot,
+            preferences={TAGGING_POLICY_KEY: "new"}, sync_uuid="sync", batch_tokens=budget)
+        with runs.bulk_operation_guard.acquire("session"):
+            async for event in operation.generate(
+                inference=SimpleNamespace(inspect_context_window=inspect),
+                run=run,
+                focus="new",
+            ):
+                if event["type"] == "bulk_question":
+                    questions.append(event)
+                    runs.bulk_operation_guard.answer("session", event["question_id"], answer)
+                if event["type"] == "content_delta":
+                    texts.append(event["text"])
+
+    asyncio.run(consume())
+
+    assert len(questions) == 1
+    question = questions[0]
+    assert question["kind"] == "tag_scope_confirmation"
+    assert question["root_count"] == 3
+    assert question["batch_count"] == 3
+    assert question["prefix_root_count"] == 1
+    assert "the evidence budget" in question["label"]
+    assert len(applied) == 1
+    if answer == "proceed":
+        assert sorted(reviewed_note_ids) == ["root-0", "root-1", "root-2"]
+        assert set(applied[0]["changes"]) == {"root-0", "root-1", "root-2"}
+        assert "Reviewed only" not in texts[0]
+    else:
+        assert reviewed_note_ids == ["root-0"]
+        assert set(applied[0]["changes"]) == {"root-0"}
+        assert texts[0].startswith("Reviewed only the first 1 of 3 root notes")
+
+
+def test_leading_tree_prefix_is_the_longest_canonical_prefix_within_budget():
+    roots = tuple(tree(f"root-{index}", "accepted", ()) for index in range(5))
+    assert tagging.leading_tree_count_within_budget(roots, make_batch(roots).tokens) == 5
+    assert tagging.leading_tree_count_within_budget(roots, make_batch(roots[:3]).tokens) == 3
+    assert tagging.leading_tree_count_within_budget(roots, make_batch(roots[:1]).tokens - 1) == 0
+
+
+def test_tag_suggestions_are_a_packaged_skill_that_keeps_existing_customizations():
+    skill = DEFAULT_AGENT_SKILLS.for_action("tag_proposals")
+    assert skill.skill_id == "tag_proposals_v1"
+    # Reusing the original key keeps prompts customized before tagging became a skill.
+    assert skill.preference_key == TAGGING_PROMPT_KEY == "pref.ai.prompt.tagging"
+    assert skill.content == DEFAULT_TAGGING_PROMPT
+    customized = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
+    assert customized.for_action("tag_proposals").content == "Only tag birds."
+
+
+def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
+    roots = (tree("a", "accepted", ()),)
+    snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
+    monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "load_client_preferences", lambda **kwargs: {})
+    monkeypatch.setattr(runs, "save_client_preferences", lambda **kwargs: None)
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: None)
+    monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
+    sent = []
+
+    async def infer(inference, run, messages, model, on_progress):
+        sent.append(messages)
+        return SimpleNamespace(content='{"proposals":[]}')
+
+    monkeypatch.setattr(runs, "infer_with_progress", infer)
+
+    async def inspect(**kwargs):
+        return SimpleNamespace(loaded_tokens=1_000_000)
+
+    skills = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
+    run = SimpleNamespace(base_url="http://local", selected_model="test",
+        current_user_request="Suggest tags", skills=skills,
+        retrieval_settings=SimpleNamespace(max_page_approximate_tokens=1_000_000))
+
+    async def consume():
+        # Stale in-memory preferences must not override the run's resolved skill.
+        operation = runs.TaggingRun(token="token", snapshot=snapshot,
+            preferences={TAGGING_POLICY_KEY: "new", TAGGING_PROMPT_KEY: "Stale prompt"},
+            sync_uuid="sync", batch_tokens=1_000_000)
+        with runs.bulk_operation_guard.acquire("session"):
+            async for _event in operation.generate(
+                inference=SimpleNamespace(inspect_context_window=inspect), run=run, focus="new",
+            ):
+                pass
+
+    asyncio.run(consume())
+
+    assert sent[0][0] == {
+        "role": "system",
+        "content": "ACTIVE_SKILL tag_proposals_v1\nTrigger action: tag_proposals\n\nOnly tag birds.",
+    }
+
+
+def test_combined_tag_card_can_choose_focus_and_the_leading_prefix(monkeypatch):
+    roots = tuple(tree(f"root-{index}", "accepted", ()) for index in range(3))
+    budget = make_batch(roots[:1]).tokens
+    snapshot = SimpleNamespace(
+        session_key="session",
+        tree_nodes_by_id={root["note_id"]: None for root in roots},
+    )
+    monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
+    monkeypatch.setattr(runs.store, "list_note_ids", lambda: tuple(
+        root["note_id"] for root in roots
+    ))
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "load_client_preferences", lambda **kwargs: {})
+    saved = []
+    monkeypatch.setattr(runs, "save_client_preferences",
+        lambda **kwargs: saved.append(dict(kwargs["preferences"])))
+    monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: None)
+    reviewed = []
+
+    async def infer(inference, run, messages, model, on_progress):
+        reviewed.extend(
+            root["note_id"] for root in json.loads(messages[2]["content"])["result_trees"]
+        )
+        return SimpleNamespace(content='{"proposals":[]}')
+
+    monkeypatch.setattr(runs, "infer_with_progress", infer)
+
+    async def inspect(**kwargs):
+        return SimpleNamespace(loaded_tokens=1_000_000)
+
+    run = SimpleNamespace(base_url="http://local", selected_model="test",
+        skills=DEFAULT_AGENT_SKILLS, current_user_request="Suggest tags",
+        retrieval_settings=SimpleNamespace(max_page_approximate_tokens=budget))
+    questions = []
+
+    async def consume():
+        operation = runs.TaggingRun(token="token", snapshot=snapshot, preferences={},
+            sync_uuid="sync", batch_tokens=budget)
+        with runs.bulk_operation_guard.acquire("session"):
+            async for event in operation.generate(
+                inference=SimpleNamespace(inspect_context_window=inspect),
+                run=run,
+                focus="unspecified",
+            ):
+                if event["type"] == "bulk_question":
+                    questions.append(event)
+                    runs.bulk_operation_guard.answer(
+                        "session", event["question_id"], "prefix_focus_new",
+                    )
+
+    asyncio.run(consume())
+
+    assert [question["kind"] for question in questions] == ["tag_scope_confirmation"]
+    assert questions[0]["prefix_root_count"] == 1
+    assert reviewed == ["root-0"]
+    assert saved == [{TAGGING_POLICY_KEY: "new", TAGGING_FOCUS_KEY: "new"}]

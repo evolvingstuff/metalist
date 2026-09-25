@@ -7,6 +7,7 @@ from contextlib import aclosing
 import json
 import math
 import time
+from collections import deque
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from contextlib import suppress
@@ -37,8 +38,18 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
+from app.services.agent.investigation import CompleteRootBatchPlan
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
+from app.services.agent.staged_summary import SummaryBatchResult
+from app.services.agent.staged_summary import SummaryFindingsResult
+from app.services.agent.staged_summary import attach_summary_coverage
+from app.services.agent.staged_summary import classify_uncitable_note_ids
+from app.services.agent.staged_summary import estimate_summary_results_tokens
+from app.services.agent.staged_summary import partition_summary_results
+from app.services.agent.staged_summary import structural_placeholder_note_ids
+from app.services.agent.staged_summary import summary_reference_note_ids
+from app.services.agent.staged_summary import summarize_partial_findings
 from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
@@ -60,6 +71,7 @@ from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.web_fetch import fetch_web_pages
 from app.services.public_http import normalize_public_http_url
+from app.services.bulk_operation import bulk_operation_guard
 from app.services.agent.history import record_history
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.agent.help_catalog import MetaListHelpResponse, MENU_BY_ID
@@ -68,6 +80,13 @@ from app.services.search_query import parse_search_query
 
 
 _MAX_ACTION_STEPS = 8
+_STAGED_SUMMARY_CONCURRENCY = 4
+_MAX_STAGED_SUMMARY_REDUCTION_LEVELS = 8
+# One corrective request when a summary cites IDs that were not disclosed as evidence.
+_SUMMARY_CITATION_CORRECTIONS = 1
+# Streamed batch previews are throttled per batch and trimmed to a compact tail.
+_SUMMARY_STREAM_INTERVAL_SECONDS = 0.3
+_SUMMARY_PREVIEW_TAIL_CHARACTERS = 240
 _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
     "OpenAI": 8_192,
 }
@@ -79,6 +98,35 @@ _SearchClauseKey = tuple[
 ]
 _SearchQueryKey = frozenset[_SearchClauseKey]
 _SearchRequestKey = _SearchQueryKey
+
+
+@dataclass(frozen=True, slots=True)
+class _SummaryBatchStarted:
+    batch_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class _SummaryBatchStreaming:
+    batch_index: int
+    finding_count: int
+    latest_text: str
+    output_tokens: int
+
+    def __post_init__(self) -> None:
+        assert self.finding_count >= 0
+        assert self.output_tokens >= 0
+        assert len(self.latest_text) <= _SUMMARY_PREVIEW_TAIL_CHARACTERS
+
+
+@dataclass(frozen=True, slots=True)
+class _SummaryBatchCompleted:
+    batch_index: int
+    summary: SummaryBatchResult
+
+
+_SummaryBatchTransition = (
+    _SummaryBatchStarted | _SummaryBatchStreaming | _SummaryBatchCompleted
+)
 
 
 class AgentExecutionError(Exception):
@@ -330,12 +378,23 @@ class AgentRuntime:
         if route.kind == "tag_proposals":
             if tag_handler is None:
                 raise AgentExecutionError("Tag proposal operations are not available in this runtime")
+            tag_skill = run.skills.for_action("tag_proposals")
+            self._record_skill_activation(run=run, skill=tag_skill)
+            yield self._status_event(
+                "skill",
+                "completed",
+                f"Activated skill · {tag_skill.title}",
+                approx_input_tokens=route_tokens,
+            )
             async for event in tag_handler(inference=self._inference, run=run):
                 yield event
             self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
             return
 
-        assert route.kind == "investigate_current_scope"
+        assert route.kind in {
+            "investigate_current_scope",
+            "summarize_current_scope",
+        }
         skill = run.skills.for_action(route.kind)
         self._record_skill_activation(run=run, skill=skill)
         yield self._status_event(
@@ -344,6 +403,97 @@ class AgentRuntime:
             f"Activated skill · {skill.title}",
             approx_input_tokens=route_tokens,
         )
+        if route.kind == "summarize_current_scope":
+            # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
+            try:
+                batch_plan = await asyncio.to_thread(
+                    state.plan_complete_root_batches,
+                    reserved_approximate_tokens=selected_note_tokens,
+                )
+            # lint: allow-PY001 rationale="an atomic root can legitimately exceed the user-configured summary batch limit"
+            except ValueError as exc:
+                raise AgentExecutionError(str(exc)) from exc
+            choice = ""
+            prefix_root_count = batch_plan.result_tree_count
+            question_choices = ("summarize_all", "cancel")
+            if len(batch_plan.batches) > 1:
+                prefix_retention = InvestigationState.start(
+                    snapshot=snapshot,
+                    settings=run.retrieval_settings,
+                ).retain_root_prefix_within_token_budget(
+                    reserved_approximate_tokens=selected_note_tokens,
+                )
+                prefix_root_count = prefix_retention.retained_result_tree_count
+                question_choices = ("summarize_all", "use_prefix", "cancel")
+            with bulk_operation_guard.acquire(run.session_key):
+                question_id, answer = bulk_operation_guard.question(
+                    question_choices
+                )
+                # Report scope size against the evidence budget, as tag proposals do.
+                budget_ratio = (
+                    (batch_plan.approximate_token_count + selected_note_tokens)
+                    / run.retrieval_settings.max_page_approximate_tokens
+                )
+                operation_description = (
+                    f"This scope contains {batch_plan.result_tree_count} root notes "
+                    "and fits in one evidence payload "
+                    f"(approximately {budget_ratio:.2f}× the evidence budget)."
+                )
+                if len(batch_plan.batches) > 1:
+                    minimum_model_calls = len(batch_plan.batches) + 1
+                    operation_description = (
+                        f"This scope uses approximately {budget_ratio:.2f}× the "
+                        f"evidence budget: its {batch_plan.result_tree_count} root "
+                        f"notes need {len(batch_plan.batches)} evidence batches "
+                        "plus a final synthesis "
+                        f"(at least {minimum_model_calls} model calls). "
+                        f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
+                        "batch requests at once."
+                    )
+                yield {
+                    "type": "bulk_question",
+                    "question_id": question_id,
+                    "kind": "summary_confirmation",
+                    "label": operation_description,
+                    "root_count": batch_plan.result_tree_count,
+                    "batch_count": len(batch_plan.batches),
+                    "prefix_root_count": prefix_root_count,
+                }
+                choice = await answer
+                if choice == "cancel":
+                    self._trace_store.complete_run(
+                        session_key=run.session_key,
+                        run_id=run.run_id,
+                    )
+                    yield {"type": "bulk_complete", "changed": False}
+                    yield {
+                        "type": "content_delta",
+                        "text": "Summary cancelled.",
+                        "reference_note_ids": [],
+                        "reference_web_ids": [],
+                    }
+                    yield {
+                        "type": "done",
+                        "reference_note_ids": [],
+                        "reference_web_ids": [],
+                    }
+                    return
+                if choice == "summarize_all" and len(batch_plan.batches) > 1:
+                    async with aclosing(self._stream_staged_scope_summary(
+                        run=run,
+                        canonical_messages=canonical_messages,
+                        state=state,
+                        skill=skill,
+                        plan=batch_plan,
+                    )) as staged_events:
+                        async for event in staged_events:
+                            yield event
+                    return
+                if choice == "use_prefix":
+                    assert len(batch_plan.batches) > 1
+                else:
+                    assert choice == "summarize_all"
+                yield {"type": "bulk_complete", "changed": False}
         retention = await asyncio.to_thread(
             state.retain_root_prefix_within_token_budget,
             reserved_approximate_tokens=selected_note_tokens,
@@ -404,6 +554,7 @@ class AgentRuntime:
             self._context_builder.build_scoped_final_messages(
                 canonical_messages=canonical_messages,
                 prompts=run.prompts,
+                skill=skill,
                 state=state,
                 evidence_payload=evidence_payload,
                 basis=basis,
@@ -468,6 +619,531 @@ class AgentRuntime:
                 reference_web_evidence=(),
             ):
                 yield event
+
+    async def _stream_staged_scope_summary(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        state: InvestigationState,
+        skill: AgentSkill,
+        plan: CompleteRootBatchPlan,
+    ) -> AsyncIterator[dict[str, object]]:
+        if len(plan.batches) < 2:
+            raise ValueError("Staged scope summary requires at least two batches")
+        summaries: list[SummaryBatchResult | None] = [None] * len(plan.batches)
+        # aclosing guarantees worker cancellation when the client abandons the stream.
+        async with aclosing(self._stream_staged_summary_batches(
+            run=run,
+            canonical_messages=canonical_messages,
+            state=state,
+            skill=skill,
+            plan=plan,
+            summaries=summaries,
+        )) as batch_events:
+            async for event in batch_events:
+                yield event
+        if any(summary is None for summary in summaries):
+            raise RuntimeError("Staged summary completed with missing batch results")
+        ordered_summaries = tuple(
+            summary for summary in summaries if summary is not None
+        )
+        summary_token_limit = run.retrieval_settings.max_page_approximate_tokens
+        if state.snapshot.selected_note.status == "available":
+            summary_token_limit -= estimate_input_tokens(
+                state.snapshot.selected_note.as_payload()
+            )
+        if summary_token_limit < 1:
+            raise AgentExecutionError(
+                "Selected-note context leaves no room for staged summary evidence"
+            )
+        if estimate_summary_results_tokens(ordered_summaries) > (
+            summary_token_limit
+        ):
+            yield {
+                "type": "bulk_progress",
+                "operation": "summary",
+                "committing": False,
+                "label": "Condensing batch summaries for final synthesis",
+                "completed_tokens": plan.approximate_token_count,
+                "total_tokens": plan.approximate_token_count,
+            }
+            ordered_summaries = await self._reduce_staged_summaries(
+                run=run,
+                canonical_messages=canonical_messages,
+                state=state,
+                skill=skill,
+                summaries=ordered_summaries,
+            )
+        yield {
+            "type": "bulk_progress",
+            "operation": "summary",
+            "committing": False,
+            "label": (
+                f"Writing final answer from {len(plan.batches)} batch summaries"
+            ),
+            "completed_tokens": plan.approximate_token_count,
+            "total_tokens": plan.approximate_token_count,
+        }
+        final_messages, reference_note_ids = (
+            self._context_builder.build_staged_summary_final_messages(
+                canonical_messages=canonical_messages,
+                prompts=run.prompts,
+                skill=skill,
+                snapshot=state.snapshot,
+                summaries=ordered_summaries,
+            )
+        )
+        yield {"type": "bulk_complete", "changed": False}
+        async for event in self._stream_prebuilt_final_response(
+            run=run,
+            final_messages=final_messages,
+            reference_note_ids=reference_note_ids,
+            reference_web_evidence=(),
+        ):
+            yield event
+
+    async def _stream_staged_summary_batches(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        state: InvestigationState,
+        skill: AgentSkill,
+        plan: CompleteRootBatchPlan,
+        summaries: list[SummaryBatchResult | None],
+    ) -> AsyncIterator[dict[str, object]]:
+        """Seed the prompt cache with batch 1, then drain later batches through a bounded worker pool.
+
+        Fills ``summaries`` in canonical batch order and yields one progress event for
+        every batch transition, including throttled previews of streamed findings.
+        Any batch failure cancels the remaining workers and propagates, so no final
+        synthesis can run on partial results.
+        """
+        batch_count = len(plan.batches)
+        assert batch_count >= 2
+        assert len(summaries) == batch_count
+        assert all(summary is None for summary in summaries)
+        batch_states = ["queued"] * batch_count
+        batch_output_tokens = [0] * batch_count
+        completed_tokens = 0
+        transitions: asyncio.Queue[_SummaryBatchTransition] = asyncio.Queue()
+
+        def apply_transition(transition: _SummaryBatchTransition) -> dict[str, object]:
+            nonlocal completed_tokens
+            index = transition.batch_index
+            if not 0 <= index < batch_count:
+                raise RuntimeError(f"Summary batch index {index} is outside the plan")
+            batch_state = batch_states[index]
+            if isinstance(transition, _SummaryBatchStarted):
+                if batch_state != "queued":
+                    raise RuntimeError(f"Summary batch {index + 1} started more than once")
+                batch_states[index] = "writing"
+                status, finding_count, latest_text = "writing", 0, ""
+            elif isinstance(transition, _SummaryBatchStreaming):
+                if batch_state != "writing":
+                    raise RuntimeError(
+                        f"Summary batch {index + 1} streamed outside its request"
+                    )
+                batch_output_tokens[index] = transition.output_tokens
+                status = "streaming"
+                finding_count = transition.finding_count
+                latest_text = transition.latest_text
+            else:
+                assert isinstance(transition, _SummaryBatchCompleted)
+                if batch_state == "complete":
+                    raise RuntimeError(
+                        f"Summary batch {index + 1} completed more than once"
+                    )
+                if batch_state != "writing":
+                    raise RuntimeError(
+                        f"Summary batch {index + 1} completed before it started"
+                    )
+                batch_states[index] = "complete"
+                summaries[index] = transition.summary
+                completed_tokens += plan.batches[index].returned_approximate_token_count
+                findings = transition.summary.findings
+                status, finding_count = "complete", len(findings)
+                latest_text = ""
+                if findings:
+                    latest_text = findings[0].text[:_SUMMARY_PREVIEW_TAIL_CHARACTERS]
+            complete_count = batch_states.count("complete")
+            writing_count = batch_states.count("writing")
+            queued_count = batch_states.count("queued")
+            assert complete_count + writing_count + queued_count == batch_count
+            return {
+                "type": "bulk_progress",
+                "operation": "summary",
+                "committing": False,
+                "label": (
+                    f"Summarizing {batch_count} batches · {complete_count} complete · "
+                    f"{writing_count} writing · {queued_count} queued"
+                ),
+                "completed_tokens": completed_tokens,
+                "total_tokens": plan.approximate_token_count,
+                "summary_batch_preview": {
+                    "batch_number": index + 1,
+                    "batch_count": batch_count,
+                    "status": status,
+                    "finding_count": finding_count,
+                    "latest_text": latest_text,
+                    "output_tokens": batch_output_tokens[index],
+                },
+            }
+
+        def stream_reporter(index: int) -> Callable[[StructuredInferenceProgress], None]:
+            last_reported_at = -math.inf
+
+            def report(progress: StructuredInferenceProgress) -> None:
+                nonlocal last_reported_at
+                if progress.phase != "output_progress":
+                    return
+                reported_at = time.monotonic()
+                if reported_at - last_reported_at < _SUMMARY_STREAM_INTERVAL_SECONDS:
+                    return
+                last_reported_at = reported_at
+                finding_count, latest_text = summarize_partial_findings(
+                    partial_output=progress.partial_output,
+                    tail_characters=_SUMMARY_PREVIEW_TAIL_CHARACTERS,
+                )
+                transitions.put_nowait(_SummaryBatchStreaming(
+                    batch_index=index,
+                    finding_count=finding_count,
+                    latest_text=latest_text,
+                    output_tokens=progress.output_tokens_received,
+                ))
+
+            return report
+
+        async def summarize_batch(index: int) -> None:
+            transitions.put_nowait(_SummaryBatchStarted(batch_index=index))
+            summary = await self._infer_staged_summary_batch(
+                run=run,
+                canonical_messages=canonical_messages,
+                state=state,
+                skill=skill,
+                evidence_payload=plan.batches[index],
+                batch_index=index,
+                batch_count=batch_count,
+                on_stream=stream_reporter(index),
+            )
+            transitions.put_nowait(
+                _SummaryBatchCompleted(batch_index=index, summary=summary)
+            )
+
+        async def drain(
+            indexes: tuple[int, ...],
+            worker_count: int,
+        ) -> AsyncIterator[dict[str, object]]:
+            assert indexes and 1 <= worker_count <= _STAGED_SUMMARY_CONCURRENCY
+            pending_indexes = deque(indexes)
+
+            async def summarize_pending_batches() -> None:
+                while pending_indexes:
+                    await summarize_batch(pending_indexes.popleft())
+
+            workers = [
+                asyncio.create_task(summarize_pending_batches())
+                for _ in range(min(worker_count, len(indexes)))
+            ]
+            running_workers = set(workers)
+            try:
+                while running_workers or not transitions.empty():
+                    next_transition = asyncio.create_task(transitions.get())
+                    try:
+                        done, _pending = await asyncio.wait(
+                            {next_transition, *running_workers},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                    finally:
+                        if not next_transition.done():
+                            next_transition.cancel()
+                    for worker in done - {next_transition}:
+                        running_workers.remove(worker)
+                        # Re-raises the first batch failure; the finally block cancels the rest.
+                        worker.result()
+                    if next_transition in done:
+                        yield apply_transition(next_transition.result())
+            finally:
+                for worker in workers:
+                    if not worker.done():
+                        worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+
+        # Batch 1 runs alone so later requests can reuse the provider-side prompt cache.
+        async with aclosing(drain((0,), 1)) as first_batch_events:
+            async for event in first_batch_events:
+                yield event
+        async with aclosing(drain(
+            tuple(range(1, batch_count)),
+            _STAGED_SUMMARY_CONCURRENCY,
+        )) as later_batch_events:
+            async for event in later_batch_events:
+                yield event
+        if batch_states != ["complete"] * batch_count:
+            raise RuntimeError("Staged summary workers stopped before every batch completed")
+
+    async def _infer_staged_summary_batch(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        state: InvestigationState,
+        skill: AgentSkill,
+        evidence_payload: InvestigationEvidencePayload,
+        batch_index: int,
+        batch_count: int,
+        on_stream: Callable[[StructuredInferenceProgress], None],
+    ) -> SummaryBatchResult:
+        messages = self._context_builder.build_staged_summary_batch_messages(
+            canonical_messages=canonical_messages,
+            prompts=run.prompts,
+            skill=skill,
+            snapshot=state.snapshot,
+            evidence_payload=evidence_payload,
+            batch_index=batch_index,
+            batch_count=batch_count,
+        )
+        return await self._infer_cited_summary_findings(
+            run=run,
+            messages=messages,
+            expected_root_ids=evidence_payload.result_tree_ids,
+            allowed_note_ids=frozenset((
+                *evidence_payload.evidence_note_ids,
+                *state.snapshot.selected_note.reference_note_ids,
+            )),
+            structural_note_ids=structural_placeholder_note_ids(
+                evidence_payload.result_trees
+            ),
+            stage_label=f"Summary batch {batch_index + 1}",
+            on_stream=on_stream,
+        )
+
+    async def _infer_cited_summary_findings(
+        self,
+        *,
+        run: _RunContext,
+        messages: list[dict[str, str]],
+        expected_root_ids: tuple[str, ...],
+        allowed_note_ids: frozenset[str],
+        structural_note_ids: frozenset[str],
+        stage_label: str,
+        on_stream: Callable[[StructuredInferenceProgress], None],
+    ) -> SummaryBatchResult:
+        """Request summary findings, asking once for a correction of uncitable IDs."""
+
+        def on_progress(progress: StructuredInferenceProgress) -> None:
+            self._record_inference_progress(
+                run=run,
+                progress=progress,
+                purpose=InferencePurpose.SUMMARY_BATCH,
+            )
+            on_stream(progress)
+
+        attempt_messages = messages
+        for correction_round in range(_SUMMARY_CITATION_CORRECTIONS + 1):
+            response = await self._request_structured_inference(
+                run=run,
+                model=self._model_policy.for_stage(
+                    purpose=InferencePurpose.SUMMARY_BATCH,
+                    selected_model=run.selected_model,
+                ),
+                messages=attempt_messages,
+                response_model=SummaryFindingsResult,
+                purpose=InferencePurpose.SUMMARY_BATCH,
+                on_progress=on_progress,
+            )
+            findings = SummaryFindingsResult.model_validate_json(response.content)
+            rejected_note_ids = classify_uncitable_note_ids(
+                result=findings,
+                allowed_note_ids=allowed_note_ids,
+                structural_note_ids=structural_note_ids,
+                request_text=json.dumps(attempt_messages),
+            )
+            if not rejected_note_ids:
+                result = attach_summary_coverage(
+                    result=findings,
+                    expected_root_ids=expected_root_ids,
+                    allowed_note_ids=allowed_note_ids,
+                )
+                self._record_structured_attempts(
+                    run=run,
+                    attempts=response.attempts,
+                    parsed=result.model_dump(mode="json"),
+                    purpose=InferencePurpose.SUMMARY_BATCH,
+                )
+                return result
+            self._record_structured_attempts(
+                run=run,
+                attempts=response.attempts,
+                parsed=findings.model_dump(mode="json"),
+                purpose=InferencePurpose.SUMMARY_BATCH,
+            )
+            rejected_detail = "; ".join(
+                f"{note_id} ({reason})" for note_id, reason in rejected_note_ids
+            )
+            self._trace_store.append_event(
+                session_key=run.session_key,
+                run_id=run.run_id,
+                event_type="SUMMARY_CITATION_REJECTED",
+                label=f"{stage_label} cited uncitable note IDs",
+                detail={
+                    "correction_round": correction_round,
+                    "rejected_note_ids": [
+                        {"note_id": note_id, "reason": reason}
+                        for note_id, reason in rejected_note_ids
+                    ],
+                },
+                duration_ms=0.0,
+            )
+            if correction_round == _SUMMARY_CITATION_CORRECTIONS:
+                raise AgentExecutionError(
+                    f"{stage_label} returned invalid findings: cited note IDs that "
+                    "were not disclosed as evidence, even after a correction "
+                    f"request: {rejected_detail}"
+                )
+            attempt_messages = (
+                self._context_builder.build_staged_summary_citation_correction_messages(
+                    messages=messages,
+                    rejected_response=response.content,
+                    rejected_note_ids=rejected_note_ids,
+                )
+            )
+        raise RuntimeError("Summary citation correction loop exited without a result")
+
+    async def _reduce_staged_summaries(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        state: InvestigationState,
+        skill: AgentSkill,
+        summaries: tuple[SummaryBatchResult, ...],
+    ) -> tuple[SummaryBatchResult, ...]:
+        token_limit = run.retrieval_settings.max_page_approximate_tokens
+        if state.snapshot.selected_note.status == "available":
+            token_limit -= estimate_input_tokens(
+                state.snapshot.selected_note.as_payload()
+            )
+        if token_limit < 1:
+            raise AgentExecutionError(
+                "Selected-note context leaves no room for summary reduction"
+            )
+        current = summaries
+        for stage_index in range(1, _MAX_STAGED_SUMMARY_REDUCTION_LEVELS + 1):
+            current_tokens = estimate_summary_results_tokens(current)
+            if current_tokens <= token_limit:
+                return current
+            # lint: allow-PY001 rationale="translate a user-configured reduction budget overflow into a concise operation failure"
+            try:
+                groups = partition_summary_results(
+                    results=current,
+                    token_limit=token_limit,
+                )
+            # lint: allow-PY001 rationale="an external intermediate summary can legitimately exceed the configured reduction limit"
+            except ValueError as exc:
+                raise AgentExecutionError(
+                    "The intermediate summaries cannot fit within the configured "
+                    f"evidence limit: {exc}"
+                ) from exc
+
+            reduced: list[SummaryBatchResult | None] = [None] * len(groups)
+            reduced[0] = await self._infer_summary_reduction_group(
+                run=run,
+                canonical_messages=canonical_messages,
+                state=state,
+                skill=skill,
+                summaries=groups[0],
+                stage_index=stage_index,
+                group_index=0,
+                group_count=len(groups),
+            )
+            semaphore = asyncio.Semaphore(_STAGED_SUMMARY_CONCURRENCY)
+
+            async def reduce_group(index: int) -> tuple[int, SummaryBatchResult]:
+                async with semaphore:
+                    result = await self._infer_summary_reduction_group(
+                        run=run,
+                        canonical_messages=canonical_messages,
+                        state=state,
+                        skill=skill,
+                        summaries=groups[index],
+                        stage_index=stage_index,
+                        group_index=index,
+                        group_count=len(groups),
+                    )
+                return index, result
+
+            tasks = [
+                asyncio.create_task(reduce_group(index))
+                for index in range(1, len(groups))
+            ]
+            try:
+                for completed_task in asyncio.as_completed(tasks):
+                    index, result = await completed_task
+                    if reduced[index] is not None:
+                        raise RuntimeError(
+                            "Summary reduction group completed more than once"
+                        )
+                    reduced[index] = result
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if any(result is None for result in reduced):
+                raise RuntimeError("Summary reduction completed with missing groups")
+            next_level = tuple(result for result in reduced if result is not None)
+            if estimate_summary_results_tokens(next_level) >= current_tokens:
+                raise AgentExecutionError(
+                    "The model did not reduce the intermediate summary size; "
+                    "the complete-scope summary was not generated"
+                )
+            current = next_level
+        raise AgentExecutionError(
+            "The complete-scope summary exceeded the maximum reduction depth"
+        )
+
+    async def _infer_summary_reduction_group(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        state: InvestigationState,
+        skill: AgentSkill,
+        summaries: tuple[SummaryBatchResult, ...],
+        stage_index: int,
+        group_index: int,
+        group_count: int,
+    ) -> SummaryBatchResult:
+        expected_root_ids = tuple(
+            root_id
+            for summary in summaries
+            for root_id in summary.covered_root_ids
+        )
+        allowed_note_ids = frozenset((
+            *summary_reference_note_ids(summaries),
+            *state.snapshot.selected_note.reference_note_ids,
+        ))
+        messages = self._context_builder.build_staged_summary_reduction_messages(
+            canonical_messages=canonical_messages,
+            prompts=run.prompts,
+            skill=skill,
+            snapshot=state.snapshot,
+            summaries=summaries,
+            stage_index=stage_index,
+            group_index=group_index,
+            group_count=group_count,
+        )
+        return await self._infer_cited_summary_findings(
+            run=run,
+            messages=messages,
+            expected_root_ids=expected_root_ids,
+            allowed_note_ids=allowed_note_ids,
+            structural_note_ids=frozenset(),
+            stage_label=f"Summary reduction stage {stage_index}",
+            on_stream=lambda progress: None,
+        )
 
     async def _stream_web_response(
         self,

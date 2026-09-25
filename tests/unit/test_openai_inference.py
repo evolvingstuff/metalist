@@ -19,6 +19,9 @@ from app.services.agent.openai_inference import resolve_openai_reasoning_effort
 from app.services.agent.openai_inference import validate_openai_model
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 import app.services.agent.openai_inference as openai_inference_module
+from app.services.agent.staged_summary import SummaryFinding
+from app.services.agent.staged_summary import SummaryFindingsResult
+from app.services.agent.structured_inference import _InstructorTraceCapture
 
 
 _API_KEY = "sk-test-0123456789abcdefghijklmnop"
@@ -434,3 +437,46 @@ def test_openai_models_and_reasoning_levels_are_strict() -> None:
     for invalid_model in ("gpt-5.6", "gpt-4o", ""):
         with pytest.raises(ValueError, match="Unsupported OpenAI model"):
             validate_openai_model(invalid_model)
+
+
+def test_structured_output_progress_carries_latest_partial_object() -> None:
+    progress_events: list[StructuredInferenceProgress] = []
+    capture = _InstructorTraceCapture(on_progress=progress_events.append)
+
+    async def run() -> None:
+        capture.record_request(model="gpt-5.6-sol", messages=[])
+        await capture.record_wire_request(httpx.Request(
+            "POST",
+            "https://api.openai.com/v1/chat/completions",
+            json={"model": "gpt-5.6-sol", "messages": []},
+        ))
+        capture.record_partial(SummaryFindingsResult(findings=[
+            SummaryFinding(text="Streaming finding", supporting_note_ids=["note-a"]),
+        ]))
+
+        async def chunk_iterator():
+            yield SimpleNamespace(model_dump=lambda **options: {
+                "choices": [{"delta": {"content": "x" * 80}}],
+            })
+
+        stream = SimpleNamespace(_iterator=chunk_iterator())
+        capture.record_response(stream)
+        async for _chunk in stream._iterator:
+            pass
+
+    asyncio.run(run())
+
+    output_events = [
+        event for event in progress_events if event.phase == "output_progress"
+    ]
+    assert output_events
+    assert output_events[0].partial_output == {
+        "findings": [{
+            "text": "Streaming finding",
+            "supporting_note_ids": ["note-a"],
+        }],
+    }
+    started = next(
+        event for event in progress_events if event.phase == "attempt_started"
+    )
+    assert started.partial_output == {}

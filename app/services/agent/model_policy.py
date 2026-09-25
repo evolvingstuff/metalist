@@ -9,6 +9,7 @@ class InferencePurpose(str, Enum):
     ACTION_SELECTION = "action-selection"
     SEARCH_QUERY = "search-query"
     FINAL_RESPONSE = "final-response"
+    SUMMARY_BATCH = "summary-batch"
 
 
 class SingleModelPolicy:

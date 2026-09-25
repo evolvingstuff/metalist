@@ -1,0 +1,150 @@
+{
+  "schema_version": 2,
+  "id": "staged-summary-complete-scope",
+  "description": "Staged summary batches confirm exact roots and final synthesis cites original notes.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Summarize all of my saved garden experiments."
+        }
+      ],
+      "context": {
+        "stage": "summary_batch",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 2,
+          "matching_result_tree_count": 2
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "result_trees": [
+          {
+            "note_id": "note-a",
+            "content_text": "The north bed produced 18 tomatoes with drip irrigation.",
+            "tags": ["garden"],
+            "proposed_tags": [],
+            "children": []
+          },
+          {
+            "note_id": "note-b",
+            "content_text": "The south bed produced 11 tomatoes with hand watering.",
+            "tags": ["garden"],
+            "proposed_tags": [],
+            "children": []
+          }
+        ],
+        "result_tree_ids": ["note-a", "note-b"],
+        "batch_index": 0,
+        "batch_count": 1
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "findings": [
+              {"supporting_note_ids": ["note-a"]},
+              {"supporting_note_ids": ["note-b"]}
+            ]
+          },
+          {
+            "findings": [
+              {"supporting_note_ids": ["note-b"]},
+              {"supporting_note_ids": ["note-a"]}
+            ]
+          },
+          {
+            "findings": [
+              {"supporting_note_ids": ["note-a", "note-b"]}
+            ]
+          },
+          {
+            "findings": [
+              {"supporting_note_ids": ["note-b", "note-a"]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Summarize all of my saved garden experiments."
+        }
+      ],
+      "context": {
+        "stage": "summary_final",
+        "scope": {
+          "scope_kind": "search",
+          "label": "garden",
+          "search_query": "garden",
+          "sort_mode": "normal",
+          "matching_note_count": 2,
+          "matching_result_tree_count": 2
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "summaries": [
+          {
+            "covered_root_ids": ["fixture-root-0"],
+            "findings": [
+              {
+                "text": "The north bed produced 18 tomatoes with drip irrigation.",
+                "supporting_note_ids": ["note-a"]
+              }
+            ]
+          },
+          {
+            "covered_root_ids": ["fixture-root-1"],
+            "findings": [
+              {
+                "text": "The south bed produced 11 tomatoes with hand watering.",
+                "supporting_note_ids": ["note-b"]
+              }
+            ]
+          }
+        ]
+      },
+      "max_output_tokens": 1024,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "preserves-findings",
+            "instruction": "State that the north bed produced 18 tomatoes with drip irrigation and the south bed produced 11 tomatoes with hand watering."
+          },
+          {
+            "id": "original-citations",
+            "instruction": "Cite the north-bed claim with the exact token [[note-a]] and the south-bed claim with the exact token [[note-b]]."
+          },
+          {
+            "id": "complete-scope",
+            "instruction": "Present the result as a synthesis of the complete supplied scope without claiming access to anything outside it."
+          }
+        ],
+        "reference_facts": "The verified staged findings cover both frozen roots and retain original note IDs note-a and note-b."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic-staged-summary-v1",
+    "note": "Invented garden notes and quantities. No personal notes or exports."
+  }
+}

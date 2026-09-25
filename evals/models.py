@@ -110,6 +110,29 @@ class InvestigationContext(StrictModel):
     result_tree_ids: list[str]
 
 
+class SummaryBatchContext(StrictModel):
+    stage: Literal["summary_batch"]
+    scope: ScopeFixture
+    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
+    result_trees: list[dict] = Field(min_length=1)
+    result_tree_ids: list[str] = Field(min_length=1)
+    batch_index: int = Field(ge=0)
+    batch_count: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_batch_index(self):
+        if self.batch_index >= self.batch_count:
+            raise ValueError("Summary batch index must be inside batch count")
+        return self
+
+
+class SummaryFinalContext(StrictModel):
+    stage: Literal["summary_final"]
+    scope: ScopeFixture
+    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
+    summaries: list[dict] = Field(min_length=1)
+
+
 class WebEvidenceFixture(StrictModel):
     evidence_id: str = Field(min_length=1)
     requested_url: str = Field(min_length=1)
@@ -180,6 +203,7 @@ class Step(StrictModel):
     conversation: list[ConversationMessage | PreviousOutput] = Field(min_length=1)
     context: Annotated[
         RouteContext | HelpContext | RespondContext | InvestigationContext
+        | SummaryBatchContext | SummaryFinalContext
         | WebActionContext | WebRespondContext,
         Field(discriminator="stage"),
     ]
@@ -190,7 +214,9 @@ class Step(StrictModel):
     def validate_contract(self):
         if self.conversation[-1].role != "user":
             raise ValueError("Conversation must end with the current user request")
-        is_structured = self.context.stage in {"route", "help", "web_action"}
+        is_structured = self.context.stage in {
+            "route", "help", "web_action", "summary_batch",
+        }
         if is_structured != (self.max_output_tokens == 0):
             raise ValueError("Structured steps use zero; text steps require a positive output limit")
         if self.expectation.kind == "action" and not is_structured:

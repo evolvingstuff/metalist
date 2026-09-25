@@ -46,6 +46,7 @@ import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { buildBacklinksQuery } from '../services/backlinks-navigation-service.js';
 import {
     captureReferenceOriginScopeForActiveTab,
+    getReferenceNavigationLabelForTab,
     isViewingReferenceSource,
     popReferenceNavigationEntryForActiveTab,
     pushReferenceNavigationEntry,
@@ -3044,24 +3045,29 @@ export function updateSearchContextsList() {
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
         throw new Error('ModeContext.tabOrder must be a non-empty array');
     }
-	for (let i = 0; i < tabOrder.length; i++) {
-	    const tabId = tabOrder[i];
-	    const tabEntry = tabs[tabId];
-	    if (!tabEntry || typeof tabEntry !== 'object') {
-	        throw new Error(`ModeContext.tabs missing entry for tab ${tabId}`);
-	    }
+    for (let i = 0; i < tabOrder.length; i++) {
+        const tabId = tabOrder[i];
+        const tabEntry = tabs[tabId];
+        if (!tabEntry || typeof tabEntry !== 'object') {
+            throw new Error(`ModeContext.tabs missing entry for tab ${tabId}`);
+        }
 
-	    let originalQuery = tabEntry.searchQuery;
-	    if (typeof originalQuery !== 'string') {
-	        originalQuery = '';
-	    }
-	    let displayQuery = originalQuery;
-	    if (!displayQuery) {
-	        displayQuery = '(empty)';
-	    }
-        
+        let originalQuery = tabEntry.searchQuery;
+        if (typeof originalQuery !== 'string') {
+            originalQuery = '';
+        }
+        const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
+        let displayQuery = referenceNavigationLabel !== ''
+            ? referenceNavigationLabel
+            : originalQuery;
+        if (!displayQuery) displayQuery = '(empty)';
+
         // Truncate long search queries for display
-        if (displayQuery.length > 12 && displayQuery !== '(empty)') {
+        if (
+            referenceNavigationLabel === ''
+            && displayQuery.length > 12
+            && displayQuery !== '(empty)'
+        ) {
             displayQuery = displayQuery.substring(0, 12) + '...';
         }
         
@@ -3105,7 +3111,10 @@ export function updateSearchContextsList() {
                 if (typeof searchQuery !== 'string') {
                     throw new Error('Clicked tab executed search query must be a string');
                 }
-                const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
+                const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
+                const activityPromise = referenceNavigationLabel !== ''
+                    ? null
+                    : NotesAPI.recordTabSearchSelection(searchQuery);
                 hideSearchContextsOverlay();
                 void CommandGate.run('tab.select', async () => {
                     if (tabId === ModeContext.activeTabId) {
@@ -3122,9 +3131,9 @@ export function updateSearchContextsList() {
                         await switchToTabContext(tabId, {});
                     }
                 });
-                await activityPromise;
-	            });
-	        });
+                if (activityPromise !== null) await activityPromise;
+            });
+        });
         
         // Add click handlers for per-tab + (duplicate)
         searchContextsList.querySelectorAll('.duplicate-context').forEach(addBtn => {

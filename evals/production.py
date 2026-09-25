@@ -13,6 +13,8 @@ from app.services.agent.prompts import load_prompt
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import AgentScopeDescriptor, ScopedSearchSnapshot, SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import AgentSkillSet, DEFAULT_AGENT_SKILLS
+from app.services.agent.staged_summary import SummaryBatchResult
+from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.skills import load_skill
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.web_capabilities import build_web_url_capabilities
@@ -30,6 +32,8 @@ RESPONSE_MODELS = {
         ScopedRouteEnvelope,
         MetaListHelpResponse,
         ContextualWebActionEnvelope,
+        SummaryBatchResult,
+        SummaryFindingsResult,
     )
 }
 _OUTPUT_MARKER = "__METALIST_REGRESSION_PREVIOUS_OUTPUT_"
@@ -45,8 +49,12 @@ def current_skills() -> AgentSkillSet:
     for skill in DEFAULT_AGENT_SKILLS.skills:
         if skill.trigger_action == "investigate_current_scope":
             filename = "scoped-investigation.md"
+        elif skill.trigger_action == "summarize_current_scope":
+            filename = "staged-summary.md"
         elif skill.trigger_action == "web_browsing":
             filename = "web-browsing.md"
+        elif skill.trigger_action == "tag_proposals":
+            filename = "tag-proposals.md"
         else:
             assert skill.trigger_action.startswith("help_")
             filename = skill.trigger_action.replace("_", "-", 1) + ".md"
@@ -207,6 +215,41 @@ def build_messages(*, step, canonical_messages, prompts, skills):
         )
         messages.append(route_request)
         return messages, "ScopedRouteEnvelope"
+    if context.stage == "summary_batch":
+        evidence = InvestigationEvidencePayload(
+            evidence_note_ids=tuple(
+                node["note_id"]
+                for tree in context.result_trees
+                for node in _flatten_result_tree(tree)
+            ),
+            result_tree_ids=tuple(context.result_tree_ids),
+            result_trees=tuple(context.result_trees),
+            returned_approximate_token_count=estimate_input_tokens(
+                context.result_trees
+            ),
+        )
+        return builder.build_staged_summary_batch_messages(
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+            skill=skills.for_action("summarize_current_scope"),
+            snapshot=snapshot,
+            evidence_payload=evidence,
+            batch_index=context.batch_index,
+            batch_count=context.batch_count,
+        ), "SummaryFindingsResult"
+    if context.stage == "summary_final":
+        summaries = tuple(
+            SummaryBatchResult.model_validate(summary)
+            for summary in context.summaries
+        )
+        messages, _references = builder.build_staged_summary_final_messages(
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+            skill=skills.for_action("summarize_current_scope"),
+            snapshot=snapshot,
+            summaries=summaries,
+        )
+        return messages, ""
     if context.stage == "respond":
         messages = builder.build_initial_messages(canonical_messages=canonical_messages, prompts=prompts)
         messages = builder.append_selected_note_context(messages=messages, snapshot=snapshot)
@@ -226,13 +269,29 @@ def build_messages(*, step, canonical_messages, prompts, skills):
         result_tree_ids=tuple(context.result_tree_ids), result_trees=tuple(context.result_trees),
         returned_approximate_token_count=estimate_input_tokens(context.result_trees))
     messages, _references = builder.build_scoped_final_messages(canonical_messages=canonical_messages,
-        prompts=prompts, state=state, evidence_payload=evidence, basis=context.basis)
+        prompts=prompts, skill=skills.for_action("investigate_current_scope"), state=state,
+        evidence_payload=evidence, basis=context.basis)
     messages.insert(-1, builder.append_web_access_context(
         messages=[],
         settings=DEFAULT_AGENT_WEB_SETTINGS,
         available_urls=capabilities.normalized_urls,
     )[0])
     return messages, ""
+
+
+def _flatten_result_tree(tree: dict) -> tuple[dict, ...]:
+    nodes = []
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        nodes.append(node)
+        children = []
+        if "children" in node:
+            children = node["children"]
+        if not isinstance(children, list):
+            raise TypeError("Regression result-tree children must be a list")
+        stack.extend(reversed(children))
+    return tuple(nodes)
 
 
 def prepare_step(step, *, prompts, skills) -> PreparedStep:

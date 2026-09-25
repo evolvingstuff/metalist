@@ -5,7 +5,15 @@ from pydantic import ValidationError
 from app.services.agent.actions import ScopedRouteEnvelope
 
 
-@pytest.mark.parametrize("kind", ["respond", "investigate_current_scope", "tag_proposals"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "respond",
+        "investigate_current_scope",
+        "summarize_current_scope",
+        "tag_proposals",
+    ],
+)
 def test_route_schema_accepts_each_supported_model_choice(kind: str) -> None:
     route = ScopedRouteEnvelope.model_validate({"kind": kind, "reason": "Model decision.", "help_topics": []})
     assert route.kind == kind

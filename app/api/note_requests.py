@@ -8,6 +8,10 @@ from pydantic import AfterValidator, ConfigDict, Field, with_config
 Identifier = Annotated[str, Field(min_length=1, max_length=256)]
 Text = Annotated[str, Field(max_length=1024 * 1024)]
 Content = Annotated[str, Field(max_length=16 * 1024 * 1024)]
+# Clients build undo contexts as "tab:<id>|search:<executed query>|epoch:<n>", so the
+# limit must admit any Text-sized search query (for example an "Open all references"
+# query ORing every cited note ID) plus that small fixed envelope.
+UndoContext = Annotated[str, Field(min_length=1, max_length=1024 * 1024 + 1024)]
 Nonnegative = Annotated[int, Field(ge=0)]
 
 
@@ -51,7 +55,7 @@ class ViewDiffRequest(TypedDict):
     editingNoteId: Text | None
     search: Text | None
     tabId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     clientNoteUuidHashes: dict[Identifier, Text]
     visibleRootAnchorId: Text | None
     isUntaggedView: bool
@@ -67,7 +71,7 @@ class UpdateTabSortModeRequest(TypedDict):
     tabId: Identifier
     sortMode: Literal['normal', 'created', 'updated', 'alphabetical', 'content-volume']
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
 
 @with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
@@ -113,21 +117,21 @@ class CreateNoteTopRequest(TypedDict):
     first_visible_note_id: Text | None
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class CreateSiblingRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class CreateChildRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -135,7 +139,7 @@ class UpdateNoteRequest(TypedDict):
     clientId: Identifier
     content: Content
     tags: Text
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -143,34 +147,34 @@ class SaveNoteRequest(TypedDict):
     clientId: Identifier
     content: Content
     tags: Text
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class AddSelectedTextTagRequest(TypedDict):
     selectedText: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class MakePseudoTagProposalsRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class AcceptTagProposalRequest(TypedDict):
     proposal: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class RejectTagProposalRequest(TypedDict):
     proposal: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -178,19 +182,19 @@ class SplitNoteRequest(TypedDict):
     clientId: Identifier
     segments: Annotated[list[Content], Field(min_length=1)]
     tags: Text
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class ToggleTodoDoneRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class UnformatNoteContentRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -199,7 +203,7 @@ class ResizeNoteImageRequest(TypedDict):
     sourceKind: Literal['inline', 'file']
     occurrenceIndex: Nonnegative
     action: Literal['bigger', 'smaller', 'reset']
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -212,7 +216,7 @@ class ToggleReferenceModeEndpointRequest(TypedDict):
     occurrence_index: Nonnegative
     mode: Literal['embed', 'link']
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -222,7 +226,7 @@ class MoveNoteEndpointRequest(TypedDict):
     sibling_id: Identifier
     position: Literal['BEFORE', 'AFTER']
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -230,33 +234,33 @@ class MoveNoteToTopEndpointRequest(TypedDict):
     search_query: Text | None
     tab_id: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class IndentNoteEndpointRequest(TypedDict):
     visible_prev_id: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class OutdentNoteEndpointRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class CollapseEndpointRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class ExpandEndpointRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -264,7 +268,7 @@ class SetCollapsedBulkEndpointRequest(TypedDict):
     note_ids: Annotated[list[Identifier], Field(min_length=1)]
     collapsed: bool
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -273,14 +277,14 @@ class SetCollapsedInContextEndpointRequest(TypedDict):
     collapsed: bool
     recursive: bool
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class SetCollapsedSubtreeEndpointRequest(TypedDict):
     collapsed: bool
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -290,7 +294,7 @@ class PrioritizeInViewEndpointRequest(TypedDict):
     search_query: Text | None
     tab_id: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -299,20 +303,20 @@ class AlphabetizeRootNotesEndpointRequest(TypedDict):
     search_query: Text | None
     tab_id: Identifier
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class ResetUpdatedAtToCreatedAtEndpointRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class DeleteNoteRequest(TypedDict):
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
@@ -323,13 +327,13 @@ class CopyNoteEndpointRequest(TypedDict):
 class PasteSiblingEndpointRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
 class PasteChildEndpointRequest(TypedDict):
     search_query: Text | None
     clientId: Identifier
-    undoContext: Identifier
+    undoContext: UndoContext
     viewport: Viewport
 

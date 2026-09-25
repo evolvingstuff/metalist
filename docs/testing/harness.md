@@ -261,6 +261,23 @@ the current production skill, final prompt, context builder, and evidence catalo
 The 2026-09-24 candidate scored 5/5 on each live case; the focused deterministic
 web/prompt/eval suite passed 208 tests with no skips.
 
+Complete-scope summary coverage adds current-production `summary_batch` and
+`summary_final` contexts. The synthetic garden case checks that the structured
+batch selects supporting note IDs from its supplied evidence, and that final
+synthesis preserves both fixed findings, cites their original note IDs, and
+describes only the complete supplied scope. Runtime tests separately enforce
+application-owned root coverage, permission before inference, unlimited total
+batches with four active requests at most, writing→streaming→complete preview
+transitions (never more than four visibly writing), compact throttled stream
+previews, one correction request for structural-placeholder citations with a
+classified failure after that, out-of-order completion with canonical
+synthesis order, citations to the permitted selected-note tree (and rejection when
+that note is unavailable), worker cancellation when the stream closes, recursive
+reduction, cancellation, and atomic failure. `ai_chat_summary_progress.test.mjs`
+behaviorally checks progress-card placement before the streaming answer (without
+ever moving the card), compact streaming and one-line completed batch cards,
+ordering, and invalid-transition failures.
+
 
 2026-09-17 prompt-suite validation: **1,517 Python tests passed, 7 skipped**;
 **728 JavaScript tests passed**; startup checks passed across **410 Python** and

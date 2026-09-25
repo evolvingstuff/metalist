@@ -1,4 +1,4 @@
-# Agent Harness: Single-Payload Read-only Investigation
+# Agent Harness: Read-only Investigation and Complete-scope Summaries
 
 ## Contract
 
@@ -19,7 +19,7 @@ POST /api2/ai/chat + AgentScopeDescriptor
   → apply the provider disclosure boundary
   → freeze immutable ScopedSearchSnapshot S0
   → select provider and verify its runtime/credential
-  → Instructor route: respond | investigate_current_scope | tag_proposals | metalist_help
+  → Instructor route: respond | investigate_current_scope | summarize_current_scope | tag_proposals | metalist_help
       respond:
         stream final prose, including the selected note when available
       investigate_current_scope:
@@ -28,12 +28,19 @@ POST /api2/ai/chat + AgentScopeDescriptor
         retain the longest leading prefix within the provider token limit
         serialize one full nested evidence payload
         stream the final answer directly from that payload
+      summarize_current_scope:
+        ask permission before any summary model call
+        partition every complete root tree into ordered evidence batches
+        summarize batch 1 alone, then run later batches up to four at once
+        recursively condense oversized intermediate results
+        synthesize one answer only after every batch succeeds
   → complete the in-memory chat turn
 ```
 
-There is no paging cursor, next-page decision, working summary, source-ranking
-memory, facet browser, or automatic tag narrowing. A request gets at most one
-evidence payload.
+Ordinary investigation has no paging cursor, next-page decision, working summary,
+source-ranking memory, facet browser, or automatic tag narrowing. Its request gets
+at most one evidence payload. Explicit complete-scope summaries use the separate
+staged path above.
 
 ## Conversation disclosure boundaries
 
@@ -153,6 +160,52 @@ The final request includes exact original/included/omitted note and root counts.
 anything was omitted, the model is told not to claim exhaustive scope coverage.
 The current user request, rather than the broad search topic, defines relevance.
 
+## Complete-scope Staged Summaries
+
+`summarize_current_scope` is reserved for requests that summarize, compare, or
+synthesize the complete frozen result scope. It always asks the user before model
+work begins, even when the entire scope fits in one payload. When multiple payloads
+are necessary, the dialog reports the root and batch counts, the minimum number of
+model calls, and offers either complete processing, the previous leading-prefix
+behavior, or cancellation.
+
+For complete processing, `plan_complete_root_batches()` partitions all permitted
+root trees in canonical order. There is no cap on the number of batches. A root is
+atomic and cannot be divided; if one root cannot fit, the operation fails visibly.
+Batch 1 runs alone to seed the provider cache. Remaining batches are drained by a
+pool of at most four workers; a worker emits a `writing` preview only after taking a
+batch, throttled `streaming` previews while the model writes, and a `complete`
+preview afterward. Batches waiting for a worker are reported as queued, never as
+writing. Streaming previews come from Instructor's partial objects: the structured
+inference capture stores the latest partial on the current attempt and attaches it
+to `output_progress` events as `partial_output`. Each preview carries only the
+finding count, the output-token estimate, and at most the last 240 characters of
+the newest finding (the first finding on completion), at most once per 0.3 seconds
+per batch. Responses are placed back into their original batch order regardless of
+completion order. Duplicate or out-of-sequence preview transitions fail loudly on
+both server and client. The first worker failure cancels the other
+workers and propagates; closing the stream also cancels them.
+
+The application attaches the exact roots supplied to each structured batch result;
+the model returns only findings. Every batch and reduction prompt also carries
+`SELECTED_NOTE_CONTEXT`, so a finding may cite disclosed note IDs from its batch
+(or reduction inputs) or from the permitted selected-note tree. Unavailable
+selected notes (blacklisted, search-redacted, password-protected, not whitelisted,
+or missing) contribute no citable IDs, and any other ID is rejected. Tree nodes
+serialized as `is_evidence: false` are structural ancestors whose content was not
+disclosed and are never citable. When a batch or reduction cites an uncitable ID,
+MetaList sends one correction request that names each rejected ID and its reason
+(structural placeholder, present in the request but not citable evidence such as
+earlier conversation, or absent from the request). A second failure aborts the
+summary with those reasons and records a `SUMMARY_CITATION_REJECTED` trace event. The final
+synthesis reference catalog likewise includes the permitted selected-note tree. If
+the combined findings cannot fit in one synthesis request, MetaList recursively
+groups and condenses them, preserving application-owned root coverage and
+original-note citations at every level. The final answer is generated
+only after all batches and reductions succeed. Failure or cancellation aborts
+outstanding work and produces neither a partial summary nor a claim of complete
+coverage.
+
 ## Configuration
 
 The only retrieval setting is a provider-specific maximum approximate evidence
@@ -187,8 +240,12 @@ root prefix. Selection remains available even when its root is beyond that prefi
 Action regression expectations measure whether the selected action was appropriate.
 
 The packaged scoped skill describes one authoritative payload and direct final
-answer. No skill or prompt describes page traversal, summary mutation, facet
-selection, or context narrowing.
+answer and is sent with every single-payload investigation. The separate
+staged-summary skill describes batch findings, verified coverage, recursive
+condensation, and final synthesis; it is also sent when a summary fits one payload
+or the user chooses the leading prefix. An activated skill is always sent to the
+model, never only recorded. No skill or prompt describes
+model-directed page traversal, facet selection, or automatic context narrowing.
 
 ## Citations and References
 
@@ -286,17 +343,17 @@ An explicit chat request can select `tag_proposals`. A second structured interpr
 Generation captures the search-visible trees. Visible ancestors supply content, but unseen sibling branches do not enter tagging evidence. Parent proposals inherit normally to unseen descendants. Privacy exclusions remain enforced before disclosure.
 
 - Existing vocabulary is accepted tags in the entire disclosed search context, computed before batching and shared by all requests; never the namespace catalog or pending proposals. `pref.ai.tagging.vocabulary` is one categorical permission (`existing`/`new`), while `pref.ai.tagging.focus` remembers the exact last selector choice (`existing`/`new`/`both`). Submitting existing-only saves existing permission; new-only or both permits new tags. There is no separate vocabulary setup question.
-- `pref.ai.prompt.tagging` contains editable tagging instructions, available through **Tagging prompt and vocabulary…** in the menu.
+- Tag suggestion guidance is the packaged `tag_proposals_v1` skill (`skills/tag-proposals.md`, title "Suggest tags"). It keeps the original `pref.ai.prompt.tagging` preference key, so existing customizations become its override; it is editable both in AI Agent Settings and through **Tagging prompt and vocabulary…** in the menu. The route records its activation, and every tagging batch sends it as an `ACTIVE_SKILL` system message; validation-critical rules (vocabulary mode, 12-tag limit, note-ID scope) stay in code.
 - Every batch receives the exact generation request. A named subject is a binding semantic filter rather than a general hint: examples disambiguate its intended meaning, proposals favor specific concepts/methods/entities inside that subject, and unrelated notes or broad neighboring classifications are omitted.
 - Existing-only requests explicitly require exact supplied vocabulary terms, without synonyms or variants. Every batch payload also carries an explicit machine-readable pass mode. New-only instructions require a final case-insensitive comparison against the supplied accepted vocabulary before output.
 - Each batch tolerates up to 10% invalid tag assignments, dropping those assignments and omitting notes left without valid tags. A separate 10% threshold applies to duplicate or non-batch note-ID entries; tolerated entries are discarded whole. Validation distinguishes an ID in another batch of the current permitted scope, a real namespace note outside the current permitted scope, and a nonexistent ID. It uses frozen ID-set membership only and never reads an out-of-scope note. A real out-of-scope ID may have been disclosed under an earlier conversation scope, so it is not labeled proof of a new disclosure leak. The denominators are distinct case-insensitive note/tag assignments and total proposal entries respectively. Existing-only accepts terms found either in disclosed context vocabulary or, after inference, in accepted namespace tags; the latter are canonicalized without disclosing the namespace catalog to the model. New-only rejects accepted tags disclosed in the context. If a new-only candidate happens to match an accepted tag elsewhere in the namespace that was never disclosed to the model, validation silently drops it without counting it as a model error. Both mode permits existing or new terms. Invalid syntax and command tags are invalid in every mode. Above either threshold, the model receives the cumulative validation failures and may regenerate the complete batch up to three times; if the third correction still fails, the pass fails atomically. Malformed response structure remains strict.
 - Generation intent never selects the per-pass focus. Every generation request asks the three-way structured focus question, preselects the exact previous choice, and keeps all choices available. The answer updates both the remembered focus and the two-way vocabulary permission in one submission. Request wording and model interpretation cannot skip the question, including explicit requests for existing, new, or both. Existing focus validates output against batch vocabulary.
-- The configured evidence budget determines batching. Evidence above 1× requires explicit confirmation, combined with the focus question when one is needed. Randomize visible root-tree order before batching so display-adjacent roots do not systematically share requests. Complete visible root trees remain together and preserve their internal hierarchy/order; every requested tree is reviewed. Processing time is hidden and paused during questions; no predicted duration. Proposal dialogs reuse the shared modal-content and form-actions styles.
+- The configured evidence budget determines batching. Every generation pass asks one `tag_scope_confirmation` card before model work, equivalent to the complete-scope summary card: the scope size as a multiple of the evidence budget, the three-way focus selector, and "Tag all N", "Use first K only" (only above 1×: the leading canonical-order roots that fit one evidence payload, `leading_tree_count_within_budget()`, reported in the completion message), and Cancel. Answers combine focus and scope (`focus_*` or `prefix_focus_*`); there is no separate focus question. `bulk-scope-question.js` derives both cards' labels and answer values. Randomize visible root-tree order before batching so display-adjacent roots do not systematically share requests. Complete visible root trees remain together and preserve their internal hierarchy/order; every requested tree is reviewed. Processing time is hidden and paused during questions; no predicted duration. Proposal dialogs reuse the shared modal-content and form-actions styles.
 - New-only focus strictly excludes disclosed accepted vocabulary terms (case insensitive). The namespace catalog remains undisclosed, so post-inference validation silently drops a collision with an accepted namespace tag the model could not know about.
 - Every pass uses token-sized requests, configured alongside the evidence limit in AI settings: `pref.ai.openai.tagging.batch_tokens` (default 100,000). Bounds match the corresponding evidence setting (500–500,000). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
 - Chat tag generation renders its choice and progress controls inside the transcript. The focus selector has three real options and no explanation paragraph or placeholder; Continue explicitly submits the selected option. No preparation overlay. Chat input and surrounding UI are locked while operation controls stay usable. Non-chat regions are inert, greyed, slightly blurred, and use a not-allowed cursor. Transcript rerenders preserve the live operation element and its selected value/focus. Programmatic acceptance/removal stays in the ordinary chat working state through its atomic update and never creates a progress or cancellation panel. Menu choice and confirmation dialogs use normal modals, but submitting a programmatic acceptance/removal operation shows only the application busy state with no second progress modal.
 - An application-owned modal locks normal interaction while the batch guard rejects conflicting server mutations. Pending question answers remain available, and Cancel aborts the stream before final application. The final synchronous commit phase disables Cancel.
-- Validated proposals accumulate only in session memory. New terms from completed batches are supplied separately to later batches as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. All batches must succeed before one database transaction writes the result. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
+- Validated proposals accumulate only in session memory. Batch 1 runs alone so its new terms can be supplied separately to every later batch as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. Remaining batches run in waves with at most four concurrent requests; there is no cap on the total number of batches, and validated results are merged in original batch order. Parallel batches do not consume one another's new terms. All batches must succeed before one database transaction writes the result. A failed or cancelled batch aborts outstanding work and applies nothing. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
 - A successful generation response lists each newly added proposal and cites every note that received it. Inline numbered markers remain clickable, while the ordinary expandable References section is replaced for this response type by one **Show all new tag proposals** link. That link uses the same combined exact-note query as Open all references. Canonical conversation history retains the tag names while stripping citation UUIDs before later model calls; subsequent tagging also reads each note's authoritative pending proposals and explicitly excludes duplicates.
 - Failure/cancellation applies no pending results; no-change results preserve history. Individual proposal controls retain their undo semantics.
 

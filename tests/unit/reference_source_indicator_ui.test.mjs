@@ -33,7 +33,7 @@ test('reference source navigation uses a dismissible mode indicator instead of a
     assert.match(mouseEvents, /await navigateBackFromReferenceContext\(\)/);
 });
 
-test('AI reference collections open a combined OR search in a new tab', async () => {
+test('AI reference collections use a temporary labeled view without entering search history', async () => {
     const [mouseEvents, keyboardEvents] = await Promise.all([
         readFile(MOUSE_EVENTS_URL, 'utf8'),
         readFile(KEYBOARD_EVENTS_URL, 'utf8'),
@@ -50,6 +50,14 @@ test('AI reference collections open a combined OR search in a new tab', async ()
     assert.match(
         keyboardEvents,
         /replaceActiveReference && isViewingReferenceSource\(\)/,
+    );
+    assert.match(
+        keyboardEvents,
+        /getReferenceNavigationLabelForTab\(tabId\)/,
+    );
+    assert.match(
+        keyboardEvents,
+        /referenceNavigationLabel !== ''[\s\S]*?NotesAPI\.recordTabSearchSelection/,
     );
 
     const mouseDownExclusion = mouseEvents.match(
