@@ -209,7 +209,10 @@ test('OpenAI chat shows a process-local resettable live cost estimate', () => {
 
     assert.match(template, /id="ai-chat-openai-cost"[\s\S]*?hidden/);
     assert.match(template, /id="ai-chat-openai-cost-amount">\$0\.00/);
-    assert.match(template, /id="ai-chat-openai-cost-reset"/);
+    assert.match(
+        template,
+        /id="ai-chat-openai-cost-reset"[^>]*>Reset spend<\/button>/,
+    );
     assert.match(template, /New input/);
     assert.match(template, /Cached input/);
     assert.match(template, /Cache writes/);
