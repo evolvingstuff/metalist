@@ -12,6 +12,12 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.9.0
+
+- AI chat can browse the web in disabled, contextual, or unrestricted mode, fetch multiple pages concurrently, and cite the specific pages used as evidence.
+- Complete-scope summaries and tag suggestions can process every permitted note in bounded parallel batches after user approval, with visible per-batch progress and final synthesis.
+- AI chat retains selected-note and tree context while enforcing redaction boundaries, and reference navigation uses temporary result collections without polluting search history.
+
 ## Changes in 0.8.0
 
 - Error diagnostics now record safe request IDs, exception types, and source locations through Loguru; full tracebacks are available only in authenticated encrypted logs.

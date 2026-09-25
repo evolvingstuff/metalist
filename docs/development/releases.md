@@ -11,7 +11,7 @@ The automatic **Publish to PyPI** main workflow must pass for that exact commit.
 Then run:
 
 ```bash
-.venv/bin/python scripts/release.py 0.8.0
+.venv/bin/python scripts/release.py 0.9.0
 ```
 
 The command requires a clean `main` checkout exactly synchronized with
