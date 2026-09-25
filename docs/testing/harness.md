@@ -58,6 +58,16 @@ action-status parsing, and the debugger UI contract:
 - `tests/unit/ai_chat_ui_contract.test.mjs`
 - `tests/unit/agent_prompt_service.test.mjs`
 
+Web-agent coverage uses the same current-production assembly rule. Deterministic
+tests cover all three modes, disclosure-derived URL capabilities, hidden selected
+notes, batched action schemas, public-address enforcement, redirect handling,
+HTML/plain-text/PDF extraction, duplicate reuse, retained evidence, mixed
+citations, unrestricted full-mode page opening, and partial external failures.
+`tests/unit/test_eval_selection.py` verifies that editing `web-browsing.md` selects
+only regression cases whose prepared production requests actually load that skill;
+the ordinary no-web cases still receive the current production
+`WEB_ACCESS_CONTEXT` and are not frozen prompt captures.
+
 For deterministic browser automation, the server still exposes a
 `TEST_MODE`-only reset endpoint: `POST /api2/test/reset`.
 

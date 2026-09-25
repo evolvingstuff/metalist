@@ -3,6 +3,7 @@
 from dataclasses import replace
 from types import MappingProxyType
 
+from app.services.agent.actions import ContextualWebActionEnvelope
 from app.services.agent.actions import RespondAction, ScopedRouteEnvelope
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.help_catalog import MetaListHelpResponse
@@ -14,11 +15,22 @@ from app.services.agent.scope import AgentScopeDescriptor, ScopedSearchSnapshot,
 from app.services.agent.skill_settings import AgentSkillSet, DEFAULT_AGENT_SKILLS
 from app.services.agent.skills import load_skill
 from app.services.agent.token_estimation import estimate_input_tokens
+from app.services.agent.web_capabilities import build_web_url_capabilities
+from app.services.agent.web_evidence import WebPageEvidence
+from app.services.agent.web_settings import AgentWebSettings
+from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from app.services.content_formatting import extract_agent_note_text
 from evals.models import Message, PreparedStep, PreviousOutput, SelectedTreeFixture, SelectedHtmlTreeNoteFixture, UnavailableSelectionFixture
 
 
-RESPONSE_MODELS = {schema.__name__: schema for schema in (ScopedRouteEnvelope, MetaListHelpResponse)}
+RESPONSE_MODELS = {
+    schema.__name__: schema
+    for schema in (
+        ScopedRouteEnvelope,
+        MetaListHelpResponse,
+        ContextualWebActionEnvelope,
+    )
+}
 _OUTPUT_MARKER = "__METALIST_REGRESSION_PREVIOUS_OUTPUT_"
 
 
@@ -32,6 +44,8 @@ def current_skills() -> AgentSkillSet:
     for skill in DEFAULT_AGENT_SKILLS.skills:
         if skill.trigger_action == "investigate_current_scope":
             filename = "scoped-investigation.md"
+        elif skill.trigger_action == "web_browsing":
+            filename = "web-browsing.md"
         else:
             assert skill.trigger_action.startswith("help_")
             filename = skill.trigger_action.replace("_", "-", 1) + ".md"
@@ -84,22 +98,119 @@ def selected_tree_note(note) -> SelectedTreeNote:
     return SelectedTreeNote(**note.model_dump())
 
 
+def web_evidence_fixture(fixture) -> WebPageEvidence:
+    return WebPageEvidence(**fixture.model_dump())
+
+
 def build_messages(*, step, canonical_messages, prompts, skills):
     builder = AgentContextBuilder()
     context = step.context
     if context.stage == "help":
-        return builder.build_help_messages(canonical_messages=canonical_messages,
-            prompts=prompts, skills=skills, topics=context.topics), "MetaListHelpResponse"
+        messages = builder.build_help_messages(
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+            skills=skills,
+            topics=context.topics,
+        )
+        help_request = messages[-1]
+        messages = builder.append_web_access_context(
+            messages=messages[:-1],
+            settings=DEFAULT_AGENT_WEB_SETTINGS,
+            available_urls=(),
+        )
+        messages.append(help_request)
+        return messages, "MetaListHelpResponse"
     snapshot = fixture_snapshot(context)
+    retained_web_evidence = ()
+    if context.stage == "web_action":
+        retained_web_evidence = tuple(
+            web_evidence_fixture(fixture)
+            for fixture in context.retained_web_evidence
+        )
+    if context.stage == "web_respond":
+        retained_web_evidence = tuple(
+            web_evidence_fixture(fixture)
+            for fixture in context.web_evidence
+        )
+    capabilities = build_web_url_capabilities(
+        canonical_messages=canonical_messages,
+        selected_note=snapshot.selected_note,
+        investigation_evidence=None,
+        retained_web_urls=tuple(
+            page.final_url for page in retained_web_evidence
+        ),
+    )
+    if context.stage in {"web_action", "web_respond"}:
+        settings = AgentWebSettings(mode=context.mode)
+        messages = builder.build_initial_messages(
+            canonical_messages=canonical_messages,
+            prompts=prompts,
+        )
+        messages = builder.append_selected_note_context(
+            messages=messages,
+            snapshot=snapshot,
+        )
+        messages = builder.append_web_access_context(
+            messages=messages,
+            settings=settings,
+            available_urls=capabilities.normalized_urls,
+        )
+        messages = builder.activate_skill(
+            messages=messages,
+            skill=skills.for_action("web_browsing"),
+        )
+        if retained_web_evidence:
+            messages = builder.append_retained_web_evidence(
+                messages=messages,
+                evidence=retained_web_evidence,
+                omitted_count=0,
+            )
+        if context.stage == "web_respond":
+            return builder.append_final_request(
+                messages=messages,
+                action=RespondAction(kind="respond", basis=context.basis),
+                prompts=prompts,
+                current_user_request=canonical_messages[-1]["content"],
+                reference_note_ids=snapshot.selected_note.reference_note_ids,
+                reference_web_evidence=retained_web_evidence,
+            ), ""
+        for exchange in context.tool_exchanges:
+            messages = builder.append_web_tool_result(
+                messages=messages,
+                action_payload=exchange.action_payload,
+                action_name=exchange.action_name,
+                result_payload=exchange.result_payload,
+                prompts=prompts,
+            )
+        messages = builder.append_web_action_request(
+            messages=messages,
+            settings=settings,
+        )
+        response_model = "ContextualWebActionEnvelope"
+        return messages, response_model
     if context.stage == "route":
-        return builder.build_scoped_route_messages(canonical_messages=canonical_messages,
-            prompts=prompts, snapshot=snapshot), "ScopedRouteEnvelope"
+        messages = builder.build_scoped_route_messages(canonical_messages=canonical_messages,
+            prompts=prompts, snapshot=snapshot)
+        route_request = messages[-1]
+        messages = builder.append_web_access_context(
+            messages=messages[:-1],
+            settings=DEFAULT_AGENT_WEB_SETTINGS,
+            available_urls=capabilities.normalized_urls,
+        )
+        messages.append(route_request)
+        return messages, "ScopedRouteEnvelope"
     if context.stage == "respond":
         messages = builder.build_initial_messages(canonical_messages=canonical_messages, prompts=prompts)
         messages = builder.append_selected_note_context(messages=messages, snapshot=snapshot)
+        messages = builder.append_web_access_context(
+            messages=messages,
+            settings=DEFAULT_AGENT_WEB_SETTINGS,
+            available_urls=capabilities.normalized_urls,
+        )
         return builder.append_final_request(messages=messages, action=RespondAction(kind="respond", basis=context.basis),
             prompts=prompts, current_user_request=canonical_messages[-1]["content"],
-            reference_note_ids=snapshot.selected_note.reference_note_ids), ""
+            reference_note_ids=snapshot.selected_note.reference_note_ids,
+            reference_web_evidence=()), ""
     assert context.stage == "investigation"
     state = InvestigationState.start(snapshot=snapshot,
         settings=AgentRetrievalSettings(max_page_approximate_tokens=500_000))
@@ -108,6 +219,11 @@ def build_messages(*, step, canonical_messages, prompts, skills):
         returned_approximate_token_count=estimate_input_tokens(context.result_trees))
     messages, _references = builder.build_scoped_final_messages(canonical_messages=canonical_messages,
         prompts=prompts, state=state, evidence_payload=evidence, basis=context.basis)
+    messages.insert(-1, builder.append_web_access_context(
+        messages=[],
+        settings=DEFAULT_AGENT_WEB_SETTINGS,
+        available_urls=capabilities.normalized_urls,
+    )[0])
     return messages, ""
 
 

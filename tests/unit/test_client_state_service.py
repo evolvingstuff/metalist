@@ -147,6 +147,7 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.openai_model": "gpt-5.6-sol",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
+        "pref.ai.web_access_mode": "contextual",
         "pref.ai.tagging.vocabulary": "new",
         "pref.ai.tagging.focus": "both",
         "pref.ai.cloud_privacy_policy": (
@@ -245,6 +246,18 @@ def test_save_client_preferences_rejects_invalid_ai_diagnostic_visibility(
     with pytest.raises(RuntimeError, match="Invalid client preference value"):
         save_client_preferences(
             preferences={"pref.ai.show_diagnostics": "sometimes"},
+            token="",
+        )
+
+
+def test_save_client_preferences_rejects_invalid_agent_web_access_mode(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    with pytest.raises(RuntimeError, match="Invalid client preference value"):
+        save_client_preferences(
+            preferences={"pref.ai.web_access_mode": "context"},
             token="",
         )
 

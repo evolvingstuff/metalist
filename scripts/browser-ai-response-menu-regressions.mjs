@@ -51,4 +51,54 @@ export async function checkAiResponseMenu(page) {
         await page.keyboard.press('Escape');
     }
     console.log('PASS Copy Response across bubble text, padding, and links in both themes');
+
+    const copiedResponseNoteId = await page.evaluate(async () => {
+        const {NotesAPI} = await import('/static/js/modules/api-client.js');
+        const created = await NotesAPI.createNote(null, '');
+        await NotesAPI.saveNote(
+            created.id,
+            '<div class="ai-chat-message-content meta-markdown" data-markdown-rendered="true">'
+            + '<p>Copied AI response.</p><section class="ai-chat-references" aria-label="References">'
+            + '<details class="ai-chat-references-disclosure">'
+            + '<summary class="ai-chat-references-heading">References</summary>'
+            + '<ol><li class="ai-chat-web-reference"><span class="ai-chat-reference-number">[1]</span>'
+            + '<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>'
+            + '</li></ol></details></section></div>',
+            '@llm',
+        );
+        return created.id;
+    });
+    await page.reload();
+    await page.waitForSelector('[data-app-ready="true"]');
+    const disclosureSelector = (
+        `[data-note-id="${copiedResponseNoteId}"] `
+        + 'details.ai-chat-references-disclosure'
+    );
+    await page.waitForSelector(`${disclosureSelector} > summary`);
+    assert.equal(await page.$eval(disclosureSelector, details => details.open), false);
+    for (const expectedOpen of [true, false]) {
+        await page.click(`${disclosureSelector} > summary`);
+        await page.waitForFunction(
+            (selector, isOpen) => document.querySelector(selector)?.open === isOpen,
+            {},
+            disclosureSelector,
+            expectedOpen,
+        );
+        const editingState = await page.evaluate(async noteId => {
+            const {ModeContextInstance} = await import(
+                '/static/js/modules/mode-manager/mode-context.js'
+            );
+            return {
+                isEditing: ModeContextInstance.isEditing,
+                noteHasEditingClass: document.querySelector(
+                    `[data-note-id="${noteId}"]`,
+                ).classList.contains('editing'),
+            };
+        }, copiedResponseNoteId);
+        assert.deepEqual(editingState, {
+            isEditing: false,
+            noteHasEditingClass: false,
+        });
+    }
+    console.log('PASS copied AI response References opens and closes without edit mode');
 }

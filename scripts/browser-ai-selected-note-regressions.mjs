@@ -28,7 +28,13 @@ export async function checkAiSelectedNote(page) {
             if (path === '/api2/ai/chat') {
                 const request = JSON.parse(options.body);
                 window.selectedNoteTest.requests.push(request);
-                return new Response(JSON.stringify({type: 'done', content: 'Test response', rendered_content: '<p>Test response</p>'}) + '\n',
+                return new Response(JSON.stringify({
+                    type: 'done',
+                    content: 'Test response',
+                    rendered_content: '<p>Test response</p>',
+                    reference_note_ids: [],
+                    reference_web_ids: [],
+                }) + '\n',
                     {headers: {'Content-Type': 'application/x-ndjson'}});
             }
             const response = await originalFetch(url, options);

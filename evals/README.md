@@ -44,6 +44,7 @@ provider, including judges and retries. See the
 # Validate all cases against current production code; no paid calls.
 .venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
   evals/cases/help/*.json evals/cases/selected-note/*.json \
+  evals/cases/web/*.json \
   --judge evals/judge.json --output /tmp/metalist-regressions-check
 
 # Record current performance before editing production prompts.
@@ -72,6 +73,7 @@ calls. No hand-maintained skill dependencies or frozen-prompt execution are used
 # Preview affected cases and why they were selected; no API calls.
 .venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
   evals/cases/help/*.json evals/cases/selected-note/*.json \
+  evals/cases/web/*.json \
   --judge evals/judge.json --changed-since /tmp/metalist-before/report.json \
   --output /tmp/metalist-affected-preview
 
@@ -139,7 +141,8 @@ instructions, and reference facts. Every criterion must pass; missing or duplica
 judge criteria count as errors. Do not revise expectations simply to pass a new prompt.
 
 Each step has `conversation`, a tagged `context`, `max_output_tokens`, and
-`expectation`. Supported contexts are `route`, `help`, `respond`, and `investigation`.
+`expectation`. Supported contexts are `route`, `help`, `respond`, `investigation`,
+`web_action`, and `web_respond`.
 Scope metadata and selected-note state are explicit. Selection fixtures can provide
 a complete containing tree with required node IDs, parent IDs, content, and tags;
 production code derives the edited-node marker from the selected ID. Existing

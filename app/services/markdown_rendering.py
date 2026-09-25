@@ -15,6 +15,9 @@ _ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^```([^\s`]*)\s*$")
 _TABLE_DELIMITER_CELL_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
 _AUTO_LINK_RE = re.compile(r"(?<![\"'=])(https?://[^\s<]+)")
+_CURRENCY_AMOUNT_RE = re.compile(
+    r"\$(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\dA-Za-z_.$])"
+)
 _ALLOWED_MARKDOWN_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
 
 
@@ -363,6 +366,7 @@ def _render_inline_markdown(text: str, *, allow_links: bool) -> str:
     if allow_links:
         rendered = _extract_markdown_links(rendered, placeholders)
         rendered = _extract_auto_links(rendered, placeholders)
+    rendered = _extract_currency_amounts(rendered, placeholders)
     rendered = _extract_latex_math(rendered, placeholders)
     rendered = _replace_strong(rendered)
     rendered = _replace_emphasis(rendered)
@@ -525,6 +529,48 @@ def _extract_latex_math(text: str, placeholders: List[_InlinePlaceholder]) -> st
         cursor = close_index + len(delimiter.closer)
 
     return "".join(output)
+
+
+def _extract_currency_amounts(
+    text: str,
+    placeholders: List[_InlinePlaceholder],
+) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    output: List[str] = []
+    cursor = 0
+    for match in _CURRENCY_AMOUNT_RE.finditer(text):
+        output.append(text[cursor:match.start()])
+        if _is_escaped_delimiter(text=text, index=match.start()):
+            output.append(match.group(0))
+        elif _is_currency_amount(text=text, match=match):
+            output.append(
+                _make_placeholder(
+                    placeholders=placeholders,
+                    html_value=match.group(0),
+                )
+            )
+        else:
+            output.append(match.group(0))
+        cursor = match.end()
+    output.append(text[cursor:])
+    return "".join(output)
+
+
+def _is_currency_amount(*, text: str, match: re.Match[str]) -> bool:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    amount_end = match.end()
+    next_dollar = _find_unescaped_char(text=text, start=amount_end, target="$")
+    if next_dollar == -1:
+        return True
+    if next_dollar + 1 < len(text) and text[next_dollar + 1].isdigit():
+        return True
+    between_amounts = text[amount_end:next_dollar]
+    if "**" in between_amounts or "__" in between_amounts:
+        return True
+    return any(character.isalpha() for character in between_amounts)
 
 
 def _latex_delimiter_at(*, text: str, index: int) -> _LatexDelimiter | None:

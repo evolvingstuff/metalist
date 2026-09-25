@@ -13,6 +13,7 @@ import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
 import { shouldExitEditingBeforeCollapseToggle } from '../services/collapse-editing-policy-service.js';
+import { shouldMarkExpandedEditSession } from '../services/edit-session-collapse-policy-service.js';
 import { resolveNotePasteResponse } from '../services/clipboard-shortcut-policy-service.js';
 import {
     recordNoteInteractionIfNew,
@@ -848,7 +849,12 @@ async function setNoteCollapse(noteId, collapsed) {
     } else {
         await NotesAPI.expandNote(noteId);
         await recordNoteInteractionIfNew(noteId, 'expand');
-        if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
+        if (shouldMarkExpandedEditSession({
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            targetNoteId: noteId,
+            expandedPersisted: ModeContext.editSessionExpandedPersisted,
+        })) {
             ModeContext.markEditSessionExpandedPersisted();
         }
     }

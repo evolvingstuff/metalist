@@ -18,6 +18,7 @@ from app.services.agent.history import record_provider_event
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.help_catalog import MetaListHelpResponse
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import ContextualWebActionEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.tagging import TagBatchResult, TagOperationIntent
@@ -31,6 +32,7 @@ _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
 _ROUTE_MAX_OUTPUT_TOKENS = 512
 _SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
+_WEB_ACTION_MAX_OUTPUT_TOKENS = 4_096
 
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
@@ -42,6 +44,7 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
+        ContextualWebActionEnvelope: _WEB_ACTION_MAX_OUTPUT_TOKENS,
     }
     if response_model not in limits:
         raise RuntimeError(

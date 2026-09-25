@@ -70,6 +70,36 @@ export function calculateAiChatPanelWidth({ pointerClientX, viewportWidth }) {
 }
 
 
+export function synchronizeExpandedReferenceMessage(
+    expandedMessageIds,
+    messageId,
+    isExpanded,
+) {
+    if (
+        expandedMessageIds === null
+        || typeof expandedMessageIds !== 'object'
+        || typeof expandedMessageIds.has !== 'function'
+        || typeof expandedMessageIds.add !== 'function'
+        || typeof expandedMessageIds.delete !== 'function'
+    ) {
+        throw new TypeError('expandedMessageIds must be a set-like object');
+    }
+    if (typeof messageId !== 'string' || messageId === '') {
+        throw new TypeError('messageId must be a non-empty string');
+    }
+    if (typeof isExpanded !== 'boolean') {
+        throw new TypeError('isExpanded must be a boolean');
+    }
+
+    const wasExpanded = expandedMessageIds.has(messageId);
+    if (isExpanded && !wasExpanded) {
+        expandedMessageIds.add(messageId);
+    } else if (!isExpanded && wasExpanded) {
+        expandedMessageIds.delete(messageId);
+    }
+}
+
+
 export function collapseCompletedActivityPairs(activities) {
     if (!Array.isArray(activities)) {
         throw new Error('collapseCompletedActivityPairs requires an activity array');
@@ -265,6 +295,15 @@ function validateAiStreamEvent(event) {
             || new Set(event.reference_note_ids).size !== event.reference_note_ids.length
         ) {
             throw new Error(`${event.type} requires unique reference_note_ids`);
+        }
+        if (
+            !Array.isArray(event.reference_web_ids)
+            || event.reference_web_ids.some((evidenceId) => (
+                typeof evidenceId !== 'string' || evidenceId.length === 0
+            ))
+            || new Set(event.reference_web_ids).size !== event.reference_web_ids.length
+        ) {
+            throw new Error(`${event.type} requires unique reference_web_ids`);
         }
     }
     if (

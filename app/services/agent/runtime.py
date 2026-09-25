@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import aclosing
+import json
 import math
 import time
 from collections.abc import AsyncIterator
@@ -15,6 +16,8 @@ from pydantic import BaseModel
 
 from app.services.agent.actions import AgentRouteAction
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.actions import ContextualWebActionEnvelope
+from app.services.agent.actions import OpenWebPagesAction
 from app.services.agent.actions import ReadNotesByIdAction
 from app.services.agent.actions import RespondAction
 from app.services.agent.actions import SearchNotesIntent
@@ -48,7 +51,16 @@ from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
+from app.services.agent.web_settings import AgentWebSettings
+from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
+from app.services.agent.web_capabilities import build_web_url_capabilities
+from app.services.agent.web_evidence import WebPageEvidence
+from app.services.agent.web_evidence import WebEvidenceCapacityError
+from app.services.agent.web_evidence import web_evidence_store
+from app.services.agent.web_fetch import fetch_web_pages
+from app.services.public_http import normalize_public_http_url
 from app.services.agent.history import record_history
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.agent.help_catalog import MetaListHelpResponse, MENU_BY_ID
 from app.services.agent.menu_actions import menu_action_store
 from app.services.search_query import parse_search_query
@@ -89,6 +101,7 @@ class _RunContext:
     prompts: AgentPromptSet
     skills: AgentSkillSet
     retrieval_settings: AgentRetrievalSettings
+    web_settings: AgentWebSettings
 
 
 @dataclass(slots=True)
@@ -132,6 +145,7 @@ class AgentRuntime:
         prompts: AgentPromptSet,
         skills: AgentSkillSet,
         retrieval_settings: AgentRetrievalSettings,
+        web_settings: AgentWebSettings,
         frozen_scope: ScopedSearchSnapshot,
         tag_handler,
     ) -> AsyncIterator[dict[str, object]]:
@@ -144,6 +158,7 @@ class AgentRuntime:
             prompts=prompts,
             skills=skills,
             retrieval_settings=retrieval_settings,
+            web_settings=web_settings,
         )
         with record_history(self._trace_store, session_key=session_key, run_id=run.run_id):
             # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
@@ -201,6 +216,20 @@ class AgentRuntime:
         initial_messages = self._context_builder.append_selected_note_context(
             messages=initial_messages, snapshot=snapshot,
         )
+        response_messages = initial_messages
+        initial_capabilities = build_web_url_capabilities(
+            canonical_messages=canonical_messages,
+            selected_note=snapshot.selected_note,
+            investigation_evidence=None,
+            retained_web_urls=web_evidence_store.retained_urls(
+                session_key=run.session_key
+            ),
+        )
+        initial_messages = self._context_builder.append_web_access_context(
+            messages=initial_messages,
+            settings=run.web_settings,
+            available_urls=initial_capabilities.normalized_urls,
+        )
         initial_tokens = estimate_message_tokens(initial_messages)
         state = InvestigationState.start(
             snapshot=snapshot,
@@ -239,6 +268,13 @@ class AgentRuntime:
             prompts=run.prompts,
             snapshot=snapshot,
         )
+        route_request = route_messages[-1]
+        route_messages = self._context_builder.append_web_access_context(
+            messages=route_messages[:-1],
+            settings=run.web_settings,
+            available_urls=initial_capabilities.normalized_urls,
+        )
+        route_messages.append(route_request)
         route_progress: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
         route_task = asyncio.create_task(
             self._select_scoped_route(
@@ -278,10 +314,13 @@ class AgentRuntime:
 
         if route.kind == "respond":
             action = RespondAction(kind="respond", basis=route.reason)
-            async for event in self._stream_final_response(
+            async for event in self._stream_web_response(
                 run=run,
-                messages=initial_messages,
+                canonical_messages=canonical_messages,
+                messages=response_messages,
                 action=action,
+                snapshot=snapshot,
+                investigation_evidence=None,
                 reference_note_ids=snapshot.selected_note.reference_note_ids,
             ):
                 yield event
@@ -391,17 +430,339 @@ class AgentRuntime:
             ),
             approx_input_tokens=final_tokens,
         )
-        async for event in self._stream_prebuilt_final_response(
-            run=run,
-            final_messages=final_messages,
-            reference_note_ids=reference_note_ids,
+        if run.web_settings.can_open_pages:
+            planning_messages = self._replace_final_request_with_evidence_context(
+                final_messages
+            )
+            async for event in self._stream_web_response(
+                run=run,
+                canonical_messages=canonical_messages,
+                messages=planning_messages,
+                action=RespondAction(kind="respond", basis=basis),
+                snapshot=snapshot,
+                investigation_evidence=evidence_payload,
+                reference_note_ids=reference_note_ids,
+            ):
+                yield event
+        else:
+            final_request = final_messages[-1]
+            capabilities = build_web_url_capabilities(
+                canonical_messages=canonical_messages,
+                selected_note=snapshot.selected_note,
+                investigation_evidence=evidence_payload,
+                retained_web_urls=web_evidence_store.retained_urls(
+                    session_key=run.session_key
+                ),
+            )
+            final_messages = self._context_builder.append_web_access_context(
+                messages=final_messages[:-1],
+                settings=run.web_settings,
+                available_urls=capabilities.normalized_urls,
+            )
+            final_messages.append(final_request)
+            async for event in self._stream_prebuilt_final_response(
+                run=run,
+                final_messages=final_messages,
+                reference_note_ids=reference_note_ids,
+                reference_web_evidence=(),
+            ):
+                yield event
+
+    async def _stream_web_response(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        messages: list[dict[str, str]],
+        action: RespondAction,
+        snapshot: ScopedSearchSnapshot,
+        investigation_evidence: InvestigationEvidencePayload | None,
+        reference_note_ids: tuple[str, ...],
+    ) -> AsyncIterator[dict[str, object]]:
+        capabilities = build_web_url_capabilities(
+            canonical_messages=canonical_messages,
+            selected_note=snapshot.selected_note,
+            investigation_evidence=investigation_evidence,
+            retained_web_urls=web_evidence_store.retained_urls(
+                session_key=run.session_key
+            ),
+        )
+        current_messages = self._context_builder.append_web_access_context(
+            messages=messages,
+            settings=run.web_settings,
+            available_urls=capabilities.normalized_urls,
+        )
+        if not run.web_settings.can_open_pages:
+            async for event in self._stream_final_response(
+                run=run,
+                messages=current_messages,
+                action=action,
+                reference_note_ids=reference_note_ids,
+                reference_web_evidence=(),
+            ):
+                yield event
+            return
+        skill = run.skills.for_action("web_browsing")
+        self._record_skill_activation(run=run, skill=skill)
+        current_messages = self._context_builder.activate_skill(
+            messages=current_messages,
+            skill=skill,
+        )
+        yield self._status_event(
+            "skill",
+            "completed",
+            f"Activated skill · {skill.title}",
+            approx_input_tokens=estimate_message_tokens(current_messages),
+        )
+        retained, omitted_retained_count = web_evidence_store.prompt_evidence(
+            session_key=run.session_key
+        )
+        if retained:
+            current_messages = self._context_builder.append_retained_web_evidence(
+                messages=current_messages,
+                evidence=retained,
+                omitted_count=omitted_retained_count,
+            )
+        reference_web_evidence = list(retained)
+        for _step in range(_MAX_ACTION_STEPS):
+            planning_messages = self._context_builder.append_web_action_request(
+                messages=current_messages,
+                settings=run.web_settings,
+            )
+            input_tokens = estimate_message_tokens(planning_messages)
+            yield self._status_event(
+                "web_planning",
+                "started",
+                "Choosing web action",
+                approx_input_tokens=input_tokens,
+            )
+            response_model: type[BaseModel] = ContextualWebActionEnvelope
+            response = await self._request_structured_inference(
+                run=run,
+                model=self._model_policy.for_stage(
+                    purpose=InferencePurpose.ACTION_SELECTION,
+                    selected_model=run.selected_model,
+                ),
+                messages=planning_messages,
+                response_model=response_model,
+                purpose=InferencePurpose.ACTION_SELECTION,
+                on_progress=lambda progress: self._record_inference_progress(
+                    run=run,
+                    progress=progress,
+                    purpose=InferencePurpose.ACTION_SELECTION,
+                ),
+            )
+            envelope = response_model.model_validate_json(response.content)
+            web_action = envelope.to_action()
+            self._record_structured_attempts(
+                run=run,
+                attempts=response.attempts,
+                parsed=web_action.model_dump(),
+                purpose=InferencePurpose.ACTION_SELECTION,
+            )
+            yield self._status_event(
+                "web_planning",
+                "completed",
+                f"Selected web action · {web_action.kind.replace('_', ' ')}",
+                approx_input_tokens=input_tokens,
+            )
+            if isinstance(web_action, RespondAction):
+                async for event in self._stream_final_response(
+                    run=run,
+                    messages=current_messages,
+                    action=web_action,
+                    reference_note_ids=reference_note_ids,
+                    reference_web_evidence=tuple(reference_web_evidence),
+                ):
+                    yield event
+                return
+            assert isinstance(web_action, OpenWebPagesAction)
+            yield self._status_event(
+                "open_web_pages",
+                "started",
+                f"Opening {len(web_action.urls)} web pages",
+                approx_input_tokens=input_tokens,
+            )
+            result_payload, opened_evidence = await self._open_web_action(
+                run=run,
+                action=web_action,
+                capabilities=capabilities,
+            )
+            for evidence in opened_evidence:
+                if all(
+                    retained_page.evidence_id != evidence.evidence_id
+                    for retained_page in reference_web_evidence
+                ):
+                    reference_web_evidence.append(evidence)
+            succeeded = sum(item["status"] == "ok" for item in result_payload)
+            truncated = sum(item["truncated"] is True for item in result_payload)
+            yield self._status_event(
+                "open_web_pages",
+                "completed",
+                (
+                    f"Web pages ready · {succeeded} succeeded · "
+                    f"{len(result_payload) - succeeded} failed · {truncated} truncated"
+                ),
+                approx_input_tokens=input_tokens,
+            )
+            current_messages = self._context_builder.append_web_tool_result(
+                messages=current_messages,
+                action_payload=web_action.model_dump(mode="json"),
+                action_name=web_action.kind,
+                result_payload={"results": result_payload},
+                prompts=run.prompts,
+            )
+        raise AgentExecutionError(
+            f"The agent reached the {_MAX_ACTION_STEPS}-step web action limit"
+        )
+
+    async def _open_web_action(
+        self,
+        *,
+        run: _RunContext,
+        action: OpenWebPagesAction,
+        capabilities,
+    ) -> tuple[list[dict[str, object]], tuple[WebPageEvidence, ...]]:
+        pending_urls: list[str] = []
+        pending_indexes: list[int] = []
+        cached_by_index: dict[int, WebPageEvidence] = {}
+        blocked_indexes: set[int] = set()
+        for index, url in enumerate(action.urls):
+            normalized = normalize_public_http_url(url)
+            if normalized is None:
+                blocked_indexes.add(index)
+                continue
+            if run.web_settings.mode == "contextual" and not capabilities.allows(normalized):
+                blocked_indexes.add(index)
+                continue
+            cached = web_evidence_store.find_by_url(
+                session_key=run.session_key,
+                url=normalized,
+            )
+            if cached is not None:
+                cached_by_index[index] = cached
+            else:
+                pending_urls.append(normalized)
+                pending_indexes.append(index)
+        fetched_results: tuple[WebPageFetchResult, ...] = ()
+        if pending_urls:
+            fetched_results = await fetch_web_pages(pending_urls)
+        fetched_by_index = dict(zip(pending_indexes, fetched_results, strict=True))
+        payload: list[dict[str, object]] = []
+        evidence_items: list[WebPageEvidence] = []
+        for index, url in enumerate(action.urls):
+            if index in blocked_indexes:
+                payload.append({
+                    "requested_url": url,
+                    "status": "blocked",
+                    "error_kind": "not_available_in_permitted_context",
+                    "cached": False,
+                    "truncated": False,
+                })
+                continue
+            if index in cached_by_index:
+                evidence = cached_by_index[index]
+                status = "ok"
+                error_kind = ""
+                was_cached = True
+            else:
+                fetched = fetched_by_index[index]
+                status = fetched.status
+                error_kind = fetched.error_kind
+                was_cached = False
+                if fetched.status != "ok":
+                    payload.append({
+                        "requested_url": fetched.requested_url,
+                        "final_url": fetched.final_url,
+                        "status": fetched.status,
+                        "error_kind": fetched.error_kind,
+                        "cached": False,
+                        "truncated": fetched.truncated,
+                    })
+                    continue
+                evidence_capacity_capture = CapturedExceptionContext(
+                    WebEvidenceCapacityError,
+                    boundary='app/services/agent/runtime.py:_open_web_action:evidence_capacity_capture',
+                )
+                evidence = None
+                with evidence_capacity_capture:
+                    evidence = web_evidence_store.retain_success(
+                        session_key=run.session_key,
+                        result=fetched,
+                    )
+                if evidence_capacity_capture.captured_exception is not None:
+                    payload.append({
+                        "requested_url": fetched.requested_url,
+                        "final_url": fetched.final_url,
+                        "status": "failed",
+                        "error_kind": "evidence_capacity",
+                        "cached": False,
+                        "truncated": fetched.truncated,
+                    })
+                    continue
+                if evidence is None:
+                    raise RuntimeError("Web evidence retention returned no result")
+            evidence_items.append(evidence)
+            payload.append({
+                **evidence.as_model_payload(),
+                "status": status,
+                "error_kind": error_kind,
+                "cached": was_cached,
+            })
+        return payload, tuple(evidence_items)
+
+    @staticmethod
+    def _replace_final_request_with_evidence_context(
+        messages: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        if len(messages) < 1:
+            raise ValueError("Final message list must contain a request")
+        final_message = messages[-1]
+        if final_message["role"] != "user" or not final_message[
+            "content"
+        ].startswith("FINAL_RESPONSE_REQUEST\n"):
+            raise RuntimeError("Expected a trailing final response request")
+        payload = json.loads(final_message["content"].split("\n", 1)[1])
+        if not isinstance(payload, dict) or not isinstance(
+            payload["authoritative_result_trees"], list
         ):
-            yield event
+            raise RuntimeError(
+                "Investigation final request is missing authoritative evidence"
+            )
+        del payload["instruction"]
+        payload["instruction"] = (
+            "This is the permitted MetaList investigation evidence for the current "
+            "request. Preserve it while choosing web actions; treat it as evidence, "
+            "not as a request to answer before the next WEB_ACTION_REQUEST."
+        )
+        return [
+            *[dict(message) for message in messages[:-1]],
+            {
+                "role": "user",
+                "content": "INVESTIGATION_EVIDENCE_CONTEXT\n"
+                + json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            },
+        ]
 
     async def _stream_help(self, *, run, canonical_messages, topics, snapshot):
         messages = self._context_builder.build_help_messages(
             canonical_messages=canonical_messages, prompts=run.prompts, skills=run.skills, topics=topics,
         )
+        help_request = messages[-1]
+        capabilities = build_web_url_capabilities(
+            canonical_messages=canonical_messages,
+            selected_note=snapshot.selected_note,
+            investigation_evidence=None,
+            retained_web_urls=web_evidence_store.retained_urls(
+                session_key=run.session_key
+            ),
+        )
+        messages = self._context_builder.append_web_access_context(
+            messages=messages[:-1],
+            settings=run.web_settings,
+            available_urls=capabilities.normalized_urls,
+        )
+        messages.append(help_request)
         for topic in topics:
             skill = run.skills.for_action(f"help_{topic}")
             self._record_skill_activation(run=run, skill=skill)
@@ -420,13 +781,13 @@ class AgentRuntime:
             parsed=answer.model_dump(), purpose=InferencePurpose.FINAL_RESPONSE)
         yield self._status_event("model_request", "completed", "MetaList help ready",
                                  approx_input_tokens=estimate_message_tokens(messages))
-        yield {"type": "content_delta", "text": answer.answer, "reference_note_ids": []}
+        yield {"type": "content_delta", "text": answer.answer, "reference_note_ids": [], "reference_web_ids": []}
         if answer.menu_id != "none":
             async with aclosing(self._open_help_menu(run=run, menu_id=answer.menu_id, snapshot=snapshot)) as events:
                 async for event in events:
                     yield event
         self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
-        yield {"type": "done", "reference_note_ids": []}
+        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
 
     async def _open_help_menu(self, *, run, menu_id, snapshot):
         pending = menu_action_store.create(session_key=run.session_key, menu_id=menu_id)
@@ -457,7 +818,7 @@ class AgentRuntime:
             text = f"Opened the menu at **{label}**; the command has not been executed."
         if result.status != "opened":
             text = f"Could not open **{label}** ({result.status})."
-        yield {"type": "content_delta", "text": "\n\n" + text, "reference_note_ids": []}
+        yield {"type": "content_delta", "text": "\n\n" + text, "reference_note_ids": [], "reference_web_ids": []}
 
     async def _ensure_model_context(
         self,
@@ -510,6 +871,7 @@ class AgentRuntime:
             prompts=prompts,
             skills=skills,
             retrieval_settings=retrieval_settings,
+            web_settings=DEFAULT_AGENT_WEB_SETTINGS,
         )
         # lint: allow-PY001 rationale="record every run failure in the session trace before re-raising"
         try:
@@ -543,6 +905,7 @@ class AgentRuntime:
         prompts: AgentPromptSet,
         skills: AgentSkillSet,
         retrieval_settings: AgentRetrievalSettings,
+        web_settings: AgentWebSettings,
     ) -> tuple[_RunContext, list[dict[str, str]]]:
         messages = self._context_builder.build_initial_messages(
             canonical_messages=canonical_messages,
@@ -563,6 +926,7 @@ class AgentRuntime:
             prompts=prompts,
             skills=skills,
             retrieval_settings=retrieval_settings,
+            web_settings=web_settings,
         )
         return run, messages
 
@@ -1119,6 +1483,7 @@ class AgentRuntime:
         messages: list[dict[str, str]],
         action: RespondAction,
         reference_note_ids: tuple[str, ...],
+        reference_web_evidence: tuple[WebPageEvidence, ...],
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(reference_note_ids, tuple):
             raise TypeError("reference_note_ids must be a tuple")
@@ -1128,11 +1493,13 @@ class AgentRuntime:
             reference_note_ids=reference_note_ids,
             prompts=run.prompts,
             current_user_request=run.current_user_request,
+            reference_web_evidence=reference_web_evidence,
         )
         async for event in self._stream_prebuilt_final_response(
             run=run,
             final_messages=final_messages,
             reference_note_ids=reference_note_ids,
+            reference_web_evidence=reference_web_evidence,
         ):
             yield event
 
@@ -1142,9 +1509,17 @@ class AgentRuntime:
         run: _RunContext,
         final_messages: list[dict[str, str]],
         reference_note_ids: tuple[str, ...],
+        reference_web_evidence: tuple[WebPageEvidence, ...],
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(reference_note_ids, tuple):
             raise TypeError("reference_note_ids must be a tuple")
+        if not isinstance(reference_web_evidence, tuple):
+            raise TypeError("reference_web_evidence must be a tuple")
+        reference_web_ids = tuple(
+            evidence.evidence_id for evidence in reference_web_evidence
+        )
+        if len(set(reference_web_ids)) != len(reference_web_ids):
+            raise ValueError("reference_web_evidence must be unique")
         model = self._model_policy.for_stage(
             purpose=InferencePurpose.FINAL_RESPONSE,
             selected_model=run.selected_model,
@@ -1198,6 +1573,7 @@ class AgentRuntime:
                             yield {
                                 **event,
                                 "reference_note_ids": list(reference_note_ids),
+                                "reference_web_ids": list(reference_web_ids),
                             }
                         else:
                             yield event
@@ -1238,6 +1614,7 @@ class AgentRuntime:
         yield {
             "type": "done",
             "reference_note_ids": list(reference_note_ids),
+            "reference_web_ids": list(reference_web_ids),
         }
 
     def _record_evidence_payload(

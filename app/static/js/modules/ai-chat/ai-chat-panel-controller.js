@@ -23,6 +23,7 @@ import {
     formatOpenAiCostUsd,
     selectPersistentNonDiagnosticActivities,
     splitSearchActivityLabel,
+    synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
 } from './ai-chat-panel-service.js';
 import {
@@ -161,6 +162,8 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'context_narrowing',
     'context_narrowing_plan',
     'context_narrowing_test',
+    'web_planning',
+    'open_web_pages',
 ]);
 
 
@@ -1554,11 +1557,11 @@ class AiChatPanelController {
                         this._expandedReferenceMessageIds.has(message.id)
                     );
                     referenceDisclosure.addEventListener('toggle', () => {
-                        if (referenceDisclosure.open) {
-                            this._expandedReferenceMessageIds.add(message.id);
-                        } else {
-                            this._expandedReferenceMessageIds.delete(message.id);
-                        }
+                        synchronizeExpandedReferenceMessage(
+                            this._expandedReferenceMessageIds,
+                            message.id,
+                            referenceDisclosure.open,
+                        );
                     });
                 }
                 article.appendChild(content);

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,7 @@ from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.web_evidence import WebEvidenceStore
 from app.services.openai_credentials import OpenAICredentialStatus
 
 
@@ -468,6 +470,43 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
     assert 'class="note-reference-link"' in rendered
 
 
+def test_ai_session_omits_stale_web_citation_after_evidence_clear(monkeypatch) -> None:
+    evidence_id = "75193dae-9e05-4a4e-94bf-417ffde18957"
+    store = AiChatSessionStore()
+    turn_id = store.start_turn(
+        session_key="session-key",
+        user_content="Summarize it",
+        provider="openai",
+        model="gpt-5.6-sol",
+    )
+    content = f"Previously supported claim. [[web:{evidence_id}]]"
+    store.append_delta(
+        session_key="session-key",
+        turn_id=turn_id,
+        delta_kind="content",
+        text=content,
+    )
+    store.complete_turn(
+        session_key="session-key",
+        turn_id=turn_id,
+        final_content=content,
+    )
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes, "web_evidence_store", WebEvidenceStore())
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+
+    response = ai_routes.get_ai_session(response=Response(), token="auth-token")
+
+    assert response.messages[1].content == content
+    assert "Previously supported claim." in response.messages[1].rendered_content
+    assert evidence_id not in response.messages[1].rendered_content
+    assert "ai-chat-references" not in response.messages[1].rendered_content
+
+
 def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> None:
     store = AiChatSessionStore()
     turn_id = store.start_turn(
@@ -565,6 +604,7 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
                     "is_collapsed": False,
                     "content": copied_note_content,
                     "tags": "@llm",
+                    "proposed_tags": "",
                 }
             ],
         )
@@ -700,6 +740,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             prompts,
             skills,
             retrieval_settings,
+            web_settings,
             frozen_scope,
             tag_handler,
         ):
@@ -713,6 +754,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert prompts.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
             assert skills == DEFAULT_AGENT_SKILLS
             assert retrieval_settings.max_page_approximate_tokens == 7_000
+            assert web_settings.mode == "none"
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
             yield {
@@ -720,17 +762,18 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
                 "action": "planning",
                 "status": "started",
                 "label": "Planning next action",
-                    "approx_input_tokens": 1_300,
-                    "output_tokens_received": 0,
-                    "duration_ms": 0.0,
+                "approx_input_tokens": 1_300,
+                "output_tokens_received": 0,
+                "duration_ms": 0.0,
             }
             yield {"type": "thinking_delta", "text": "Think"}
             yield {
                 "type": "content_delta",
                 "text": "Hi",
                 "reference_note_ids": [],
+                "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
@@ -794,14 +837,16 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         },
         {
             "type": "content_delta",
-            "text": "Hi",
-            "reference_note_ids": [],
-            "rendered_text": "<p>Hi</p>",
+                "text": "Hi",
+                "reference_note_ids": [],
+                "reference_web_ids": [],
+                "rendered_text": "<p>Hi</p>",
         },
         {
-            "type": "done",
-            "reference_note_ids": [],
-            "content": "Hi",
+                "type": "done",
+                "reference_note_ids": [],
+                "reference_web_ids": [],
+                "content": "Hi",
             "rendered_content": "<p>Hi</p>",
         },
     ]
@@ -862,12 +907,14 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
                 arguments["retrieval_settings"].max_page_approximate_tokens
                 == 20_000
             )
+            assert arguments["web_settings"].mode == "none"
             yield {
                 "type": "content_delta",
                 "text": "Hi from OpenAI",
                 "reference_note_ids": [],
+                "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
@@ -1209,11 +1256,12 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             prompts,
             skills,
             retrieval_settings,
+            web_settings,
             frozen_scope,
             tag_handler,
         ):
             del session_key, base_url, selected_model, thinking_level
-            del prompts, skills, retrieval_settings, frozen_scope
+            del prompts, skills, retrieval_settings, web_settings, frozen_scope
             assert canonical_messages == [
                 {"role": "user", "content": "Summarize testosterone notes"},
                 {"role": "assistant", "content": "Sleep affects testosterone."},
@@ -1223,8 +1271,9 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
                 "type": "content_delta",
                 "text": f"Bayes updates a prior. [[{stale_note_id}]]",
                 "reference_note_ids": [],
+                "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
 
     store = AiChatSessionStore()
     monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure_key', lambda **kwargs: 'fixture-boundary')
@@ -1282,6 +1331,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     assert events[3] == {
         "type": "done",
         "reference_note_ids": [],
+        "reference_web_ids": [],
         "content": "Bayes updates a prior.",
         "rendered_content": "<p>Bayes updates a prior.</p>",
     }
@@ -1304,11 +1354,12 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
             prompts,
             skills,
             retrieval_settings,
+            web_settings,
             frozen_scope,
             tag_handler,
         ):
             del session_key, base_url, selected_model, thinking_level
-            del canonical_messages, prompts, skills, retrieval_settings
+            del canonical_messages, prompts, skills, retrieval_settings, web_settings
             del frozen_scope
             raise InferenceProviderError("OpenAI generation failed")
             yield
@@ -1356,6 +1407,63 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
     ]
     assert snapshot["messages"][1]["status"] == "error"
     assert snapshot["messages"][1]["error"] == "OpenAI generation failed"
+
+
+def test_stream_chat_persists_data_free_diagnostic_for_internal_failure(
+    monkeypatch,
+) -> None:
+    store = AiChatSessionStore()
+    repository = Path(__file__).resolve().parents[2]
+    namespace: dict[str, object] = {}
+    source = compile(
+        "def fail():\n    raise AttributeError('PRIVATE_SEARCH_RESPONSE')",
+        str(repository / "app" / "services" / "agent" / "openai_inference.py"),
+        "exec",
+    )
+    exec(source, namespace)
+    fail = namespace["fail"]
+
+    class FailingRuntime:
+        async def stream_scoped(self, **arguments):
+            del arguments
+            fail()
+            yield
+
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FailingRuntime())
+    monkeypatch.setattr(
+        ai_routes.token_service,
+        "get_session_key",
+        lambda token: "session-key",
+    )
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+
+    response = ai_routes.stream_ai_chat(
+        payload=ai_routes.AiChatRequest(
+            selected_note_id="",
+            provider="openai",
+            model="gpt-5.6-sol",
+            thinking_level="high",
+            show_diagnostics=False,
+            message="Hello",
+            scope=_all_notes_scope(),
+        ),
+        token="auth-token",
+    )
+
+    async def read_events() -> None:
+        async for _chunk in response.body_iterator:
+            pass
+
+    with pytest.raises(AttributeError, match="PRIVATE_SEARCH_RESPONSE"):
+        asyncio.run(read_events())
+    snapshot = store.snapshot(session_key="session-key")
+    assert snapshot["messages"][1]["status"] == "error"
+    assert snapshot["messages"][1]["error"] == (
+        "Internal agent error (AttributeError at "
+        "app/services/agent/openai_inference.py:2)"
+    )
+    assert "PRIVATE_SEARCH_RESPONSE" not in snapshot["messages"][1]["error"]
 
 
 @pytest.mark.parametrize("request_type, fields", [

@@ -218,6 +218,32 @@ so it can be opened after a failure. Its evidence event contains the exact one
 payload sent for answer generation, and Copy all produces complete formatted JSON.
 Traces are never persisted.
 
+## Web action loop
+
+Each run freezes `pref.ai.web_access_mode` with the note scope. `none` exposes no
+web action schema, while `contextual` and `full` expose only `open_web_pages`.
+Full mode permits direct public page URLs proposed by the model; it does not add a
+search-engine action. Ordinary lookups open a Google results URL through
+`open_web_pages`, then may open useful result URLs in another batch. Google and
+source pages use the application-owned fetcher, independent of the inference
+provider. The application validates every contextual URL
+against capabilities built only from user messages, disclosure-safe selected or
+investigation evidence, and retained web evidence. It never scans hidden NoteStore
+records to authorize a URL.
+
+The conditionally loaded `web_browsing_v1` skill describes batching, citations,
+partial failures, and the untrusted-content boundary. Application checks remain
+authoritative. Page-open actions accept at most eight independent URLs. Page work
+is concurrent and results stay in submitted order; normalized duplicates share one
+retained evidence object.
+
+Opened pages enter a bounded, session-owned evidence store. Subsequent planning
+can reuse them without another request, but links merely mentioned by their page
+bodies do not become contextual capabilities. The final response receives exact
+`[[web:UUID]]` tokens and a catalog of allowed external references. Streaming,
+reload, copying an answer to a note, and mixed note/web reference rendering all
+use that same authorization scope.
+
 ## Provider Details
 
 OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted

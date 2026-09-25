@@ -2,7 +2,11 @@ import { ApplicationState } from '../../app/static/js/modules/application-state.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { isViewModeNoteLink, resolveNonContentNoteSelectionTarget } from '../../app/static/js/modules/mode-manager/services/note-click-target-service.js';
+import {
+    isViewModeNoteDisclosureToggle,
+    isViewModeNoteLink,
+    resolveNonContentNoteSelectionTarget,
+} from '../../app/static/js/modules/mode-manager/services/note-click-target-service.js';
 
 const source = readFileSync(new URL(
     '../../app/static/js/modules/mode-manager/events/mouse-events.js', import.meta.url,
@@ -24,7 +28,8 @@ function harness(isEditing) {
     label.closest = (selector) => ({ 'a[href]': anchor, '.note': note, '.note-content': content })[selector] ?? null;
     const events = [];
     const dependencies = {
-        Element, isViewModeNoteLink, resolveNonContentNoteSelectionTarget,
+        Element, isViewModeNoteDisclosureToggle, isViewModeNoteLink,
+        resolveNonContentNoteSelectionTarget,
         ModeContext: { isEditing, currentNoteId: isEditing ? 'note-1' : null, isConnected: true, isLoading: false },
         isContextMenuInteractionTarget: () => false,
         Logger: { logNoop() {}, logDebug() {} },
@@ -44,6 +49,44 @@ function harness(isEditing) {
     } };
 }
 
+function disclosureHarness(isEditing) {
+    const h = harness(isEditing);
+    const note = h.anchor.closest('.note');
+    const content = h.anchor.closest('.note-content');
+    const details = {
+        closest(selector) {
+            return ({
+                '.note': note,
+                '.note-content': content,
+                'details.ai-chat-references-disclosure': details,
+            })[selector] ?? null;
+        },
+    };
+    const summary = {
+        closest(selector) {
+            return ({
+                '.note': note,
+                '.note-content': content,
+                'details.ai-chat-references-disclosure': details,
+                'summary.ai-chat-references-heading': summary,
+            })[selector] ?? null;
+        },
+    };
+    const label = {
+        closest(selector) {
+            return ({
+                '.note': note,
+                '.note-content': content,
+                'details.ai-chat-references-disclosure': details,
+                'summary.ai-chat-references-heading': summary,
+            })[selector] ?? null;
+        },
+    };
+    h.event.target = label;
+    h.event.composedPath = () => [label, summary, details, content, note];
+    return h;
+}
+
 test('clicking nested title/domain markup preserves browser navigation and view mode', () => {
     const h = harness(false);
     h.handlers.handleImmediateMouseDown(h.event);
@@ -58,4 +101,19 @@ test('link guard distinguishes view links from editor links and non-link content
     assert.equal(isViewModeNoteLink(harness(true).label), false);
     assert.equal(isViewModeNoteLink({ closest: () => null }), false);
     assert.equal(isViewModeNoteLink(null), false);
+});
+
+test('References disclosure toggles in view mode without selecting or dragging its note', () => {
+    const h = disclosureHarness(false);
+    h.handlers.handleImmediateMouseDown(h.event);
+    h.handlers.handleMoveDragMouseDown(h.event);
+    h.handlers.handleClick(h.event);
+
+    assert.deepEqual(h.events, []);
+    assert.equal(h.handlers.dragContext(), null);
+});
+
+test('References disclosure guard applies only outside edit mode', () => {
+    assert.equal(isViewModeNoteDisclosureToggle(disclosureHarness(false).event.target), true);
+    assert.equal(isViewModeNoteDisclosureToggle(disclosureHarness(true).event.target), false);
 });

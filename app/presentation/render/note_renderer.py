@@ -37,6 +37,7 @@ def _format_note_content_standard(*, content_html: str, tags: str) -> str:
                 markdown_text,
                 notes=note_store,
                 allowed_note_ids=allowed_note_ids,
+                allowed_web_evidence=(),
             )
             return (
                 '<div class="ai-chat-message-content meta-markdown" '

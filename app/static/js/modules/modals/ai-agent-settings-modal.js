@@ -17,6 +17,7 @@ import {
     getCloudPrivacyTextFieldsValidationMessage,
     parseCloudPrivacyTextFields,
 } from '../ai-chat/cloud-privacy-policy.js';
+import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 
 
 function escapeHtml(value) {
@@ -94,6 +95,7 @@ export class AiAgentSettingsModal extends BaseModal {
         return {
             provider: settings.provider,
             model: settings.model,
+            webAccessMode: validateAgentWebAccessMode(settings.webAccessMode),
             openAiRetrievalSettings: retrievalStateFields(
                 settings.openAiRetrievalSettings,
                 'openai',
@@ -205,6 +207,21 @@ export class AiAgentSettingsModal extends BaseModal {
                             ${installedModelOptions}
                         </select>
                     </label>
+                    <fieldset class="ai-agent-web-settings">
+                        <legend>Web access</legend>
+                        <p>
+                            Controls which public web sources the agent may retrieve.
+                            Content from web pages is treated as untrusted evidence.
+                        </p>
+                        <label for="ai-agent-web-access-mode">
+                            <span>Browsing mode</span>
+                            <select id="ai-agent-web-access-mode">
+                                <option value="none" ${state.webAccessMode === 'none' ? 'selected' : ''}>No web access</option>
+                                <option value="contextual" ${state.webAccessMode === 'contextual' ? 'selected' : ''}>Open links from permitted context</option>
+                                <option value="full" ${state.webAccessMode === 'full' ? 'selected' : ''}>Open any public web page</option>
+                            </select>
+                        </label>
+                    </fieldset>
                     <fieldset class="ai-agent-retrieval-settings">
                         <legend>OpenAI evidence limit</legend>
                         <p>
@@ -266,6 +283,7 @@ export class AiAgentSettingsModal extends BaseModal {
         const maxPageApproximateTokensInput = document.getElementById(
             'ai-agent-max-page-approximate-tokens',
         );
+        const webAccessModeSelect = document.getElementById('ai-agent-web-access-mode');
         const whitelistTagsInput = document.getElementById(
             'ai-agent-cloud-whitelist-tags',
         );
@@ -293,6 +311,9 @@ export class AiAgentSettingsModal extends BaseModal {
         if (!(maxPageApproximateTokensInput instanceof HTMLInputElement)) {
             throw new Error('AI settings approximate evidence tokens input missing');
         }
+        if (!(webAccessModeSelect instanceof HTMLSelectElement)) {
+            throw new Error('AI settings web access selector missing');
+        }
         for (const [input, label] of [
             [whitelistTagsInput, 'whitelisted tags'],
             [whitelistPhrasesInput, 'whitelisted phrases'],
@@ -316,6 +337,12 @@ export class AiAgentSettingsModal extends BaseModal {
         installedModelSelect.onchange = () => {
             this.updateModalState({ model: installedModelSelect.value, error: '' });
             this.renderModalContent();
+        };
+        webAccessModeSelect.onchange = () => {
+            this.updateModalState({
+                webAccessMode: validateAgentWebAccessMode(webAccessModeSelect.value),
+                error: '',
+            });
         };
         if (openAiApiKeyInput instanceof HTMLInputElement) {
             openAiApiKeyInput.oninput = () => {
@@ -561,6 +588,7 @@ export class AiAgentSettingsModal extends BaseModal {
         await this._saveSettings({
             provider: state.provider,
             model: state.model,
+            webAccessMode: validateAgentWebAccessMode(state.webAccessMode),
             openAiRetrievalSettings: validateAgentRetrievalSettings(
                 state.openAiRetrievalSettings,
                 'openai',

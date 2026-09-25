@@ -1,0 +1,121 @@
+{
+  "schema_version": 2,
+  "id": "web-full-unrestricted-open",
+  "description": "Full mode opens a Google results page for a current public fact without provider-hosted search.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "what is the price of QQQ?"
+        }
+      ],
+      "context": {
+        "stage": "web_action",
+        "mode": "full",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 0,
+          "matching_result_tree_count": 0
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "retained_web_evidence": [],
+        "tool_exchanges": []
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "kind": "open_web_pages",
+            "urls": [
+              "https://www.google.com/search?q=QQQ+price"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "what is the price of QQQ?"
+        }
+      ],
+      "context": {
+        "stage": "web_action",
+        "mode": "full",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 0,
+          "matching_result_tree_count": 0
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "retained_web_evidence": [],
+        "tool_exchanges": [
+          {
+            "action_name": "open_web_pages",
+            "action_payload": {
+              "kind": "open_web_pages",
+              "urls": [
+                "https://www.google.com/search?q=QQQ+price"
+              ],
+              "rationale": "Look up the current QQQ price on Google."
+            },
+            "result_payload": {
+              "results": [
+                {
+                  "evidence_id": "20000000-0000-4000-8000-000000000001",
+                  "requested_url": "https://www.google.com/search?q=QQQ+price",
+                  "final_url": "https://www.google.com/search?q=QQQ+price",
+                  "title": "Google Search",
+                  "content_text": "If you're having trouble accessing Google Search, please click here, or send feedback.",
+                  "fetched_at": "2026-09-24T00:00:00+00:00",
+                  "truncated": false,
+                  "citation_token": "[[web:20000000-0000-4000-8000-000000000001]]",
+                  "status": "ok",
+                  "error_kind": "",
+                  "cached": false
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "kind": "open_web_pages",
+            "urls": [
+              "https://www.google.com/finance/quote/QQQ:NASDAQ?hl=en"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "source": "manual failure observed in AI Chat on 2026-09-24"
+  }
+}

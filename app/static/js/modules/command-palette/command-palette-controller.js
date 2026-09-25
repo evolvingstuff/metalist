@@ -75,6 +75,11 @@ import {
     validateCloudPrivacyPolicy,
 } from '../ai-chat/cloud-privacy-policy.js';
 import {
+    AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY,
+    readAgentWebAccessMode,
+    validateAgentWebAccessMode,
+} from '../ai-chat/agent-web-settings.js';
+import {
     resolveSearchInputDisplayQuery,
     syncSearchInputValue,
 } from '../mode-manager/services/search-input-service.js';
@@ -669,6 +674,9 @@ class CommandPaletteController {
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
                 DEFAULT_AI_THINKING_LEVEL,
             ),
+            webAccessMode: readAgentWebAccessMode(
+                (key) => this._preferences.getRaw(key),
+            ),
             openAiRetrievalSettings,
             cloudPrivacyPolicy: readCloudPrivacyPolicy(
                 (key) => this._preferences.getRaw(key),
@@ -783,6 +791,7 @@ class CommandPaletteController {
         const cloudPrivacyPolicy = validateCloudPrivacyPolicy(
             settings.cloudPrivacyPolicy,
         );
+        const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
         const modelPreferenceKey = 'pref.ai.openai_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
@@ -794,6 +803,7 @@ class CommandPaletteController {
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,
             ),
+            [AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY]: webAccessMode,
         });
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',

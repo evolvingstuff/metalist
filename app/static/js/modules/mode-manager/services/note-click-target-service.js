@@ -14,6 +14,22 @@ export function isViewModeNoteLink(target) {
     return note !== null && !note.classList.contains('editing');
 }
 
+export function isViewModeNoteDisclosureToggle(target) {
+    if (!supportsClosest(target)) {
+        return false;
+    }
+    const summary = target.closest('summary.ai-chat-references-heading');
+    if (!summary) {
+        return false;
+    }
+    const disclosure = summary.closest('details.ai-chat-references-disclosure');
+    if (!disclosure || !summary.closest('.note-content')) {
+        return false;
+    }
+    const note = summary.closest('.note');
+    return note !== null && !note.classList.contains('editing');
+}
+
 export function resolveNonContentNoteSelectionTarget(target) {
     if (!supportsClosest(target)) {
         return null;

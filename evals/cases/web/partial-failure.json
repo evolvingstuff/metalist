@@ -1,0 +1,97 @@
+{
+  "schema_version": 2,
+  "id": "web-partial-failure",
+  "description": "A successful page remains usable when a sibling page fails.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Compare the two reports, using what is available and noting any material limitation."
+        }
+      ],
+      "context": {
+        "stage": "web_action",
+        "mode": "full",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 0,
+          "matching_result_tree_count": 0
+        },
+        "selected_note": {
+          "status": "none",
+          "note_id": "",
+          "content_text": "",
+          "tags": ""
+        },
+        "retained_web_evidence": [
+          {
+            "evidence_id": "10000000-0000-4000-8000-000000000001",
+            "requested_url": "https://example.com/report",
+            "final_url": "https://example.com/report",
+            "title": "Example report",
+            "content_text": "The 2026 report states that the measured value is 42. It links to https://outside.example/details.",
+            "fetched_at": "2026-09-24T00:00:00+00:00",
+            "truncated": false
+          }
+        ],
+        "tool_exchanges": [
+          {
+            "action_name": "open_web_pages",
+            "action_payload": {
+              "kind": "open_web_pages",
+              "urls": [
+                "https://example.com/report",
+                "https://missing.example/report"
+              ],
+              "reason": "Compare sources."
+            },
+            "result_payload": {
+              "results": [
+                {
+                  "evidence_id": "10000000-0000-4000-8000-000000000001",
+                  "requested_url": "https://example.com/report",
+                  "final_url": "https://example.com/report",
+                  "title": "Example report",
+                  "content_text": "The 2026 report states that the measured value is 42. It links to https://outside.example/details.",
+                  "fetched_at": "2026-09-24T00:00:00+00:00",
+                  "truncated": false,
+                  "citation_token": "[[web:10000000-0000-4000-8000-000000000001]]",
+                  "status": "ok",
+                  "error_kind": "",
+                  "cached": false
+                },
+                {
+                  "requested_url": "https://missing.example/report",
+                  "final_url": "https://missing.example/report",
+                  "status": "failed",
+                  "error_kind": "dns_error",
+                  "cached": false,
+                  "truncated": false
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "kind": "respond"
+          }
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic per-item web failure regression"
+  }
+}

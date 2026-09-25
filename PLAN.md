@@ -8,10 +8,11 @@ evidence provenance, and cross-platform behavior.
 
 The agent must support three namespace-scoped modes:
 
-1. **No web access** — no search or page-opening action is available.
+1. **No web access** — no page-opening action is available.
 2. **Contextual web access** — the agent may open only exact URLs already disclosed
-   through permitted context; it cannot search or follow links discovered in pages.
-3. **Full web access** — the agent may search the public web and open public URLs.
+   through permitted context; it cannot propose new URLs or follow links discovered
+   in pages.
+3. **Full web access** — the agent may propose and open direct public page URLs.
 
 `No web access` is the default for new and existing installations. A setting change
 takes effect on the next message.
@@ -45,10 +46,15 @@ takes effect on the next message.
 - One external fetch failure produces a structured result for that URL without
   discarding successful sibling results. Invalid action structure and internal
   invariants still fail loudly.
-- Add a separate typed `search_web` action accepting a bounded batch of nonblank
-  queries. It is exposed only in full-web mode.
-- Search results do not silently count as opened pages. They provide titles, URLs,
-  snippets, and provenance; the agent may then batch-open the useful results.
+- Do not add a search-engine action. Both enabled modes expose only the typed,
+  batched `open_web_pages` action.
+- In full mode, the model may propose direct public HTTP(S) page URLs even when they
+  are absent from context. Page retrieval remains an application tool independent
+  of the selected LLM provider.
+- Ordinary full-mode lookups open a Google Search result URL through
+  `open_web_pages`, then open useful result pages in later batches. Google pages
+  and source pages use the same application-owned fetcher; no LLM provider supplies
+  retrieval.
 - Do not create a mutually exclusive top-level “web lookup” route. Web actions must
   compose with selected-note and investigated-note evidence in the same run.
 
@@ -75,7 +81,7 @@ takes effect on the next message.
   execute commands.
 - Each successful page result carries a stable session evidence ID, requested URL,
   final URL, title, extracted content, retrieval time, and truncation state. Each
-  search result carries its query and provider/source provenance.
+  page keeps explicit URL provenance.
 
 ### Conversation lifetime and citations
 
@@ -92,8 +98,8 @@ takes effect on the next message.
 - Retain enough bounded web evidence for follow-ups. If the configured evidence
   budget cannot include every retained page, report exact included/omitted counts
   to the model and never imply complete coverage.
-- Show concise activity such as `Searching the web · 2 queries` and
-  `Opening 3 web pages`, followed by success, failure, and truncation counts. The UI
+- Show concise activity such as `Opening 3 web pages`, followed by success, failure,
+  and truncation counts. The UI
   must expose the sources used in the final answer without exposing internal prompt
   or capability metadata.
 
@@ -130,16 +136,16 @@ takes effect on the next message.
   allowing internal programming errors to propagate.
 - Return results in submitted order and share one evidence object for duplicates.
 
-### 4. Implement full-web search
+### 4. Implement unrestricted direct-page opening
 
-- Add a search-provider adapter using the official OpenAI web-search capability so
-  the existing OpenAI credential funds search without requiring another account.
-- Accept multiple queries in one action, preserve query/result grouping, deduplicate
-  URLs conservatively, and record provider-returned titles, snippets, and source URLs.
-- Keep search unavailable in contextual and no-access modes. Application code, not
-  prompt wording, enforces this boundary.
-- Treat search output as untrusted evidence. Search results authorize later page opens
-  only because full mode already permits public URLs.
+- Keep the sole web tool, `open_web_pages`, outside every LLM-provider adapter.
+- In full mode, accept direct public HTTP(S) URLs proposed by the model without
+  requiring them to appear in context. Continue applying the same network and SSRF
+  controls to every request.
+- Keep page opening unavailable in no-access mode and capability-limited in
+  contextual mode. Application code, not prompt wording, enforces both boundaries.
+- Do not add OpenAI-hosted search, another search provider, or any provider-specific
+  retrieval behavior.
 
 ### 5. Add per-turn URL capabilities
 
@@ -158,8 +164,8 @@ takes effect on the next message.
 - Extend strict action schemas and the application-owned step loop to execute batched
   web actions, append verified results, and return control to the model until it can
   answer or reaches the existing bounded-step limit.
-- Allow a run to combine selected-note context, scoped investigation evidence, search
-  results, and opened-page evidence. Preserve the frozen note scope and disclosure
+- Allow a run to combine selected-note context, scoped investigation evidence, and
+  opened-page evidence. Preserve the frozen note scope and disclosure
   boundary throughout the run.
 - Add browsing instructions as a conditionally loaded production skill. Keep the
   no-web request prefix and schemas unchanged so unrelated regression cases remain
@@ -185,13 +191,13 @@ takes effect on the next message.
 
 ### 8. Add UI feedback and accessibility
 
-- Display batched search/open activity with counts while work is running and concise
+- Display batched page-open activity with counts while work is running and concise
   outcome summaries afterward.
 - Make partial external failures understandable without showing stack traces, and
   keep internal errors loud through the existing Loguru/error boundary.
 - Ensure activity and references are keyboard accessible and announced through the
   existing status semantics.
-- Keep the composer cancellable while search or fetch tasks are active.
+- Keep the composer cancellable while page fetch tasks are active.
 
 ### 9. Update documentation
 
@@ -222,7 +228,7 @@ takes effect on the next message.
   redirect hops, DNS rebinding, metadata targets, credentials, and schemes.
 - Contextual mode cannot open in-page links; full mode can independently open them.
 - Prompt-injection text remains inert evidence and never expands capabilities.
-- Search batching, grouping, provenance, and provider-error handling.
+- Full-mode direct URL authorization and page-fetch failure handling.
 - Combined note/web evidence, bounded retention, reset/session cleanup, cancellation,
   step limits, trace redaction, and exact citation authorization.
 - Existing link-title behavior remains unchanged after transport extraction.
@@ -230,7 +236,7 @@ takes effect on the next message.
 ### Deterministic JavaScript and browser tests
 
 - Settings modal displays/saves all three values and defaults to no access.
-- Stream validation and activity rendering for batched search/open outcomes.
+- Stream validation and activity rendering for batched page-open outcomes.
 - Mixed note/web references survive streaming, reload, copy, and conversation reset.
 - A real browser scenario selects permitted and blocked notes, verifies only disclosed
   URLs can be opened in contextual mode, and confirms outgoing page links remain
@@ -241,7 +247,7 @@ takes effect on the next message.
 ### Current-production LLM regressions
 
 - Add fixed cases for no-access refusal/answering, contextual user URLs, permitted
-  note URLs, blocked-note URLs, batched duplicate opens, batched searches, combined
+  note URLs, blocked-note URLs, batched duplicate opens, unrestricted direct opens, combined
   note-and-web questions, follow-ups over retained pages, partial failures, and
   citation selection.
 - Build every case through the production prompts, conditional skill loader, action
@@ -263,8 +269,8 @@ takes effect on the next message.
    that the response does not leak its existence or source.
 4. Verify a directly supplied copy of that same public URL is allowed.
 5. Verify links shown inside an opened page cannot be followed in contextual mode.
-6. In full mode, run multiple searches, batch-open selected results, combine them with
-   note evidence, and verify mixed citations.
+6. In full mode, have the model propose multiple direct public page URLs, batch-open
+   them, combine them with note evidence, and verify mixed citations.
 7. Reset the chat and verify retained page evidence is gone.
 
 ## Completion and Release Gates

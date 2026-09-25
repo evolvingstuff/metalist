@@ -1,10 +1,12 @@
 """Failure contracts across the extracted persistence and stream boundaries."""
 import asyncio
+import re
 
 import pytest
 
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ai_chat_stream import ChatTurnStream
+from app.services.agent.web_evidence import WebEvidenceStore
 from app.services.encryption import EncryptionService
 from app.services.note_store import NoteStore
 from app.services.password_note_fields import prepare_note_rewrite
@@ -38,14 +40,14 @@ def test_password_note_rewrite_rejects_partial_encryption_metadata(encrypted):
 
 @pytest.mark.parametrize('events', [
     [{'type': 'unknown'}],
-    [{'type': 'content_delta', 'text': 'answer', 'reference_note_ids': []},
-     {'type': 'done', 'reference_note_ids': ['new-reference']}],
+    [{'type': 'content_delta', 'text': 'answer', 'reference_note_ids': [], 'reference_web_ids': []},
+     {'type': 'done', 'reference_note_ids': ['new-reference'], 'reference_web_ids': []}],
 ])
 def test_internal_stream_failure_closes_source_and_fails_turn(events):
     store = AiChatSessionStore()
     turn_id = store.start_turn(session_key='test', user_content='question', provider='openai', model='test')
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key='test', turn_id=turn_id,
-                            initial_input_tokens=1)
+                            initial_input_tokens=1, web_evidence_store=WebEvidenceStore())
     closed = []
 
     async def source():
@@ -65,7 +67,10 @@ def test_internal_stream_failure_closes_source_and_fails_turn(events):
     asyncio.run(consume())
     message = store.snapshot(session_key='test')['messages'][-1]
     assert message['status'] == 'error'
-    assert message['error'] == 'Internal agent error'
+    assert re.fullmatch(
+        r'Internal agent error \(RuntimeError at app/services/ai_chat_stream\.py:\d+\)',
+        message['error'],
+    )
 
 
 def test_incomplete_ontology_contract_fails_instead_of_disabling_equivalence():

@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "id": "help-output-web-access",
+  "description": "What web access do you have right now, and what can the other modes do?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "What web access do you have right now, and what can the other modes do?"
+        }
+      ],
+      "context": {
+        "stage": "help",
+        "topics": [
+          "ai"
+        ]
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "accurate",
+            "instruction": "State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. Mention the AI Agent Settings control without claiming it was changed."
+          }
+        ],
+        "reference_facts": "WEB_ACCESS_CONTEXT mode is none. Contextual mode can open only URLs in permitted disclosed context and cannot follow page links. Full mode can open a Google results URL and useful result pages through MetaList's provider-independent page opener, with no separate search action. Privacy-withheld note URLs remain unavailable."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic current-mode product-help regression",
+    "personal_data": false
+  }
+}

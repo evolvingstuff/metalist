@@ -40,7 +40,7 @@ def test_route_builder_changes_reach_existing_cases(monkeypatch):
         return original(self, **kwargs) + [{"role": "user", "content": "New runtime context"}]
     monkeypatch.setattr(production_context.AgentContextBuilder, "build_scoped_route_messages", changed)
     prepared = prepare_case(case("actions/hello"))
-    assert prepared.steps[0].messages[-1].content == "New runtime context"
+    assert any(message.content == "New runtime context" for message in prepared.steps[0].messages)
     assert any(m.content.startswith("SELECTED_NOTE_CONTEXT\n") for m in prepared.steps[0].messages)
 
 

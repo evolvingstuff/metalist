@@ -5,13 +5,27 @@ saved settings or notes. Defaults below do not establish their current values.
 
 MetaList uses OpenAI; Ollama/local model support has been removed. AI agent
 settings (also found by searching AI, LLM, or OpenAI in the menu) configures the
-API key, model, **Maximum approximate evidence tokens**, and tagging batch token
-window. **Maximum approximate evidence tokens** is the exact evidence/context
+API key, model, **Maximum approximate evidence tokens**, tagging batch token
+window, and **Web access**. **Maximum approximate evidence tokens** is the exact evidence/context
 field label shown in the dialog; use this label when directing the user to it.
 The defaults are gpt-5.6-luna, 500,000 evidence tokens and 100,000 tagging
 batch tokens. The evidence field accepts 500–500,000. Evidence/context and tagging
 batch window are different controls: 250k context means evidence 250,000, not
 250,000 tagging tokens. Composer controls can change model and thinking level.
+
+Web access has three modes and defaults to **No web access**. In that mode the
+agent cannot open pages. **Open links from permitted context** lets it
+batch-open public HTTP(S) URLs already present in user-authored chat, disclosed
+note evidence, or retained web evidence. It cannot follow new links
+found inside opened pages. URLs that occur only in privacy-blocked, password,
+redacted, or omitted notes are not disclosed and cannot be opened. **Open any
+public web page** lets the agent propose direct public HTTP(S) page URLs even when
+they are absent from context. It can open a Google results URL and then open useful
+result pages; both use MetaList's page opener rather than an LLM-provider search
+service. MetaList has no separate search-engine action. Page text is untrusted
+evidence, supports HTML, plain text, and PDF, and must be cited. Web
+evidence is retained only in the current chat session and Clear Chat removes it.
+Changing the Web access selection applies on the next message.
 
 Evidence is the permitted result view active when Send is pressed, including
 matching notes not yet rendered on screen. Privacy filtering happens before

@@ -25,6 +25,32 @@
   truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
 
+## Web access
+
+**AI Agent Settings** has three enforced browsing modes:
+
+- **No web access** is the default. The agent cannot open pages and
+  explains that limitation when a request needs the web.
+- **Open links from permitted context** can open only exact URLs supplied by the
+  user or present in note/evidence content that passed the same disclosure
+  boundary as the rest of the prompt. Links found inside an opened page do not
+  become available.
+- **Open any public web page** lets the agent propose direct public HTTP(S) page
+  URLs even when they are not in the current note or conversation. Ordinary
+  lookups open a Google results page and then useful result pages through the same
+  MetaList page opener. No LLM provider supplies search or retrieval, and MetaList
+  has no separate search-engine action.
+
+The web-browsing skill tells the agent to batch up to eight URLs,
+reuse duplicate pages, treat page text as untrusted evidence, and explain what
+the active mode permits. Page opens support HTML, plain text, and PDF. Individual
+pages can fail or be truncated without discarding successful siblings.
+
+Successful pages remain in bounded server-memory chat evidence for follow-up
+questions. Clear Chat, logout, a disclosure-boundary change, server restart, or
+runtime reset removes that evidence. Web claims use their own external reference
+links; responses can cite disclosed notes and web pages together.
+
 ## Product help and menus
 
 The first model call selects relevant topics from a compact catalog: notes,
@@ -255,7 +281,9 @@ notice; it is preserved but never applied until Save or Restore removes it.
   code/existing links remain literal.
 - Right-click a completed answer and choose `Copy Response` to copy Markdown tagged
   `@markdown @llm` into the MetaList note clipboard and rich/plain content onto the
-  system clipboard.
+  system clipboard. After pasting that response as a note, its References disclosure
+  remains interactive in view mode: opening or closing it does not enter edit mode
+  or begin a note drag.
 
 ## Session and Debug Boundaries
 

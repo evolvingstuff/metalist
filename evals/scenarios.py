@@ -14,7 +14,8 @@ def scenario_from_invocation(invocation, expectation) -> Step:
             continue
         prefix, separator, body = message["content"].partition("\n")
         if separator and prefix in {"ROUTE_SELECTION_REQUEST", "METALIST_HELP_REQUEST",
-                                    "SELECTED_NOTE_CONTEXT", "FINAL_RESPONSE_REQUEST"}:
+                                    "SELECTED_NOTE_CONTEXT", "WEB_ACCESS_CONTEXT",
+                                    "FINAL_RESPONSE_REQUEST"}:
             if prefix in payloads:
                 raise ValueError(f"Duplicate runtime context: {prefix}")
             payloads[prefix] = json.loads(body)

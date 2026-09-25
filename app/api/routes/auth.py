@@ -52,6 +52,7 @@ from app.security.sensitive_logging import traceback_frame_summary
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.ai_chat import ai_chat_store
+from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.trace import agent_trace_store
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
@@ -383,6 +384,7 @@ def _reset_runtime_state_after_restore() -> bool:
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     view_cache.clear()
@@ -563,6 +565,7 @@ def login(
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     view_cache.clear()
@@ -587,6 +590,7 @@ def logout(
 ):
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
+    web_evidence_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
     openai_credential_store.clear_session(session_key=session_key)
     token_service.revoke_token(token)
@@ -674,6 +678,7 @@ def create_passwordless_session(
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     view_cache.clear()
@@ -1089,6 +1094,7 @@ def create_password(
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     clear_all_locks()
@@ -1118,6 +1124,7 @@ def change_password(
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     clear_all_locks()
@@ -1139,6 +1146,7 @@ def remove_password(
     invalidate_runtime_work()
     clear_sensitive_caches()
     ai_chat_store.reset()
+    web_evidence_store.reset()
     agent_trace_store.reset()
     openai_credential_store.reset()
     clear_all_locks()

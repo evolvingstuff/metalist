@@ -5,6 +5,16 @@ syntax suppressions and is consumed by runtime capture and the startup gate.
 """
 
 CAPTURE_BOUNDARIES = {
+    # Web retrieval translates only expected failures from untrusted remote targets.
+    'app/services/agent/web_fetch.py:fetch_web_page:target_capture': ('PublicHttpTargetRejected',),
+    'app/services/agent/web_fetch.py:_download_one_url:transport_capture': (
+        'TimeoutException', 'NetworkError', 'HTTPError',
+        'TimeoutException', 'NetworkError', 'ProtocolError',
+    ),
+    'app/services/agent/web_fetch.py:_extract_pdf_content:pdf_capture': ('PyPdfError',),
+    'app/services/agent/web_fetch.py:_decode_web_text:encoding_capture': ('LookupError',),
+    'app/services/agent/web_fetch.py:handle_starttag:join_capture': ('ValueError',),
+    'app/services/agent/runtime.py:_open_web_action:evidence_capacity_capture': ('WebEvidenceCapacityError',),
     # In-app updates translate only external transport, installation eligibility and job lookup errors.
     'app/services/app_updates.py:check_for_update:eligibility': ('AppUpdateRejected',),
     'app/services/app_updates.py:job_path:validation': ('ValueError',),
@@ -106,11 +116,12 @@ CAPTURE_BOUNDARIES = {
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/link_titles.py:_fetch_one_url:capture': ('TimeoutException', 'NetworkError', 'HTTPError', 'TimeoutException', 'NetworkError', 'ProtocolError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/link_titles.py:_resolve_public_http_target:capture': ('gaierror',),
+    'app/services/public_http.py:resolve_public_http_target:resolve_capture': ('gaierror',),
+    'app/services/public_http.py:normalize_public_http_url:parse_capture': ('ValueError',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/link_titles.py:connect_tcp:connect_capture': ('ConnectError', 'ConnectTimeout'),
+    'app/services/public_http.py:connect_tcp:connect_capture': ('ConnectError', 'ConnectTimeout'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/link_titles.py:fetch_link_title:target_capture': ('_LinkTitleTargetRejected',),
+    'app/services/link_titles.py:fetch_link_title:target_capture': ('PublicHttpTargetRejected',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_is_process_running:kill_capture': ('ProcessLookupError', 'PermissionError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
@@ -138,7 +149,7 @@ CAPTURE_BOUNDARIES = {
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/remote_image_proxy.py:_download_one_url:request_capture': ('TimeoutException', 'NetworkError', 'HTTPError', 'TimeoutException', 'NetworkError', 'ProtocolError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
-    'app/services/remote_image_proxy.py:_download_one_url:target_rejection_capture': ('_LinkTitleTargetRejected',),
+    'app/services/remote_image_proxy.py:_download_one_url:target_rejection_capture': ('PublicHttpTargetRejected',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/remote_image_proxy.py:_validated_image_mime_type:validation_capture': ('DecompressionBombError', 'OSError', 'SyntaxError', 'UnidentifiedImageError', 'ValueError'),
     # Record operation failure and re-raise; never resume the failed operation.

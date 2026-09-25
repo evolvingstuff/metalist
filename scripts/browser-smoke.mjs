@@ -190,6 +190,31 @@ try {
   });
   await page.keyboard.type(' editor-transition-check');
   await page.waitForFunction(() => document.querySelector('.note.editing .note-content').textContent.includes('editor-transition-check'));
+  for (const [isCollapsed, expectedExpandedPersisted] of [
+    [true, false],
+    [false, true],
+    [true, true],
+    [false, true],
+  ]) {
+    const editSession = await page.evaluate(async (noteId, shouldCollapse) => {
+      const actions = await import('/static/js/modules/mode-manager/actions/note-actions.js');
+      const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+      if (shouldCollapse) await actions.collapseNote(noteId);
+      else await actions.expandNote(noteId);
+      return {
+        isEditing: ModeContextInstance.isEditing,
+        currentNoteId: ModeContextInstance.currentNoteId,
+        expandedPersisted: ModeContextInstance.editSessionExpandedPersisted,
+      };
+    }, noteId, isCollapsed);
+    assert.deepEqual(editSession, {
+      isEditing: true,
+      currentNoteId: noteId,
+      expandedPersisted: expectedExpandedPersisted,
+    });
+    assert.deepEqual(errors, []);
+  }
+  console.log('PASS repeated collapse/expand preserves one active edit session');
   for (const endOffset of [4, 1]) {
     const expectedSelection = await page.evaluate(endOffset => {
       const content = document.querySelector('.note.editing .note-content');

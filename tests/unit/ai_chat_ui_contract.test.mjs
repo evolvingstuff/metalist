@@ -101,6 +101,28 @@ test('chat accepts tagging activities both live and in restored messages', () =>
 });
 
 
+test('chat accepts every web activity emitted by the agent runtime', () => {
+    const source = readFileSync(CONTROLLER_URL, 'utf8');
+    const activityValidator = source.slice(source.indexOf('const AI_ACTIVITY_ACTIONS'),
+        source.indexOf('class AiChatPanelController'));
+    const { validateActivity } = runInNewContext(
+        `${activityValidator}\n({ validateActivity })`,
+    );
+    for (const action of ['web_planning', 'open_web_pages']) {
+        const activity = {
+            sequence: 1,
+            action,
+            status: 'started',
+            label: `Running ${action}`,
+            approx_input_tokens: 100,
+            output_tokens_received: 0,
+            duration_ms: 0,
+        };
+        assert.equal(validateActivity(activity), activity);
+    }
+});
+
+
 test('chat panel markup has a resizer, transcript, thinking region, and composer', () => {
     const template = readFileSync(TEMPLATE_URL, 'utf8');
 
@@ -296,6 +318,22 @@ test('AI agent settings expose one provider-specific evidence limit', () => {
     assert.doesNotMatch(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
     assert.match(commandController, /maxPageApproximateTokens/);
+});
+
+
+test('AI agent settings expose and persist all three web access modes', () => {
+    const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(settingsModal, /<legend>Web access<\/legend>/);
+    assert.match(settingsModal, /id="ai-agent-web-access-mode"/);
+    assert.match(settingsModal, /value="none"[^>]*>No web access/);
+    assert.match(settingsModal, /value="contextual"[^>]*>Open links from permitted context/);
+    assert.match(settingsModal, /value="full"[^>]*>Open any public web page/);
+    assert.match(settingsModal, /Content from web pages is treated as untrusted evidence/);
+    assert.match(commandController, /AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY/);
+    assert.match(commandController, /readAgentWebAccessMode/);
+    assert.match(commandController, /validateAgentWebAccessMode/);
 });
 
 

@@ -84,6 +84,55 @@ class RespondAction(BaseModel):
         return value
 
 
+class OpenWebPagesAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["open_web_pages"]
+    urls: list[str] = Field(..., min_length=1, max_length=8)
+    rationale: str = Field(..., min_length=1, max_length=2_000)
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(value == "" for value in normalized):
+            raise ValueError("Web page URLs must be non-empty strings")
+        return normalized
+
+    @field_validator("rationale")
+    @classmethod
+    def reject_blank_rationale(cls, value: str) -> str:
+        if value.strip() == "":
+            raise ValueError("Agent action rationale must not be blank")
+        return value
+
+
+class ContextualWebActionEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["respond", "open_web_pages"]
+    urls: list[str] = Field(..., max_length=8)
+    reason: str = Field(..., min_length=1, max_length=4_000)
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> Self:
+        if self.kind == "open_web_pages" and len(self.urls) == 0:
+            raise ValueError("open_web_pages requires at least one URL")
+        if self.kind == "respond" and len(self.urls) != 0:
+            raise ValueError("respond requires an empty URL list")
+        OpenWebPagesAction.validate_urls(self.urls) if self.urls else self.urls
+        return self
+
+    def to_action(self) -> RespondAction | OpenWebPagesAction:
+        if self.kind == "open_web_pages":
+            return OpenWebPagesAction(
+                kind=self.kind,
+                urls=self.urls,
+                rationale=self.reason,
+            )
+        return RespondAction(kind="respond", basis=self.reason)
+
+
 class SearchNotesIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

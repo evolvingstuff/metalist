@@ -23,6 +23,10 @@ from app.services.agent.scope import FrozenScopedTreeNode
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.scope import SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
+from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
+from app.services.agent.web_settings import AgentWebSettings
+from app.services.agent.web_evidence import web_evidence_store
+from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.trace import AgentTraceStore
 
 
@@ -229,6 +233,7 @@ def _events(
                 retrieval_settings=AgentRetrievalSettings(
                     max_page_approximate_tokens=token_limit,
                 ),
+                web_settings=DEFAULT_AGENT_WEB_SETTINGS,
                 frozen_scope=snapshot,
             )
         ]
@@ -338,3 +343,194 @@ def test_model_can_respond_to_request_prohibiting_note_inspection() -> None:
     )
     assert inference.final_messages
     assert "ROOT_ALPHA" not in json.dumps(inference.final_messages)
+
+
+class _WebInference(_FakeInference):
+    def __init__(
+        self,
+        *,
+        web_actions: list[dict[str, object]],
+        route_kind: str,
+    ) -> None:
+        super().__init__(route_kind=route_kind)
+        self.web_actions = list(web_actions)
+
+    async def infer_structured(self, **arguments) -> InferenceResponse:
+        response_model = arguments["response_model"]
+        if response_model.__name__ == "ScopedRouteEnvelope":
+            return await super().infer_structured(**arguments)
+        assert response_model.__name__ == "ContextualWebActionEnvelope"
+        assert self.web_actions, "Web planner requested more fixture actions"
+        content = json.dumps(self.web_actions.pop(0))
+        response_model.model_validate_json(content)
+        return InferenceResponse(
+            content=content,
+            thinking="",
+            usage={},
+            attempts=[InferenceAttempt(request={}, response={}, error="", duration_ms=1.0)],
+        )
+
+    async def stream_text(self, **arguments):
+        self.final_messages = arguments["messages"]
+        final_payload = json.loads(
+            arguments["messages"][-1]["content"].split("\n", 1)[1]
+        )
+        web_catalog = final_payload["web_reference_catalog"]
+        citation = ""
+        if web_catalog:
+            citation = " " + web_catalog[0]["citation_token"]
+        yield {"type": "content_delta", "text": "Web answer" + citation}
+        yield {"type": "done"}
+
+
+def _web_events(*, inference, snapshot, mode):
+    async def collect():
+        return [
+            event
+            async for event in _runtime(inference).stream_scoped(
+                tag_handler=None,
+                session_key="session-1",
+                base_url="https://api.openai.com/v1",
+                selected_model="gpt-5.6-sol",
+                thinking_level="off",
+                canonical_messages=[{"role": "user", "content": "Read the linked page"}],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=AgentRetrievalSettings(
+                    max_page_approximate_tokens=24_000,
+                ),
+                web_settings=AgentWebSettings(mode=mode),
+                frozen_scope=snapshot,
+            )
+        ]
+    return asyncio.run(collect())
+
+
+def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeypatch) -> None:
+    web_evidence_store.reset()
+    snapshot = replace(
+        _snapshot(large_tail=False),
+        selected_note=SelectedNoteContext(
+            "available",
+            "child-a",
+            (SelectedTreeNote(
+                "child-a", "", "See https://example.com/article", "source"
+            ),),
+        ),
+    )
+    inference = _WebInference(route_kind="respond", web_actions=[
+        {"kind": "open_web_pages", "urls": ["https://example.com/article"],
+         "reason": "Open disclosed source"},
+        {"kind": "respond", "urls": [], "reason": "Page is sufficient"},
+    ])
+    calls = []
+
+    async def fake_fetch(urls):
+        calls.append(list(urls))
+        return (WebPageFetchResult(
+            requested_url="https://example.com/article",
+            final_url="https://example.com/article",
+            status="ok",
+            title="Article",
+            content_text="Verified page content",
+            fetched_at="2026-09-24T00:00:00+00:00",
+            truncated=False,
+            error_kind="",
+        ),)
+
+    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", fake_fetch)
+    events = _web_events(inference=inference, snapshot=snapshot, mode="contextual")
+
+    assert calls == [["https://example.com/article"]]
+    assert events[-1]["type"] == "done"
+    assert len(events[-1]["reference_web_ids"]) == 1
+    assert "web_reference_catalog" in inference.final_messages[-1]["content"]
+
+
+def test_contextual_web_loop_blocks_undisclosed_url_without_network(monkeypatch) -> None:
+    web_evidence_store.reset()
+    inference = _WebInference(route_kind="respond", web_actions=[
+        {"kind": "open_web_pages", "urls": ["https://private.example/hidden"],
+         "reason": "Try URL"},
+        {"kind": "respond", "urls": [], "reason": "Explain contextual limit"},
+    ])
+
+    async def forbidden_fetch(_urls):
+        raise AssertionError("Undisclosed contextual URL reached the network")
+
+    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", forbidden_fetch)
+    events = _web_events(
+        inference=inference,
+        snapshot=_snapshot(large_tail=False),
+        mode="contextual",
+    )
+
+    assert events[-1]["reference_web_ids"] == []
+    tool_messages = [
+        message["content"] for message in inference.final_messages
+        if message["content"].startswith("TOOL_RESULT open_web_pages")
+    ]
+    assert len(tool_messages) == 1
+    assert "not_available_in_permitted_context" in tool_messages[0]
+
+
+def test_full_web_loop_opens_agent_proposed_url_outside_context(monkeypatch) -> None:
+    web_evidence_store.reset()
+    inference = _WebInference(route_kind="respond", web_actions=[
+        {"kind": "open_web_pages", "urls": ["https://example.com/quote"],
+         "reason": "Open a direct public source"},
+        {"kind": "respond", "urls": [], "reason": "Explain opened page"},
+    ])
+    calls = []
+
+    async def fake_fetch(urls):
+        calls.append(list(urls))
+        return (WebPageFetchResult(
+            requested_url="https://example.com/quote",
+            final_url="https://example.com/quote",
+            status="ok",
+            title="Public quote",
+            content_text="Current value: 42",
+            fetched_at="2026-09-24T00:00:00+00:00",
+            truncated=False,
+            error_kind="",
+        ),)
+
+    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", fake_fetch)
+
+    events = _web_events(
+        inference=inference,
+        snapshot=_snapshot(large_tail=False),
+        mode="full",
+    )
+
+    assert calls == [["https://example.com/quote"]]
+    assert events[-1]["type"] == "done"
+    assert len(events[-1]["reference_web_ids"]) == 1
+
+
+def test_investigation_web_loop_preserves_full_note_evidence() -> None:
+    web_evidence_store.reset()
+    inference = _WebInference(
+        route_kind="investigate_current_scope",
+        web_actions=[
+            {
+                "kind": "respond",
+                "urls": [],
+                "reason": "The note evidence is sufficient",
+            },
+        ],
+    )
+
+    events = _web_events(
+        inference=inference,
+        snapshot=_snapshot(large_tail=False),
+        mode="contextual",
+    )
+
+    assert events[-1]["type"] == "done"
+    assert "INVESTIGATION_EVIDENCE_CONTEXT" in json.dumps(
+        inference.final_messages
+    )
+    assert "ROOT_ALPHA" in json.dumps(inference.final_messages)
+    assert "TAIL" in json.dumps(inference.final_messages)

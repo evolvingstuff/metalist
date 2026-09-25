@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
+from app.services.agent.web_evidence import WebPageEvidence
 
 
 NOTE_ID = "75193dae-9e05-4a4e-94bf-417ffde18957"
@@ -10,6 +11,19 @@ SECOND_NOTE_ID = "75ee44d0-7aee-49a4-935a-a059b02c4bb4"
 ROOT_NOTE_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_ROOT_NOTE_ID = "22222222-2222-4222-8222-222222222222"
 MISSING_ID = "99999999-9999-4999-9999-999999999999"
+WEB_ID = "33333333-3333-4333-8333-333333333333"
+
+
+def _web_evidence() -> WebPageEvidence:
+    return WebPageEvidence(
+        evidence_id=WEB_ID,
+        requested_url="https://example.com/start",
+        final_url="https://example.com/article",
+        title="Example article",
+        content_text="Article evidence",
+        fetched_at="2026-09-24T00:00:00+00:00",
+        truncated=False,
+    )
 
 
 class FakeNotes:
@@ -57,6 +71,7 @@ def test_ai_chat_renderer_moves_bare_note_uuid_to_references_section() -> None:
         f"See note {NOTE_ID} for details.",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert f">{NOTE_ID}<" not in rendered
@@ -84,6 +99,7 @@ def test_ai_chat_renderer_mentions_explicit_reference_without_leaving_brackets()
         f"Source: [[{NOTE_ID}]]",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert "[[" not in rendered
@@ -101,6 +117,7 @@ def test_ai_chat_renderer_hides_partial_bracketed_citation_during_streaming() ->
         f"Supported finding. [[{NOTE_ID}]",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert "Supported finding." in rendered
@@ -119,6 +136,7 @@ def test_ai_chat_streaming_renderer_withholds_all_reference_ui_until_done() -> N
             f"- **Source:** [Saved note](https://example.com) [[{NOTE_ID}]]"
         ),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert "Supported finding." in rendered
@@ -134,6 +152,7 @@ def test_ai_chat_renderer_deduplicates_repeated_reference_links() -> None:
         f"Compare [[{NOTE_ID}]] with {NOTE_ID}.",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert rendered.count('class="ai-chat-note-mention"') == 1
@@ -147,6 +166,7 @@ def test_ai_chat_renderer_collapses_adjacent_duplicate_citation_markers() -> Non
         f"Supported claim. [[{NOTE_ID}]][[{NOTE_ID}]]",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert rendered.count('class="ai-chat-citation-marker"') == 1
@@ -159,6 +179,7 @@ def test_ai_chat_renderer_collapses_adjacent_same_root_citation_markers() -> Non
         f"Supported claim. [[{NOTE_ID}]] [[{SECOND_NOTE_ID}]]",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID, SECOND_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     expected_query = f"{NOTE_ID} OR {SECOND_NOTE_ID}"
@@ -176,6 +197,7 @@ def test_ai_chat_renderer_sorts_adjacent_citations_by_reference_number() -> None
         ),
         notes=FakeNotes(),
         allowed_note_ids=(ROOT_NOTE_ID, OTHER_ROOT_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     body_html, _references_html = rendered.split('<section class="ai-chat-references"')
@@ -188,6 +210,7 @@ def test_ai_chat_renderer_adds_open_all_link_with_or_query_for_multiple_refs() -
         f"Compare [[{NOTE_ID}]] and [[{OTHER_ROOT_NOTE_ID}]].",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID, OTHER_ROOT_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     expected_query = f"{NOTE_ID} OR {OTHER_ROOT_NOTE_ID}"
@@ -202,6 +225,7 @@ def test_ai_chat_renderer_groups_child_citations_into_one_root_reference() -> No
         f"Compare [[{NOTE_ID}]] and [[{SECOND_NOTE_ID}]].",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID, SECOND_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     assert 'class="ai-chat-note-mention"' not in rendered
@@ -221,6 +245,7 @@ def test_ai_chat_renderer_recovers_known_uuid_from_inline_code_and_unicode_dashe
             f"The note with the ID `{unicode_dash_note_id}` discusses Pydantic AI.",
             notes=FakeNotes(),
             allowed_note_ids=(SECOND_NOTE_ID,),
+        allowed_web_evidence=(),
         )
 
         assert f">{unicode_dash_note_id}<" not in rendered
@@ -235,6 +260,7 @@ def test_ai_chat_renderer_suppresses_unknown_citations_but_preserves_fenced_code
         f"Unknown {MISSING_ID}.\n\n```text\n{NOTE_ID}\n```",
         notes=FakeNotes(),
         allowed_note_ids=(),
+    allowed_web_evidence=(),
     )
 
     assert MISSING_ID not in rendered
@@ -249,6 +275,7 @@ def test_ai_chat_sanitizer_removes_hallucinated_uuid_citations() -> None:
         f"A grounded sentence. [[{MISSING_ID}]]",
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert sanitized == "A grounded sentence."
@@ -259,6 +286,7 @@ def test_ai_chat_renderer_suppresses_note_citations_not_retrieved_in_current_run
         f"Bayes' theorem needs no saved notes. [[{NOTE_ID}]] `{SECOND_NOTE_ID}`",
         notes=FakeNotes(),
         allowed_note_ids=(),
+    allowed_web_evidence=(),
     )
 
     assert "Bayes' theorem needs no saved notes." in rendered
@@ -275,6 +303,7 @@ def test_ai_chat_renderer_maps_numbered_citations_to_superscript_references() ->
         "First supported claim[citation:1] and second supported claim[citation:2].",
         notes=FakeNotes(),
         allowed_note_ids=(ROOT_NOTE_ID, OTHER_ROOT_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     assert rendered.count('class="ai-chat-citation-marker"') == 2
@@ -294,6 +323,7 @@ def test_ai_chat_renderer_keeps_loose_cited_items_in_one_ordered_list() -> None:
         ),
         notes=FakeNotes(),
         allowed_note_ids=(ROOT_NOTE_ID, OTHER_ROOT_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     body_html, references_html = rendered.split('<section class="ai-chat-references"')
@@ -308,6 +338,7 @@ def test_ai_chat_sanitizer_canonicalizes_authorized_numbered_citations() -> None
         "First supported claim[citation:1].",
         notes=FakeNotes(),
         allowed_note_ids=(ROOT_NOTE_ID,),
+    allowed_web_evidence=(),
     )
 
     assert sanitized == f"First supported claim[[{ROOT_NOTE_ID}]]."
@@ -325,11 +356,13 @@ def test_ai_chat_renderer_removes_standalone_source_lines_and_repairs_numbering(
         markdown,
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID, SECOND_NOTE_ID),
+    allowed_web_evidence=(),
     )
     rendered = render_ai_chat_markdown_to_html(
         sanitized,
         notes=FakeNotes(),
         allowed_note_ids=(NOTE_ID, SECOND_NOTE_ID),
+    allowed_web_evidence=(),
     )
 
     assert "Source:" not in sanitized
@@ -343,3 +376,56 @@ def test_ai_chat_renderer_removes_standalone_source_lines_and_repairs_numbering(
     assert body_html.count('<sup class="ai-chat-citation-marker"') == 2
     assert body_html.count("<ol>") == 1
     assert body_html.count("<li>") == 2
+
+
+def test_ai_chat_renderer_sanitizes_and_renders_web_citation() -> None:
+    evidence = _web_evidence()
+    sanitized = sanitize_ai_chat_markdown_citations(
+        f"Fresh claim [[web:{WEB_ID}]] and hidden [[web:{MISSING_ID}]].",
+        notes=FakeNotes(),
+        allowed_note_ids=(),
+        allowed_web_evidence=(evidence,),
+    )
+    rendered = render_ai_chat_markdown_to_html(
+        sanitized,
+        notes=FakeNotes(),
+        allowed_note_ids=(),
+        allowed_web_evidence=(evidence,),
+    )
+
+    assert sanitized == f"Fresh claim [[web:{WEB_ID}]] and hidden ."
+    assert 'href="https://example.com/article"' in rendered
+    assert 'target="_blank" rel="noopener noreferrer"' in rendered
+    assert "Example article" in rendered
+    assert MISSING_ID not in rendered
+
+
+def test_ai_chat_renderer_preserves_bold_currency_with_web_citation() -> None:
+    evidence = _web_evidence()
+    rendered = render_ai_chat_markdown_to_html(
+        (
+            "QQQ is currently **$741.64**, up **$0.43** "
+            f"(**+0.06%**) today. [[web:{WEB_ID}]]"
+        ),
+        notes=FakeNotes(),
+        allowed_note_ids=(),
+        allowed_web_evidence=(evidence,),
+    )
+
+    assert "<strong>$741.64</strong>" in rendered
+    assert "<strong>$0.43</strong>" in rendered
+    assert "<strong>+0.06%</strong>" in rendered
+    assert "meta-latex" not in rendered
+    assert 'class="ai-chat-references"' in rendered
+
+
+def test_streaming_renderer_hides_web_citation_tokens() -> None:
+    evidence = _web_evidence()
+    rendered = render_ai_chat_streaming_markdown_to_html(
+        f"Fresh claim [[web:{WEB_ID}]]",
+        allowed_note_ids=(),
+        allowed_web_evidence=(evidence,),
+    )
+
+    assert "Fresh claim" in rendered
+    assert WEB_ID not in rendered

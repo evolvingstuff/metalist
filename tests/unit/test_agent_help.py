@@ -15,6 +15,7 @@ from app.services.agent.menu_actions import MenuActionStore, MenuResult, menu_ac
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS, resolve_agent_skill_set
+from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from test_agent_history import install_transport, chunk, response, USAGE
 from test_agent_scoped_runtime import _FakeInference, _runtime, _snapshot
 
@@ -143,9 +144,10 @@ def test_real_runtime_two_calls_and_actual_menu_result(menu_id, status):
             tag_handler=None, session_key='session-1', base_url='https://api.openai.com/v1',
             selected_model='gpt-5.6-luna', thinking_level='off',
             canonical_messages=[{'role': 'user', 'content': 'Where is the context limit?'}],
-            prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
-            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=24000),
-            frozen_scope=_snapshot(large_tail=False),
+                prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=24000),
+                web_settings=DEFAULT_AGENT_WEB_SETTINGS,
+                frozen_scope=_snapshot(large_tail=False),
         ):
             events.append(event)
             if event['type'] == 'menu_open':
@@ -189,6 +191,7 @@ def test_real_instructor_history_captures_selected_skill_and_menu_ack(monkeypatc
             canonical_messages=[{'role': 'user', 'content': 'Open AI settings'}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
             retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=24000),
+            web_settings=DEFAULT_AGENT_WEB_SETTINGS,
             frozen_scope=_snapshot(large_tail=False),
         ):
             if event['type'] == 'menu_open':
@@ -214,6 +217,7 @@ def test_closing_stream_at_menu_request_cleans_pending_ack_immediately():
             canonical_messages=[{'role': 'user', 'content': 'Open AI settings'}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
             retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=24000),
+            web_settings=DEFAULT_AGENT_WEB_SETTINGS,
             frozen_scope=_snapshot(large_tail=False),
         )
         async for event in stream:

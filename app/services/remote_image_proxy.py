@@ -16,13 +16,11 @@ import httpx
 from PIL import Image, UnidentifiedImageError
 
 from app.services.exception_capture import CapturedExceptionContext
-from app.services.link_titles import (
-    _LinkTitleTargetRejected,
-    _PinnedHTTPTransport,
-    _resolve_public_http_target,
-    normalize_url_for_link_title,
-)
+from app.services.link_titles import normalize_url_for_link_title
 from app.services.input_errors import InputRejected, ResourceNotFound
+from app.services.public_http import PinnedPublicHTTPTransport
+from app.services.public_http import PublicHttpTargetRejected
+from app.services.public_http import resolve_public_http_target
 
 
 _FETCH_TIMEOUT_SECONDS = 8.0
@@ -205,13 +203,13 @@ def _validated_image_mime_type(content: bytes) -> tuple[str | None, str | None]:
 
 
 def _download_one_url(url: str) -> tuple[bytes | None, str | None, str | None]:
-    target_rejection_capture = CapturedExceptionContext(_LinkTitleTargetRejected, boundary='app/services/remote_image_proxy.py:_download_one_url:target_rejection_capture')
+    target_rejection_capture = CapturedExceptionContext(PublicHttpTargetRejected, boundary='app/services/remote_image_proxy.py:_download_one_url:target_rejection_capture')
     target = None
     with target_rejection_capture:
-        target = _resolve_public_http_target(url)
+        target = resolve_public_http_target(url)
     if target_rejection_capture.captured_exception is not None:
         error = target_rejection_capture.captured_exception
-        if not isinstance(error, _LinkTitleTargetRejected):
+        if not isinstance(error, PublicHttpTargetRejected):
             raise RuntimeError("Remote image target rejection has unexpected type")
         return None, None, error.reason
     if target is None:
@@ -230,7 +228,7 @@ def _download_one_url(url: str) -> tuple[bytes | None, str | None, str | None]:
         with httpx.Client(
             timeout=_FETCH_TIMEOUT_SECONDS,
             follow_redirects=False,
-            transport=_PinnedHTTPTransport(
+            transport=PinnedPublicHTTPTransport(
                 target=target,
                 network_backend=httpcore.SyncBackend(),
             ),

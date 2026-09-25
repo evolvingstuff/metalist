@@ -6,6 +6,7 @@ import math
 import time
 from collections.abc import AsyncGenerator
 
+from app.security.http_error_diagnostics import describe_server_exception
 from app.services.ai_chat import AiChatActivityTimer, AiChatSessionStore
 from app.services.note_store import NoteStore
 from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html, render_ai_chat_markdown_to_html, sanitize_ai_chat_markdown_citations
@@ -13,6 +14,8 @@ from app.services.markdown_rendering import render_markdown_to_html
 from app.services.runtime_generation import register_current_task, unregister_task
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.web_evidence import WebEvidenceStore
+from app.services.agent.web_evidence import WebPageEvidence
 
 
 def event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
@@ -26,13 +29,27 @@ def event_reference_note_ids(event: dict[str, object]) -> tuple[str, ...]:
     return tuple(raw_ids)
 
 
+def event_reference_web_ids(event: dict[str, object]) -> tuple[str, ...]:
+    raw_ids = event["reference_web_ids"]
+    if not isinstance(raw_ids, list):
+        raise RuntimeError("Agent reference_web_ids event field must be a list")
+    if any(not isinstance(evidence_id, str) or not evidence_id for evidence_id in raw_ids):
+        raise RuntimeError("Agent web evidence id must be non-empty")
+    if len(set(raw_ids)) != len(raw_ids):
+        raise RuntimeError("Agent reference_web_ids event field has duplicates")
+    return tuple(raw_ids)
+
+
 class ChatTurnStream:
-    def __init__(self, *, store: AiChatSessionStore, notes: NoteStore, session_key: str,
-                 turn_id: str, initial_input_tokens: int) -> None:
+    def __init__(self, *, store: AiChatSessionStore, notes: NoteStore,
+                 session_key: str, turn_id: str, initial_input_tokens: int,
+                 web_evidence_store: WebEvidenceStore) -> None:
         self.store, self.notes = store, notes
+        self.web_evidence_store = web_evidence_store
         self.session_key, self.turn_id = session_key, turn_id
         self.thinking = self.content = ''
         self.reference_note_ids: tuple[str, ...] = ()
+        self.reference_web_ids: tuple[str, ...] = ()
         self.has_reference_scope = False
         self.latest_input_tokens = initial_input_tokens
         self.latest_output_tokens = 0
@@ -65,21 +82,53 @@ class ChatTurnStream:
 
     def content_delta(self, event: dict[str, object]) -> dict[str, object]:
         note_ids = event_reference_note_ids(event)
-        if self.has_reference_scope and note_ids != self.reference_note_ids:
+        web_ids = event_reference_web_ids(event)
+        if self.has_reference_scope and (
+            note_ids != self.reference_note_ids or web_ids != self.reference_web_ids
+        ):
             raise RuntimeError('Agent reference scope changed during final response')
-        self.reference_note_ids, self.has_reference_scope = note_ids, True
+        self.reference_note_ids = note_ids
+        self.reference_web_ids = web_ids
+        self.has_reference_scope = True
+        web_evidence = self._reference_web_evidence()
         self.store.append_delta(session_key=self.session_key, turn_id=self.turn_id, delta_kind='content', text=event['text'])
         self.content += event['text']
-        return {**event, 'rendered_text': render_ai_chat_streaming_markdown_to_html(self.content, allowed_note_ids=note_ids)}
+        return {**event, 'rendered_text': render_ai_chat_streaming_markdown_to_html(
+            self.content,
+            allowed_note_ids=note_ids,
+            allowed_web_evidence=web_evidence,
+        )}
 
     def complete(self, event: dict[str, object]) -> dict[str, object]:
         if not self.has_reference_scope:
             raise RuntimeError('Agent final response completed without a reference scope')
         if event_reference_note_ids(event) != self.reference_note_ids:
             raise RuntimeError('Agent completion reference scope does not match content')
-        content = sanitize_ai_chat_markdown_citations(self.content, notes=self.notes, allowed_note_ids=self.reference_note_ids)
+        if event_reference_web_ids(event) != self.reference_web_ids:
+            raise RuntimeError('Agent completion web reference scope does not match content')
+        web_evidence = self._reference_web_evidence()
+        content = sanitize_ai_chat_markdown_citations(
+            self.content,
+            notes=self.notes,
+            allowed_note_ids=self.reference_note_ids,
+            allowed_web_evidence=web_evidence,
+        )
         self.store.complete_turn(session_key=self.session_key, turn_id=self.turn_id, final_content=content)
-        return {**event, 'content': content, 'rendered_content': render_ai_chat_markdown_to_html(content, notes=self.notes, allowed_note_ids=self.reference_note_ids)}
+        return {**event, 'content': content, 'rendered_content': render_ai_chat_markdown_to_html(
+            content,
+            notes=self.notes,
+            allowed_note_ids=self.reference_note_ids,
+            allowed_web_evidence=web_evidence,
+        )}
+
+    def _reference_web_evidence(self) -> tuple[WebPageEvidence, ...]:
+        return tuple(
+            self.web_evidence_store.get(
+                session_key=self.session_key,
+                evidence_id=evidence_id,
+            )
+            for evidence_id in self.reference_web_ids
+        )
 
     def transform(self, event: dict[str, object]) -> dict[str, object]:
         event_type = event['type']
@@ -119,9 +168,13 @@ class ChatTurnStream:
                 self.fail('Cancelled by user')
             raise
         # lint: allow-PY001 rationale="record the turn failure and re-raise the original internal defect"
-        except Exception:
+        except Exception as exc:
             if self.is_streaming():
-                self.fail('Internal agent error')
+                diagnostic = describe_server_exception(exc)
+                self.fail(
+                    "Internal agent error "
+                    f"({diagnostic['errorType']} at {diagnostic['codeLocation']})"
+                )
             raise
         finally:
             unregister_task(task)

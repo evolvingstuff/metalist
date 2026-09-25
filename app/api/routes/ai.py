@@ -20,6 +20,7 @@ from app.models.utils import render_note_data_read_only
 from app.services.ai_chat_stream import ChatTurnStream
 from app.services.ai_chat import ai_chat_store
 from app.services.ai_chat_rendering import find_note_citation_ids
+from app.services.ai_chat_rendering import find_web_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.cloud_privacy import cloud_privacy_evaluator
@@ -58,6 +59,9 @@ from app.services.openai_credentials import validate_openai_api_key
 from app.services.sync import set_clipboard, get_current_sync_uuid
 from app.services.agent.tagging_run import TaggingRun, proposal_scope_ids
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
+from app.services.agent.web_settings import AgentWebSettings
+from app.services.agent.web_settings import resolve_agent_web_settings
+from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.tagging import TAGGING_PROMPT_KEY, TAGGING_POLICY_KEY, DEFAULT_TAGGING_PROMPT
 from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_proposal_changes
 from app.services.bulk_operation import bulk_operation_guard
@@ -249,7 +253,7 @@ class AiCopyMessageResponse(BaseModel):
     tags: str
 
 
-def _render_ai_response_note_content(markdown_text: str) -> str:
+def _render_ai_response_note_content(*, markdown_text: str, session_key: str) -> str:
     if not isinstance(markdown_text, str) or markdown_text == "":
         raise ValueError("AI response Markdown must be a non-empty string")
     allowed_note_ids = find_note_citation_ids(
@@ -260,6 +264,10 @@ def _render_ai_response_note_content(markdown_text: str) -> str:
         markdown_text,
         notes=note_store,
         allowed_note_ids=allowed_note_ids,
+        allowed_web_evidence=web_evidence_store.available_for_ids(
+            session_key=session_key,
+            evidence_ids=find_web_citation_ids(markdown_text),
+        ),
     )
     if rendered_content == "":
         raise RuntimeError("Completed AI response rendered to empty HTML")
@@ -461,6 +469,10 @@ def get_ai_session(
                 message["content"],
                 notes=note_store,
                 allowed_note_ids=allowed_note_ids,
+                allowed_web_evidence=web_evidence_store.available_for_ids(
+                    session_key=session_key,
+                    evidence_ids=find_web_citation_ids(message["content"]),
+                ),
             )
         if message["role"] == "assistant" and message["thinking"] != "":
             rendered_thinking = render_markdown_to_html(message["thinking"])
@@ -502,6 +514,7 @@ def clear_ai_session(
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
     ai_chat_store.clear_session(session_key=session_key)
+    web_evidence_store.clear_session(session_key=session_key)
     agent_trace_store.clear_trace(session_key=session_key)
     return AiClearResponse(message="Chat cleared")
 
@@ -576,7 +589,10 @@ def copy_ai_message(
         raise HTTPException(status_code=409, detail="AI response is empty")
 
     tags = "@llm"
-    note_content = _render_ai_response_note_content(content)
+    note_content = _render_ai_response_note_content(
+        markdown_text=content,
+        session_key=session_key,
+    )
     clipboard_record = {
         "id": f"ai-chat:{message_id}",
         "parent_id": None,
@@ -585,6 +601,7 @@ def copy_ai_message(
         "is_collapsed": False,
         "content": note_content,
         "tags": tags,
+        "proposed_tags": "",
     }
     set_clipboard(payload.client_id, [clipboard_record])
 
@@ -626,6 +643,7 @@ def stream_ai_chat(
         preferences=preferences,
         provider=payload.provider,
     )
+    web_settings = resolve_agent_web_settings(preferences=preferences)
     privacy_boundary = resolve_cloud_privacy_boundary(
         preferences=preferences,
         provider=payload.provider,
@@ -660,10 +678,12 @@ def stream_ai_chat(
     )
     tagging_run = TaggingRun(token=token, snapshot=frozen_scope, preferences=preferences, sync_uuid=get_current_sync_uuid(),
         batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider))
-    ai_chat_store.synchronize_disclosure_boundary(
+    disclosure_changed = ai_chat_store.synchronize_disclosure_boundary(
         session_key=session_key,
         disclosure_key=cloud_privacy_evaluator.history_disclosure_key(boundary=privacy_boundary),
     )
+    if disclosure_changed:
+        web_evidence_store.clear_session(session_key=session_key)
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,
         user_content=payload.message,
@@ -677,11 +697,13 @@ def stream_ai_chat(
     )
     initial_approx_input_tokens = estimate_input_tokens(initial_messages)
 
-    turn_stream = ChatTurnStream(store=ai_chat_store, notes=note_store, session_key=session_key,
+    turn_stream = ChatTurnStream(store=ai_chat_store, notes=note_store,
+                                 web_evidence_store=web_evidence_store, session_key=session_key,
                                  turn_id=turn_id, initial_input_tokens=initial_approx_input_tokens)
     events = _stream_runtime_events(payload=payload, openai_api_key=openai_api_key,
         session_key=session_key, provider_messages=provider_messages, prompts=prompts, skills=skills,
         retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
+        web_settings=web_settings,
         initial_input_tokens=initial_approx_input_tokens)
 
     return StreamingResponse(
@@ -699,7 +721,7 @@ async def _stream_runtime_events(
     *, payload: AiChatRequest, openai_api_key: str, session_key: str,
     provider_messages: list[dict[str, str]], prompts: AgentPromptSet, skills: AgentSkillSet,
     retrieval_settings: AgentRetrievalSettings, frozen_scope: ScopedSearchSnapshot,
-    tagging_run: TaggingRun, initial_input_tokens: int,
+    tagging_run: TaggingRun, initial_input_tokens: int, web_settings: AgentWebSettings,
 ) -> AsyncIterator[dict[str, object]]:
     action, start_label = 'provider_runtime', 'Connecting to OpenAI API'
     ready_label = 'OpenAI API ready · 1,050,000-token context'
@@ -712,7 +734,8 @@ async def _stream_runtime_events(
     events = runtime.stream_scoped(session_key=session_key, base_url=base_url,
             selected_model=payload.model, thinking_level=payload.thinking_level,
             canonical_messages=provider_messages, prompts=prompts, skills=skills,
-            retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tag_handler=tagging_run.stream)
+            retrieval_settings=retrieval_settings, web_settings=web_settings,
+            frozen_scope=frozen_scope, tag_handler=tagging_run.stream)
     try:
         async for event in events:
             yield event

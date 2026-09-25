@@ -66,12 +66,12 @@ export async function checkAdditionalStateTransitions(page) {
     let scenario = 'stream';
     window.fetch = async (url, options = {}) => {
       if (url === CONFIG.API.AI.CHAT) {
-        const final = {type:'done', content:'Local simulated answer ', rendered_content:'<p>Local simulated answer</p>', reference_note_ids:[]};
+        const final = {type:'done', content:'Local simulated answer ', rendered_content:'<p>Local simulated answer</p>', reference_note_ids:[], reference_web_ids:[]};
         const events = scenario === 'bulk'
           ? [{type:'bulk_progress', label:'Testing unchanged completion', committing:false}, {type:'bulk_complete', changed:false}, final]
           : [{type:'thinking_delta', text:' ', rendered_text:''},
-             {type:'content_delta', text:'Local simulated answer', rendered_text:final.rendered_content, reference_note_ids:[]},
-             {type:'content_delta', text:' ', rendered_text:final.rendered_content, reference_note_ids:[]}, final];
+             {type:'content_delta', text:'Local simulated answer', rendered_text:final.rendered_content, reference_note_ids:[], reference_web_ids:[]},
+             {type:'content_delta', text:' ', rendered_text:final.rendered_content, reference_note_ids:[], reference_web_ids:[]}, final];
         return new Response(events.map(event => JSON.stringify(event)).join('\n')+'\n', {headers:{'Content-Type':'application/x-ndjson'}});
       }
       if (url === CONFIG.API.AI.SESSION) {

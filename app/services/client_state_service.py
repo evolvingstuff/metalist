@@ -27,6 +27,8 @@ from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TO
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.skill_settings import AGENT_SKILL_PREFERENCE_KEYS
 from app.services.agent.skill_settings import SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
+from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
+from app.services.agent.web_settings import WEB_ACCESS_MODES
 from app.services.agent.skill_settings import validate_agent_skill_content
 from app.services.agent.openai_inference import validate_openai_model
 
@@ -54,6 +56,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.openai_model": "openai_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
+    WEB_ACCESS_MODE_PREFERENCE_KEY: WEB_ACCESS_MODES,
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"

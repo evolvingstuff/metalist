@@ -11,6 +11,7 @@ from app.services.embedded_references import get_note_reference_preview
 from app.services.embedded_references import render_compact_note_reference_link
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.note_store import NoteStore
+from app.services.agent.web_evidence import WebPageEvidence
 
 
 _UUID_DASH_CHARACTERS = "-‐‑‒–—−"
@@ -25,10 +26,18 @@ _UUID_PATTERN = (
 )
 _NOTE_CITATION_RE = re.compile(
     rf"\[\[(?P<reference>{_UUID_PATTERN})\]\]"
-    rf"|(?<!\[\[)(?<![{_UUID_BOUNDARY_PATTERN}])(?P<bare>{_UUID_PATTERN})"
+    rf"|(?<!\[\[)(?<!web:)(?<![{_UUID_BOUNDARY_PATTERN}])(?P<bare>{_UUID_PATTERN})"
     rf"(?![{_UUID_BOUNDARY_PATTERN}])"
 )
 _BRACKETED_NOTE_CITATION_RE = re.compile(rf"\[\[{_UUID_PATTERN}\]\]")
+_WEB_CITATION_RE = re.compile(
+    rf"\[\[web:(?P<web_id>{_UUID_PATTERN})\]\]",
+    re.IGNORECASE,
+)
+_INCOMPLETE_WEB_CITATION_SUFFIX_RE = re.compile(
+    rf"\[\[web:[0-9a-fA-F{re.escape(_UUID_DASH_CHARACTERS)}]{{0,36}}\]?$",
+    re.IGNORECASE,
+)
 _INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE = re.compile(
     rf"\[\[[0-9a-fA-F{re.escape(_UUID_DASH_CHARACTERS)}]{{0,36}}\]?$"
 )
@@ -69,8 +78,10 @@ def render_ai_chat_markdown_to_html(
     *,
     notes: NoteStore,
     allowed_note_ids: tuple[str, ...],
+    allowed_web_evidence: tuple[WebPageEvidence, ...],
 ) -> str:
     _validate_allowed_note_ids(allowed_note_ids)
+    web_evidence_by_id = _validate_allowed_web_evidence(allowed_web_evidence)
     visible_markdown = _hide_incomplete_bracketed_citation_suffix(markdown_text)
     canonical_markdown = _canonicalize_numbered_note_citations(
         markdown_text=visible_markdown,
@@ -92,22 +103,36 @@ def render_ai_chat_markdown_to_html(
         context=context,
         allowed_note_ids=allowed_note_ids,
     )
-    if len(cited_note_ids) == 0:
-        return body_html
-    reference_groups = _group_citations_by_reference_root(
-        cited_note_ids=cited_note_ids,
-        context=context,
+    reference_groups: list[tuple[str, tuple[str, ...]]] = []
+    if cited_note_ids:
+        reference_groups = _group_citations_by_reference_root(
+            cited_note_ids=cited_note_ids,
+            context=context,
+        )
+    body_html, cited_web_ids = _replace_web_citations(
+        rendered_html=body_html,
+        evidence_by_id=web_evidence_by_id,
+        starting_number=len(reference_groups) + 1,
     )
-    return f"{body_html}{_render_references_section(reference_groups, context=context)}"
+    if len(reference_groups) == 0 and len(cited_web_ids) == 0:
+        return body_html
+    return f"{body_html}{_render_references_section(
+        reference_groups,
+        context=context,
+        cited_web_ids=cited_web_ids,
+        evidence_by_id=web_evidence_by_id,
+    )}"
 
 
 def render_ai_chat_streaming_markdown_to_html(
     markdown_text: str,
     *,
     allowed_note_ids: tuple[str, ...],
+    allowed_web_evidence: tuple[WebPageEvidence, ...],
 ) -> str:
     """Render partial response prose without exposing citation UI before completion."""
     _validate_allowed_note_ids(allowed_note_ids)
+    _validate_allowed_web_evidence(allowed_web_evidence)
     visible_markdown = _hide_incomplete_bracketed_citation_suffix(markdown_text)
     canonical_markdown = _canonicalize_numbered_note_citations(
         markdown_text=visible_markdown,
@@ -117,7 +142,8 @@ def render_ai_chat_streaming_markdown_to_html(
 
     def remove_reference_tokens(text: str) -> str:
         without_note_ids = _NOTE_CITATION_RE.sub("", text)
-        return _NUMBERED_NOTE_CITATION_RE.sub("", without_note_ids)
+        without_web_ids = _WEB_CITATION_RE.sub("", without_note_ids)
+        return _NUMBERED_NOTE_CITATION_RE.sub("", without_web_ids)
 
     reference_free_markdown = _transform_markdown_outside_fences(
         markdown_text=normalized_markdown,
@@ -136,7 +162,9 @@ def strip_note_citations_for_history(markdown_text: str) -> str:
         raise ValueError("AI history content must be a non-empty string")
     stripped = _transform_markdown_outside_fences(
         markdown_text=markdown_text,
-        transform=lambda text: _BRACKETED_NOTE_CITATION_RE.sub("", text),
+        transform=lambda text: _WEB_CITATION_RE.sub(
+            "", _BRACKETED_NOTE_CITATION_RE.sub("", text)
+        ),
     ).strip()
     if stripped == "":
         raise RuntimeError("AI response contains only note citation metadata")
@@ -148,11 +176,13 @@ def sanitize_ai_chat_markdown_citations(
     *,
     notes: NoteStore,
     allowed_note_ids: tuple[str, ...],
+    allowed_web_evidence: tuple[WebPageEvidence, ...],
 ) -> str:
     """Keep only citations backed by notes retrieved during the current run."""
     if not isinstance(markdown_text, str) or markdown_text == "":
         raise ValueError("AI response content must be a non-empty string")
     _validate_allowed_note_ids(allowed_note_ids)
+    web_evidence_by_id = _validate_allowed_web_evidence(allowed_web_evidence)
     allowed_note_id_set = frozenset(allowed_note_ids)
     canonical_markdown = _canonicalize_numbered_note_citations(
         markdown_text=markdown_text,
@@ -174,6 +204,23 @@ def sanitize_ai_chat_markdown_citations(
     sanitized = _transform_markdown_outside_fences(
         markdown_text=canonical_markdown,
         transform=sanitize_text,
+    )
+    allowed_web_ids = frozenset(web_evidence_by_id)
+
+    def sanitize_web_text(text: str) -> str:
+        def replace_web(match: re.Match[str]) -> str:
+            evidence_id = match.group("web_id").translate(
+                _UUID_DASH_TRANSLATION
+            ).lower()
+            if evidence_id not in allowed_web_ids:
+                return ""
+            return f"[[web:{evidence_id}]]"
+
+        return _WEB_CITATION_RE.sub(replace_web, text)
+
+    sanitized = _transform_markdown_outside_fences(
+        markdown_text=sanitized,
+        transform=sanitize_web_text,
     )
     sanitized = _normalize_generated_response_structure(sanitized).strip()
     if sanitized == "":
@@ -207,6 +254,24 @@ def find_note_citation_ids(
     return tuple(cited_note_ids)
 
 
+def find_web_citation_ids(markdown_text: str) -> tuple[str, ...]:
+    if not isinstance(markdown_text, str) or markdown_text == "":
+        raise ValueError("AI response content must be a non-empty string")
+    cited_ids: list[str] = []
+
+    def collect(text: str) -> str:
+        for match in _WEB_CITATION_RE.finditer(text):
+            evidence_id = match.group("web_id").translate(
+                _UUID_DASH_TRANSLATION
+            ).lower()
+            if evidence_id not in cited_ids:
+                cited_ids.append(evidence_id)
+        return text
+
+    _transform_markdown_outside_fences(markdown_text=markdown_text, transform=collect)
+    return tuple(cited_ids)
+
+
 def _canonicalize_numbered_note_citations(
     *,
     markdown_text: str,
@@ -234,9 +299,9 @@ def _hide_incomplete_bracketed_citation_suffix(markdown_text: str) -> str:
     """Keep a streaming `[[UUID]]` invisible until both closing brackets arrive."""
     return _transform_markdown_outside_fences(
         markdown_text=markdown_text,
-        transform=lambda text: _INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE.sub(
+        transform=lambda text: _INCOMPLETE_WEB_CITATION_SUFFIX_RE.sub(
             "",
-            text,
+            _INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE.sub("", text),
         ),
     )
 
@@ -344,6 +409,21 @@ def _validate_allowed_note_ids(allowed_note_ids: tuple[str, ...]) -> None:
     for note_id in allowed_note_ids:
         if not isinstance(note_id, str) or note_id == "":
             raise ValueError("allowed_note_ids must contain non-empty strings")
+
+
+def _validate_allowed_web_evidence(
+    evidence: tuple[WebPageEvidence, ...],
+) -> dict[str, WebPageEvidence]:
+    if not isinstance(evidence, tuple):
+        raise TypeError("allowed_web_evidence must be a tuple")
+    by_id: dict[str, WebPageEvidence] = {}
+    for page in evidence:
+        if not isinstance(page, WebPageEvidence):
+            raise TypeError("allowed_web_evidence must contain WebPageEvidence")
+        if page.evidence_id in by_id:
+            raise ValueError("allowed_web_evidence must be unique")
+        by_id[page.evidence_id] = page
+    return by_id
 
 
 def _raw_note_id_from_match(match: re.Match[str]) -> str:
@@ -562,6 +642,69 @@ def _render_citation_marker(
     )
 
 
+def _replace_web_citations(
+    *,
+    rendered_html: str,
+    evidence_by_id: dict[str, WebPageEvidence],
+    starting_number: int,
+) -> tuple[str, list[str]]:
+    if starting_number < 1:
+        raise ValueError("Web citation numbering must be positive")
+    output: list[str] = []
+    cited_ids: list[str] = []
+    number_by_id: dict[str, int] = {}
+    open_tags: list[str] = []
+    for segment in _HTML_SEGMENT_RE.split(rendered_html):
+        if segment == "":
+            continue
+        if not segment.startswith("<"):
+            if any(tag in _CITATION_SUPPRESSING_TAGS for tag in open_tags):
+                output.append(segment)
+                continue
+
+            def replace(match: re.Match[str]) -> str:
+                evidence_id = match.group("web_id").translate(
+                    _UUID_DASH_TRANSLATION
+                ).lower()
+                if evidence_id not in evidence_by_id:
+                    return ""
+                if evidence_id not in number_by_id:
+                    number_by_id[evidence_id] = starting_number + len(number_by_id)
+                    cited_ids.append(evidence_id)
+                reference_number = number_by_id[evidence_id]
+                return (
+                    '<sup class="ai-chat-citation-marker" '
+                    f'aria-label="Reference {reference_number}">'
+                    '<a class="ai-chat-citation-link ai-chat-web-citation-link" '
+                    f'href="{html.escape(evidence_by_id[evidence_id].final_url, quote=True)}" '
+                    'target="_blank" rel="noopener noreferrer">'
+                    f"[{reference_number}]</a></sup>"
+                )
+
+            output.append(_WEB_CITATION_RE.sub(replace, segment))
+            continue
+        close_match = _CLOSE_TAG_RE.match(segment)
+        if close_match is not None:
+            closing_tag = close_match.group(1).casefold()
+            if len(open_tags) == 0 or open_tags[-1] != closing_tag:
+                raise RuntimeError(
+                    f"AI Markdown renderer produced mismatched closing tag {closing_tag}"
+                )
+            open_tags.pop()
+            output.append(segment)
+            continue
+        open_match = _OPEN_TAG_RE.match(segment)
+        if open_match is None:
+            raise RuntimeError("AI Markdown renderer produced an unrecognized HTML segment")
+        opening_tag = open_match.group(1).casefold()
+        if opening_tag not in _VOID_TAGS and not segment.rstrip().endswith("/>"):
+            open_tags.append(opening_tag)
+        output.append(segment)
+    if open_tags:
+        raise RuntimeError(f"AI Markdown renderer left unclosed tags: {open_tags}")
+    return "".join(output), cited_ids
+
+
 def _sort_adjacent_citation_marker_runs(rendered_text: str) -> str:
     marker_matches = list(_CITATION_MARKER_HTML_RE.finditer(rendered_text))
     if len(marker_matches) < 2:
@@ -600,9 +743,11 @@ def _render_references_section(
     reference_groups: list[tuple[str, tuple[str, ...]]],
     *,
     context: EmbedRenderContext,
+    cited_web_ids: list[str],
+    evidence_by_id: dict[str, WebPageEvidence],
 ) -> str:
-    if len(reference_groups) == 0:
-        raise ValueError("References section requires at least one cited note")
+    if len(reference_groups) == 0 and len(cited_web_ids) == 0:
+        raise ValueError("References section requires at least one citation")
     reference_items: list[str] = []
     all_cited_note_ids: list[str] = []
     for reference_number, (root_note_id, cited_note_ids) in enumerate(
@@ -622,8 +767,22 @@ def _render_references_section(
             f"{reference_link}</li>"
         )
 
+    for evidence_id in cited_web_ids:
+        page = evidence_by_id[evidence_id]
+        reference_number = len(reference_items) + 1
+        label = page.title
+        if label == "":
+            label = page.final_url
+        reference_items.append(
+            '<li class="ai-chat-web-reference">'
+            f'<span class="ai-chat-reference-number">[{reference_number}]</span>'
+            f'<a href="{html.escape(page.final_url, quote=True)}" '
+            'target="_blank" rel="noopener noreferrer">'
+            f"{html.escape(label)}</a></li>"
+        )
+
     open_all_html = ""
-    if len(reference_groups) > 1:
+    if len(reference_groups) > 1 and len(cited_web_ids) == 0:
         reference_query = " OR ".join(all_cited_note_ids)
         escaped_query = html.escape(reference_query, quote=True)
         open_all_html = (

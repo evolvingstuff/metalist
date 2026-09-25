@@ -33,8 +33,11 @@ LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
     "pref.ai.skill.scoped_investigation_v2"
 )
 LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
+WEB_BROWSING_SKILL_ID = "web_browsing_v1"
+WEB_BROWSING_SKILL_PREFERENCE_KEY = "pref.ai.skill.web_browsing_v1"
 AGENT_SKILL_PREFERENCE_KEYS = (
     SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
+    WEB_BROWSING_SKILL_PREFERENCE_KEY,
     *(f"pref.ai.skill.help_{topic}_v1" for topic in HELP_TOPICS),
 )
 SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
@@ -134,6 +137,17 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             superseded_preference_keys=(
                 *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
             ),
+        ),
+        AgentSkill(
+            skill_id=WEB_BROWSING_SKILL_ID,
+            title="Web browsing",
+            description=(
+                "Opens public pages and Google result pages within the selected "
+                "web-access mode."
+            ),
+            trigger_action="web_browsing",
+            preference_key=WEB_BROWSING_SKILL_PREFERENCE_KEY,
+            content=load_skill("web-browsing.md"),
         ),
         *(AgentSkill(
             skill_id=f"help_{topic}_v1", title=title, description=description,

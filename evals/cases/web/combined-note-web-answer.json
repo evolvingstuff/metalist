@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "id": "web-combined-note-web-answer",
+  "description": "A final comparison combines selected-note and web evidence with both citation types.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Compare our internal target with the external benchmark."
+        }
+      ],
+      "context": {
+        "stage": "web_respond",
+        "mode": "full",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 1,
+          "matching_result_tree_count": 1
+        },
+        "selected_note": {
+          "status": "available",
+          "note_id": "30000000-0000-4000-8000-000000000001",
+          "tree_notes": [
+            {
+              "note_id": "30000000-0000-4000-8000-000000000001",
+              "parent_id": "",
+              "content_text": "Our internal target is a 20% reduction in processing time.",
+              "tags": "target performance"
+            }
+          ]
+        },
+        "basis": "the selected internal target and the opened benchmark report",
+        "web_evidence": [
+          {
+            "evidence_id": "30000000-0000-4000-8000-000000000002",
+            "requested_url": "https://example.com/benchmark",
+            "final_url": "https://example.com/benchmark",
+            "title": "External benchmark report",
+            "content_text": "The external benchmark reports a 30% reduction in processing time.",
+            "fetched_at": "2026-09-24T00:00:00+00:00",
+            "truncated": false
+          }
+        ]
+      },
+      "max_output_tokens": 512,
+      "expectation": {
+        "kind": "output",
+        "criteria": [
+          {
+            "id": "comparison",
+            "instruction": "State that the internal target is a 20% reduction and the external benchmark reports a 30% reduction, a 10 percentage-point difference."
+          },
+          {
+            "id": "note-citation",
+            "instruction": "Cite the internal 20% target with [[30000000-0000-4000-8000-000000000001]]."
+          },
+          {
+            "id": "web-citation",
+            "instruction": "Cite the external 30% benchmark with [[web:30000000-0000-4000-8000-000000000002]]."
+          }
+        ],
+        "reference_facts": "The selected note sets a 20% processing-time reduction target. The opened report states a 30% reduction, which is 10 percentage points higher."
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic combined note and web evidence regression"
+  }
+}

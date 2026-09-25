@@ -25,7 +25,11 @@ import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
-import { isViewModeNoteLink, resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
+import {
+    isViewModeNoteDisclosureToggle,
+    isViewModeNoteLink,
+    resolveNonContentNoteSelectionTarget,
+} from '../services/note-click-target-service.js';
 import {
     SHELL_CLOSE_SELECTOR,
     SHELL_RUNNING_CLASS,
@@ -353,6 +357,10 @@ function handleImmediateMouseDown(event) {
 
     if (isWritingAssistantInteraction(event)) return;
 
+    if (isViewModeNoteDisclosureToggle(event.target)) {
+        return;
+    }
+
     if (isViewModeNoteLink(event.target)) {
         return;
     }
@@ -471,6 +479,9 @@ function handleMoveDragMouseDown(event) {
     }
     if (!event.target) {
         throw new Error('Move drag mousedown missing target element');
+    }
+    if (isViewModeNoteDisclosureToggle(event.target)) {
+        return;
     }
     if (isViewModeNoteLink(event.target)) {
         return;
@@ -877,6 +888,10 @@ function handleClick(event) {
     }
 
     if (isWritingAssistantInteraction(event)) return;
+
+    if (isViewModeNoteDisclosureToggle(event.target)) {
+        return;
+    }
 
     // Consume the gesture before any target-specific early return. Holding the
     // mouse button does not expire an action already performed on mousedown.

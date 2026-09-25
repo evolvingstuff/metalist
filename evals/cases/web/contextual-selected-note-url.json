@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "id": "web-contextual-selected-note-url",
+  "description": "Contextual mode opens a URL disclosed by the selected note tree.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "off",
+  "steps": [
+    {
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Open the report linked in the selected note and summarize it."
+        }
+      ],
+      "context": {
+        "stage": "web_action",
+        "mode": "contextual",
+        "scope": {
+          "scope_kind": "all_notes",
+          "label": "All notes",
+          "search_query": "",
+          "sort_mode": "normal",
+          "matching_note_count": 2,
+          "matching_result_tree_count": 1
+        },
+        "selected_note": {
+          "status": "available",
+          "note_id": "20000000-0000-4000-8000-000000000002",
+          "tree_notes": [
+            {
+              "note_id": "20000000-0000-4000-8000-000000000001",
+              "parent_id": "",
+              "content_text": "Research sources",
+              "tags": "research"
+            },
+            {
+              "note_id": "20000000-0000-4000-8000-000000000002",
+              "parent_id": "20000000-0000-4000-8000-000000000001",
+              "content_text": "https://example.com/selected-report#results",
+              "tags": "report priority"
+            }
+          ]
+        },
+        "retained_web_evidence": [],
+        "tool_exchanges": []
+      },
+      "max_output_tokens": 0,
+      "expectation": {
+        "kind": "action",
+        "alternatives": [
+          {
+            "kind": "open_web_pages",
+            "urls": [
+              "https://example.com/selected-report"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "source": "synthetic permitted selected-note URL regression"
+  }
+}

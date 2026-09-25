@@ -188,6 +188,28 @@ writes).
 
 ## Security Properties
 
+### Agent public-web retrieval
+
+Agent web access defaults off. Contextual mode derives URL capabilities only from
+user-authored messages and note/evidence objects that already passed search,
+`@password`, whitelist, blacklist, and text-redaction rules. A URL that exists
+only in withheld content is neither disclosed nor authorized; the same public URL
+can still be authorized independently when the user supplies it. Full mode may
+search for and open public sources.
+
+Retrieval accepts only public HTTP(S) targets. Each initial target and redirect is
+normalized, DNS-resolved, rejected if it reaches private, loopback, link-local,
+reserved, or metadata address space, and connected through the validated address
+with TLS verification. Requests use GET without browser cookies, credentials, or
+JavaScript. Response bytes, redirects, PDF pages, extracted text, batch size, and
+concurrency are bounded.
+
+Remote text is untrusted evidence. It cannot change system instructions, settings,
+permissions, the frozen note scope, or contextual URL capabilities. Expected DNS,
+network, HTTP, unsupported-format, and malformed-document failures are reported per
+item; internal programming errors still propagate. Page evidence is held only in
+bounded process memory and is cleared with its chat/auth disclosure lifecycle.
+
 ### Shell Execution
 
 The server rejects `@shell` execution and shell-output polling unless the

@@ -136,7 +136,7 @@ async function checkChatMenuAcknowledgment(page) {
             if (String(url).endsWith('/ai/menu-result')) {
                 acknowledgment = JSON.parse(options.body);
                 const content = 'Opened AI agent settings.';
-                streamController.enqueue(encode({type: 'done', content, rendered_content: `<p>${content}</p>`, reference_note_ids: []}));
+                streamController.enqueue(encode({type: 'done', content, rendered_content: `<p>${content}</p>`, reference_note_ids: [], reference_web_ids: []}));
                 streamController.close();
                 return new Response(JSON.stringify({acknowledged: true}), {headers: {'content-type': 'application/json'}});
             }

@@ -338,7 +338,8 @@ def test_selected_tree_never_discloses_redacted_children_even_when_selected(sele
         prompts=DEFAULT_AGENT_PROMPTS, snapshot=snapshot)
     final = builder.append_final_request(messages=route, action=RespondAction(kind="respond", basis="supplied context"),
         prompts=DEFAULT_AGENT_PROMPTS, current_user_request="Summarize the selected note.",
-        reference_note_ids=snapshot.selected_note.reference_note_ids)
+        reference_note_ids=snapshot.selected_note.reference_note_ids,
+        reference_web_evidence=())
     for messages in (route, final):
         for withheld in ("gray-child", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
             assert withheld not in str(messages)

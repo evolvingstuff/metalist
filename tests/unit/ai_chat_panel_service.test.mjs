@@ -9,6 +9,7 @@ import {
     selectPersistentNonDiagnosticActivities,
     splitSearchActivityLabel,
     parseAiChatNdjsonBuffer,
+    synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
 } from '../../app/static/js/modules/ai-chat/ai-chat-panel-service.js';
 
@@ -69,6 +70,38 @@ test('chat maximum width preserves the minimum notes area', () => {
     assert.equal(calculateAiChatMaximumWidth(1200), 720);
     assert.equal(calculateAiChatMaximumWidth(2000), 1520);
     assert.equal(calculateAiChatMaximumWidth(760), 280);
+});
+
+
+test('reference disclosure toggle ignores browser-emitted redundant state events', () => {
+    const calls = [];
+    let isExpanded = false;
+    const strictState = {
+        has: messageId => {
+            assert.equal(messageId, 'assistant-1');
+            return isExpanded;
+        },
+        add: messageId => {
+            if (isExpanded) throw new Error('redundant add');
+            calls.push(['add', messageId]);
+            isExpanded = true;
+        },
+        delete: messageId => {
+            if (!isExpanded) throw new Error('redundant delete');
+            calls.push(['delete', messageId]);
+            isExpanded = false;
+        },
+    };
+
+    synchronizeExpandedReferenceMessage(strictState, 'assistant-1', true);
+    synchronizeExpandedReferenceMessage(strictState, 'assistant-1', true);
+    synchronizeExpandedReferenceMessage(strictState, 'assistant-1', false);
+    synchronizeExpandedReferenceMessage(strictState, 'assistant-1', false);
+
+    assert.deepEqual(calls, [
+        ['add', 'assistant-1'],
+        ['delete', 'assistant-1'],
+    ]);
 });
 
 
@@ -326,8 +359,8 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
     );
 
     const completed = parseAiChatNdjsonBuffer(
-        `${parsed.remainder}</p>","reference_note_ids":[]}\n`
-        + '{"type":"done","content":"Hi","rendered_content":"<p>Hi</p>","reference_note_ids":[]}\n',
+        `${parsed.remainder}</p>","reference_note_ids":[],"reference_web_ids":[]}\n`
+        + '{"type":"done","content":"Hi","rendered_content":"<p>Hi</p>","reference_note_ids":[],"reference_web_ids":[]}\n',
     );
     assert.deepEqual(completed.events, [
         {
@@ -335,12 +368,14 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
             text: 'Hi',
             rendered_text: '<p>Hi</p>',
             reference_note_ids: [],
+            reference_web_ids: [],
         },
         {
             type: 'done',
             content: 'Hi',
             rendered_content: '<p>Hi</p>',
             reference_note_ids: [],
+            reference_web_ids: [],
         },
     ]);
     assert.equal(completed.remainder, '');
@@ -388,7 +423,7 @@ test('NDJSON parser requires rendered snapshots for streamed text', () => {
     );
     assert.throws(
         () => parseAiChatNdjsonBuffer(
-            '{"type":"done","content":"hello","reference_note_ids":[]}\n',
+            '{"type":"done","content":"hello","reference_note_ids":[],"reference_web_ids":[]}\n',
         ),
         /done requires rendered_content/,
     );

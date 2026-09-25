@@ -32,3 +32,29 @@ def test_malformed_external_markdown_table_renders_as_text() -> None:
         "| --- |<br>\n"
         "| caching | reused input |</p>"
     )
+
+
+def test_bold_currency_amounts_do_not_become_one_latex_span() -> None:
+    rendered = render_markdown_to_html(
+        "QQQ is currently **$741.64**, up **$0.43** (**+0.06%**) today."
+    )
+
+    assert rendered == (
+        "<p>QQQ is currently <strong>$741.64</strong>, up "
+        "<strong>$0.43</strong> (<strong>+0.06%</strong>) today.</p>"
+    )
+    assert "meta-latex" not in rendered
+
+
+def test_numeric_dollar_delimited_math_still_renders() -> None:
+    rendered = render_markdown_to_html("Math: $2 + 3 = 5$.")
+
+    assert 'class="meta-latex meta-latex-inline"' in rendered
+    assert "<math" in rendered
+
+
+def test_plain_currency_range_keeps_both_dollar_signs() -> None:
+    rendered = render_markdown_to_html("The range is $5–$10 today.")
+
+    assert rendered == "<p>The range is $5–$10 today.</p>"
+    assert "meta-latex" not in rendered

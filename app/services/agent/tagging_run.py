@@ -357,5 +357,6 @@ class TaggingRun:
             "type": "content_delta",
             "text": message,
             "reference_note_ids": list(reference_note_ids),
+            "reference_web_ids": [],
         }
-        yield {"type": "done", "reference_note_ids": list(reference_note_ids)}
+        yield {"type": "done", "reference_note_ids": list(reference_note_ids), "reference_web_ids": []}

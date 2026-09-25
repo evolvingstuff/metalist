@@ -8,6 +8,7 @@ import httpx
 import instructor
 import pytest
 from openai import AsyncOpenAI
+from openai import APIError
 
 from app.services.agent.actions import AgentRouteEnvelope
 from app.services.agent.inference import InferenceAttempt

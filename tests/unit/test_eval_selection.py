@@ -50,6 +50,33 @@ def test_skill_edit_selects_only_cases_that_actually_load_that_skill(tmp_path, m
     assert all(entry["reason"] == "effective_fingerprint" for entry in plan["selected"])
 
 
+def test_web_skill_edit_selects_only_web_skill_cases(tmp_path, monkeypatch):
+    scenarios = cases()
+    baseline = tmp_path / "before.json"
+    save_baseline(baseline, scenarios)
+    loader = production.load_skill
+    monkeypatch.setattr(
+        production,
+        "load_skill",
+        lambda name: (
+            loader(name) + "\nChanged browsing guidance."
+            if name == "web-browsing.md"
+            else loader(name)
+        ),
+    )
+    plan = selection(scenarios, baseline)
+    expected = {
+        case.id
+        for case in scenarios
+        if any(
+            step.context.stage in {"web_action", "web_respond"}
+            for step in case.steps
+        )
+    }
+    assert expected and len(expected) < len(scenarios)
+    assert {entry["case_id"] for entry in plan["selected"]} == expected
+
+
 def test_system_prompt_edit_selects_every_existing_case(tmp_path, monkeypatch):
     scenarios = cases()
     baseline = tmp_path / "before.json"

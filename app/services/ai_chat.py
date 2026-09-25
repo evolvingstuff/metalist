@@ -286,7 +286,7 @@ class AiChatSessionStore:
             message["status"] = "error"
             message["error"] = error
 
-    def synchronize_disclosure_boundary(self, *, session_key: str, disclosure_key: str) -> None:
+    def synchronize_disclosure_boundary(self, *, session_key: str, disclosure_key: str) -> bool:
         """Retain the display transcript, but never replay a previous disclosure context."""
         self._validate_session_key(session_key)
         if not disclosure_key:
@@ -295,6 +295,8 @@ class AiChatSessionStore:
             if self._disclosure_keys.get(session_key) != disclosure_key:
                 self._history_starts[session_key] = len(self._sessions.get(session_key, []))
                 self._disclosure_keys[session_key] = disclosure_key
+                return True
+            return False
 
     def provider_messages(self, *, session_key: str) -> list[dict[str, str]]:
         self._validate_session_key(session_key)
