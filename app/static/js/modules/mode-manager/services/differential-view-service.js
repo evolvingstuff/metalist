@@ -23,6 +23,7 @@ import {
     syncNoteTimestampDataset,
 } from './note-timestamp-hover-service.js';
 import { syncTagProposalPresentation } from './tag-proposal-service.js';
+import { splitTagsForDisplay } from './tag-syntax-service.js';
 
 const CONTENT_ELEMENT_CACHE = ApplicationState.createWeakCollection('CONTENT_ELEMENT_CACHE', 'map');
 const CHILD_CONTAINER_CACHE = ApplicationState.createWeakCollection('CHILD_CONTAINER_CACHE', 'map');
@@ -546,7 +547,25 @@ function getTagsElement(noteElement) {
 function syncTagsElement(noteElement) {
     const tagsElement = getTagsElement(noteElement);
     const tags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
-    tagsElement.textContent = tags;
+    if (tagsElement.dataset.renderedTags === tags) {
+        return;
+    }
+    // One span per tag, scope or comment, separated by spaces so the text reads
+    // exactly as saved; the dark theme styles each span as a pill.
+    tagsElement.textContent = '';
+    splitTagsForDisplay(tags).forEach((piece, index) => {
+        if (index > 0) {
+            tagsElement.appendChild(document.createTextNode(' '));
+        }
+        const pieceElement = document.createElement('span');
+        pieceElement.classList.add('note-tag');
+        if (piece.kind !== 'tag') {
+            pieceElement.classList.add(`note-tag--${piece.kind}`);
+        }
+        pieceElement.textContent = piece.text;
+        tagsElement.appendChild(pieceElement);
+    });
+    tagsElement.dataset.renderedTags = tags;
 }
 
 function getChildContainer(noteElement) {

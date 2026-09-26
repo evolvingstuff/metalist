@@ -181,7 +181,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Generate random password…
 - Keyboard Shortcuts / Cheatsheet…
 - Version info… (also found by typing `update`, `upgrade`, or `release`; checks PyPI and offers an update for supported uv installations when behind)
-- Note Layout & Appearance… (top-level size, child indentation, and vertical spacing)
+- Note Layout & Appearance… (top-level size, child indentation, vertical spacing, note corners, and tag style)
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command)
 

@@ -130,6 +130,8 @@ def test_save_client_preferences_accepts_note_layout_keys(
         "pref.note_layout.top_level_note_size": "largest",
         "pref.note_layout.child_indentation": "wide",
         "pref.note_layout.vertical_spacing": "spacious",
+        "pref.note_layout.note_corners": "subtle",
+        "pref.note_layout.tag_style": "text",
     }
 
     saved = save_client_preferences(preferences=expected_preferences, token="")

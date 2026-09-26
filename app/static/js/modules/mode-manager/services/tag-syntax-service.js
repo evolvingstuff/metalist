@@ -617,6 +617,34 @@ export function analyzeTagBarInput(rawInput) {
     };
 }
 
+// Saved tag-bar text as display pieces: plain tags, @meta tags, bracketed scopes
+// (kept whole, including their inner spaces) and /* comments */.
+export function splitTagsForDisplay(tags) {
+    if (typeof tags !== 'string') {
+        throw new Error('splitTagsForDisplay expects a string');
+    }
+    const { segments, unclosedCommentText } = scanTagBarSegments(tags);
+    const pieces = segments.map((segment) => {
+        if (segment.type === 'comment') {
+            return { kind: 'comment', text: segment.text };
+        }
+        if (segment.type !== 'token') {
+            throw new Error(`Unknown tag bar segment type: ${segment.type}`);
+        }
+        if (TAG_WRAPPER_OPENERS.has(segment.text[0])) {
+            return { kind: 'scope', text: segment.text };
+        }
+        if (segment.text.startsWith('@')) {
+            return { kind: 'meta', text: segment.text };
+        }
+        return { kind: 'tag', text: segment.text };
+    });
+    if (unclosedCommentText) {
+        pieces.push({ kind: 'comment', text: unclosedCommentText });
+    }
+    return pieces;
+}
+
 export function normalizeTagBarInput(rawInput) {
     if (typeof rawInput !== 'string') {
         throw new Error('normalizeTagBarInput expects a string');

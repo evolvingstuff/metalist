@@ -171,13 +171,13 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Generate random password…
 - Keyboard Shortcuts / Cheatsheet…
 - Version info… (also found by typing `update`, `upgrade`, or `release`; checks PyPI and offers an update for supported uv installations when behind)
-- Note Layout & Appearance… (top-level size, child indentation, and vertical spacing)
+- Note Layout & Appearance… (top-level size, child indentation, vertical spacing, note corners, and tag style)
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 
 App menus close with `Escape` or an outside click. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
 
-When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
+When `Show tags in list` is enabled, the right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width. With the default `Pills` tag style (Note Layout & Appearance), each tag is an outlined pill, with meta tags and bracketed scopes dashed and `/* comments */` in italics; `Plain text` shows the saved tag string as grey text.
 
 ## Tag Bar Syntax
 - See `docs/ui/tag-bar.md` for the full grammar (tokens, wrappers, and `/* ... */` comments).

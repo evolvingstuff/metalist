@@ -645,6 +645,16 @@ class CommandPaletteController {
                 allowedValues('verticalSpacing'),
                 DEFAULT_NOTE_LAYOUT_SETTINGS.verticalSpacing,
             ),
+            noteCorners: this._getSelect(
+                NOTE_LAYOUT_PREFERENCE_KEYS.noteCorners,
+                allowedValues('noteCorners'),
+                DEFAULT_NOTE_LAYOUT_SETTINGS.noteCorners,
+            ),
+            tagStyle: this._getSelect(
+                NOTE_LAYOUT_PREFERENCE_KEYS.tagStyle,
+                allowedValues('tagStyle'),
+                DEFAULT_NOTE_LAYOUT_SETTINGS.tagStyle,
+            ),
         });
     }
 
@@ -654,6 +664,8 @@ class CommandPaletteController {
             [NOTE_LAYOUT_PREFERENCE_KEYS.topLevelNoteSize]: validated.topLevelNoteSize,
             [NOTE_LAYOUT_PREFERENCE_KEYS.childIndentation]: validated.childIndentation,
             [NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing]: validated.verticalSpacing,
+            [NOTE_LAYOUT_PREFERENCE_KEYS.noteCorners]: validated.noteCorners,
+            [NOTE_LAYOUT_PREFERENCE_KEYS.tagStyle]: validated.tagStyle,
         });
         this._applyPreferenceEffectsFromStorage();
     }

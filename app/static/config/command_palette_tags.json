@@ -122,7 +122,7 @@
     },
     {
       "id": "form.note_layout_appearance",
-      "tags": ["note", "notes", "layout", "appearance", "font", "size", "spacing", "indentation", "hierarchy", "display", "settings"]
+      "tags": ["note", "notes", "layout", "appearance", "font", "size", "spacing", "indentation", "hierarchy", "display", "settings", "corners", "rounded", "radius", "tags", "pills"]
     },
     {
       "id": "form.switch_namespace",

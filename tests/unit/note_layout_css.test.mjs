@@ -33,3 +33,39 @@ test('a single line of visible note tags adds no vertical spacing', () => {
     assert.match(css, /\.note-tags\s*\{[^}]*padding:\s*0 8px;/s);
     assert.doesNotMatch(css, /\.note-tags\s*\{[^}]*margin-bottom:/s);
 });
+
+
+test('every corner preset sets root and nested radii that notes and the preview use', () => {
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+
+    for (const preset of ['subtle', 'rounded', 'round']) {
+        const rule = new RegExp(
+            `body\\[data-note-corners="${preset}"\\],\\s*\\.note-layout-preview\\[data-note-corners="${preset}"\\]\\s*\\{[^}]*--note-corner-radius:[^}]*--note-corner-radius-nested:`,
+            's',
+        );
+        assert.match(css, rule);
+    }
+    assert.match(css, /\.note\s*\{[^}]*border-radius:\s*var\(--note-corner-radius\)/s);
+    assert.match(css, /\.note-children\s+\.note\s*\{[^}]*border-radius:\s*var\(--note-corner-radius-nested\)/s);
+});
+
+
+test('tag style presets switch note tags between pills and plain text in every theme', () => {
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+
+    for (const preset of ['pills', 'text']) {
+        assert.match(css, new RegExp(`body\\[data-tag-style="${preset}"\\],\\s*\\.note-layout-preview\\[data-tag-style="${preset}"\\]`));
+    }
+    assert.match(css, /\.note-tag\s*\{[^}]*border:\s*var\(--note-tag-border-width\) solid var\(--note-tag-border\)/s);
+    assert.doesNotMatch(css, /html\[data-theme="dark"\]\s+\.note-tag\s*\{/);
+});
+
+
+test('the note being edited glows in the dark theme, the inverse of the light theme shadow', () => {
+    const css = readFileSync(MAIN_CSS_URL, 'utf8');
+    const rule = css.match(/html\[data-theme="dark"\] \.note\.editing\s*\{([^}]*)\}/);
+    assert.ok(rule, 'expected a dark theme editing note rule');
+    const shadow = rule[1].match(/box-shadow:([^;]*);/);
+    assert.ok(shadow, 'expected a box-shadow on the edited note');
+    assert.match(shadow[1], /0 0 \d+px rgba\(255, 255, 255, 0\.\d+\)/);
+});

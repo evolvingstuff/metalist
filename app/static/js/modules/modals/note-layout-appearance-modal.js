@@ -83,7 +83,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
         modalElement.innerHTML = `
             <div class="modal-content note-layout-appearance-modal-content">
                 <h2>Note Layout &amp; Appearance</h2>
-                <p class="note-layout-description">Adjust how note hierarchy and spacing appear in this namespace.</p>
+                <p class="note-layout-description">Adjust how note hierarchy, spacing, corners and tags appear in this namespace.</p>
 
                 <div class="note-layout-controls">
                     <label for="note-layout-top-level-size">
@@ -104,12 +104,24 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                             ${buildOptions(NOTE_LAYOUT_OPTIONS.verticalSpacing, settings.verticalSpacing)}
                         </select>
                     </label>
+                    <label for="note-layout-note-corners">
+                        <span>Note corners</span>
+                        <select id="note-layout-note-corners"${disabled}>
+                            ${buildOptions(NOTE_LAYOUT_OPTIONS.noteCorners, settings.noteCorners)}
+                        </select>
+                    </label>
+                    <label for="note-layout-tag-style">
+                        <span>Tag style</span>
+                        <select id="note-layout-tag-style"${disabled}>
+                            ${buildOptions(NOTE_LAYOUT_OPTIONS.tagStyle, settings.tagStyle)}
+                        </select>
+                    </label>
                 </div>
 
                 <div class="note-layout-preview" aria-label="Layout preview">
-                    <div class="note-layout-preview-root">Top-level note</div>
-                    <div class="note-layout-preview-child">Child note</div>
-                    <div class="note-layout-preview-child">Another child note</div>
+                    <div class="note-layout-preview-root"><span>Top-level note</span><span class="note-layout-preview-tags"><span class="note-tag">travel</span> <span class="note-tag">japan</span></span></div>
+                    <div class="note-layout-preview-child"><span>Child note</span><span class="note-layout-preview-tags"><span class="note-tag">restaurant</span></span></div>
+                    <div class="note-layout-preview-child"><span>Another child note</span><span class="note-layout-preview-tags"><span class="note-tag note-tag--meta">@todo</span></span></div>
                 </div>
 
                 <div class="form-actions">
@@ -133,6 +145,8 @@ export class NoteLayoutAppearanceModal extends BaseModal {
             ['note-layout-top-level-size', 'topLevelNoteSize'],
             ['note-layout-child-indentation', 'childIndentation'],
             ['note-layout-vertical-spacing', 'verticalSpacing'],
+            ['note-layout-note-corners', 'noteCorners'],
+            ['note-layout-tag-style', 'tagStyle'],
         ];
         for (const [elementId, stateKey] of selectBindings) {
             const select = document.getElementById(elementId);

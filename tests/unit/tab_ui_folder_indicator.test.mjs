@@ -11,7 +11,7 @@ const COMMAND_PALETTE_CONTROLLER_URL = new URL(
 );
 
 
-test('enabled tabs expose a white outline folder indicator inside the hover trigger', async () => {
+test('enabled tabs expose an outline folder indicator inside the hover trigger', async () => {
     const [templateSource, cssSource, commandPaletteControllerSource] = await Promise.all([
         readFile(TEMPLATE_URL, 'utf8'),
         readFile(CSS_URL, 'utf8'),
@@ -31,7 +31,7 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
         hoverZoneSource,
         /class="tab-ui-folder-icon-back"[\s\S]*V20a2\.5 2\.5 0 0 1-2\.5 2\.5H12A2\.5 2\.5 0 0 1 9\.5 20z/,
     );
-    assert.match(cssSource, /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*stroke: #ffffff;/);
+    assert.match(cssSource, /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*stroke: var\(--search-shell-ink\);/);
     assert.match(
         cssSource,
         /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*left: 6px;[\s\S]*transform: translateY\(-50%\);/,
@@ -64,9 +64,51 @@ test('enabled tabs expose a white outline folder indicator inside the hover trig
         commandPaletteControllerSource,
         /'pref\.show_search_results_count',[\s\S]*?true,[\s\S]*?'pref-show-search-results-count'/,
     );
-    assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: #000000;/);
+    assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: var\(--search-shell-surface\);/);
     assert.match(
         cssSource,
         /body\.pref-show-tab-ui \.controls \.tab-ui-folder-icon\s*\{[\s\S]*opacity: 0\.78;/,
     );
+});
+
+
+test('the light theme search bar is a light grey with dark, readable controls', async () => {
+    const cssSource = await readFile(new URL('../../app/static/css/main.css', import.meta.url), 'utf8');
+    const rootTokens = cssSource.match(/:root\s*\{([^}]*)\}/);
+    assert.ok(rootTokens, 'expected the :root token block');
+    const hexToken = (name) => {
+        const match = rootTokens[1].match(new RegExp(`--${name}:\\s*#([0-9a-f]{6})`, 'i'));
+        assert.ok(match, `expected --${name} in :root`);
+        return [0, 2, 4].map((offset) => parseInt(match[1].slice(offset, offset + 2), 16));
+    };
+    const luminance = (channels) => {
+        const [r, g, b] = channels.map((channel) => {
+            const value = channel / 255;
+            return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const surface = hexToken('search-shell-surface');
+    const ink = hexToken('search-shell-ink');
+    assert.ok(Math.min(...surface) >= 0xc0 && Math.max(...surface) <= 0xe8, 'search bar should be a light grey, not white or black');
+    const contrast = (luminance(surface) + 0.05) / (luminance(ink) + 0.05);
+    assert.ok(contrast >= 4.5, `icon and count need 4.5:1 contrast on the bar, got ${contrast.toFixed(2)}`);
+
+    assert.match(cssSource, /(?:^|\n)\.controls\s*\{[^}]*background:\s*var\(--search-shell-surface\)/);
+    assert.match(cssSource, /\.controls \.search-results-count\s*\{[^}]*color:\s*var\(--search-shell-ink\)/);
+    assert.match(cssSource, /\.controls \.search-validation-message\s*\{[^}]*color:\s*var\(--search-shell-warning\)/);
+});
+
+
+test('dark theme tabs dropdown is an opaque grey panel that stands out from the notes under it', async () => {
+    const cssSource = await readFile(new URL('../../app/static/css/main.css', import.meta.url), 'utf8');
+    const rule = cssSource.match(/html\[data-theme="dark"\] #search-contexts-list\s*\{([^}]*)\}/);
+    assert.ok(rule, 'expected a dark theme rule for the tabs dropdown');
+    const background = rule[1].match(/background:\s*#([0-9a-f]{6})\s*;/i);
+    assert.ok(background, 'tabs dropdown needs an opaque background so notes do not show through');
+    const darkTokens = cssSource.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/)[1];
+    const noteSurface = darkTokens.match(/--app-surface-1:\s*#([0-9a-f]{6})/i)[1];
+    const red = (hex) => parseInt(hex.slice(0, 2), 16);
+    assert.ok(red(background[1]) - red(noteSurface) >= 24, `#${background[1]} must stand out from notes #${noteSurface}`);
+    assert.match(rule[1], /border:\s*1px solid rgba\(255, 255, 255, 0\.\d+\)/);
 });

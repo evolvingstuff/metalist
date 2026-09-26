@@ -7,6 +7,7 @@
 - A lone `@` or unknown meta tag such as `@cvs` is removed on sanitization, including inside a closed wrapper. An unfinished wrapper such as `{{@ ` is also removed. If multiple renderer meta tags target the same note or wrapper (for example `@json @csv` or `{@json @csv}`), the first renderer is kept and later conflicting renderers are removed. Other valid tags remain.
 - Previously saved tags with these forms do not block note rendering; editing and saving the tag bar applies the cleanup without changing note content.
 - When tags are shown in the note list, one line of tags shares the note's existing row height; the row grows only when its tags wrap onto additional lines.
+- The note list renders each saved tag, bracketed scope (kept whole, e.g. `{{@red @monospace}}`) and comment as its own element, separated by spaces, using `splitTagsForDisplay()` in `tag-syntax-service.js`. The text reads exactly as saved; the `Pills` tag style (Note Layout & Appearance) outlines each piece, and `Plain text` leaves them as ordinary text.
 
 ## Whitespace + Tokens
 - Outside of `/* ... */` comments, tags are separated by whitespace.

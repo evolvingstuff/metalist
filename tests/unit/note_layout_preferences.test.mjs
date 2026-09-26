@@ -14,7 +14,32 @@ test('note layout defaults preserve the existing indentation and spacing while e
         topLevelNoteSize: 'larger',
         childIndentation: 'standard',
         verticalSpacing: 'comfortable',
+        noteCorners: 'round',
+        tagStyle: 'pills',
     });
+});
+
+
+test('corner and tag style presets use clear labels', () => {
+    assert.deepEqual(
+        NOTE_LAYOUT_OPTIONS.noteCorners.map((option) => [option.value, option.label]),
+        [['subtle', 'Subtle'], ['rounded', 'Rounded'], ['round', 'Round']],
+    );
+    assert.deepEqual(
+        NOTE_LAYOUT_OPTIONS.tagStyle.map((option) => [option.value, option.label]),
+        [['pills', 'Pills'], ['text', 'Plain text']],
+    );
+});
+
+
+test('validateNoteLayoutSettings rejects an unknown tag style', () => {
+    assert.throws(
+        () => validateNoteLayoutSettings({
+            ...DEFAULT_NOTE_LAYOUT_SETTINGS,
+            tagStyle: 'bubbles',
+        }),
+        /tagStyle/,
+    );
 });
 
 
@@ -38,7 +63,7 @@ test('validateNoteLayoutSettings rejects unknown preset values', () => {
 });
 
 
-test('applyNoteLayoutSettings exposes all three presets to CSS', () => {
+test('applyNoteLayoutSettings exposes every preset to CSS', () => {
     const attributes = new Map();
     const body = {
         setAttribute: (name, value) => attributes.set(name, value),
@@ -47,6 +72,8 @@ test('applyNoteLayoutSettings exposes all three presets to CSS', () => {
         topLevelNoteSize: 'largest',
         childIndentation: 'wide',
         verticalSpacing: 'spacious',
+        noteCorners: 'subtle',
+        tagStyle: 'text',
     };
 
     applyNoteLayoutSettings(body, settings);
@@ -54,4 +81,6 @@ test('applyNoteLayoutSettings exposes all three presets to CSS', () => {
     assert.equal(attributes.get('data-top-level-note-size'), 'largest');
     assert.equal(attributes.get('data-child-indentation'), 'wide');
     assert.equal(attributes.get('data-note-vertical-spacing'), 'spacious');
+    assert.equal(attributes.get('data-note-corners'), 'subtle');
+    assert.equal(attributes.get('data-tag-style'), 'text');
 });

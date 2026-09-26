@@ -23,3 +23,24 @@ test('tag bar focus has a persistent cue and an optional one-shot halo', async (
         /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.note-tag-bar:focus-within::after[\s\S]*animation: none;/,
     );
 });
+
+
+test('dark theme tag bar and search shell share a grey control surface that stands out', async () => {
+    const cssSource = await readFile(CSS_URL, 'utf8');
+    const darkTokens = cssSource.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/);
+    assert.ok(darkTokens, 'expected the dark theme token block');
+    const hexToken = (name) => {
+        const match = darkTokens[1].match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
+        assert.ok(match, `expected --${name} in the dark theme tokens`);
+        return parseInt(match[1].slice(1, 3), 16);
+    };
+    const control = hexToken('app-control-surface');
+    assert.ok(control - hexToken('app-surface-0') >= 16, 'control surface must stand out from the edited note');
+    assert.ok(control - hexToken('app-surface-1') >= 16, 'control surface must stand out from notes');
+    assert.ok(control - hexToken('bg-color') >= 24, 'control surface must stand out from the page');
+
+    assert.match(cssSource, /html\[data-theme="dark"\] \.note-tag-bar\s*\{[^}]*background:\s*var\(--app-control-surface\)/);
+    assert.match(cssSource, /html\[data-theme="dark"\] \.note-tag-bar-empty-icon-front\s*\{[^}]*fill:\s*var\(--app-control-surface\)/);
+    assert.match(cssSource, /html\[data-theme="dark"\] \.controls\s*\{[^}]*background:\s*var\(--app-control-surface\)/);
+    assert.match(cssSource, /html\[data-theme="dark"\] \.controls \.tab-ui-folder-icon-front\s*\{[^}]*fill:\s*var\(--app-control-surface\)/);
+});

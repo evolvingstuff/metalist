@@ -6,6 +6,7 @@ import {
     enforceTagBarInputForEditing,
     normalizeTagBarInput,
     parseTagBarSuggestionContext,
+    splitTagsForDisplay,
 } from '../../app/static/js/modules/mode-manager/services/tag-syntax-service.js';
 
 test('allows matching bracket wrappers up to 3', () => {
@@ -169,4 +170,29 @@ test('second scoped tag suggestions preserve partial closing delimiters', () => 
     assert.equal(context.prefix, '@bo');
     assert.deepEqual(context.anchors, ['topic', '@red']);
     assert.equal(raw.slice(0, context.replaceStart) + '@bold' + raw.slice(context.replaceEnd), 'topic {{@red @bold}');
+});
+
+test('splits saved tags into display pieces without breaking scopes or comments', () => {
+    assert.deepEqual(
+        splitTagsForDisplay('travel japan @red {{@monospace @bold}} /* for the April trip */ [[@LaTeX]]'),
+        [
+            { kind: 'tag', text: 'travel' },
+            { kind: 'tag', text: 'japan' },
+            { kind: 'meta', text: '@red' },
+            { kind: 'scope', text: '{{@monospace @bold}}' },
+            { kind: 'comment', text: '/* for the April trip */' },
+            { kind: 'scope', text: '[[@LaTeX]]' },
+        ],
+    );
+});
+
+test('display pieces keep the saved text and handle empty or unfinished input', () => {
+    assert.deepEqual(splitTagsForDisplay(''), []);
+    assert.deepEqual(splitTagsForDisplay('   '), []);
+    assert.deepEqual(splitTagsForDisplay('todo /* unfinished'), [
+        { kind: 'tag', text: 'todo' },
+        { kind: 'comment', text: '/* unfinished' },
+    ]);
+    const saved = 'phone-number contact {@json} /* a b */';
+    assert.equal(splitTagsForDisplay(saved).map((piece) => piece.text).join(' '), saved);
 });

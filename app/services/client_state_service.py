@@ -47,6 +47,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
+    "pref.note_layout.note_corners": {"subtle", "rounded", "round"},
+    "pref.note_layout.tag_style": {"pills", "text"},
     "pref.theme": {"system", "light", "dark"},
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
