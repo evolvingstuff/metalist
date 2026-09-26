@@ -36,6 +36,7 @@ function harness(isEditing) {
         performance: { now: () => 100 },
         CommandGate: { run: (name) => events.push(name) },
         SHELL_SELECTOR: '.meta-shell', SHELL_CLOSE_SELECTOR: '.meta-shell-close',
+        resolveDiagramTarget: () => null,
     };
     const handlers = new Function('ApplicationState', ...Object.keys(dependencies), `${source}\nreturn {
         handleImmediateMouseDown, handleMoveDragMouseDown, handleClick,

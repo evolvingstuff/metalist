@@ -20,8 +20,9 @@ from app.utils.text_utils import strip_html
 
 
 _HTML_TOKEN_SPLIT_RE = re.compile(r"(<[^>]+>)")
+# Editors write "first line<div>second line</div>", so a block's opening tag also ends a line.
 _FIRST_LINE_BOUNDARY_RE = re.compile(
-    r"(?i)<br\s*/?>|</(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)>\s*|\n"
+    r"(?i)<br\s*/?>|</?(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)\b[^>]*>\s*|\n"
 )
 _TEXT_LINE_SPLIT_RE = re.compile(r"(\r\n|\r|\n)")
 _HTML_TAG_NAME_RE = re.compile(r"^<\s*/?\s*([a-zA-Z][a-zA-Z0-9:-]*)")
@@ -65,6 +66,9 @@ _COLLAPSED_PREVIEW_MEDIA_TAGS = {
     "video",
 }
 _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
+_INLINE_IMG_TAG_RE = re.compile(r"<img\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", re.IGNORECASE)
+# File kinds that collapse to a thumbnail, in a collapsed note and in a compact reference to it.
+_THUMBNAIL_FILE_KINDS = frozenset({"image", "excalidraw"})
 _UUID_REFERENCE_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -120,6 +124,21 @@ class _FootnoteReferencePreview(HTMLParser):
     def handle_data(self, data: str) -> None:
         if not self.in_references:
             self.output.append(html.escape(_REFERENCE_TOKEN_RE.sub(_strip_reference_token_if_uuid, data)))
+
+
+class _ImageSourceParser(HTMLParser):
+    """The src of the first <img> in a fragment of stored note HTML."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.source: Optional[str] = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "img" or self.source is not None:
+            return
+        for name, value in attrs:
+            if name == "src" and value is not None:
+                self.source = value
 
 
 def collect_reference_tokens_from_html(content_html: str) -> List[ReferenceToken]:
@@ -317,6 +336,11 @@ def _extract_collapsed_preview_meaningful_fragments(content_html: str) -> List[s
         if part == "":
             continue
         if _is_html_segment(part):
+            # Editors write "first line<div>second line</div>": a block opening after content
+            # starts a new line, just as a block closing ends one.
+            if _is_collapsed_preview_block_opening_tag(part) and _fragment_has_collapsed_preview_content(fragment_parts):
+                fragments.append("".join(fragment_parts).strip())
+                fragment_parts = []
             fragment_parts.append(part)
             if _is_collapsed_preview_line_boundary_tag(part):
                 if _fragment_has_collapsed_preview_content(fragment_parts):
@@ -376,7 +400,7 @@ def collapsed_preview_source_has_image_file_embed(
         thumbnail_kind = getattr(record, "thumbnail_kind")
         if not isinstance(thumbnail_kind, str):
             raise TypeError("file thumbnail_kind must be a string")
-        if thumbnail_kind == "image":
+        if thumbnail_kind in {"image", "excalidraw"}:
             return True
     return False
 
@@ -595,6 +619,7 @@ def _render_reference_block(
                 context=context,
                 static_export=static_export,
                 redact_passwords=redact_passwords,
+                show_media=True,
             )
     elif file_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-file"
@@ -604,6 +629,8 @@ def _render_reference_block(
             raise TypeError("file thumbnail_kind must be a non-empty string")
         if display_as_embed and thumbnail_kind == "image":
             wrapper_classes = f"{wrapper_classes} note-reference-file-image"
+        if display_as_embed and thumbnail_kind == "excalidraw":
+            wrapper_classes = f"{wrapper_classes} note-reference-file-excalidraw"
         if display_as_embed:
             body_html = _render_file_embed_body(
                 record=record,
@@ -674,6 +701,7 @@ def _render_link_body(
     context: EmbedRenderContext,
     static_export: bool,
     redact_passwords: bool,
+    show_media: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
     preview, is_password_preview = _resolve_note_reference_preview(
@@ -682,7 +710,20 @@ def _render_link_body(
         redact_passwords=redact_passwords,
     )
     preview_html = None
-    if not is_password_preview:
+    title_classes = "note-reference-link-title"
+    if show_media and not is_password_preview:
+        # A source that collapses to a thumbnail is referenced by the same thumbnail.
+        thumbnail_html, caption = _render_link_preview_thumbnail(
+            record=context.get_note(reference_note_id),
+            context=context,
+            static_export=static_export,
+        )
+        if thumbnail_html != "":
+            title_classes = "note-reference-link-title note-reference-link-title-media"
+            preview_html = thumbnail_html
+            if caption != "":
+                preview_html = f'{thumbnail_html}<span class="note-reference-link-caption">{html.escape(caption)}</span>'
+    if preview_html is None and not is_password_preview:
         record = context.get_note(reference_note_id)
         if has_scoped_footnotes(record.tags):
             # Format the entire source first: standalone scopes on later lines
@@ -715,9 +756,109 @@ def _render_link_body(
     return (
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
         '<span class="note-reference-link-icon" aria-hidden="true" title="Link to reference source">&#8599;</span>'
-        f'<span class="note-reference-link-title">{preview_html}</span>'
+        f'<span class="{title_classes}">{preview_html}</span>'
         "</a>"
     )
+
+
+def _render_link_preview_thumbnail(
+    *,
+    record: object,
+    context: EmbedRenderContext,
+    static_export: bool,
+) -> tuple[str, str]:
+    """When the source's first visible line shows an image or diagram, its thumbnail and that line's text.
+
+    Returns ("", "") when the first line has no thumbnail, so the link keeps its text preview.
+    """
+    content_html = getattr(record, "content")
+    if not isinstance(content_html, str):
+        raise TypeError("linked note content must be a string")
+    fragment = extract_collapsed_preview_source_html(content_html)
+    if fragment == "":
+        return "", ""
+    candidates: list[tuple[int, str]] = []
+    for token in collect_reference_tokens_from_html(fragment):
+        if not token.is_embed or not context.has_file(token.note_id):
+            continue
+        file_record = context.get_file(token.note_id)
+        thumbnail_kind = getattr(file_record, "thumbnail_kind")
+        if not isinstance(thumbnail_kind, str):
+            raise TypeError("file thumbnail_kind must be a string")
+        if thumbnail_kind not in _THUMBNAIL_FILE_KINDS:
+            continue
+        thumbnail = _render_file_link_thumbnail(
+            record=file_record, file_id=token.note_id, thumbnail_kind=thumbnail_kind, static_export=static_export,
+        )
+        if thumbnail != "":
+            candidates.append((token.start, thumbnail))
+            break
+    image_match = _INLINE_IMG_TAG_RE.search(fragment)
+    if image_match is not None:
+        thumbnail = _render_inline_image_link_thumbnail(tag_html=image_match.group(0), static_export=static_export)
+        if thumbnail != "":
+            candidates.append((image_match.start(), thumbnail))
+    if not candidates:
+        return "", ""
+    first_thumbnail = min(candidates, key=lambda candidate: candidate[0])[1]
+    return first_thumbnail, _strip_reference_tokens(strip_html(fragment))
+
+
+def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind: str, static_export: bool) -> str:
+    kind_class = "note-reference-link-thumbnail-image"
+    if thumbnail_kind == "excalidraw":
+        kind_class = "note-reference-link-thumbnail-diagram"
+    if static_export:
+        export_data_url = getattr(record, "export_data_url")
+        if not isinstance(export_data_url, str):
+            raise TypeError("static export file must provide an export_data_url string")
+        if export_data_url == "":
+            return ""
+        return (
+            f'<span class="note-reference-link-thumbnail {kind_class}">'
+            f'<img class="note-reference-link-thumbnail-static" src="{html.escape(export_data_url, quote=True)}" alt="" />'
+            "</span>"
+        )
+    escaped_file_id = html.escape(file_id, quote=True)
+    if thumbnail_kind == "excalidraw":
+        content_revision = getattr(record, "content_revision")
+        if not isinstance(content_revision, int) or content_revision < 1:
+            raise TypeError("excalidraw file content_revision must be a positive int")
+        images = "".join(
+            f'<img class="note-file-excalidraw-preview note-file-excalidraw-preview-{variant}" '
+            f'data-preview-variant="{variant}" alt="" decoding="async" draggable="false" hidden />'
+            for variant in ("light", "dark")
+        )
+        # Hydrated by the diagram preview service; not editable from here.
+        return (
+            f'<span class="note-reference-link-thumbnail {kind_class} note-file-excalidraw-embed" '
+            f'data-file-ref-id="{escaped_file_id}" data-file-revision="{content_revision}" data-preview-state="idle">'
+            f'<span class="note-file-excalidraw-frame">{images}'
+            '<span class="note-file-excalidraw-placeholder">Loading diagram...</span>'
+            "</span></span>"
+        )
+    # Hydrated by the image file preview service.
+    return (
+        f'<span class="note-reference-link-thumbnail {kind_class} note-file-image-embed" '
+        f'data-file-ref-id="{escaped_file_id}" data-preview-state="idle">'
+        '<span class="note-file-image-preview-frame">'
+        '<img class="note-file-image-preview" alt="" loading="lazy" decoding="async" draggable="false" hidden />'
+        '<span class="note-file-image-preview-placeholder">Loading image...</span>'
+        "</span></span>"
+    )
+
+
+def _render_inline_image_link_thumbnail(*, tag_html: str, static_export: bool) -> str:
+    parser = _ImageSourceParser()
+    parser.feed(tag_html)
+    parser.close()
+    source = parser.source
+    if source is None or source.strip() == "":
+        return ""
+    image = f'<img class="note-reference-link-thumbnail-inline" src="{html.escape(source, quote=True)}" alt="" draggable="false" />'
+    if not static_export:
+        image = rewrite_remote_image_sources_for_proxy(content_html=image, registry=remote_image_proxy_registry)
+    return f'<span class="note-reference-link-thumbnail note-reference-link-thumbnail-image">{image}</span>'
 
 
 def _resolve_note_reference_preview(
@@ -778,11 +919,13 @@ def render_compact_note_reference_link(
     if not context.has_note(reference_note_id):
         raise KeyError(f"Cannot render missing note reference {reference_note_id}")
     escaped_note_id = html.escape(reference_note_id, quote=True)
+    # AI chat citations stay text-only chips.
     link_body = _render_link_body(
         reference_note_id=reference_note_id,
         context=context,
         static_export=False,
         redact_passwords=redact_passwords,
+        show_media=False,
     )
     return (
         '<span class="ai-chat-note-reference note-reference-block '
@@ -870,6 +1013,12 @@ def _render_file_body(
             is_embed=is_embed,
             thumbnail_kind=thumbnail_kind,
         )
+    if is_embed and thumbnail_kind == "excalidraw":
+        return _render_excalidraw_embed(
+            record=record,
+            escaped_note_id=escaped_note_id,
+            escaped_title_attribute=escaped_title_attribute,
+        )
     if is_embed and thumbnail_kind == "image":
         return (
             f'<div class="note-file-image-embed" data-file-ref-id="{escaped_note_id}" data-preview-state="idle">'
@@ -896,6 +1045,28 @@ def _render_file_body(
     )
 
 
+def _render_excalidraw_embed(*, record: object, escaped_note_id: str, escaped_title_attribute: str) -> str:
+    """An Excalidraw diagram in view mode: light and dark SVG previews, loaded by the browser."""
+    content_revision = getattr(record, "content_revision")
+    if not isinstance(content_revision, int) or content_revision < 1:
+        raise TypeError("excalidraw file content_revision must be a positive int")
+    images = "".join(
+        f'<img class="note-file-excalidraw-preview note-file-excalidraw-preview-{variant}" '
+        f'data-file-ref-id="{escaped_note_id}" data-file-kind="excalidraw" data-preview-variant="{variant}" '
+        f'alt="{escaped_title_attribute}" decoding="async" draggable="false" hidden />'
+        for variant in ("light", "dark")
+    )
+    return (
+        f'<div class="note-file-excalidraw-embed" data-file-ref-id="{escaped_note_id}" '
+        f'data-file-revision="{content_revision}" data-preview-state="idle" title="Double-click to edit the diagram">'
+        '<div class="note-file-excalidraw-frame">'
+        f"{images}"
+        '<div class="note-file-excalidraw-placeholder">Loading diagram...</div>'
+        "</div>"
+        "</div>"
+    )
+
+
 def _render_static_file_body(
     *,
     record: object,
@@ -917,6 +1088,20 @@ def _render_static_file_body(
             "</div>"
             "</div>"
         )
+
+    if is_embed and thumbnail_kind == "excalidraw":
+        export_data_url = getattr(record, "export_data_url")
+        if not isinstance(export_data_url, str):
+            raise TypeError("static export excalidraw file must provide an export_data_url string")
+        if export_data_url != "":
+            escaped_data_url = html.escape(export_data_url, quote=True)
+            return (
+                '<div class="note-file-excalidraw-embed note-file-excalidraw-static" data-preview-state="loaded">'
+                '<div class="note-file-excalidraw-frame">'
+                f'<img class="note-file-excalidraw-preview" src="{escaped_data_url}" alt="{escaped_title_attribute}" decoding="async" />'
+                "</div>"
+                "</div>"
+            )
 
     classes = "note-file-reference-link note-file-reference-link-static"
     if is_embed:
@@ -1073,6 +1258,14 @@ def _is_collapsed_preview_line_boundary_tag(tag_html: str) -> bool:
     return False
 
 
+def _is_collapsed_preview_block_opening_tag(tag_html: str) -> bool:
+    if not isinstance(tag_html, str):
+        raise TypeError("tag_html must be a string")
+    if _extract_html_closing_tag_name(tag_html) != "":
+        return False
+    return _extract_html_tag_name(tag_html) in _COLLAPSED_PREVIEW_BLOCK_TAGS
+
+
 def _fragment_has_collapsed_preview_content(fragment_parts: List[str]) -> bool:
     if not isinstance(fragment_parts, list):
         raise TypeError("fragment_parts must be a list")
@@ -1129,6 +1322,8 @@ def _format_thumbnail_badge(thumbnail_kind: str) -> str:
         return "TXT"
     if thumbnail_kind == "archive":
         return "ZIP"
+    if thumbnail_kind == "excalidraw":
+        return "DRAW"
     return "FILE"
 
 

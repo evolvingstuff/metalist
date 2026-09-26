@@ -1,4 +1,5 @@
 import { ApplicationState } from './application-state.js';
+import { unlessDiagramEditorOpen } from './excalidraw/excalidraw-editor-state.js';
 import {
     initSelectionTracking,
     setActiveEditable,
@@ -168,7 +169,7 @@ export function initEditorToolbar() {
         event.preventDefault();
     }, { passive: false });
     moduleState.toolbarElement.addEventListener('click', handleToolbarClick);
-    document.addEventListener('selectionchange', handleSelectionChange, true);
+    document.addEventListener('selectionchange', unlessDiagramEditorOpen(handleSelectionChange), true);
     moduleState.toolbarElement.setAttribute('aria-hidden', 'true');
     moduleState.toolbarElement.style.pointerEvents = 'none';
     moduleState.initialized = true;

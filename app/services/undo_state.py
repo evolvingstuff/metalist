@@ -13,6 +13,8 @@ from app.usecases.move import apply_move
 from app.usecases.update_content import apply_update_content, apply_update_note_sources
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
+from app.services.file_edit_sessions import reset_all_file_edit_sessions
+from app.services.file_storage import FileSnapshot, restore_file_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ def _summarize_op(op: dict) -> str:
         "collapse",
         "paste_into",
         "split_note",
+        "file_content",
     }:
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
@@ -195,6 +198,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         "collapse",
         "paste_into",
         "split_note",
+        "file_content",
     }:
         if "note_id" not in op:
             raise RuntimeError(f"Undo op missing required key: note_id | op={op}")
@@ -318,8 +322,9 @@ def restore_undo_state(snapshot: dict) -> None:
 
 
 def reset_all_undo_state() -> None:
-    """Discard every client's undo/redo payloads, which may contain plaintext notes."""
+    """Discard every client's undo/redo payloads, which may contain plaintext notes and files."""
     _clients.clear()
+    reset_all_file_edit_sessions()
 
 
 def _enforce_undo_limits() -> None:
@@ -764,6 +769,51 @@ def record_split_note(
     _enforce_undo_limits()
 
 
+def record_file_content(
+    client_id: str,
+    undo_context: str,
+    note_id: str,
+    *,
+    before: FileSnapshot,
+    after: FileSnapshot,
+    viewport: Dict[str, object],
+) -> None:
+    """Record one diagram editing session, from its opening snapshot to its final save."""
+    if not isinstance(note_id, str) or not note_id:
+        raise ValueError("note_id must be a non-empty string")
+    if not isinstance(before, FileSnapshot) or not isinstance(after, FileSnapshot):
+        raise TypeError("before and after must be FileSnapshots")
+    if before.file_id != after.file_id:
+        raise ValueError("before and after snapshots must describe the same file")
+    if after.content_revision <= before.content_revision:
+        raise ValueError("after snapshot must be newer than the before snapshot")
+
+    maybe_reset_on_context(client_id, undo_context)
+    ctx = _ctx(client_id)
+    normalized_viewport = _normalize_viewport_snapshot(viewport)
+    view_anchor_root_id = _anchor_root_id(normalized_viewport)
+    ctx.history.append({
+        "type": "file_content",
+        "note_id": note_id,
+        "file_id": before.file_id,
+        "before": before,
+        "after": after,
+        "viewport": normalized_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+    })
+    ctx.redo.clear()
+    _enforce_undo_limits()
+
+
+def _apply_file_snapshot(op: dict, *, key: str, token: str) -> None:
+    if key != "before" and key != "after":
+        raise ValueError("key must be before or after")
+    snapshot = op[key]
+    if not isinstance(snapshot, FileSnapshot):
+        raise RuntimeError(f"Undo op file_content.{key} must be a FileSnapshot | op={_summarize_op(op)}")
+    restore_file_snapshot(snapshot=snapshot, token=token)
+
+
 def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
     ctx = _ctx(client_id)
     if not isinstance(undo_context, str):
@@ -940,6 +990,10 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
             apply_delete_subtree(record.id)
         apply_update_content(note_id, before_content, before_tags, token)
 
+        ctx.redo.append(op)
+        generate_new_uuid()
+    elif op_type == "file_content":
+        _apply_file_snapshot(op, key="before", token=token)
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "paste_subtree":
@@ -1125,6 +1179,10 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     elif op_type == "paste_subtree":
         # restore the subtree
         apply_restore_records(op["records"], token)
+        ctx.history.append(op)
+        generate_new_uuid()
+    elif op_type == "file_content":
+        _apply_file_snapshot(op, key="after", token=token)
         ctx.history.append(op)
         generate_new_uuid()
     else:

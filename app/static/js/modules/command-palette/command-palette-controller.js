@@ -1,4 +1,5 @@
 import { openAgentMenu } from '../ai-chat/agent-menu-actions.js';
+import { addDiagramToNote } from '../excalidraw/excalidraw-actions.js';
 import { captureActiveAgentScope } from '../ai-chat/ai-chat-panel-controller.js';
 import { showUpdateNotice } from '../app-update-service.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
@@ -406,6 +407,7 @@ class CommandPaletteController {
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
+                addExcalidrawDiagram: this.addExcalidrawDiagram.bind(this),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 openSwitchNamespace: this.openSwitchNamespace.bind(this),
                 openCreateNamespace: this.openCreateNamespace.bind(this),
@@ -1568,6 +1570,14 @@ class CommandPaletteController {
                 true,
             );
         }
+    }
+
+    async addExcalidrawDiagram() {
+        if (this.isOpen()) {
+            this.close();
+        }
+        const preferredNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+        await addDiagramToNote(preferredNoteId);
     }
 
     async trimUnusedFiles() {

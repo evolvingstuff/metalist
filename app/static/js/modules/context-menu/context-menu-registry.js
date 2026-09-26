@@ -28,6 +28,61 @@ function buildTagContextItems(context, handlers) {
     ];
 }
 
+// Right-clicking a rendered Excalidraw diagram: edit it, resize it, zoom it, or save the .excalidraw file.
+function buildDiagramItems(context, imageContext, handlers) {
+    for (const [name, handler] of Object.entries(handlers)) {
+        if (typeof handler !== 'function') {
+            throw new Error(`Diagram context missing ${name} handler`);
+        }
+    }
+    if (typeof context.canResizeImage !== 'boolean') {
+        throw new Error('Diagram context missing canResizeImage boolean');
+    }
+    const items = [{
+        id: 'edit-diagram',
+        label: 'Edit Diagram',
+        icon: 'diagram',
+        enabled: context.canEditDiagram === true,
+        onSelect: () => handlers.onEditDiagram(imageContext),
+    }];
+    if (context.canResizeImage) {
+        items.push({
+            id: 'make-image-bigger',
+            label: 'Make Bigger',
+            icon: 'zoom_in',
+            enabled: true,
+            onSelect: () => handlers.onMakeImageBigger(imageContext),
+        }, {
+            id: 'make-image-smaller',
+            label: 'Make Smaller',
+            icon: 'zoom_out',
+            enabled: true,
+            onSelect: () => handlers.onMakeImageSmaller(imageContext),
+        }, {
+            id: 'reset-image-size',
+            label: 'Reset Size',
+            icon: 'restart_alt',
+            enabled: true,
+            onSelect: () => handlers.onResetImageSize(imageContext),
+        });
+    }
+    items.push({
+        id: 'zoom-diagram',
+        label: 'Zoom Diagram',
+        icon: 'zoom',
+        enabled: true,
+        separated: context.canResizeImage,
+        onSelect: () => handlers.onZoomImage(imageContext),
+    }, {
+        id: 'save-diagram',
+        label: 'Save Diagram File',
+        icon: 'download',
+        enabled: true,
+        onSelect: () => handlers.onSaveDiagram(imageContext),
+    });
+    return items;
+}
+
 function buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource) {
     if (typeof referenceNoteId !== 'string' || referenceNoteId.trim() === '') {
         throw new Error('Reference context requires non-empty referenceNoteId');
@@ -94,6 +149,9 @@ function buildNoteContextItems(context, handlers) {
     const onFullyExpandNote = handlers.onFullyExpandNote;
     const onFullyCollapseNote = handlers.onFullyCollapseNote;
     const onMakePseudoSuggestions = handlers.onMakePseudoSuggestions;
+    const onAddDiagram = handlers.onAddDiagram;
+    const onEditDiagram = handlers.onEditDiagram;
+    const onSaveDiagram = handlers.onSaveDiagram;
     if (typeof onAddSiblingNote !== 'function') {
         throw new Error('Note context missing onAddSiblingNote handler');
     }
@@ -158,7 +216,13 @@ function buildNoteContextItems(context, handlers) {
         });
     }
     const imageContext = context.imageContext;
-    if (imageContext !== null && typeof imageContext === 'object') {
+    const isDiagram = imageContext !== null && typeof imageContext === 'object' && imageContext.fileKind === 'excalidraw';
+    if (isDiagram) {
+        items.push(...buildDiagramItems(context, imageContext, {
+            onEditDiagram, onSaveDiagram, onZoomImage, onMakeImageBigger, onMakeImageSmaller, onResetImageSize,
+        }));
+    }
+    if (!isDiagram && imageContext !== null && typeof imageContext === 'object') {
         const canResizeImage = context.canResizeImage;
         if (typeof canResizeImage !== 'boolean') {
             throw new Error('Image note context missing canResizeImage boolean');
@@ -316,6 +380,19 @@ function buildNoteContextItems(context, handlers) {
             icon: 'clear_formatting',
             enabled: true,
             onSelect: () => onRemoveFormatting(noteId),
+        });
+    }
+
+    if (context.canAddDiagram === true) {
+        if (typeof onAddDiagram !== 'function') {
+            throw new Error('Editing note context missing onAddDiagram handler');
+        }
+        items.unshift({
+            id: 'add-excalidraw-diagram',
+            label: 'Add Excalidraw Diagram',
+            icon: 'diagram',
+            enabled: true,
+            onSelect: () => onAddDiagram(noteId),
         });
     }
 

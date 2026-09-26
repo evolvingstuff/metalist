@@ -9,6 +9,26 @@ export class HttpRequestError extends Error {
     }
 }
 
+// A file edited in MetaList (an Excalidraw diagram) was saved elsewhere since this window loaded it.
+export class FileRevisionConflictError extends HttpRequestError {
+    constructor(message, currentRevision) {
+        super(message);
+        this.name = 'FileRevisionConflictError';
+        if (!Number.isInteger(currentRevision) || currentRevision < 1) {
+            throw new Error('FileRevisionConflictError requires a positive integer currentRevision');
+        }
+        this.currentRevision = currentRevision;
+    }
+}
+
+// The server no longer holds the diagram editing session (it expired, or the app was locked).
+export class FileEditSessionExpiredError extends HttpRequestError {
+    constructor(message) {
+        super(message);
+        this.name = 'FileEditSessionExpiredError';
+    }
+}
+
 export function isRequestCancellation(error, signal) {
     return signal instanceof AbortSignal && signal.aborted
         && (error === signal.reason || (error instanceof DOMException && error.name === 'AbortError'));

@@ -7,8 +7,9 @@ from app.services.note_store import store as note_store
 from app.utils.text_utils import strip_html
 
 
+# Editors write "first line<div>second line</div>", so a block's opening tag also ends a line.
 _FIRST_LINE_BOUNDARY_RE = re.compile(
-    r"(?i)<br\s*/?>|</(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)>\s*|\n"
+    r"(?i)<br\s*/?>|</?(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)\b[^>]*>\s*|\n"
 )
 _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
 _WHITESPACE_RE = re.compile(r"\s+")

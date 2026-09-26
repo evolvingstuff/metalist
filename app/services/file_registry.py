@@ -73,6 +73,13 @@ class FileRegistry:
         with self._lock:
             return set(self._ids)
 
+    def has_resizable_file(self, file_id: str) -> bool:
+        """Embedded files whose rendered size can be changed with a size wrapper: images and diagrams."""
+        if not isinstance(file_id, str) or file_id == "":
+            raise TypeError("file_id must be a non-empty string")
+        with self._lock:
+            return self._thumbnail_kinds_by_id.get(file_id) in {"image", "excalidraw"}
+
     def has_image_file(self, file_id: str) -> bool:
         if not isinstance(file_id, str) or file_id == "":
             raise TypeError("file_id must be a non-empty string")

@@ -2,6 +2,12 @@ import { ApplicationState } from '../application-state.js';
 const MENU_PADDING_PX = 8;
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const CONTEXT_MENU_ICONS = {
+    diagram: [
+        'M3 4h8v6H3z',
+        'M14.5 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0 -7 0',
+        'M11 7h4a3 3 0 0 1 3 3v4',
+        'M16 12l2 2 2-2',
+    ],
     add_top: [
         'M5 4h14',
         'M12 8v12',

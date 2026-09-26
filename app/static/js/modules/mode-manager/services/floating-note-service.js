@@ -5,6 +5,7 @@ import { CommandGate } from './command-gate-service.js';
 import { createFloatingNoteElements, applyFloatingNoteRect, getFloatingNoteTitle } from './floating-note-dom.js';
 import { constrainFloatingNoteRect, moveFloatingNoteRect } from './floating-note-layout.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
+import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
 import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
@@ -149,6 +150,7 @@ async function refreshWindow(id) {
     }
     ensureAnchorsOpenInNewTabs(entry.tree);
     hydrateImageFilePreviews(entry.tree);
+    void hydrateExcalidrawPreviews(entry.tree);
     hydrateRemoteImageProxies(entry.tree);
     await queueMermaidDiagramRendering(entry.tree);
 }

@@ -11,7 +11,7 @@ from app.services.content_formatting import find_list_style
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
-from app.services.file_storage import download_file
+from app.services.file_storage import download_file, find_file_preview
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
 from app.services.snapshot import resolve_search_scope
@@ -193,6 +193,14 @@ def _render_exported_notes_markup(*, search: str | None, token: str, root_note_i
                     mime_type=downloaded.record.mime_type,
                     content_bytes=downloaded.content_bytes,
                 )
+            if thumbnail_kind == "excalidraw":
+                # Exports show the light rendering; a diagram never rendered exports as a file card.
+                preview = find_file_preview(file_id=file_id, variant="light", token=token)
+                if preview is not None:
+                    export_data_url = _build_file_data_url(
+                        mime_type=preview.mime_type,
+                        content_bytes=preview.content_bytes,
+                    )
 
             file_record_cache[file_id] = _ExportFileRecord(
                 id=record.id,

@@ -27,6 +27,7 @@ var/
 logs/
 package-lock.json
 !scripts/browser-validation/package-lock.json
+!scripts/vendor/excalidraw/package-lock.json
 node_modules/
 # Symlinked claude compatibility stub
 CLAUDE.md

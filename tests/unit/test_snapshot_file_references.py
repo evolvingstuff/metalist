@@ -204,3 +204,219 @@ def test_collapsed_image_file_reference_preview_skips_leading_blank_lines(monkey
     assert "note-file-image-preview" in rendered
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
     assert "trailing text" not in rendered
+
+
+def test_embed_excalidraw_file_reference_renders_light_and_dark_previews(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "4b0cf5b3-8d5a-4c43-9f63-5c3cc6a3f1e2"
+    notes = {
+        "a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", ""),
+    }
+    file_record = SimpleNamespace(
+        id=file_id,
+        title="Diagram.excalidraw",
+        original_filename="Diagram.excalidraw",
+        mime_type="application/vnd.excalidraw+json",
+        size_bytes=512,
+        thumbnail_kind="excalidraw",
+        content_revision=7,
+    )
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        file_ids={file_id},
+        file_record=file_record,
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-reference-file-excalidraw" in rendered
+    assert f'class="note-file-excalidraw-embed" data-file-ref-id="{file_id}" data-file-revision="7"' in rendered
+    assert 'data-preview-variant="light"' in rendered
+    assert 'data-preview-variant="dark"' in rendered
+    assert rendered.count('data-file-kind="excalidraw"') == 2
+    assert "note-file-reference-badge" not in rendered
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
+def test_linked_excalidraw_file_reference_renders_a_file_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "0f1d3c9e-7a55-4a8c-9c6f-1b8e2d7a4c11"
+    notes = {
+        "a": _Note("a", None, None, None, False, f"<div>[[{file_id}]]</div>", ""),
+    }
+    file_record = SimpleNamespace(
+        id=file_id,
+        title="Diagram.excalidraw",
+        original_filename="Diagram.excalidraw",
+        mime_type="application/vnd.excalidraw+json",
+        size_bytes=512,
+        thumbnail_kind="excalidraw",
+        content_revision=1,
+    )
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        file_ids={file_id},
+        file_record=file_record,
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-file-excalidraw-embed" not in rendered
+    assert "note-file-reference-link" in rendered
+    assert "DRAW" in rendered
+
+
+_DIAGRAM_ID = "6d5f8a41-0c3e-4f7b-9a2d-58e1b7c4d903"
+_SOURCE_ID = "1c9e7b52-3f4a-4d8e-a6b0-7e2f9d1c5a38"
+
+
+def _diagram_record() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=_DIAGRAM_ID,
+        title="Diagram.excalidraw",
+        original_filename="Diagram.excalidraw",
+        mime_type="application/vnd.excalidraw+json",
+        size_bytes=512,
+        thumbnail_kind="excalidraw",
+        content_revision=4,
+    )
+
+
+@pytest.mark.parametrize(
+    ("host_content", "host_collapsed"),
+    [(f"<div>[[{_SOURCE_ID}]]</div>", False), (f"<div>![[{_SOURCE_ID}]]</div>", True)],
+)
+def test_compact_reference_to_a_diagram_note_shows_the_diagram_thumbnail(
+    monkeypatch: pytest.MonkeyPatch, host_content: str, host_collapsed: bool,
+) -> None:
+    notes = {
+        "host": _Note("host", None, None, _SOURCE_ID, host_collapsed, host_content, ""),
+        _SOURCE_ID: _Note(_SOURCE_ID, None, "host", None, True, f"<div>![[{_DIAGRAM_ID}]]</div><div>later line</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["host", _SOURCE_ID]},
+        file_ids={_DIAGRAM_ID},
+        file_record=_diagram_record(),
+    )
+
+    rendered = state.payloads["host"]["content"]
+    assert "(empty note)" not in rendered
+    assert "later line" not in rendered
+    assert 'class="note-reference-link-title note-reference-link-title-media"' in rendered
+    assert (
+        '<span class="note-reference-link-thumbnail note-reference-link-thumbnail-diagram note-file-excalidraw-embed" '
+        f'data-file-ref-id="{_DIAGRAM_ID}" data-file-revision="4" data-preview-state="idle">'
+    ) in rendered
+    assert 'data-preview-variant="light"' in rendered and 'data-preview-variant="dark"' in rendered
+    # Thumbnails are not editable diagrams or file images with their own context-menu actions.
+    assert 'data-file-kind="excalidraw"' not in rendered
+    assert "Double-click to edit" not in rendered
+    assert rendered.index("note-reference-link-icon") < rendered.index("note-reference-link-thumbnail")
+
+
+def test_compact_reference_keeps_text_when_the_source_starts_with_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "host": _Note("host", None, None, _SOURCE_ID, False, f"<div>[[{_SOURCE_ID}]]</div>", ""),
+        _SOURCE_ID: _Note(_SOURCE_ID, None, "host", None, False, f"<div>Kyoto hotel</div><div>![[{_DIAGRAM_ID}]]</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["host", _SOURCE_ID]},
+        file_ids={_DIAGRAM_ID},
+        file_record=_diagram_record(),
+    )
+
+    rendered = state.payloads["host"]["content"]
+    assert "note-reference-link-thumbnail" not in rendered
+    assert '<span class="note-reference-link-title">Kyoto hotel</span>' in rendered
+
+
+def test_compact_reference_shows_an_inline_image_thumbnail_with_its_line_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = "data:image/png;base64,iVBORw0KGgo="
+    notes = {
+        "host": _Note("host", None, None, _SOURCE_ID, False, f"<div>[[{_SOURCE_ID}]]</div>", ""),
+        _SOURCE_ID: _Note(_SOURCE_ID, None, "host", None, False, f'<div><img src="{image}" alt="map"> Route map</div>', ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["host", _SOURCE_ID]},
+        file_ids=set(),
+        file_record=None,
+    )
+
+    rendered = state.payloads["host"]["content"]
+    assert (
+        '<span class="note-reference-link-thumbnail note-reference-link-thumbnail-image">'
+        f'<img class="note-reference-link-thumbnail-inline" src="{image}" alt="" draggable="false" /></span>'
+    ) in rendered
+    assert '<span class="note-reference-link-caption">Route map</span>' in rendered
+
+
+def test_redacted_password_and_ai_chat_references_stay_text_only() -> None:
+    from app.services.embedded_references import (
+        EmbedRenderContext,
+        render_compact_note_reference_link,
+        render_note_content_with_embeds,
+    )
+
+    def context_for(source: _Note) -> EmbedRenderContext:
+        return EmbedRenderContext(
+            has_note=lambda note_id: note_id == _SOURCE_ID,
+            get_note=lambda note_id: source,
+            get_children=lambda parent_id: [],
+            has_file=lambda file_id: file_id == _DIAGRAM_ID,
+            get_file=lambda file_id: _diagram_record(),
+        )
+
+    password_source = _Note(_SOURCE_ID, None, None, None, False, f"<div>![[{_DIAGRAM_ID}]] hunter2</div>", "@password")
+    exported = render_note_content_with_embeds(
+        note_id="host",
+        content_html=f"<div>[[{_SOURCE_ID}]]</div>",
+        tags="",
+        context=context_for(password_source),
+        static_export=True,
+        redact_passwords=True,
+    )
+    assert "note-reference-link-thumbnail" not in exported
+    assert "hunter2" not in exported
+
+    plain_source = _Note(_SOURCE_ID, None, None, None, False, f"<div>![[{_DIAGRAM_ID}]]</div>", "")
+    chat_link = render_compact_note_reference_link(
+        reference_note_id=_SOURCE_ID,
+        context=context_for(plain_source),
+        redact_passwords=True,
+    )
+    assert "note-reference-link-thumbnail" not in chat_link
+    assert "(empty note)" in chat_link
+
+
+def test_exported_compact_reference_embeds_the_diagram_preview() -> None:
+    from app.services.embedded_references import EmbedRenderContext, render_note_content_with_embeds
+
+    source = _Note(_SOURCE_ID, None, None, None, False, f"<div>![[{_DIAGRAM_ID}]]</div>", "")
+    record = _diagram_record()
+
+    def export(data_url: str) -> str:
+        return render_note_content_with_embeds(
+            note_id="host",
+            content_html=f"<div>[[{_SOURCE_ID}]]</div>",
+            tags="",
+            context=EmbedRenderContext(
+                has_note=lambda note_id: note_id == _SOURCE_ID,
+                get_note=lambda note_id: source,
+                get_children=lambda parent_id: [],
+                has_file=lambda file_id: file_id == _DIAGRAM_ID,
+                get_file=lambda file_id: SimpleNamespace(**vars(record), export_data_url=data_url),
+            ),
+            static_export=True,
+            redact_passwords=True,
+        )
+
+    rendered = export("data:image/svg+xml;base64,PHN2Zy8+")
+    assert '<img class="note-reference-link-thumbnail-static" src="data:image/svg+xml;base64,PHN2Zy8+" alt="" />' in rendered
+    assert "data-file-ref-id" not in rendered
+    assert "(empty note)" in export("")

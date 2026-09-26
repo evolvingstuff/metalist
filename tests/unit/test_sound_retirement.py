@@ -35,7 +35,7 @@ def test_sound_retirement_preserves_reminders_files_and_historical_archive(tmp_p
         connection.commit()
     with closing(sqlite3.connect(files)) as connection:
         initialize_file_schema(connection)
-        connection.execute("INSERT INTO files VALUES ('attachment','keep title',NULL,NULL,'{}',NULL,NULL,?,NULL,NULL,'2026-09-12','2026-09-12')", (b'keep attachment bytes',))
+        connection.execute("INSERT INTO files (id, title, title_encryption_nonce, title_encryption_tag, metadata_json, metadata_encryption_nonce, metadata_encryption_tag, blob_data, blob_encryption_nonce, blob_encryption_tag, created_at, updated_at) VALUES ('attachment','keep title',NULL,NULL,'{}',NULL,NULL,?,NULL,NULL,'2026-09-12','2026-09-12')", (b'keep attachment bytes',))
         connection.execute('CREATE TABLE sounds AS SELECT * FROM files')
         connection.execute("UPDATE sounds SET id='sound', blob_data=?", (b'retired sound bytes',))
         connection.execute('CREATE TABLE retained_attachment_marker(value TEXT)')
@@ -50,7 +50,7 @@ def test_sound_retirement_preserves_reminders_files_and_historical_archive(tmp_p
             service = encryption
         with connection:
             result = run_database_migrations(connection=connection, encryption_enabled=encrypted, encryption_service=service)
-        assert result.applied_versions == (9,)
+        assert result.applied_versions == (9, 10)
         row = connection.execute('SELECT payload_json, payload_encryption_nonce, payload_encryption_tag FROM reminders').fetchone()
         payload = row[0]
         if encrypted:

@@ -682,3 +682,78 @@ test('buildContextMenuItems preserves tag menu behavior', () => {
     items[0].onSelect();
     assert.deepEqual(calls, ['project-alpha']);
 });
+
+test('buildContextMenuItems gives a rendered diagram edit, size, zoom, and save actions', () => {
+    const calls = [];
+    const diagramContext = {
+        sourceKind: 'file',
+        fileId: 'file-1',
+        fileKind: 'excalidraw',
+        hostNoteId: 'note-123',
+        occurrenceIndex: 0,
+        src: 'blob:light-preview',
+        alt: 'Diagram',
+        filename: 'Diagram.excalidraw',
+    };
+    const handlers = {
+        ...buildNoteHandlers(calls),
+        onEditDiagram: (context) => calls.push(['editDiagram', context]),
+        onSaveDiagram: (context) => calls.push(['saveDiagram', context]),
+        onZoomImage: (context) => calls.push(['zoomImage', context]),
+    };
+    const items = buildContextMenuItems(
+        buildNoteContext({ imageContext: diagramContext, canResizeImage: true, canEditDiagram: true }),
+        handlers,
+    );
+
+    assert.deepEqual(items.slice(0, 6).map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })), [
+        { id: 'edit-diagram', label: 'Edit Diagram', enabled: true },
+        { id: 'make-image-bigger', label: 'Make Bigger', enabled: true },
+        { id: 'make-image-smaller', label: 'Make Smaller', enabled: true },
+        { id: 'reset-image-size', label: 'Reset Size', enabled: true },
+        { id: 'zoom-diagram', label: 'Zoom Diagram', enabled: true },
+        { id: 'save-diagram', label: 'Save Diagram File', enabled: true },
+    ]);
+    assert.equal(items.some((item) => item.id === 'copy-image' || item.id === 'open-image-new-tab'), false);
+    assert.equal(items[4].separated, true);
+    for (const item of items.slice(0, 6)) {
+        assert.equal(isContextMenuIconSupported(item.icon), true, `unsupported icon: ${item.icon}`);
+    }
+    for (const item of items.slice(0, 6)) {
+        item.onSelect();
+    }
+    assert.deepEqual(calls.map(([name]) => name), [
+        'editDiagram', 'makeImageBigger', 'makeImageSmaller', 'resetImageSize', 'zoomImage', 'saveDiagram',
+    ]);
+    assert.ok(calls.every(([, context]) => context === diagramContext));
+
+    const whileEditing = buildContextMenuItems(
+        buildNoteContext({ imageContext: diagramContext, canResizeImage: false, canEditDiagram: false }),
+        handlers,
+    );
+    assert.deepEqual(whileEditing.slice(0, 3).map((item) => ({ id: item.id, enabled: item.enabled })), [
+        { id: 'edit-diagram', enabled: false },
+        { id: 'zoom-diagram', enabled: true },
+        { id: 'save-diagram', enabled: true },
+    ]);
+    assert.equal(whileEditing[1].separated, false);
+});
+
+test('buildContextMenuItems offers Add Excalidraw Diagram only to the editing note', () => {
+    const calls = [];
+    const handlers = { ...buildNoteHandlers(calls), onAddDiagram: (noteId) => calls.push(['addDiagram', noteId]) };
+    const items = buildContextMenuItems(buildNoteContext({ canAddDiagram: true }), handlers);
+    const addDiagram = items.find((item) => item.id === 'add-excalidraw-diagram');
+    assert.ok(addDiagram);
+    assert.equal(addDiagram.label, 'Add Excalidraw Diagram');
+    assert.equal(isContextMenuIconSupported(addDiagram.icon), true);
+    addDiagram.onSelect();
+    assert.deepEqual(calls, [['addDiagram', 'note-123']]);
+
+    const viewItems = buildContextMenuItems(buildNoteContext(), buildNoteHandlers([]));
+    assert.equal(viewItems.some((item) => item.id === 'add-excalidraw-diagram'), false);
+    assert.throws(
+        () => buildContextMenuItems(buildNoteContext({ canAddDiagram: true }), buildNoteHandlers([])),
+        /onAddDiagram/,
+    );
+});

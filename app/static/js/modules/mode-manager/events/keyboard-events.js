@@ -95,6 +95,7 @@ import {
 } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
 
 const helpModal = new HelpModal();
@@ -153,16 +154,18 @@ function isTagBarNoteShortcut(event) {
 
 export function initKeyboardEvents() {
         
-    document.addEventListener('keydown', handleKeyDown, { capture: true });
-    document.addEventListener('paste', handlePasteEvent, { capture: false });
+    // While the full-screen diagram editor is open, keys, pastes and drops belong to Excalidraw.
+    const listen = (type, handler, options) => document.addEventListener(type, unlessDiagramEditorOpen(handler), options);
+    listen('keydown', handleKeyDown, { capture: true });
+    listen('paste', handlePasteEvent, { capture: false });
     document.addEventListener('visibilitychange', handleVisibilityChange, { capture: false });
-    document.addEventListener('dragover', handleDragOverEvent, { capture: false });
-    document.addEventListener('drop', handleDropEvent, { capture: false });
-    document.addEventListener('mousedown', handleTabDragCandidateMouseDown, { capture: true });
-    document.addEventListener('mouseup', clearTabDragCandidate, { capture: true });
-    document.addEventListener('dragstart', handleTabDragStart, { capture: true });
-    document.addEventListener('dragover', handleTabDragOver, { capture: true });
-    document.addEventListener('drop', handleTabDrop, { capture: true });
+    listen('dragover', handleDragOverEvent, { capture: false });
+    listen('drop', handleDropEvent, { capture: false });
+    listen('mousedown', handleTabDragCandidateMouseDown, { capture: true });
+    listen('mouseup', clearTabDragCandidate, { capture: true });
+    listen('dragstart', handleTabDragStart, { capture: true });
+    listen('dragover', handleTabDragOver, { capture: true });
+    listen('drop', handleTabDrop, { capture: true });
     document.addEventListener('dragend', handleTabDragEnd, { capture: true });
     document.addEventListener('click', handleTabDragClick, { capture: true });
     window.addEventListener('blur', handleWindowBlur, { capture: false });

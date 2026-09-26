@@ -4,6 +4,7 @@ import test from 'node:test';
 import { ApplicationState } from '../../app/static/js/modules/application-state.js';
 import { updateMoveDragGestureState } from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
 import { selectTagOnDoubleClick } from '../../app/static/js/modules/mode-manager/services/tag-input-selection-service.js';
+import { unlessDiagramEditorOpen } from '../../app/static/js/modules/excalidraw/excalidraw-editor-state.js';
 
 const source = readFileSync(new URL(
     '../../app/static/js/modules/mode-manager/events/mouse-events.js', import.meta.url,
@@ -27,6 +28,7 @@ function harness() {
         Element: Object,
         Logger: { logNoop() {}, logInit() {} },
         recordCollapse: () => actions.push('collapse'),
+        unlessDiagramEditorOpen, resolveDiagramTarget: () => null, openDiagramEditor: () => {},
     };
     const handlers = new Function(...Object.keys(dependencies), `${source}
         handleImmediateMouseDown = () => {};

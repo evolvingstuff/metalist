@@ -38,6 +38,9 @@ Structural and operational metadata remain readable: note IDs, hierarchy/order,
 collapse flags, timestamps, namespace names/ports, schema/vault versions and
 cryptographic metadata. Attachment filename/MIME metadata is inside an encrypted
 payload; this is distinct from readable database structure and container sizes.
+Excalidraw diagram previews (`file_previews.preview_data`) are encrypted like
+attachment bytes; their file ID, light/dark variant, SVG MIME type and the file
+content revision counter are readable structural metadata.
 Without a namespace password, ordinary note/file payloads are plaintext at the
 MetaList layer. OS disk encryption is separate.
 
@@ -338,7 +341,7 @@ full exception messages and tracebacks to diagnose failures:
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.4.2`.
-- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `9`.
+- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `10`.
 - Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
 
 Passwordless namespaces run pending migrations during startup. Encrypted namespaces remain usable for password verification at their old database version, then create a backup and run all intermediate migrations after the password unwraps the DEK. Migration functions are ordered, transactional, idempotent, and refuse databases newer than the running application.
@@ -715,6 +718,8 @@ Attachment uploads default to 100 MiB per file, configurable with positive-byte 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 10 adds `content_revision` to attachments and the `file_previews` table (encrypted Excalidraw diagram previews) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts either shape before version 10 and requires both from version 10.
 
 Database version 9 removes sound support from the installed live namespace only. Encrypted payload cleanup requires successful unlock. The sidecar table drop is idempotent; an interrupted 8→9 migration can retry after restart. Existing backups and legacy sidecars are never migrated in place.
 

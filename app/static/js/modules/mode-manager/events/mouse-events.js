@@ -10,6 +10,8 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { updateTagSuggestions } from '../services/tag-suggestions-service.js';
 import { selectTagOnDoubleClick } from '../services/tag-input-selection-service.js';
+import { openDiagramEditor, resolveDiagramTarget } from '../../excalidraw/excalidraw-actions.js';
+import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import {
     hideSearchSuggestionsForSearchContextHover,
     hideSearchSuggestionsForSearchContextPointerMove,
@@ -72,24 +74,44 @@ const SHELL_POLL_INTERVAL_MS = 250;
 const copyFeedbackTimers = ApplicationState.createWeakCollection('copyFeedbackTimers', 'map');
 
 export function initMouseEvents() {
-    document.addEventListener('mousedown', beginMouseGesture, { capture: true });
-    document.addEventListener('pointercancel', cancelMouseGesture, { capture: true });
+    // While the full-screen diagram editor is open, every pointer event belongs to Excalidraw.
+    const listen = (type, handler, options) => document.addEventListener(type, unlessDiagramEditorOpen(handler), options);
+    listen('mousedown', beginMouseGesture, { capture: true });
+    listen('pointercancel', cancelMouseGesture, { capture: true });
     window.addEventListener('blur', cancelMouseGesture);
-    document.addEventListener('mousedown', handleCollapseToggleMouseDown, { capture: true });
-    document.addEventListener('mousedown', handleImmediateMouseDown, { capture: true });
-    document.addEventListener('mousedown', handleMoveDragMouseDown, { capture: true });
-    document.addEventListener('mousemove', handleMoveDragMouseMove, { capture: true });
-    document.addEventListener('mousemove', handleSearchSuggestionsPointerMove, { capture: true, passive: true });
-    document.addEventListener('mousemove', handleSearchContextsPointerMove, { capture: true, passive: true });
-    document.addEventListener('mouseup', handleMoveDragMouseUp, { capture: true });
-    document.addEventListener('mousedown', handleSelectionDragMouseDown, { capture: true });
-    document.addEventListener('mouseup', handleSelectionDragMouseUp, { capture: true });
-    document.addEventListener('click', handleClick, { capture: true });
-    document.addEventListener('dblclick', selectTagOnDoubleClick, { capture: true });
-    document.addEventListener('mouseover', handleMouseOver, { capture: true });
-    document.addEventListener('mouseout', handleMouseOut, { capture: true });
+    listen('mousedown', handleCollapseToggleMouseDown, { capture: true });
+    listen('mousedown', handleImmediateMouseDown, { capture: true });
+    listen('mousedown', handleMoveDragMouseDown, { capture: true });
+    listen('mousemove', handleMoveDragMouseMove, { capture: true });
+    listen('mousemove', handleSearchSuggestionsPointerMove, { capture: true, passive: true });
+    listen('mousemove', handleSearchContextsPointerMove, { capture: true, passive: true });
+    listen('mouseup', handleMoveDragMouseUp, { capture: true });
+    listen('mousedown', handleSelectionDragMouseDown, { capture: true });
+    listen('mouseup', handleSelectionDragMouseUp, { capture: true });
+    listen('click', handleClick, { capture: true });
+    listen('dblclick', selectTagOnDoubleClick, { capture: true });
+    listen('dblclick', handleDiagramDoubleClick, { capture: true });
+    listen('mouseover', handleMouseOver, { capture: true });
+    listen('mouseout', handleMouseOut, { capture: true });
 
     Logger.logInit('Mouse events handler');
+}
+
+function handleDiagramDoubleClick(event) {
+    if (event.button !== 0) {
+        return;
+    }
+    const diagram = resolveDiagramTarget(event.target);
+    if (diagram === null) {
+        return;
+    }
+    // Full-screen and floating note views are read-only.
+    if (event.target.closest('.note-fullscreen-overlay, .floating-note-window')) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    void openDiagramEditor(diagram.fileId, diagram.hostNoteId);
 }
 
 function beginMouseGesture(event) {
@@ -911,6 +933,10 @@ function handleClick(event) {
         return;
     }
     if (isShellInteractiveTarget(event.target)) {
+        return;
+    }
+    if (resolveDiagramTarget(event.target) !== null) {
+        // A single click on a rendered diagram does nothing; a double-click opens the editor.
         return;
     }
 

@@ -297,3 +297,44 @@ def test_blank_collapsed_note_with_children_is_collapsible(monkeypatch: pytest.M
     assert state.payloads["a"]["flags"]["hasChildren"] is True
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
     assert "b" not in state.payloads
+
+
+@pytest.mark.parametrize(
+    ("content", "first_line"),
+    [
+        ("Kyoto hotel<div>3 nights</div><div>Breakfast</div>", "Kyoto hotel"),
+        ("<b>Bold</b> start<p>next paragraph</p>", "<b>Bold</b> start"),
+        ("Groceries<ul><li>milk</li></ul>", "Groceries"),
+    ],
+)
+def test_a_block_opening_after_the_first_line_starts_the_second_line(content: str, first_line: str) -> None:
+    # Editors write "first line<div>second line</div>" when Enter follows unwrapped text.
+    assert extract_collapsed_preview_source_html(content) == first_line
+
+
+def test_collapsed_note_starting_with_a_reference_hides_its_later_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    source_id = "1c9e7b52-3f4a-4d8e-a6b0-7e2f9d1c5a38"
+    notes = {
+        "host": _Note("host", None, None, source_id, True, f"![[{source_id}]]<div>second line</div>", ""),
+        source_id: _Note(source_id, None, "host", None, False, "Kyoto hotel<div>3 nights</div>", ""),
+    }
+
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["host", source_id]},
+        editing_note_id=None,
+    )
+
+    rendered = state.payloads["host"]["content"]
+    assert "second line" not in rendered
+    assert '<span class="note-reference-link-title">Kyoto hotel</span>' in rendered
+    assert "3 nights" not in rendered
+    assert state.payloads["host"]["flags"]["isCollapsible"] is True
+
+
+def test_backlink_previews_use_only_the_first_line() -> None:
+    from app.services.backlinks import _extract_preview
+
+    assert _extract_preview("Kyoto hotel<div>3 nights</div>") == "Kyoto hotel"
+    assert _extract_preview("<div>alpha</div><div>beta</div>") == "alpha"

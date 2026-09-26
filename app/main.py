@@ -1,6 +1,8 @@
 from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, Request, Depends
 from app.db.files_sql import AttachmentSizeExceeded
+from app.services.file_storage import FileNotEditable, FilePreviewMissing, FileRevisionConflict, InvalidFileContent
+from app.services.file_edit_sessions import FileEditSessionMissing
 from app.services.hierarchy import HierarchyError
 from app.services.sync import ClipboardCapacityError
 from app.services.shell_session_service import shell_session_service, ShellCapacityError, ShellRunNotFound
@@ -705,6 +707,31 @@ async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_d
 @app.exception_handler(AttachmentSizeExceeded)
 async def attachment_size_error(request: Request, exc: AttachmentSizeExceeded):
     return JSONResponse(status_code=413, content={"detail": "Attachment exceeds METALIST_MAX_ATTACHMENT_BYTES; increase this limit to download a larger legacy attachment"})
+
+
+@app.exception_handler(FileRevisionConflict)
+async def file_revision_conflict(request: Request, exc: FileRevisionConflict):
+    return JSONResponse(status_code=409, content={"detail": str(exc), "currentRevision": exc.current_revision})
+
+
+@app.exception_handler(FileNotEditable)
+async def file_not_editable(request: Request, exc: FileNotEditable):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidFileContent)
+async def invalid_file_content(request: Request, exc: InvalidFileContent):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(FilePreviewMissing)
+async def file_preview_missing(request: Request, exc: FilePreviewMissing):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(FileEditSessionMissing)
+async def file_edit_session_missing(request: Request, exc: FileEditSessionMissing):
+    return JSONResponse(status_code=410, content={"detail": str(exc)})
 
 
 @app.exception_handler(HierarchyError)

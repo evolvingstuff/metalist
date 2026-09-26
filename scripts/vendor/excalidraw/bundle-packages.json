@@ -1,0 +1,577 @@
+[
+  {
+    "name": "@babel/runtime",
+    "version": "7.29.7",
+    "license": "MIT",
+    "lockKey": "node_modules/@babel/runtime"
+  },
+  {
+    "name": "@braintree/sanitize-url",
+    "version": "6.0.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@braintree/sanitize-url"
+  },
+  {
+    "name": "@excalidraw/excalidraw",
+    "version": "0.18.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@excalidraw/excalidraw"
+  },
+  {
+    "name": "@excalidraw/laser-pointer",
+    "version": "1.3.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@excalidraw/laser-pointer"
+  },
+  {
+    "name": "@floating-ui/core",
+    "version": "1.8.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@floating-ui/core"
+  },
+  {
+    "name": "@floating-ui/dom",
+    "version": "1.8.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@floating-ui/dom"
+  },
+  {
+    "name": "@floating-ui/react-dom",
+    "version": "2.1.9",
+    "license": "MIT",
+    "lockKey": "node_modules/@floating-ui/react-dom"
+  },
+  {
+    "name": "@floating-ui/utils",
+    "version": "0.2.12",
+    "license": "MIT",
+    "lockKey": "node_modules/@floating-ui/utils"
+  },
+  {
+    "name": "@radix-ui/primitive",
+    "version": "1.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/primitive"
+  },
+  {
+    "name": "@radix-ui/react-arrow",
+    "version": "1.1.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-arrow"
+  },
+  {
+    "name": "@radix-ui/react-collection",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-collection"
+  },
+  {
+    "name": "@radix-ui/react-compose-refs",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-collection/node_modules/@radix-ui/react-compose-refs"
+  },
+  {
+    "name": "@radix-ui/react-context",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-collection/node_modules/@radix-ui/react-context"
+  },
+  {
+    "name": "@radix-ui/react-slot",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-collection/node_modules/@radix-ui/react-slot"
+  },
+  {
+    "name": "@radix-ui/react-compose-refs",
+    "version": "1.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-compose-refs"
+  },
+  {
+    "name": "@radix-ui/react-context",
+    "version": "1.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-context"
+  },
+  {
+    "name": "@radix-ui/react-direction",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-direction"
+  },
+  {
+    "name": "@radix-ui/react-dismissable-layer",
+    "version": "1.1.5",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-dismissable-layer"
+  },
+  {
+    "name": "@radix-ui/react-focus-guards",
+    "version": "1.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-focus-guards"
+  },
+  {
+    "name": "@radix-ui/react-focus-scope",
+    "version": "1.1.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-focus-scope"
+  },
+  {
+    "name": "@radix-ui/react-id",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-id"
+  },
+  {
+    "name": "@radix-ui/react-popover",
+    "version": "1.1.6",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-popover"
+  },
+  {
+    "name": "@radix-ui/react-popper",
+    "version": "1.2.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-popper"
+  },
+  {
+    "name": "@radix-ui/react-portal",
+    "version": "1.1.4",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-portal"
+  },
+  {
+    "name": "@radix-ui/react-presence",
+    "version": "1.1.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-presence"
+  },
+  {
+    "name": "@radix-ui/react-primitive",
+    "version": "2.0.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-primitive"
+  },
+  {
+    "name": "@radix-ui/react-roving-focus",
+    "version": "1.0.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus"
+  },
+  {
+    "name": "@radix-ui/primitive",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/primitive"
+  },
+  {
+    "name": "@radix-ui/react-compose-refs",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-compose-refs"
+  },
+  {
+    "name": "@radix-ui/react-context",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-context"
+  },
+  {
+    "name": "@radix-ui/react-id",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-id"
+  },
+  {
+    "name": "@radix-ui/react-primitive",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-primitive"
+  },
+  {
+    "name": "@radix-ui/react-slot",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-slot"
+  },
+  {
+    "name": "@radix-ui/react-use-callback-ref",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-use-callback-ref"
+  },
+  {
+    "name": "@radix-ui/react-use-controllable-state",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-use-controllable-state"
+  },
+  {
+    "name": "@radix-ui/react-use-layout-effect",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-roving-focus/node_modules/@radix-ui/react-use-layout-effect"
+  },
+  {
+    "name": "@radix-ui/react-slot",
+    "version": "1.1.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-slot"
+  },
+  {
+    "name": "@radix-ui/react-tabs",
+    "version": "1.0.2",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs"
+  },
+  {
+    "name": "@radix-ui/primitive",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/primitive"
+  },
+  {
+    "name": "@radix-ui/react-compose-refs",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-compose-refs"
+  },
+  {
+    "name": "@radix-ui/react-context",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-context"
+  },
+  {
+    "name": "@radix-ui/react-id",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-id"
+  },
+  {
+    "name": "@radix-ui/react-presence",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-presence"
+  },
+  {
+    "name": "@radix-ui/react-primitive",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-primitive"
+  },
+  {
+    "name": "@radix-ui/react-slot",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-slot"
+  },
+  {
+    "name": "@radix-ui/react-use-callback-ref",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-use-callback-ref"
+  },
+  {
+    "name": "@radix-ui/react-use-controllable-state",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-use-controllable-state"
+  },
+  {
+    "name": "@radix-ui/react-use-layout-effect",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-tabs/node_modules/@radix-ui/react-use-layout-effect"
+  },
+  {
+    "name": "@radix-ui/react-use-callback-ref",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-use-callback-ref"
+  },
+  {
+    "name": "@radix-ui/react-use-controllable-state",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-use-controllable-state"
+  },
+  {
+    "name": "@radix-ui/react-use-escape-keydown",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-use-escape-keydown"
+  },
+  {
+    "name": "@radix-ui/react-use-layout-effect",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-use-layout-effect"
+  },
+  {
+    "name": "@radix-ui/react-use-size",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/@radix-ui/react-use-size"
+  },
+  {
+    "name": "aria-hidden",
+    "version": "1.2.6",
+    "license": "MIT",
+    "lockKey": "node_modules/aria-hidden"
+  },
+  {
+    "name": "browser-fs-access",
+    "version": "0.29.1",
+    "license": "Apache-2.0",
+    "lockKey": "node_modules/browser-fs-access"
+  },
+  {
+    "name": "canvas-roundrect-polyfill",
+    "version": "0.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/canvas-roundrect-polyfill"
+  },
+  {
+    "name": "clsx",
+    "version": "1.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/clsx"
+  },
+  {
+    "name": "crc-32",
+    "version": "0.3.0",
+    "license": "Apache-2.0",
+    "lockKey": "node_modules/crc-32"
+  },
+  {
+    "name": "detect-node-es",
+    "version": "1.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/detect-node-es"
+  },
+  {
+    "name": "es6-promise-pool",
+    "version": "2.5.0",
+    "license": "MIT",
+    "lockKey": "node_modules/es6-promise-pool"
+  },
+  {
+    "name": "fractional-indexing",
+    "version": "3.2.0",
+    "license": "CC0-1.0",
+    "lockKey": "node_modules/fractional-indexing"
+  },
+  {
+    "name": "fuzzy",
+    "version": "0.1.3",
+    "lockKey": "node_modules/fuzzy"
+  },
+  {
+    "name": "get-nonce",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/get-nonce"
+  },
+  {
+    "name": "hachure-fill",
+    "version": "0.5.2",
+    "license": "MIT",
+    "lockKey": "node_modules/hachure-fill"
+  },
+  {
+    "name": "image-blob-reduce",
+    "version": "3.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/image-blob-reduce"
+  },
+  {
+    "name": "jotai",
+    "version": "2.11.0",
+    "license": "MIT",
+    "lockKey": "node_modules/jotai"
+  },
+  {
+    "name": "jotai-scope",
+    "version": "0.7.2",
+    "license": "MIT",
+    "lockKey": "node_modules/jotai-scope"
+  },
+  {
+    "name": "lodash.debounce",
+    "version": "4.0.8",
+    "license": "MIT",
+    "lockKey": "node_modules/lodash.debounce"
+  },
+  {
+    "name": "lodash.throttle",
+    "version": "4.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/lodash.throttle"
+  },
+  {
+    "name": "nanoid",
+    "version": "3.3.19",
+    "license": "MIT",
+    "lockKey": "node_modules/nanoid"
+  },
+  {
+    "name": "open-color",
+    "version": "1.9.1",
+    "license": "MIT",
+    "lockKey": "node_modules/open-color"
+  },
+  {
+    "name": "pako",
+    "version": "2.0.3",
+    "license": "(MIT AND Zlib)",
+    "lockKey": "node_modules/pako"
+  },
+  {
+    "name": "path-data-parser",
+    "version": "0.1.0",
+    "license": "MIT",
+    "lockKey": "node_modules/path-data-parser"
+  },
+  {
+    "name": "perfect-freehand",
+    "version": "1.2.0",
+    "license": "MIT",
+    "lockKey": "node_modules/perfect-freehand"
+  },
+  {
+    "name": "pica",
+    "version": "7.1.1",
+    "license": "MIT",
+    "lockKey": "node_modules/pica"
+  },
+  {
+    "name": "png-chunk-text",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/png-chunk-text"
+  },
+  {
+    "name": "png-chunks-encode",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/png-chunks-encode"
+  },
+  {
+    "name": "png-chunks-extract",
+    "version": "1.0.0",
+    "license": "MIT",
+    "lockKey": "node_modules/png-chunks-extract"
+  },
+  {
+    "name": "points-on-curve",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/points-on-curve"
+  },
+  {
+    "name": "points-on-path",
+    "version": "0.2.1",
+    "license": "MIT",
+    "lockKey": "node_modules/points-on-path"
+  },
+  {
+    "name": "points-on-curve",
+    "version": "0.2.0",
+    "license": "MIT",
+    "lockKey": "node_modules/points-on-path/node_modules/points-on-curve"
+  },
+  {
+    "name": "react",
+    "version": "18.3.1",
+    "license": "MIT",
+    "lockKey": "node_modules/react"
+  },
+  {
+    "name": "react-dom",
+    "version": "18.3.1",
+    "license": "MIT",
+    "lockKey": "node_modules/react-dom"
+  },
+  {
+    "name": "react-remove-scroll",
+    "version": "2.7.2",
+    "license": "MIT",
+    "lockKey": "node_modules/react-remove-scroll"
+  },
+  {
+    "name": "react-remove-scroll-bar",
+    "version": "2.3.8",
+    "license": "MIT",
+    "lockKey": "node_modules/react-remove-scroll-bar"
+  },
+  {
+    "name": "react-style-singleton",
+    "version": "2.2.3",
+    "license": "MIT",
+    "lockKey": "node_modules/react-style-singleton"
+  },
+  {
+    "name": "roughjs",
+    "version": "4.6.4",
+    "license": "MIT",
+    "lockKey": "node_modules/roughjs"
+  },
+  {
+    "name": "points-on-curve",
+    "version": "0.2.0",
+    "license": "MIT",
+    "lockKey": "node_modules/roughjs/node_modules/points-on-curve"
+  },
+  {
+    "name": "scheduler",
+    "version": "0.23.2",
+    "license": "MIT",
+    "lockKey": "node_modules/scheduler"
+  },
+  {
+    "name": "sliced",
+    "version": "1.0.1",
+    "license": "MIT",
+    "lockKey": "node_modules/sliced"
+  },
+  {
+    "name": "tslib",
+    "version": "2.8.1",
+    "license": "0BSD",
+    "lockKey": "node_modules/tslib"
+  },
+  {
+    "name": "tunnel-rat",
+    "version": "0.1.2",
+    "license": "MIT",
+    "lockKey": "node_modules/tunnel-rat"
+  },
+  {
+    "name": "use-callback-ref",
+    "version": "1.3.3",
+    "license": "MIT",
+    "lockKey": "node_modules/use-callback-ref"
+  },
+  {
+    "name": "use-sidecar",
+    "version": "1.1.3",
+    "license": "MIT",
+    "lockKey": "node_modules/use-sidecar"
+  },
+  {
+    "name": "use-sync-external-store",
+    "version": "1.7.0",
+    "license": "MIT",
+    "lockKey": "node_modules/use-sync-external-store"
+  },
+  {
+    "name": "zustand",
+    "version": "4.5.7",
+    "license": "MIT",
+    "lockKey": "node_modules/zustand"
+  }
+]

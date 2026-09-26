@@ -282,6 +282,12 @@
     "presentation": "palette"
   },
   {
+    "id": "action.add_excalidraw_diagram",
+    "label": "Add Excalidraw diagram",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.trim_unused_files",
     "label": "Trim unused files",
     "selector": "#command-palette-modal",

@@ -12,7 +12,7 @@ HELP_TOPICS = {
     'search': ('Search and views', 'Tag/text queries, OR, exclusions, matching, sorting and untagged view.'),
     'tags': ('Tags and ontology', 'Manual tag assignment, inheritance, autocomplete, ontology and tag relationship rules. AI proposal workflows belong to ai.'),
     'formatting': ('Formatting and attachments', 'Markdown, LaTeX, Mermaid, formatting scopes and files.'),
-    'references': ('References and floating notes', 'Links, transclusions, backlinks and floating windows.'),
+    'references': ('References and floating notes', 'Links, transclusions, backlinks, floating windows and Excalidraw diagrams.'),
     'menus': ('Menus and settings', 'Find/open menu dialogs and understand preference controls.'),
     'reminders': ('Reminders', 'Creating, editing, snoozing and recurrence.'),
     'ai': ('AI and tag proposals', 'OpenAI settings, context limits, prompts/skills, history export, and AI tag proposals: generation, acceptance, rejection/removal and bulk undo limits. This topic alone covers proposal workflow explanations.'),

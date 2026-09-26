@@ -1,4 +1,5 @@
 import { ApplicationState } from '../../application-state.js';
+import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
@@ -381,10 +382,10 @@ export function initializeTagSuggestions() {
     }
     moduleState.initialized = true;
 
-    document.addEventListener('mousedown', handleDocumentMouseDown, true);
-    document.addEventListener('focusin', handleFocusIn, true);
-    document.addEventListener('focusout', handleFocusOut, true);
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', unlessDiagramEditorOpen(handleDocumentMouseDown), true);
+    document.addEventListener('focusin', unlessDiagramEditorOpen(handleFocusIn), true);
+    document.addEventListener('focusout', unlessDiagramEditorOpen(handleFocusOut), true);
+    document.addEventListener('keydown', unlessDiagramEditorOpen(handleKeyDown));
     window.addEventListener('scroll', handleViewportChange, true);
     window.addEventListener('resize', handleViewportChange);
 }

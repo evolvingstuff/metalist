@@ -39,7 +39,7 @@ function harness() {
             return entry;
         },
         getFloatingNoteTitle: () => 'Root',
-        applyFloatingNoteRect() {}, hydrateImageFilePreviews() {}, ensureAnchorsOpenInNewTabs() {},
+        applyFloatingNoteRect() {}, hydrateImageFilePreviews() {}, hydrateExcalidrawPreviews: async () => [], ensureAnchorsOpenInNewTabs() {},
         hydrateRemoteImageProxies() {}, queueMermaidDiagramRendering: async () => {},
     };
     const build = new Function(...Object.keys(dependencies), source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')

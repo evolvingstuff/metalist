@@ -1,4 +1,4 @@
-import { HttpRequestError, rethrowUnexpectedError } from './expected-errors.js';
+import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, rethrowUnexpectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
@@ -11,6 +11,70 @@ import { describeApiFailure } from './api-error-diagnostics.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
+}
+
+const FILE_REVISION_HEADER = 'X-MetaList-File-Revision';
+const FILE_PREVIEW_VARIANTS = ['light', 'dark'];
+
+function readFileRevision(response) {
+    const revision = Number(response.headers.get(FILE_REVISION_HEADER));
+    if (!Number.isInteger(revision) || revision < 1) {
+        throw new Error(`Response is missing a valid ${FILE_REVISION_HEADER} header`);
+    }
+    return revision;
+}
+
+function requireFileId(fileId, methodName) {
+    if (typeof fileId !== 'string' || fileId.length === 0) {
+        throw new Error(`FilesAPI.${methodName} requires fileId string`);
+    }
+}
+
+function requireRevision(revision, methodName) {
+    if (!Number.isInteger(revision) || revision < 1) {
+        throw new Error(`FilesAPI.${methodName} requires a positive integer revision`);
+    }
+}
+
+async function throwFileRevisionConflict(response, description) {
+    const body = await response.json();
+    throw new FileRevisionConflictError(`${description}: ${body.detail}`, body.currentRevision);
+}
+
+function requireSessionId(sessionId, methodName) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error(`FilesAPI.${methodName} requires sessionId string`);
+    }
+}
+
+// Diagram editing sessions answer with the sync UUID, which this window adopts as its own change.
+async function postFileEditSession(url, body, description) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify(body),
+    });
+    if (response.status === 409) {
+        await throwFileRevisionConflict(response, description);
+    }
+    if (response.status === 410) {
+        throw new FileEditSessionExpiredError(`${description}: the editing session is no longer open`);
+    }
+    if (!response.ok) {
+        ErrorHandler.handleApiError(null, response);
+        throw new HttpRequestError(`${description} failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    if (typeof data.updateUUID !== 'string' || data.updateUUID.length === 0) {
+        throw new Error(`${description} response is missing updateUUID`);
+    }
+    if (!Number.isInteger(data.contentRevision) || data.contentRevision < 1) {
+        throw new Error(`${description} response is missing contentRevision`);
+    }
+    if (ModeContext.lastUpdateUUID !== data.updateUUID) {
+        ModeContext.setLastUpdateUUID(data.updateUUID);
+    }
+    return data;
 }
 
 function extractFilenameFromContentDisposition(disposition) {
@@ -1016,7 +1080,133 @@ export const FilesAPI = {
             filename: extractFilenameFromContentDisposition(
                 response.headers.get('content-disposition')
             ),
+            revision: readFileRevision(response),
         };
+    },
+
+    // Replace an Excalidraw scene in place; throws FileRevisionConflictError if it was saved elsewhere first.
+    async replaceFileContent(fileId, contentBlob, filename, expectedRevision) {
+        requireFileId(fileId, 'replaceFileContent');
+        requireRevision(expectedRevision, 'replaceFileContent');
+        if (!(contentBlob instanceof Blob)) {
+            throw new Error('FilesAPI.replaceFileContent requires a Blob');
+        }
+        if (typeof filename !== 'string' || filename.length === 0) {
+            throw new Error('FilesAPI.replaceFileContent requires filename string');
+        }
+
+        const formData = new FormData();
+        formData.append('file', contentBlob, filename);
+        formData.append('expected_revision', String(expectedRevision));
+        const response = await fetch(CONFIG.API.FILES.CONTENT(fileId), {
+            method: 'PUT',
+            headers: buildAuthHeaders(false),
+            body: formData,
+        });
+        if (response.status === 409) {
+            await throwFileRevisionConflict(response, 'File changed elsewhere');
+        }
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`File update failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
+    // Store the light and dark SVG previews rendered from contentRevision.
+    async storeFilePreviews(fileId, previewSvgByVariant, contentRevision) {
+        requireFileId(fileId, 'storeFilePreviews');
+        requireRevision(contentRevision, 'storeFilePreviews');
+        const formData = new FormData();
+        for (const variant of FILE_PREVIEW_VARIANTS) {
+            const svgText = previewSvgByVariant[variant];
+            if (typeof svgText !== 'string' || !svgText.startsWith('<svg')) {
+                throw new Error(`FilesAPI.storeFilePreviews requires an SVG string for ${variant}`);
+            }
+            formData.append(variant, new Blob([svgText], { type: 'image/svg+xml' }), `${variant}.svg`);
+        }
+        formData.append('content_revision', String(contentRevision));
+        const response = await fetch(CONFIG.API.FILES.PREVIEWS(fileId), {
+            method: 'PUT',
+            headers: buildAuthHeaders(false),
+            body: formData,
+        });
+        if (response.status === 409) {
+            await throwFileRevisionConflict(response, 'File changed before its preview was saved');
+        }
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`File preview save failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
+    // Snapshots the diagram on the server so the whole editing session undoes as one step.
+    // Returns { sessionId, contentRevision }.
+    async startEditSession(fileId) {
+        requireFileId(fileId, 'startEditSession');
+        const data = await postFileEditSession(CONFIG.API.FILES.EDIT_SESSIONS(fileId), {}, 'Opening the diagram');
+        if (typeof data.sessionId !== 'string' || data.sessionId.length === 0) {
+            throw new Error('Opening the diagram response is missing sessionId');
+        }
+        return { sessionId: data.sessionId, contentRevision: data.contentRevision };
+    },
+
+    // Ends the session after Done. Returns { undoStepRecorded, contentRevision }. A new diagram's
+    // first session records no step of its own: undoing its insertion removes it entirely.
+    async finishEditSession(fileId, sessionId, hostNoteId, contentRevision, isNewDiagram) {
+        requireFileId(fileId, 'finishEditSession');
+        requireSessionId(sessionId, 'finishEditSession');
+        requireRevision(contentRevision, 'finishEditSession');
+        if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+            throw new Error('FilesAPI.finishEditSession requires hostNoteId string');
+        }
+        if (typeof isNewDiagram !== 'boolean') {
+            throw new Error('FilesAPI.finishEditSession requires isNewDiagram boolean');
+        }
+        const data = await postFileEditSession(CONFIG.API.FILES.EDIT_SESSION_FINISH(fileId, sessionId), {
+            clientId: ModeContext.clientId,
+            hostNoteId,
+            contentRevision,
+            isNewDiagram,
+            undoContext: captureUndoContext(),
+            viewport: captureViewportSnapshot(),
+        }, 'Saving the diagram to undo history');
+        if (typeof data.undoStepRecorded !== 'boolean') {
+            throw new Error('Finishing the diagram edit response is missing undoStepRecorded');
+        }
+        return { undoStepRecorded: data.undoStepRecorded, contentRevision: data.contentRevision };
+    },
+
+    // Restores the diagram the session opened with. Returns { contentRevision }.
+    async discardEditSession(fileId, sessionId, contentRevision) {
+        requireFileId(fileId, 'discardEditSession');
+        requireSessionId(sessionId, 'discardEditSession');
+        requireRevision(contentRevision, 'discardEditSession');
+        const data = await postFileEditSession(CONFIG.API.FILES.EDIT_SESSION_DISCARD(fileId, sessionId), {
+            contentRevision,
+        }, 'Discarding the diagram changes');
+        return { contentRevision: data.contentRevision };
+    },
+
+    // Returns { status: 'missing' } until a preview has been saved, else { status: 'ready', blob, revision }.
+    async downloadFilePreview(fileId, variant) {
+        requireFileId(fileId, 'downloadFilePreview');
+        if (!FILE_PREVIEW_VARIANTS.includes(variant)) {
+            throw new Error(`FilesAPI.downloadFilePreview unknown variant: ${variant}`);
+        }
+        const response = await fetch(CONFIG.API.FILES.PREVIEW(fileId, variant), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (response.status === 404) {
+            return { status: 'missing' };
+        }
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`File preview download failed: ${response.status} ${response.statusText}`);
+        }
+        return { status: 'ready', blob: await response.blob(), revision: readFileRevision(response) };
     },
 
     async trimUnusedFiles() {

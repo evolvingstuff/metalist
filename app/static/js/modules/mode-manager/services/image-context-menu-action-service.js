@@ -277,6 +277,10 @@ export function resolveImageContextFromElement(element) {
     if (!(image instanceof HTMLImageElement)) {
         return null;
     }
+    // Compact reference thumbnails show the source note; right-clicking them offers note actions.
+    if (image.closest('.note-reference-link-thumbnail') !== null) {
+        return null;
+    }
     const src = typeof image.currentSrc === 'string' && image.currentSrc.length > 0
         ? image.currentSrc
         : image.src;
@@ -304,6 +308,8 @@ export function resolveImageContextFromElement(element) {
         }
         return {
             sourceKind: 'file',
+            // Rendered Excalidraw diagrams are file images too, with their own context-menu actions.
+            fileKind: image.dataset.fileKind === 'excalidraw' ? 'excalidraw' : 'image',
             fileId,
             hostNoteId,
             occurrenceIndex,

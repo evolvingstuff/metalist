@@ -121,6 +121,7 @@ test('resolveImageContextFromElement returns file image context', async (t) => {
 
     assert.deepEqual(resolveImageContextFromElement(image), {
         sourceKind: 'file',
+        fileKind: 'image',
         fileId: 'file-123',
         hostNoteId: 'note-456',
         occurrenceIndex: 3,
@@ -128,6 +129,25 @@ test('resolveImageContextFromElement returns file image context', async (t) => {
         alt: 'Saved photo',
         filename: null,
     });
+});
+
+test('resolveImageContextFromElement ignores thumbnails inside compact references', async (t) => {
+    const { FakeHTMLElement, FakeImageElement } = installImageContextDom(t);
+    const { resolveImageContextFromElement } = await import(
+        '../../app/static/js/modules/mode-manager/services/image-context-menu-action-service.js'
+    );
+    const image = new FakeImageElement({
+        currentSrc: 'blob:thumbnail',
+        src: 'blob:thumbnail',
+        dataset: { previewVariant: 'light' },
+        alt: '',
+        closestBySelector: {
+            '.note-reference-link-thumbnail': new FakeHTMLElement({ fileRefId: 'file-123' }),
+            '.note[data-note-id]': new FakeHTMLElement({ noteId: 'note-123' }),
+        },
+    });
+
+    assert.equal(resolveImageContextFromElement(image), null);
 });
 
 test('buildSuggestedImageFilename uses sanitized alt and MIME extension', async (t) => {

@@ -173,6 +173,10 @@
       "tags": ["attach", "file", "files", "upload", "reference", "note", "insert", "attachment"]
     },
     {
+      "id": "action.add_excalidraw_diagram",
+      "tags": ["excalidraw", "diagram", "drawing", "draw", "sketch", "whiteboard", "insert", "add", "new"]
+    },
+    {
       "id": "action.trim_unused_files",
       "tags": ["file", "trim", "unused", "orphan", "attachments", "cleanup", "delete"]
     },

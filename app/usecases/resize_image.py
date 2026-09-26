@@ -43,7 +43,7 @@ class CmdResizeImage(QueryCommand):
             source_kind=self.source_kind,
             occurrence_index=self.occurrence_index,
             action=self.action,
-            is_image_file=file_registry.has_image_file,
+            is_image_file=file_registry.has_resizable_file,
         )
         update_uuid = generate_new_uuid()
         if not mutation.changed:

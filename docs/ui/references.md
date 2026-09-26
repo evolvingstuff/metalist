@@ -15,6 +15,7 @@
     - `![[UUID]]` renders the referenced note as an embedded block with its complete descendant subtree whenever the host note is expanded. Saved collapse states on the referenced root or any descendant are ignored inside the embed.
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
     - when the host note is collapsed, both note-reference modes render as a single compact link row showing the referenced note's first line; an embed never expands inside a collapsed host.
+    - when the referenced note's first visible line is an image or Excalidraw diagram, the compact row shows the same thumbnail the collapsed source shows (plus any text on that line) instead of `(empty note)`. AI chat citations stay text-only.
     - compact source previews retain first-line footnote superscripts, including markers attached from standalone footnote lines, without showing the reference bodies. The preview and its superscripts share the existing source-navigation link.
     - an expanded embed begins with an arrow-only `↗` link (tooltip: `Go to reference source`) that opens the source note in a temporary reference-source context. All embedded content shares a small left inset for that arrow; there is no footer link. Compact references retain their `↗ title` link.
     - when a note contains only one note reference (including ordinary editor wrappers/whitespace), the entire note uses the reference background and the reference has no separate inner panel. References mixed with other content keep their panels. Nested references retain their own panels.
@@ -27,9 +28,10 @@
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
+    - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor. See `docs/ui/excalidraw.md`.
     - clicking the rendered file reference downloads the decrypted file from the server.
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
-    - when the host note is collapsed and the first visible line is an embedded image file, the note collapses to a compact thumbnail-only version of that image preview.
+    - when the host note is collapsed and the first visible line is an embedded image file or diagram, the note collapses to a compact thumbnail-only version of that preview.
   - Rendered references have no internal expand/collapse or embed/link controls; edit the raw token to change between `![[...]]` and `[[...]]`.
   - The embed always renders on its own visual line (block), even when written inline.
   - The referenced note's child subtree is included.
@@ -52,7 +54,9 @@
 - Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
+- `Add Excalidraw diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
+- Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
 
 ## Failure / Safety Cases
@@ -87,6 +91,7 @@
   - Non-matching sibling branches in visible context are redacted via normal search rules.
 
 ## Related Docs
+- `docs/ui/excalidraw.md`
 - `docs/ui/content-formatting.md`
 - `docs/ui/command-palette.md`
 - `docs/ui/controls.md`

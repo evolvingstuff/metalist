@@ -27,6 +27,7 @@ Sources: docs/ui/references.md
     - `![[UUID]]` renders the referenced note as an embedded block with its complete descendant subtree whenever the host note is expanded. Saved collapse states on the referenced root or any descendant are ignored inside the embed.
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
     - when the host note is collapsed, both note-reference modes render as a single compact link row showing the referenced note's first line; an embed never expands inside a collapsed host.
+    - when the referenced note's first visible line is an image or Excalidraw diagram, the compact row shows the same thumbnail the collapsed source shows (plus any text on that line) instead of `(empty note)`. AI chat citations stay text-only.
     - compact source previews retain first-line footnote superscripts, including markers attached from standalone footnote lines, without showing the reference bodies. The preview and its superscripts share the existing source-navigation link.
     - an expanded embed begins with an arrow-only `↗` link (tooltip: `Go to reference source`) that opens the source note in a temporary reference-source context. All embedded content shares a small left inset for that arrow; there is no footer link. Compact references retain their `↗ title` link.
     - when a note contains only one note reference (including ordinary editor wrappers/whitespace), the entire note uses the reference background and the reference has no separate inner panel. References mixed with other content keep their panels. Nested references retain their own panels.
@@ -39,9 +40,10 @@ Sources: docs/ui/references.md
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
+    - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor (see Excalidraw Diagrams below).
     - clicking the rendered file reference downloads the decrypted file from the server.
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
-    - when the host note is collapsed and the first visible line is an embedded image file, the note collapses to a compact thumbnail-only version of that image preview.
+    - when the host note is collapsed and the first visible line is an embedded image file or diagram, the note collapses to a compact thumbnail-only version of that preview.
   - Rendered references have no internal expand/collapse or embed/link controls; edit the raw token to change between `![[...]]` and `[[...]]`.
   - The embed always renders on its own visual line (block), even when written inline.
   - The referenced note's child subtree is included.
@@ -64,7 +66,9 @@ Sources: docs/ui/references.md
 - Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
+- `Add Excalidraw diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
+- Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place.
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
 
 ## Failure / Safety Cases
@@ -104,3 +108,12 @@ Sources: docs/ui/references.md
 - `docs/ui/controls.md`
 - `docs/ui/search-semantics.md`
 - `docs/design/differential-view-protocol.md`
+
+## Excalidraw Diagrams
+- Add one with **Add Excalidraw Diagram** in the right-click menu of the note being edited, or `Add Excalidraw diagram` in the command palette. The diagram is attached as a `.excalidraw` file and referenced with `![[UUID]]`; the editor opens immediately.
+- In view mode a diagram shows as a picture for the current light or dark theme. Double-click it, or right-click it and choose **Edit Diagram**, to open the full-screen editor. A single click does not start editing its note.
+- Right-click a diagram for **Make Bigger**, **Make Smaller**, **Reset Size**, **Zoom Diagram**, and **Save Diagram File**. Size uses the same `@size` tag as images.
+- In edit mode the note shows only the raw `![[UUID]]` token.
+- The editor autosaves 2 seconds after drawing stops. **Done** or `Cmd/Ctrl+Enter` saves and closes; `Escape` belongs to Excalidraw and does not close the editor. **Discard changes** (click twice) restores the diagram as it was when the editor opened.
+- Each editing session is one undo step: `Cmd/Ctrl+Z` in the main view restores the diagram as it was before the session. A newly added diagram undoes together with its insertion, so one undo removes it. Undo inside the editor is Excalidraw's own.
+- Text inside diagrams is not searchable, not used for tags, and not visible to AI.

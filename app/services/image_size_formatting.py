@@ -170,7 +170,7 @@ def _resolve_source_span(
     if not reference.is_embed:
         raise ValueError("Target file image must be an embedded reference")
     if not is_image_file(reference.note_id):
-        raise ValueError("Target reference is not an image file")
+        raise ValueError("Target reference is not a resizable image or diagram file")
     return _SourceSpan(start=reference.start, end=reference.end)
 
 

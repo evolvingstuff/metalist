@@ -42,5 +42,18 @@
     "license": "app/static/js/vendor/zxcvbn-4.4.2.LICENSE.txt",
     "member": "package/dist/zxcvbn.js",
     "upstream": "https://www.npmjs.com/package/zxcvbn/v/4.4.2"
+  },
+  {
+    "name": "@excalidraw/excalidraw",
+    "version": "0.18.1",
+    "path": "app/static/js/vendor/excalidraw-0.18.1.min.js",
+    "license": "app/static/js/vendor/excalidraw-0.18.1.LICENSE.txt",
+    "sha256": "98d0fb0b56f3a2b061d643d8040918e09e0ba72ad4208c5d25ff2e43e15b3946",
+    "upstream": "https://www.npmjs.com/package/@excalidraw/excalidraw/v/0.18.1",
+    "bundle": {
+      "build_script": "scripts/vendor/excalidraw/build.mjs",
+      "lockfile": "scripts/vendor/excalidraw/package-lock.json",
+      "packages": "scripts/vendor/excalidraw/bundle-packages.json"
+    }
   }
 ]

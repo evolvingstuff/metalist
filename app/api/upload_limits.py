@@ -23,6 +23,18 @@ async def read_attachment(file: UploadFile) -> bytes:
         await file.close()
 
 
+def _is_upload_request(scope) -> bool:
+    path = scope['path']
+    if path.endswith('/files/upload'):
+        return True
+    # In-place updates of MetaList-edited files (Excalidraw scenes and their previews) are uploads too.
+    if '/files/' not in path:
+        return False
+    if not path.endswith('/content') and not path.endswith('/previews'):
+        return False
+    return scope['method'] == 'PUT'
+
+
 class UploadLimitMiddleware:
     def __init__(self, app):
         self.app = app
@@ -32,7 +44,7 @@ class UploadLimitMiddleware:
         if scope['type'] != 'http':
             await self.app(scope, receive, send)
             return
-        is_upload = scope['path'].endswith('/files/upload')
+        is_upload = _is_upload_request(scope)
         is_download = '/files/' in scope['path'] and scope['path'].endswith('/download')
         if not (is_upload or is_download):
             await self.app(scope, receive, send)

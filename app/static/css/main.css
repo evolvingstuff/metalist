@@ -4233,6 +4233,186 @@ body[data-tag-style="text"],
     display: none;
 }
 
+/* Excalidraw diagrams in view mode: stored light and dark SVG previews shown as images. */
+.note-reference-block.note-reference-file-excalidraw,
+html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
+    padding: 0;
+    border: none;
+    background: transparent;
+}
+
+.note-file-excalidraw-embed {
+    display: block;
+    width: min(720px, 100%);
+    max-width: 100%;
+    cursor: pointer;
+}
+
+.note-file-excalidraw-frame {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    border-radius: 10px;
+}
+
+.note-file-excalidraw-preview {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    user-select: none;
+}
+
+.note-file-excalidraw-preview-dark {
+    display: none;
+}
+
+.note-file-excalidraw-preview[hidden] {
+    display: none;
+}
+
+.note:not(.editing) .note-file-excalidraw-embed:not(.note-file-excalidraw-static):not(.note-reference-link-thumbnail):hover .note-file-excalidraw-preview {
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.note-file-excalidraw-placeholder {
+    width: 100%;
+    padding: 18px 16px;
+    border: 1px dashed #c3cad6;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.note-file-excalidraw-embed[data-preview-state="loaded"] .note-file-excalidraw-placeholder {
+    display: none;
+}
+
+/* A compact reference to a note whose first visible line is an image or diagram shows the same
+   thumbnail the collapsed source note shows. The thumbnail is part of the link. */
+.note-reference-link:has(.note-reference-link-title-media) {
+    align-items: flex-start;
+}
+
+.note-reference-link-title.note-reference-link-title-media {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    overflow: visible;
+}
+
+.note-reference-link-caption {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.note-reference-link .note-reference-link-thumbnail {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    width: 7.5em;
+    max-width: 7.5em;
+    height: 4.5em;
+    gap: 0;
+    overflow: hidden;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.note-reference-link .note-reference-link-thumbnail .note-file-excalidraw-frame,
+.note-reference-link .note-reference-link-thumbnail .note-file-image-preview-frame {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border-radius: 4px;
+}
+
+.note .note-content .note-reference-link .note-reference-link-thumbnail img {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 4px;
+    object-fit: cover !important;
+    object-position: center center;
+}
+
+.note .note-content .note-reference-link .note-reference-link-thumbnail-diagram img.note-file-excalidraw-preview,
+.note .note-content .note-reference-link .note-reference-link-thumbnail-diagram img.note-reference-link-thumbnail-static {
+    object-fit: contain !important;
+    object-position: left center;
+}
+
+.note-reference-link .note-reference-link-thumbnail .note-file-excalidraw-placeholder,
+.note-reference-link .note-reference-link-thumbnail .note-file-image-preview-placeholder {
+    padding: 0 0.35rem;
+    border: none;
+    font-size: 11px;
+    line-height: 1.2;
+    text-decoration: none;
+}
+
+/* Full-screen diagram editor. Above full-screen notes and image zoom, below menus and modals. */
+.excalidraw-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 12700;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.excalidraw-editor-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+}
+
+.excalidraw-editor-title {
+    font-weight: 600;
+}
+
+.excalidraw-editor-status {
+    flex: 1;
+    min-width: 0;
+    color: #64748b;
+}
+
+.excalidraw-editor-bar button {
+    padding: 6px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.excalidraw-editor-bar .excalidraw-editor-done {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #ffffff;
+}
+
+.excalidraw-editor-bar button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.excalidraw-editor-canvas {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
 .note-file-image-download-link {
     padding: 0;
     border: none;
@@ -4458,7 +4638,7 @@ html[data-theme="dark"] .note-fullscreen-close {
     min-width: 0;
 }
 
-.note.collapsed:not(.editing) .note-content:has(.note-reference-file:not(.note-reference-file-image)) {
+.note.collapsed:not(.editing) .note-content:has(.note-reference-file:not(.note-reference-file-image):not(.note-reference-file-excalidraw)) {
     max-height: none;
     display: block;
     line-height: 1.25;
@@ -4509,7 +4689,46 @@ html[data-theme="dark"] .note-fullscreen-close {
     line-height: 1.2;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file-excalidraw .note-file-excalidraw-embed {
+    width: 7.5em;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file-excalidraw .note-file-excalidraw-frame {
+    height: 4.5em;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file-excalidraw .note-file-excalidraw-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: contain !important;
+    object-position: left center;
+    border-radius: 4px;
+}
+
+/* The collapsed-image rule forces every image visible; keep only the current theme's preview. */
+.note.collapsed:not(.editing) .note-content img.note-file-excalidraw-preview[hidden],
+.note.collapsed:not(.editing) .note-content img.note-file-excalidraw-preview-dark,
+.note.collapsed:not(.editing) .note-content .note-reference-link-thumbnail img[hidden] {
+    display: none !important;
+}
+
+html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-file-excalidraw-preview-light {
+    display: none !important;
+}
+
+html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-file-excalidraw-preview-dark:not([hidden]) {
+    display: inline-block !important;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file-excalidraw .note-file-excalidraw-placeholder {
+    padding: 0 0.35rem;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image):not(.note-reference-file-excalidraw) {
     align-items: center;
     gap: 0;
     padding: 0;
@@ -6998,6 +7217,23 @@ html[data-theme="dark"] .note-file-image-download-link,
 html[data-theme="dark"] .note-reference-link,
 html[data-theme="dark"] .note-file-reference-link {
     color: #d9e5f7;
+}
+
+html[data-theme="dark"] .note-file-excalidraw-preview-light {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-excalidraw-preview-dark:not([hidden]) {
+    display: block;
+}
+
+html[data-theme="dark"] .note-file-excalidraw-placeholder {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .excalidraw-editor-status {
+    color: var(--app-text-muted);
 }
 
 html[data-theme="dark"] .note-file-image-preview-frame {

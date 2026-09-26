@@ -546,3 +546,132 @@ def test_cli_returns_nonzero_and_does_not_print_plaintext(
     assert "Encrypted namespace audit: FAIL" in output
     assert "SECRET BODY" not in output
     assert "secret-id" not in output
+
+
+_LEGACY_FILES_TABLE = """
+CREATE TABLE files (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    title_encryption_nonce BLOB,
+    title_encryption_tag BLOB,
+    metadata_json TEXT NOT NULL,
+    metadata_encryption_nonce BLOB,
+    metadata_encryption_tag BLOB,
+    blob_data BLOB NOT NULL,
+    blob_encryption_nonce BLOB,
+    blob_encryption_tag BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+
+def _insert_encrypted_file(connection: sqlite3.Connection, *, file_id: str, nonce_byte: int) -> None:
+    connection.execute(
+        """
+        INSERT INTO files (
+            id, title, title_encryption_nonce, title_encryption_tag,
+            metadata_json, metadata_encryption_nonce, metadata_encryption_tag,
+            blob_data, blob_encryption_nonce, blob_encryption_tag,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            file_id, "dGl0bGU=", bytes([nonce_byte]) * 12, b"a" * 16,
+            "bWV0YWRhdGE=", bytes([nonce_byte + 1]) * 12, b"b" * 16,
+            b"encrypted-blob", bytes([nonce_byte + 2]) * 12, b"c" * 16,
+            _NOW, _NOW,
+        ),
+    )
+
+
+def _insert_preview(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    variant: str,
+    preview_data: bytes,
+    nonce: bytes | None,
+    tag: bytes | None,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO file_previews (
+            file_id, variant, mime_type, preview_data, preview_encryption_nonce,
+            preview_encryption_tag, content_revision, updated_at
+        ) VALUES (?, ?, 'image/svg+xml', ?, ?, ?, 1, ?)
+        """,
+        (file_id, variant, preview_data, nonce, tag, _NOW),
+    )
+
+
+def test_audit_accepts_files_databases_before_and_after_the_diagram_upgrade(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    legacy_path = _create_namespace_database(namespaces_directory, namespace="legacy", encryption_enabled=True)
+    connection = sqlite3.connect(resolve_file_database_path(legacy_path))
+    connection.execute(_LEGACY_FILES_TABLE)
+    _insert_encrypted_file(connection, file_id="legacy-file", nonce_byte=20)
+    connection.commit()
+    connection.close()
+
+    current_path = _create_namespace_database(namespaces_directory, namespace="current", encryption_enabled=True)
+    connection = sqlite3.connect(resolve_file_database_path(current_path))
+    initialize_file_schema(connection)
+    _insert_encrypted_file(connection, file_id="current-file", nonce_byte=10)
+    for variant, nonce_byte in (("light", b"L"), ("dark", b"D")):
+        _insert_preview(
+            connection, file_id="current-file", variant=variant,
+            preview_data=b"encrypted-preview", nonce=nonce_byte * 12, tag=b"d" * 16,
+        )
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.findings == ()
+    assert report.startup_allowed is True
+    assert report.checked_payload_count == 2 * 3 + 2  # three payloads per file, one per preview
+
+
+def test_audit_reports_plaintext_diagram_previews_in_encrypted_namespaces(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    initialize_file_schema(connection)
+    _insert_encrypted_file(connection, file_id="file-1", nonce_byte=10)
+    _insert_preview(
+        connection, file_id="file-1", variant="light",
+        preview_data=b"<svg>secret diagram text</svg>", nonce=None, tag=None,
+    )
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert [(finding.table, finding.field) for finding in report.fatal_findings] == [("file_previews", "preview_data")]
+    assert "secret diagram text" not in report.render_text()
+
+
+@pytest.mark.parametrize(("version", "upgraded", "allowed"), [(9, False, True), (9, True, True), (10, True, True), (10, False, False)])
+def test_version_10_requires_the_editable_files_schema(tmp_path: Path, version: int, upgraded: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(f"PRAGMA user_version = {version}")
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    if upgraded:
+        initialize_file_schema(connection)
+    else:
+        connection.execute(_LEGACY_FILES_TABLE)
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("file_previews", "*"),
+            ("files", "content_revision"),
+        }

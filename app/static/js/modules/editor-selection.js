@@ -1,4 +1,5 @@
 import { ApplicationState } from './application-state.js';
+import { unlessDiagramEditorOpen } from './excalidraw/excalidraw-editor-state.js';
 const moduleState = ApplicationState.createFields('editor-selection', {
     activeEditableElement: null,
     activeNoteId: null,
@@ -46,7 +47,7 @@ export function initSelectionTracking() {
     if (moduleState.trackingInitialized) {
         return;
     }
-    document.addEventListener('selectionchange', handleSelectionChange, true);
+    document.addEventListener('selectionchange', unlessDiagramEditorOpen(handleSelectionChange), true);
     moduleState.trackingInitialized = true;
 }
 

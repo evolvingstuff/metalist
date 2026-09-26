@@ -2,11 +2,12 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { sanitizeTags, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { hideSearchContextsOverlay } from '../services/search-contexts-overlay-service.js';
+import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 
 export function initFocusEvents() {
         
-    document.addEventListener('focusin', handleFocus, { capture: true });
-    document.addEventListener('focusout', handleBlur, { capture: true });
+    document.addEventListener('focusin', unlessDiagramEditorOpen(handleFocus), { capture: true });
+    document.addEventListener('focusout', unlessDiagramEditorOpen(handleBlur), { capture: true });
         
     Logger.logInit('Focus events handler (search only)');
 }

@@ -1,0 +1,7 @@
+Excalifont
+Copyright (c) 2024 by Excalidraw (from the font's naming table).
+
+Excalifont is released by Excalidraw under the SIL Open Font License, Version 1.1:
+https://plus.excalidraw.com/excalifont
+
+The full text of the SIL Open Font License, Version 1.1 is reproduced in the Virgil licence that follows.

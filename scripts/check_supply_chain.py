@@ -31,6 +31,39 @@ def check_exports(root: Path) -> None:
         raise RuntimeError('Updater test uv hashes must match the complete CI export')
 
 
+def bundled_packages(root: Path, library: dict) -> list[dict]:
+    """Packages compiled into a vendored bundle, each verified against the bundle's npm lockfile."""
+    bundle = library['bundle']
+    for key in ('build_script', 'lockfile', 'packages'):
+        if not (root / bundle[key]).is_file():
+            raise RuntimeError(f'Vendor bundle {library["name"]} is missing its {key}: {bundle[key]}')
+    locked = json.loads((root / bundle['lockfile']).read_text())['packages']
+    packages = json.loads((root / bundle['packages']).read_text())
+    if not isinstance(packages, list) or not packages:
+        raise RuntimeError(f'Vendor bundle {library["name"]} lists no packages')
+    for package in packages:
+        entry = locked.get(package['lockKey'])
+        if entry is None or entry.get('version') != package['version'] or 'integrity' not in entry:
+            raise RuntimeError(f'Bundled package {package["name"]}@{package["version"]} is not pinned in {bundle["lockfile"]}')
+        if not package['lockKey'].endswith('node_modules/' + package['name']):
+            raise RuntimeError(f'Bundled package {package["name"]} has an inconsistent lock key {package["lockKey"]}')
+    if not any(package['name'] == library['name'] and package['version'] == library['version'] for package in packages):
+        raise RuntimeError(f'Vendor bundle {library["name"]}@{library["version"]} does not contain itself')
+    return packages
+
+
+def audited_versions(root: Path, libraries: list[dict]) -> list[dict]:
+    """Every npm name/version shipped: single-file vendors plus each package inside a bundle."""
+    versions = {}
+    for library in libraries:
+        members = [library]
+        if 'bundle' in library:
+            members = bundled_packages(root, library)
+        for member in members:
+            versions[(member['name'], member['version'])] = {'name': member['name'], 'version': member['version']}
+    return [versions[key] for key in sorted(versions)]
+
+
 def check_vendor_files(root: Path) -> list[dict]:
     libraries = json.loads((root / 'docs/security/vendor-manifest.json').read_text())
     actual = {path.relative_to(root).as_posix() for path in (root / 'app/static/js/vendor').glob('*.js')}
@@ -42,6 +75,8 @@ def check_vendor_files(root: Path) -> list[dict]:
             raise RuntimeError(f'Vendor checksum mismatch: {library["path"]}')
         if not (root / library['license']).is_file():
             raise RuntimeError(f'Vendor license missing: {library["name"]}')
+        if 'bundle' in library:
+            bundled_packages(root, library)
     return libraries
 
 
@@ -103,7 +138,7 @@ def audit(root: Path, output: Path) -> None:
             sys.executable, '-m', 'pip_audit', '--no-deps', '--disable-pip',
             '-r', str(requirements), '--format', 'json', '--output', str(output / 'python.json'),
         ], cwd=root, check=False)
-    vendor_results = audit_vendor_versions(libraries)
+    vendor_results = audit_vendor_versions(audited_versions(root, libraries))
     (output / 'vendor.json').write_text(json.dumps({
         'checked_at': datetime.now(timezone.utc).isoformat(),
         'source': 'https://api.osv.dev/v1/query', 'libraries': vendor_results,
@@ -112,7 +147,7 @@ def audit(root: Path, output: Path) -> None:
         raise RuntimeError(f'Python dependency audit failed (exit {completed.returncode}); inspect python.json')
     if any(library['vulnerabilities'] for library in vendor_results):
         raise RuntimeError('Vendored dependencies have known advisories; inspect vendor.json')
-    print(f'Audited {len(packages)} Python versions across all platform markers and {len(libraries)} vendor versions: no known advisories')
+    print(f'Audited {len(packages)} Python versions across all platform markers and {len(vendor_results)} vendor versions: no known advisories')
 
 
 def main() -> None:

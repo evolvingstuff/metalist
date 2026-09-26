@@ -28,7 +28,7 @@ import {
     prepareMoveNoteToTopContextAction,
 } from '../services/note-context-menu-action-service.js';
 import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-write-service.js';
-import { insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
+import { downloadFileReference, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import {
     copyImageFromContext,
     openImageInNewTabFromContext,
@@ -63,6 +63,8 @@ import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 import { openNoteFullscreen } from '../services/note-fullscreen-service.js';
 import { openFloatingNote } from '../services/floating-note-service.js';
 import { openReferenceInNewTab } from './keyboard-events.js';
+import { addDiagramToNote, openDiagramEditor } from '../../excalidraw/excalidraw-actions.js';
+import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 
 const ontologyModal = new OntologyModal();
 
@@ -725,6 +727,8 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canMakePseudoSuggestions: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
+        canAddDiagram: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
+        canEditDiagram: true,
         canAddNoteAtTop: !ModeContext.isEditing,
         canViewFullscreen: !ModeContext.isEditing,
         canOpenFloatingNote: true,
@@ -832,6 +836,17 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         onZoomImage: (targetImageContext) => {
             void CommandGate.run('contextMenu.image.zoom', async () => {
                 await zoomImageFromContext(targetImageContext);
+            });
+        },
+        onAddDiagram: (targetNoteId) => {
+            void addDiagramToNote(targetNoteId);
+        },
+        onEditDiagram: (targetImageContext) => {
+            void openDiagramEditor(targetImageContext.fileId, targetImageContext.hostNoteId);
+        },
+        onSaveDiagram: (targetImageContext) => {
+            void CommandGate.run('contextMenu.diagram.save', async () => {
+                await downloadFileReference(targetImageContext.fileId);
             });
         },
         onOpenImageInNewTab: (targetImageContext) => {
@@ -1157,6 +1172,6 @@ function handleContextMenu(event) {
 
 export function initContextMenuEvents() {
     initContextMenuService();
-    document.addEventListener('contextmenu', handleContextMenu, { capture: true });
+    document.addEventListener('contextmenu', unlessDiagramEditorOpen(handleContextMenu), { capture: true });
     Logger.logInit('Context menu events handler');
 }

@@ -67,6 +67,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
+    const addExcalidrawDiagram = requireAction(actions, 'addExcalidrawDiagram');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
     const openSwitchNamespace = requireAction(actions, 'openSwitchNamespace');
@@ -443,6 +444,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Attach file',
             closeOnExecute: true,
             execute: async () => attachFileToCurrentNote(),
+        },
+        {
+            id: 'action.add_excalidraw_diagram',
+            kind: 'action',
+            label: 'Add Excalidraw diagram',
+            closeOnExecute: true,
+            execute: async () => addExcalidrawDiagram(),
         },
         {
             id: 'action.trim_unused_files',

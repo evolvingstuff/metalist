@@ -207,6 +207,19 @@ class ResizeNoteImageRequest(TypedDict):
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
+class FinishFileEditSessionRequest(TypedDict):
+    clientId: Identifier
+    hostNoteId: Identifier
+    contentRevision: Annotated[int, Field(ge=1)]
+    isNewDiagram: bool
+    undoContext: UndoContext
+    viewport: Viewport
+
+@with_config(ConfigDict(strict=True))
+class DiscardFileEditSessionRequest(TypedDict):
+    contentRevision: Annotated[int, Field(ge=1)]
+
+@with_config(ConfigDict(strict=True))
 class RunShellEndpointRequest(TypedDict):
     timeoutSeconds: Annotated[int, Field(ge=0, le=SHELL_SECONDS)]
 

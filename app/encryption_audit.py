@@ -317,16 +317,31 @@ _OPAQUE_MAIN_SCHEMA = {
     "search_interaction_history": _OPAQUE_SEARCH_HISTORY_COLUMNS,
 }
 
+_ATTACHMENT_COLUMNS = frozenset(
+    {
+        "id", "title", "title_encryption_nonce", "title_encryption_tag",
+        "metadata_json", "metadata_encryption_nonce", "metadata_encryption_tag",
+        "blob_data", "blob_encryption_nonce", "blob_encryption_tag", "created_at",
+        "updated_at",
+    }
+)
+
+# Migration 9→10 added a plaintext revision counter to files and a table of encrypted
+# rendered diagram previews. Before version 10 either may be missing, or already present
+# because opening a files database adds them ahead of the authenticated migration.
+_FILE_REVISION_COLUMN = "content_revision"
+_FILE_PREVIEWS_TABLE = "file_previews"
+_EDITABLE_FILES_DATABASE_VERSION = 10
+
 _FILE_SCHEMA = {
-    table: frozenset(
+    "files": _ATTACHMENT_COLUMNS | {_FILE_REVISION_COLUMN},
+    _FILE_PREVIEWS_TABLE: frozenset(
         {
-            "id", "title", "title_encryption_nonce", "title_encryption_tag",
-            "metadata_json", "metadata_encryption_nonce", "metadata_encryption_tag",
-            "blob_data", "blob_encryption_nonce", "blob_encryption_tag", "created_at",
-            "updated_at",
+            "file_id", "variant", "mime_type", "preview_data", "preview_encryption_nonce",
+            "preview_encryption_tag", "content_revision", "updated_at",
         }
-    )
-    for table in ("files", "sounds")
+    ),
+    "sounds": _ATTACHMENT_COLUMNS,
 }
 
 _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
@@ -406,6 +421,10 @@ _FILE_PAYLOADS = tuple(
         ("metadata_json", "metadata", "text"),
         ("blob_data", "blob", "bytes"),
     )
+) + (
+    _PayloadSpec(
+        _FILE_PREVIEWS_TABLE, "preview_data", "preview_encryption_nonce", "preview_encryption_tag", "bytes"
+    ),
 )
 
 _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
@@ -425,6 +444,7 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
     6: frozenset(),
     7: frozenset(),
     8: frozenset(),
+    9: frozenset(),
 }
 
 
@@ -839,6 +859,38 @@ def _audit_database(
         connection.close()
 
 
+def _file_schema_for_database_version(
+    *,
+    file_database_path: Path,
+    database_version: int,
+) -> dict[str, frozenset[str]]:
+    resolved_schema = {
+        name: columns for name, columns in _FILE_SCHEMA.items() if name != "sounds" or database_version < 9
+    }
+    if database_version >= _EDITABLE_FILES_DATABASE_VERSION:
+        return resolved_schema
+    connection = _connect_read_only(file_database_path)
+    try:
+        return _file_schema_before_editable_files(connection=connection, expected_schema=resolved_schema)
+    finally:
+        connection.close()
+
+
+def _file_schema_before_editable_files(
+    *,
+    connection: sqlite3.Connection,
+    expected_schema: dict[str, frozenset[str]],
+) -> dict[str, frozenset[str]]:
+    """Accept a version 9 or older files database with or without the 9→10 additions."""
+    resolved_schema = dict(expected_schema)
+    actual_tables = _table_names(connection)
+    if _FILE_PREVIEWS_TABLE not in actual_tables:
+        del resolved_schema[_FILE_PREVIEWS_TABLE]
+    if "files" in actual_tables and _FILE_REVISION_COLUMN not in _column_names(connection, table="files"):
+        resolved_schema["files"] = resolved_schema["files"] - {_FILE_REVISION_COLUMN}
+    return resolved_schema
+
+
 def _resolve_file_database_path(note_database_path: Path) -> Path:
     suffix = note_database_path.suffix
     stem = note_database_path.stem
@@ -928,7 +980,10 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
     if file_database_path.exists():
         _audit_database(
             database_path=file_database_path,
-            expected_schema={name: columns for name, columns in _FILE_SCHEMA.items() if name != "sounds" or database_version < 9},
+            expected_schema=_file_schema_for_database_version(
+                file_database_path=file_database_path,
+                database_version=database_version,
+            ),
             payload_specs=tuple(spec for spec in _FILE_PAYLOADS if spec.table != "sounds" or database_version < 9),
             state=state,
             is_main_database=False,

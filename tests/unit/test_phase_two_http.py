@@ -409,7 +409,7 @@ def test_metadata_reads_omit_blobs_and_download_limit_is_checked_in_sql():
     with sqlite3.connect(':memory:') as connection:
         connection.row_factory = sqlite3.Row
         initialize_file_schema(connection)
-        connection.execute("INSERT INTO files VALUES ('file','title',NULL,NULL,'{}',NULL,NULL,zeroblob(1000000),NULL,NULL,'2026-09-12','2026-09-12')")
+        connection.execute("INSERT INTO files (id, title, title_encryption_nonce, title_encryption_tag, metadata_json, metadata_encryption_nonce, metadata_encryption_tag, blob_data, blob_encryption_nonce, blob_encryption_tag, created_at, updated_at) VALUES ('file','title',NULL,NULL,'{}',NULL,NULL,zeroblob(1000000),NULL,NULL,'2026-09-12','2026-09-12')")
         queries = []
         connection.set_trace_callback(queries.append)
         assert fetch_file_metadata(connection, 'file')['blob_data'] == b''
