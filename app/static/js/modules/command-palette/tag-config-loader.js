@@ -87,3 +87,97 @@ export async function loadCommandPaletteTagMap() {
 
     return tagMap;
 }
+
+// Every distinct tag from the loaded command palette tag map.
+export function collectCommandPaletteTags(tagMap) {
+    if (!(tagMap instanceof Map)) {
+        throw new Error('collectCommandPaletteTags requires the loaded tag map');
+    }
+    // Each map value is a Set; Array.prototype.flat() would keep the Sets themselves.
+    const allTags = new Set();
+    for (const [id, tags] of tagMap) {
+        if (!(tags instanceof Set)) {
+            throw new Error(`Command palette tags for ${id} must be a Set`);
+        }
+        for (const tag of tags) {
+            allTags.add(tag);
+        }
+    }
+    return allTags;
+}
+
+// Suggestions shown under "No matches": prefix matches first, then tags one edit away.
+export function findNearMissTags(allTags, token) {
+    if (!(allTags instanceof Set)) {
+        throw new Error('findNearMissTags requires a Set of tags');
+    }
+    if (token === null || typeof token === 'undefined') {
+        return [];
+    }
+    if (typeof token !== 'string' || token.length === 0) {
+        return [];
+    }
+
+    const maxResults = 8;
+    const lower = token.toLowerCase();
+    const prefixMatches = [];
+    for (const tag of allTags) {
+        if (tag.startsWith(lower)) {
+            prefixMatches.push(tag);
+        }
+    }
+    prefixMatches.sort();
+    if (prefixMatches.length > 0) {
+        return prefixMatches.slice(0, maxResults);
+    }
+
+    const editMatches = [];
+    for (const tag of allTags) {
+        if (isEditDistanceAtMostOne(lower, tag)) {
+            editMatches.push(tag);
+        }
+    }
+    editMatches.sort();
+    return editMatches.slice(0, maxResults);
+}
+
+function isEditDistanceAtMostOne(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') {
+        throw new Error('isEditDistanceAtMostOne requires strings');
+    }
+    if (a === b) {
+        return true;
+    }
+    const lenDiff = Math.abs(a.length - b.length);
+    if (lenDiff > 1) {
+        return false;
+    }
+
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length <= b.length ? b : a;
+
+    let i = 0;
+    let j = 0;
+    let edits = 0;
+    while (i < shorter.length && j < longer.length) {
+        if (shorter[i] === longer[j]) {
+            i += 1;
+            j += 1;
+            continue;
+        }
+        edits += 1;
+        if (edits > 1) {
+            return false;
+        }
+        if (shorter.length === longer.length) {
+            i += 1;
+            j += 1;
+        } else {
+            j += 1;
+        }
+    }
+    if (i < shorter.length || j < longer.length) {
+        edits += 1;
+    }
+    return edits <= 1;
+}
