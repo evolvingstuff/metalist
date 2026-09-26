@@ -108,7 +108,12 @@ import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { waitForCommandAvailability } from './backup-command-availability.js';
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
-import { loadCommandPaletteTagMap, validateCommandPaletteTagMappings } from './tag-config-loader.js';
+import {
+    collectCommandPaletteTags,
+    findNearMissTags,
+    loadCommandPaletteTagMap,
+    validateCommandPaletteTagMappings,
+} from './tag-config-loader.js';
 import { UsageStore } from './usage-store.js';
 import {
     DEFAULT_NOTE_LAYOUT_SETTINGS,
@@ -376,7 +381,7 @@ class CommandPaletteController {
 
         this._usage.replaceAll(clientState.command_palette_usage);
 
-        this._allTags = new Set(Array.from(this._tagMap.values()).flat());
+        this._allTags = collectCommandPaletteTags(this._tagMap);
 
         this._endpoints = buildCommandPaletteEndpoints({
             preferencesStore: this._preferences,
@@ -1070,7 +1075,7 @@ class CommandPaletteController {
                 nearMissToken = offender;
             }
 
-            const nearMisses = this._nearMissTags(nearMissToken);
+            const nearMisses = findNearMissTags(this._allTags, nearMissToken);
             if (nearMisses.length > 0) {
                 const hint = document.createElement('div');
                 hint.className = 'command-palette-empty';
@@ -1128,78 +1133,6 @@ class CommandPaletteController {
             }
         }
         return null;
-    }
-
-    _nearMissTags(token) {
-        if (token === null || typeof token === 'undefined') {
-            return [];
-        }
-        if (typeof token !== 'string' || token.length === 0) {
-            return [];
-        }
-
-        const maxResults = 8;
-        const lower = token.toLowerCase();
-        const prefixMatches = [];
-        for (const tag of this._allTags) {
-            if (tag.startsWith(lower)) {
-                prefixMatches.push(tag);
-            }
-        }
-        prefixMatches.sort();
-        if (prefixMatches.length > 0) {
-            return prefixMatches.slice(0, maxResults);
-        }
-
-        const editMatches = [];
-        for (const tag of this._allTags) {
-            if (this._editDistanceAtMostOne(lower, tag)) {
-                editMatches.push(tag);
-            }
-        }
-        editMatches.sort();
-        return editMatches.slice(0, maxResults);
-    }
-
-    _editDistanceAtMostOne(a, b) {
-        if (typeof a !== 'string' || typeof b !== 'string') {
-            throw new Error('_editDistanceAtMostOne requires strings');
-        }
-        if (a === b) {
-            return true;
-        }
-        const lenDiff = Math.abs(a.length - b.length);
-        if (lenDiff > 1) {
-            return false;
-        }
-
-        const shorter = a.length <= b.length ? a : b;
-        const longer = a.length <= b.length ? b : a;
-
-        let i = 0;
-        let j = 0;
-        let edits = 0;
-        while (i < shorter.length && j < longer.length) {
-            if (shorter[i] === longer[j]) {
-                i += 1;
-                j += 1;
-                continue;
-            }
-            edits += 1;
-            if (edits > 1) {
-                return false;
-            }
-            if (shorter.length === longer.length) {
-                i += 1;
-                j += 1;
-            } else {
-                j += 1;
-            }
-        }
-        if (i < shorter.length || j < longer.length) {
-            edits += 1;
-        }
-        return edits <= 1;
     }
 
     _formatEndpointValue(endpoint) {

@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { buildCommandPaletteEndpoints } from '../../app/static/js/modules/command-palette/endpoint-registry.js';
 import {
+    collectCommandPaletteTags,
+    findNearMissTags,
     loadCommandPaletteTagMap,
     validateCommandPaletteTagMappings,
 } from '../../app/static/js/modules/command-palette/tag-config-loader.js';
@@ -200,4 +202,28 @@ test('combined search suggestion stats and settings form matches all related que
     ]) {
         assert.equal(statistics.tags.includes(tag), true, `expected ${tag} tag`);
     }
+});
+
+test('collected palette tags are the plain tag strings from every config row', async (t) => {
+    const tagMap = await loadRealTagMap(t);
+    const allTags = collectCommandPaletteTags(tagMap);
+
+    const expected = new Set([...tagMap.values()].flatMap((tags) => [...tags]));
+    for (const tag of allTags) {
+        assert.equal(typeof tag, 'string');
+    }
+    assert.deepEqual([...allTags].sort(), [...expected].sort());
+});
+
+test('a mistyped palette query suggests tags one edit away', async (t) => {
+    const allTags = collectCommandPaletteTags(await loadRealTagMap(t));
+
+    assert.deepEqual(findNearMissTags(allTags, 'tabz'), ['tab', 'tabs']);
+});
+
+test('an unmatched palette word suggests tags that start with it', async (t) => {
+    const allTags = collectCommandPaletteTags(await loadRealTagMap(t));
+
+    assert.deepEqual(findNearMissTags(allTags, 'shortc'), ['shortcuts']);
+    assert.deepEqual(findNearMissTags(allTags, 'zzzz'), []);
 });
