@@ -26,9 +26,9 @@
     --note-vertical-spacing: 2px;
     --note-corner-radius: 12px;
     --note-corner-radius-nested: 10px;
-    --search-shell-surface: #dcdcdc;
+    --search-shell-surface: #c8c8c8;
     --search-shell-ink: #333333;
-    --search-shell-warning: #b42318;
+    --search-shell-warning: #9b1b10;
     --note-tag-border: rgba(0, 0, 0, 0.2);
     --note-tag-text: #555555;
     --note-tag-muted: #8a8a8a;
