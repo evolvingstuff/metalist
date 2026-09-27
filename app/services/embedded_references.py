@@ -4,7 +4,8 @@ import html
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Callable, FrozenSet, List, Optional, Tuple
+from itertools import islice
+from typing import Callable, FrozenSet, Iterator, List, Optional, Tuple
 
 from app.services.content_formatting import find_consumed_content_wrapper_keys
 from app.services.content_formatting import find_global_credential_tag
@@ -16,6 +17,7 @@ from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
 )
+from app.security.sensitive_cache import sensitive_lru_cache
 from app.utils.text_utils import strip_html
 
 
@@ -324,13 +326,12 @@ def render_collapsed_note_content_with_embeds(
     )
 
 
-def _extract_collapsed_preview_meaningful_fragments(content_html: str) -> List[str]:
+def _iter_collapsed_preview_meaningful_fragments(content_html: str) -> Iterator[str]:
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
     if content_html == "":
-        return []
+        return
 
-    fragments: List[str] = []
     fragment_parts: List[str] = []
     for part in _HTML_TOKEN_SPLIT_RE.split(content_html):
         if part == "":
@@ -339,12 +340,12 @@ def _extract_collapsed_preview_meaningful_fragments(content_html: str) -> List[s
             # Editors write "first line<div>second line</div>": a block opening after content
             # starts a new line, just as a block closing ends one.
             if _is_collapsed_preview_block_opening_tag(part) and _fragment_has_collapsed_preview_content(fragment_parts):
-                fragments.append("".join(fragment_parts).strip())
+                yield "".join(fragment_parts).strip()
                 fragment_parts = []
             fragment_parts.append(part)
             if _is_collapsed_preview_line_boundary_tag(part):
                 if _fragment_has_collapsed_preview_content(fragment_parts):
-                    fragments.append("".join(fragment_parts).strip())
+                    yield "".join(fragment_parts).strip()
                 fragment_parts = []
             continue
 
@@ -353,26 +354,34 @@ def _extract_collapsed_preview_meaningful_fragments(content_html: str) -> List[s
                 continue
             if _TEXT_LINE_SPLIT_RE.fullmatch(text_part):
                 if _fragment_has_collapsed_preview_content(fragment_parts):
-                    fragments.append("".join(fragment_parts).strip())
+                    yield "".join(fragment_parts).strip()
                 fragment_parts = []
                 continue
             fragment_parts.append(text_part)
 
     if _fragment_has_collapsed_preview_content(fragment_parts):
-        fragments.append("".join(fragment_parts).strip())
-    return fragments
+        yield "".join(fragment_parts).strip()
+
+
+@sensitive_lru_cache(maxsize=8192, max_bytes=32 * 1024 * 1024)
+def _collapsed_preview_head(content_html: str) -> Tuple[str, bool]:
+    """First meaningful fragment and whether another follows.
+
+    Pure in the content string; a view asks for this several times per note,
+    so it is cached and stops scanning once a second fragment is known.
+    """
+    head = tuple(islice(_iter_collapsed_preview_meaningful_fragments(content_html), 2))
+    if not head:
+        return "", False
+    return head[0], len(head) > 1
 
 
 def extract_collapsed_preview_source_html(content_html: str) -> str:
-    fragments = _extract_collapsed_preview_meaningful_fragments(content_html)
-    if fragments:
-        return fragments[0]
-    return ""
+    return _collapsed_preview_head(content_html)[0]
 
 
 def collapsed_preview_source_has_hidden_content(content_html: str) -> bool:
-    fragments = _extract_collapsed_preview_meaningful_fragments(content_html)
-    return len(fragments) > 1
+    return _collapsed_preview_head(content_html)[1]
 
 
 def collapsed_preview_source_has_media(content_html: str) -> bool:

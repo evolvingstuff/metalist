@@ -90,7 +90,7 @@ def test_descendant_tag_search_renders_referenced_subtree(monkeypatch):
     assert f'data-embed-note-id="{SOURCE}"' in rendered
     assert f'data-embed-note-id="{CHILD}"' in rendered
     assert "bar" in rendered and "baz" in rendered
-    assert state.payloads[HOST]["metadata"]["inheritedTags"] == ["descendant"]
+    assert sorted(store.get_inherited_non_meta_tag_terms(HOST)) == ["descendant"]
 
 
 @pytest.mark.parametrize("bulk", [False, True])
@@ -345,8 +345,8 @@ def test_search_snapshot_shows_references_and_inherited_metadata(monkeypatch):
         anchor_root_id=None, is_untagged_view=False,
     )
     assert set(state.payloads) == {SOURCE, HOST, CHILD}
-    assert state.payloads[HOST]["metadata"]["inheritedTags"] == ["foo"]
-    assert state.payloads[CHILD]["metadata"]["inheritedTags"] == ["foo"]
+    assert sorted(store.get_inherited_non_meta_tag_terms(HOST)) == ["foo"]
+    assert sorted(store.get_inherited_non_meta_tag_terms(CHILD)) == ["foo"]
     untagged = snapshot_module.build_view_state(
         editing_note_id=None, search=None, sort_mode="normal",
         client_known_note_ids=set(), client_seen_root_ids=set(),

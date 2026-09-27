@@ -319,6 +319,7 @@ def restore_undo_state(snapshot: dict) -> None:
         value.used_at = used_at
         value.limited = limited
         _clients[key] = value
+    _enforce_undo_limits()
 
 
 def reset_all_undo_state() -> None:
@@ -354,11 +355,17 @@ def _ctx(client_id: str) -> _ClientUndo:
     for key in tuple(_clients):
         if now - _clients[key].used_at >= CLIENT_IDLE_SECONDS:
             del _clients[key]
-    if client_id not in _clients:
+    created = client_id not in _clients
+    if created:
         _clients[client_id] = _ClientUndo()
     _clients.move_to_end(client_id)
     _clients[client_id].used_at = now
-    _enforce_undo_limits()
+    # Every path that grows undo state enforces the limits right afterwards,
+    # and idle eviction only shrinks it, so the full retained-bytes walk is
+    # needed here only when a new client entry was added. Skipping it keeps
+    # views and saves from re-walking all history on every request.
+    if created:
+        _enforce_undo_limits()
     return _clients[client_id]
 
 
@@ -1038,6 +1045,8 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         _summarize_stack(ctx.history, 12),
         _summarize_stack(ctx.redo, 12),
     )
+    # The op moved between stacks; re-check the budget before returning.
+    _enforce_undo_limits()
     return payload
 
 
@@ -1216,4 +1225,6 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         _summarize_stack(ctx.history, 12),
         _summarize_stack(ctx.redo, 12),
     )
+    # The op moved between stacks; re-check the budget before returning.
+    _enforce_undo_limits()
     return payload

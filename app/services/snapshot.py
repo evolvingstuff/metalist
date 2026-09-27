@@ -405,8 +405,6 @@ class _SnapshotTraversalCache:
     def __init__(self) -> None:
         self._children_by_parent: Dict[Optional[str], List[str]] = {}
         self._record_by_id: Dict[str, object] = {}
-        self._path_by_id: Dict[str, List[Dict[str, str]]] = {}
-        self._descendant_count_by_id: Dict[str, int] = {}
         self._proposal_subtree_count_by_id: Dict[str, int] = {}
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
@@ -419,73 +417,14 @@ class _SnapshotTraversalCache:
             self._record_by_id[note_id] = note_store.get_note(note_id)
         return self._record_by_id[note_id]
 
-    def _build_path(self, note_id: str) -> List[Dict[str, str]]:
-        if note_id in self._path_by_id:
-            return self._path_by_id[note_id]
-
-        uncached_records: List[object] = []
-        current_id = note_id
-        visited_ids: Set[str] = set()
-        while current_id not in self._path_by_id:
-            if current_id in visited_ids:
-                raise RuntimeError(f"Hierarchy cycle detected while building path for {note_id}")
-            visited_ids.add(current_id)
-            record = self.get_note(current_id)
-            uncached_records.append(record)
-            if record.parent_id is None:
-                path: List[Dict[str, str]] = []
-                break
-            current_id = record.parent_id
-        else:
-            path = list(self._path_by_id[current_id])
-
-        for record in reversed(uncached_records):
-            path.append({
-                "id": record.id,
-                "label": strip_html(record.content).strip()[:80],
-            })
-            self._path_by_id[record.id] = list(path)
-        return self._path_by_id[note_id]
-
-    def _count_descendants(self, note_id: str) -> int:
-        if note_id in self._descendant_count_by_id:
-            return self._descendant_count_by_id[note_id]
-
-        stack: List[Tuple[str, bool]] = [(note_id, False)]
-        visiting: Set[str] = set()
-        while stack:
-            current_id, is_expanded = stack.pop()
-            if current_id in self._descendant_count_by_id:
-                continue
-            if is_expanded:
-                children = self.get_children(current_id)
-                self._descendant_count_by_id[current_id] = sum(
-                    1 + self._descendant_count_by_id[child_id]
-                    for child_id in children
-                )
-                visiting.remove(current_id)
-                continue
-            if current_id in visiting:
-                raise RuntimeError(
-                    f"Hierarchy cycle detected while counting descendants for {note_id}"
-                )
-            visiting.add(current_id)
-            stack.append((current_id, True))
-            for child_id in reversed(self.get_children(current_id)):
-                if child_id not in self._descendant_count_by_id:
-                    stack.append((child_id, False))
-        return self._descendant_count_by_id[note_id]
-
-    def build_metadata(self, note_id: str) -> Dict[str, object]:
+    def build_metadata(self, note_id: str) -> Dict[str, str]:
+        # The client reads only the timestamps (note-timestamp-hover-service).
+        # Paths, counts, and inherited tags were computed per visible note on
+        # every view, including a full subtree walk, and never read.
         record = self.get_note(note_id)
-        inherited_tags = sorted(note_store.get_inherited_non_meta_tag_terms(note_id))
         return {
             "createdAt": _timestamp_iso(record, "created_at"),
             "updatedAt": _timestamp_iso(record, "updated_at"),
-            "inheritedTags": inherited_tags,
-            "path": self._build_path(note_id),
-            "childCount": len(self.get_children(note_id)),
-            "subtreeCount": self._count_descendants(note_id),
         }
 
     def count_proposals_in_subtree(
