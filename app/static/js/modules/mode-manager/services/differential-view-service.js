@@ -42,6 +42,8 @@ const LOCK_ICON_CACHE = ApplicationState.createWeakCollection('LOCK_ICON_CACHE',
 const TAGS_ELEMENT_CACHE = ApplicationState.createWeakCollection('TAGS_ELEMENT_CACHE', 'map');
 
 function logVDOM(action, details) {
+    // Per-operation logging costs time and keeps logged objects alive.
+    if (!CONFIG.DEBUG.LOG_VDOM_OPS) return;
     console.log(` [VDOM] ${action}`, details);
 }
 

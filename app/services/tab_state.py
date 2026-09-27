@@ -179,6 +179,14 @@ class TabStateStore:
             incoming_ids = set(normalized_tabs.keys())
             if incoming_ids != existing_ids:
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
+            # Scroll persistence posts about once a second; unchanged state must
+            # not re-encrypt and rewrite the row. Clients accept the same version.
+            if (
+                self._tabs == normalized_tabs
+                and self._active_tab_id == active_tab_id
+                and self._tab_order == normalized_order
+            ):
+                return self._snapshot_locked()
             self._tabs = normalized_tabs
             self._active_tab_id = active_tab_id
             self._tab_order = normalized_order

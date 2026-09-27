@@ -160,9 +160,11 @@ export async function actionRefreshAndMaybeSelect(options) {
             ? Object.keys(snapshot.notes).length
             : 0;
         const roundtripMs = performance.now() - requestStartedAt;
-        console.log(' [PERF] notes.view roundtrip:', {
-            ms: Number(roundtripMs.toFixed(2))
-        });
+        if (CONFIG.DEBUG.LOG_API_CALLS) {
+            console.log(' [PERF] notes.view roundtrip:', {
+                ms: Number(roundtripMs.toFixed(2))
+            });
+        }
 
         if (CONFIG.DEBUG.LOG_API_CALLS) {
             console.log(' [SNAPSHOT] notes.view summary:', {

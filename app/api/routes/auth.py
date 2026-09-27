@@ -713,7 +713,8 @@ def auth_status(
         "version": VERSION,
         "database_user_version": database_user_version,
         "authenticated": token is not None,
-        "has_password": auth.has_password(),
+        # Same answer as AuthService.has_password(), from the row already read.
+        "has_password": settings is not None and bool(settings.encryption_enabled),
         "encryption_enabled": settings.encryption_enabled if settings else False,
         "encryption_algorithm": settings.encryption_algorithm if settings else None,
         "vault_version": settings.vault_version if settings else None,
