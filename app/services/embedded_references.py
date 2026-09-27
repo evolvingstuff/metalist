@@ -376,6 +376,10 @@ def _collapsed_preview_head(content_html: str) -> Tuple[str, bool]:
     return head[0], len(head) > 1
 
 
+def collapsed_preview_head(content_html: str) -> Tuple[str, bool]:
+    return _collapsed_preview_head(content_html)
+
+
 def extract_collapsed_preview_source_html(content_html: str) -> str:
     return _collapsed_preview_head(content_html)[0]
 
@@ -385,7 +389,10 @@ def collapsed_preview_source_has_hidden_content(content_html: str) -> bool:
 
 
 def collapsed_preview_source_has_media(content_html: str) -> bool:
-    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    return preview_html_has_media(extract_collapsed_preview_source_html(content_html))
+
+
+def preview_html_has_media(preview_source_html: str) -> bool:
     if preview_source_html == "":
         return False
     return _fragment_has_media_tag(preview_source_html)
@@ -396,7 +403,12 @@ def collapsed_preview_source_has_image_file_embed(
     content_html: str,
     context: EmbedRenderContext,
 ) -> bool:
-    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    return preview_html_has_image_file_embed(
+        preview_source_html=extract_collapsed_preview_source_html(content_html), context=context,
+    )
+
+
+def preview_html_has_image_file_embed(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
     if preview_source_html == "":
         return False
     tokens = collect_reference_tokens_from_html(preview_source_html)
@@ -419,7 +431,12 @@ def collapsed_preview_source_has_note_embed(
     content_html: str,
     context: EmbedRenderContext,
 ) -> bool:
-    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    return preview_html_has_note_embed(
+        preview_source_html=extract_collapsed_preview_source_html(content_html), context=context,
+    )
+
+
+def preview_html_has_note_embed(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
     if preview_source_html == "":
         return False
     tokens = collect_reference_tokens_from_html(preview_source_html)

@@ -10,8 +10,10 @@ import app.services.embedded_references as embedded_references
 import app.services.snapshot as snapshot_module
 import app.services.sync as sync
 import app.services.undo_state as undo_state
+from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import collapsed_preview_source_has_hidden_content
 from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.link_titles import LinkTitleStore
 from app.services.note_store import NoteRecord
 from app.services.snapshot import _SnapshotTraversalCache
 
@@ -120,60 +122,229 @@ def _record(note_id: str, content: str) -> NoteRecord:
 
 
 @pytest.mark.parametrize("content", [
-    "see [[00000000-0000-0000-0000-000000000000]]",
-    "https://example.test/page",
-    "<a href=\"http://x.test\">x</a>",
-    "https&#58;//example.test",
-    "https&colon;//example.test",
-    "https:&sol;&sol;example.test",
+    "<img src=\"https://example.test/a.png\">",
+    "<IMG SRC=https://example.test/a.png>",
 ])
-def test_notes_with_references_or_urls_are_never_render_cached(content: str) -> None:
+def test_remote_image_notes_are_never_render_cached(content: str) -> None:
     assert not snapshot_module._is_render_cacheable(content)
 
 
-def test_plain_formatted_notes_are_render_cacheable() -> None:
-    assert snapshot_module._is_render_cacheable("<div><b>plain</b> &amp; &nbsp; <img src=\"data:image/png;base64,AA==\"></div>")
+@pytest.mark.parametrize("content", [
+    "<div><b>plain</b> &amp; &#8217; &nbsp; <img src=\"data:image/png;base64,AA==\"></div>",
+    "https://example.test/page",
+    "<a href=\"http://x.test\">x</a>",
+    "see [[00000000-0000-0000-0000-000000000000]]",
+])
+def test_plain_link_and_reference_notes_are_render_cacheable(content: str) -> None:
+    assert snapshot_module._is_render_cacheable(content)
 
 
-def test_render_cache_rerenders_whenever_an_input_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+class _LiveWorld:
+    """Mutable stand-in for the store and file registry behind a render context."""
+
+    def __init__(self) -> None:
+        self.notes: dict[str, NoteRecord] = {}
+        self.children: dict[str | None, list[str]] = {}
+        self.files: dict[str, object] = {}
+
+    def context(self) -> EmbedRenderContext:
+        def get_children(parent_id: str | None) -> list[str]:
+            if parent_id in self.children:
+                return list(self.children[parent_id])
+            return []
+
+        return EmbedRenderContext(
+            has_note=lambda note_id: note_id in self.notes,
+            get_note=lambda note_id: self.notes[note_id],
+            get_children=get_children,
+            has_file=lambda file_id: file_id in self.files,
+            get_file=lambda file_id: self.files[file_id],
+        )
+
+
+def _prepare_render_cache(monkeypatch: pytest.MonkeyPatch, fake_render) -> None:
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
+    monkeypatch.setattr(snapshot_module.link_title_store, "get_render_generation", lambda: 0)
+    monkeypatch.setattr(snapshot_module, "get_ontology_if_ready", lambda: None)
+    monkeypatch.setattr(snapshot_module, "_render_note_view_html", fake_render)
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def _render_cached(rec: NoteRecord, world: _LiveWorld, *, collapsed: bool, backlinks: bool) -> str:
+    return snapshot_module._cached_note_view_html(
+        rec=rec, is_collapsed=collapsed, has_backlinks=backlinks, context=world.context(),
+    )
+
+
+def test_render_cache_rerenders_whenever_a_key_input_changes(monkeypatch: pytest.MonkeyPatch) -> None:
     renders: list[tuple[str, bool, bool]] = []
 
     def fake_render(*, rec, is_collapsed, has_backlinks, context):
         renders.append((rec.content, is_collapsed, has_backlinks))
         return f"{rec.content}|{is_collapsed}|{has_backlinks}"
 
+    _prepare_render_cache(monkeypatch, fake_render)
     ontology = [object()]
-    # Other tests lock the namespace, which disables sensitive caches globally.
-    monkeypatch.setattr(sensitive_cache, "_enabled", True)
-    monkeypatch.setattr(snapshot_module, "_render_note_view_html", fake_render)
+    generation = [0]
     monkeypatch.setattr(snapshot_module, "get_ontology_if_ready", lambda: ontology[0])
-    snapshot_module._cached_note_view_html.cache_clear()
-    key = snapshot_module._IdentityKey
-
-    def render(rec: NoteRecord, *, collapsed: bool, backlinks: bool) -> str:
-        return snapshot_module._cached_note_view_html(key(rec), collapsed, backlinks, key(ontology[0]))
-
+    monkeypatch.setattr(snapshot_module.link_title_store, "get_render_generation", lambda: generation[0])
+    world = _LiveWorld()
     original = _record("note", "<div>one</div>")
-    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
-    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+
+    assert _render_cached(original, world, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert _render_cached(original, world, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
     assert len(renders) == 1
 
     # A replaced record re-renders even when it compares equal field by field.
-    assert render(dataclasses.replace(original), collapsed=False, backlinks=False) == "<div>one</div>|False|False"
-    assert render(_record("note", "<div>two</div>"), collapsed=False, backlinks=False) == "<div>two</div>|False|False"
-    assert render(original, collapsed=True, backlinks=False) == "<div>one</div>|True|False"
-    assert render(original, collapsed=False, backlinks=True) == "<div>one</div>|False|True"
+    _render_cached(dataclasses.replace(original), world, collapsed=False, backlinks=False)
+    _render_cached(_record("note", "<div>two</div>"), world, collapsed=False, backlinks=False)
+    assert _render_cached(original, world, collapsed=True, backlinks=False) == "<div>one</div>|True|False"
+    assert _render_cached(original, world, collapsed=False, backlinks=True) == "<div>one</div>|False|True"
     ontology[0] = object()
-    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    _render_cached(original, world, collapsed=False, backlinks=False)
+    generation[0] = 1
+    _render_cached(original, world, collapsed=False, backlinks=False)
+    assert len(renders) == 7
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def test_render_cache_revalidates_every_referenced_note_and_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    renders: list[str] = []
+
+    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+        # Mimic an embed render: reads the target, its children, and a file.
+        target = context.get_note("target")
+        child_ids = context.get_children("target")
+        file_label = "no-file"
+        if context.has_file("file"):
+            file_label = context.get_file("file")
+        missing = context.has_note("missing")
+        rendered = f"{target.content}|{child_ids}|{file_label}|{missing}"
+        renders.append(rendered)
+        return rendered
+
+    _prepare_render_cache(monkeypatch, fake_render)
+    world = _LiveWorld()
+    world.notes["target"] = _record("target", "<div>target v1</div>")
+    world.children["target"] = ["child-a"]
+    world.files["file"] = "file rev 1"
+    host = _record("host", "<div>![[target]]</div>")
+
+    def render() -> str:
+        return _render_cached(host, world, collapsed=False, backlinks=False)
+
+    render()
+    render()
+    assert len(renders) == 1
+
+    world.notes["target"] = _record("target", "<div>target v2</div>")
+    assert "target v2" in render()
+    world.children["target"] = ["child-a", "child-b"]
+    assert "child-b" in render()
+    world.files["file"] = "file rev 2"
+    assert "file rev 2" in render()
+    del world.files["file"]
+    assert "no-file" in render()
+    world.notes["missing"] = _record("missing", "<div>now exists</div>")
+    assert render().endswith("|True")
     assert len(renders) == 6
-    snapshot_module._cached_note_view_html.cache_clear()
+    render()
+    assert len(renders) == 6
+    snapshot_module._VIEW_RENDER_MEMO.clear()
 
 
-def test_cacheable_render_context_rejects_reference_lookups() -> None:
-    context = snapshot_module._reference_free_render_context("note")
+def test_renders_with_remote_image_proxy_sources_are_not_stored(monkeypatch: pytest.MonkeyPatch) -> None:
+    renders: list[str] = []
 
-    assert context.has_note("note") is True
-    with pytest.raises(RuntimeError, match="consulted note other"):
-        context.has_note("other")
-    with pytest.raises(RuntimeError, match="consulted references"):
-        context.get_children("note")
+    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+        renders.append(rec.id)
+        return '<img data-remote-image-proxy-src="/api2/remote-images/token">'
+
+    _prepare_render_cache(monkeypatch, fake_render)
+    world = _LiveWorld()
+    host = _record("host", "<div>![[target]]</div>")
+
+    _render_cached(host, world, collapsed=False, backlinks=False)
+    _render_cached(host, world, collapsed=False, backlinks=False)
+
+    assert len(renders) == 2
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def test_render_cache_hits_replay_link_title_fetch_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested: list[str] = []
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
+    monkeypatch.setattr(snapshot_module.link_title_store, "get_render_generation", lambda: 0)
+    monkeypatch.setattr(snapshot_module.link_title_store, "get_ok_title", lambda _url: None)
+    monkeypatch.setattr(snapshot_module.link_title_store, "maybe_enqueue_fetch", requested.append)
+    monkeypatch.setattr(snapshot_module, "get_ontology_if_ready", lambda: None)
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+    world = _LiveWorld()
+    rec = _record("note", "<div>https://example.test/page</div>")
+    world.notes["note"] = rec
+
+    first = _render_cached(rec, world, collapsed=False, backlinks=False)
+    second = _render_cached(rec, world, collapsed=False, backlinks=False)
+
+    assert first == second
+    assert snapshot_module._VIEW_RENDER_MEMO.info().hits == 1
+    # The fresh render requested the fetch once; the hit replays that request.
+    assert requested == ["https://example.test/page"] * 2
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def test_render_cache_shows_link_title_after_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
+    titles: dict[str, str] = {}
+    generation = [0]
+    store = snapshot_module.link_title_store
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
+    monkeypatch.setattr(store, "get_render_generation", lambda: generation[0])
+
+    def lookup_title(url: str) -> str | None:
+        if url in titles:
+            return titles[url]
+        return None
+
+    monkeypatch.setattr(store, "get_ok_title", lookup_title)
+    monkeypatch.setattr(store, "get_diagnostic", lambda _url: None)
+    monkeypatch.setattr(store, "maybe_enqueue_fetch", lambda _url: None)
+    monkeypatch.setattr(snapshot_module, "get_ontology_if_ready", lambda: None)
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+    url = "https://example.test/page"
+    world = _LiveWorld()
+    rec = _record("note", f"<div>{url}</div>")
+    world.notes["note"] = rec
+
+    before = _render_cached(rec, world, collapsed=False, backlinks=False)
+    titles[url] = "Example Page Title"
+    generation[0] += 1
+    after = _render_cached(rec, world, collapsed=False, backlinks=False)
+
+    assert "Example Page Title" not in before
+    assert "Example Page Title" in after
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def test_sensitive_memo_stores_nothing_while_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    memo = sensitive_cache.SensitiveMemo(maxsize=4, max_bytes=1024 * 1024)
+    monkeypatch.setattr(sensitive_cache, "_enabled", False)
+    memo.store("key", "plaintext")
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
+
+    assert memo.lookup("key") == (False, None)
+    memo.store("key", "plaintext")
+    assert memo.lookup("key") == (True, "plaintext")
+    sensitive_cache.clear_sensitive_caches()
+    assert memo.lookup("key") == (False, None)
+
+
+def test_link_title_render_generation_tracks_changes_the_revision_skips() -> None:
+    store = LinkTitleStore()
+    start = store.get_render_generation()
+
+    store.discard_in_flight("https://example.test/page")
+    after_discard = store.get_render_generation()
+    store.reset()
+
+    assert store.get_revision() == 0
+    assert start < after_discard < store.get_render_generation()

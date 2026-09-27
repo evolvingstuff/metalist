@@ -99,7 +99,10 @@ export function handleTabSwitch() {
 }
 
 function collectRootVisibility() {
-    const rootElements = document.querySelectorAll('.note');
+    // Root notes are direct children of the container; scanning every nested
+    // note each tick only to discard children made the poll scale with the
+    // whole rendered tree. The parent-id check below still guards roots.
+    const rootElements = document.querySelectorAll('#notes-container > .note');
     const viewportHeight = window.innerHeight;
     const visible = [];
     const past = [];

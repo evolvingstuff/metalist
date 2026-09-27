@@ -12,16 +12,18 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 from loguru import logger
 
 from app.services.content_formatting import find_list_style
-from app.services.embedded_references import collapsed_preview_source_has_image_file_embed
-from app.services.embedded_references import collapsed_preview_source_has_hidden_content
-from app.services.embedded_references import collapsed_preview_source_has_media
-from app.services.embedded_references import collapsed_preview_source_has_note_embed
+from app.services.content_formatting import recording_link_title_fetches
+from app.services.content_formatting import replay_link_title_fetches
+from app.services.embedded_references import collapsed_preview_head
 from app.services.embedded_references import EmbedRenderContext
-from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.embedded_references import preview_html_has_image_file_embed
+from app.services.embedded_references import preview_html_has_media
+from app.services.embedded_references import preview_html_has_note_embed
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
+from app.services.link_titles import link_title_store
 from app.services.note_store import NoteRecord, store as note_store
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
@@ -33,7 +35,7 @@ from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
-from app.security.sensitive_cache import sensitive_lru_cache
+from app.security.sensitive_cache import SensitiveMemo
 from app.utils.text_utils import strip_html
 
 # Windowing constants (tuned later)
@@ -524,16 +526,21 @@ def _select_view(
     )
 
 
-# Rendered view HTML depends on shared state only through references ([[...]]:
-# other notes, files, embeds) and URLs (link titles, their fetch/retry side
-# effects, and remote-image proxy tokens). Notes containing none of these
-# markers, including entity-encoded ':' or '/', render purely from their own
-# record, collapse state, backlink presence, and the ontology.
-_UNCACHEABLE_RENDER_MARKERS = ("[[", "://", "&#", "&colon;", "&sol;")
+# Rendered view HTML reads shared state only through the render context
+# (other notes, their children, files), link titles, the ontology, and
+# remote-image proxy tokens. The cache key pins the note record, collapse
+# state, backlink presence, ontology, and link-title render generation; every
+# context lookup a render makes is recorded and re-checked before reuse, and
+# the link-title fetches it requested are replayed. Proxy tokens are random and
+# evictable, so renders that use them are never cached: notes whose own
+# content has a literal URL image source are skipped up front, and renders
+# that still emitted a proxy source (e.g. from an embedded note) are not stored.
+_REMOTE_IMAGE_PROXY_MARKER = "data-remote-image-proxy-src="
+_VIEW_RENDER_MEMO = SensitiveMemo(maxsize=65536, max_bytes=64 * 1024 * 1024)
 
 
 def _is_render_cacheable(content_html: str) -> bool:
-    return not any(marker in content_html for marker in _UNCACHEABLE_RENDER_MARKERS)
+    return not ("://" in content_html and "<img" in content_html.lower())
 
 
 class _IdentityKey:
@@ -555,19 +562,93 @@ class _IdentityKey:
         return isinstance(other, _IdentityKey) and other.value is self.value
 
 
-def _reference_free_render_context(note_id: str) -> EmbedRenderContext:
-    def has_note(candidate_id: str) -> bool:
-        if candidate_id != note_id:
-            raise RuntimeError(f"Cacheable render of {note_id} consulted note {candidate_id}")
-        return True
+@dataclass(frozen=True)
+class _RenderDependencies:
+    note_presence: Tuple[Tuple[str, bool], ...]
+    note_records: Tuple[Tuple[str, _IdentityKey], ...]
+    children: Tuple[Tuple[Optional[str], Tuple[str, ...]], ...]
+    file_presence: Tuple[Tuple[str, bool], ...]
+    file_records: Tuple[Tuple[str, object], ...]
 
-    def forbidden(*args: object) -> object:
-        raise RuntimeError(f"Cacheable render of {note_id} consulted references: {args}")
 
-    return EmbedRenderContext(
-        has_note=has_note, get_note=forbidden, get_children=forbidden,
-        has_file=forbidden, get_file=forbidden,
-    )
+class _DependencyRecorder:
+    """Render context that forwards to the live context and records each lookup."""
+
+    def __init__(self, live: EmbedRenderContext) -> None:
+        self._live = live
+        self._note_presence: Dict[str, bool] = {}
+        self._note_records: Dict[str, _IdentityKey] = {}
+        self._children: Dict[Optional[str], Tuple[str, ...]] = {}
+        self._file_presence: Dict[str, bool] = {}
+        self._file_records: Dict[str, object] = {}
+
+    def context(self) -> EmbedRenderContext:
+        return EmbedRenderContext(
+            has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
+            has_file=self._has_file, get_file=self._get_file,
+        )
+
+    def _has_note(self, note_id: str) -> bool:
+        present = self._live.has_note(note_id)
+        self._note_presence[note_id] = present
+        return present
+
+    def _get_note(self, note_id: str) -> object:
+        record = self._live.get_note(note_id)
+        self._note_records[note_id] = _IdentityKey(record)
+        return record
+
+    def _get_children(self, parent_id: Optional[str]) -> List[str]:
+        child_ids = self._live.get_children(parent_id)
+        self._children[parent_id] = tuple(child_ids)
+        return child_ids
+
+    def _has_file(self, file_id: str) -> bool:
+        present = self._live.has_file(file_id)
+        self._file_presence[file_id] = present
+        return present
+
+    def _get_file(self, file_id: str) -> object:
+        record = self._live.get_file(file_id)
+        self._file_records[file_id] = record
+        return record
+
+    def freeze(self) -> _RenderDependencies:
+        return _RenderDependencies(
+            note_presence=tuple(self._note_presence.items()),
+            note_records=tuple(self._note_records.items()),
+            children=tuple(self._children.items()),
+            file_presence=tuple(self._file_presence.items()),
+            file_records=tuple(self._file_records.items()),
+        )
+
+
+def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderContext) -> bool:
+    for note_id, present in dependencies.note_presence:
+        if live.has_note(note_id) != present:
+            return False
+    for note_id, record_key in dependencies.note_records:
+        if not live.has_note(note_id) or live.get_note(note_id) is not record_key.value:
+            return False
+    for parent_id, child_ids in dependencies.children:
+        if parent_id is not None and not live.has_note(parent_id):
+            return False
+        if tuple(live.get_children(parent_id)) != child_ids:
+            return False
+    for file_id, present in dependencies.file_presence:
+        if live.has_file(file_id) != present:
+            return False
+    for file_id, file_record in dependencies.file_records:
+        if not live.has_file(file_id) or live.get_file(file_id) != file_record:
+            return False
+    return True
+
+
+@dataclass(frozen=True)
+class _CachedViewRender:
+    html: str
+    fetch_urls: Tuple[str, ...]
+    dependencies: _RenderDependencies
 
 
 def _render_note_view_html(
@@ -598,22 +679,34 @@ def _render_note_view_html(
     )
 
 
-@sensitive_lru_cache(maxsize=65536, max_bytes=64 * 1024 * 1024)
 def _cached_note_view_html(
-    record_key: _IdentityKey, is_collapsed: bool, has_backlinks: bool, ontology_key: _IdentityKey,
+    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
 ) -> str:
-    # NoteRecord is immutable and replaced on every change, so the record's
-    # identity pins content, tags, and every other field. The ontology object
-    # is likewise replaced whenever rules change; it only needs to be part of
-    # the key, since rendering reads the same current ontology.
-    rec = record_key.value
-    assert isinstance(rec, NoteRecord)
+    # NoteRecord is immutable and replaced on every change, so its identity
+    # pins content, tags, and every other field; the ontology object is
+    # likewise replaced whenever rules change.
+    assert type(rec) is NoteRecord
     assert _is_render_cacheable(rec.content)
-    assert ontology_key.value is get_ontology_if_ready()
-    return _render_note_view_html(
-        rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks,
-        context=_reference_free_render_context(rec.id),
+    key = (
+        _IdentityKey(rec), is_collapsed, has_backlinks,
+        _IdentityKey(get_ontology_if_ready()), link_title_store.get_render_generation(),
     )
+    found, cached = _VIEW_RENDER_MEMO.lookup(key)
+    if found and _dependencies_hold(cached.dependencies, context):
+        # A fresh render requests these fetches every time (first lookups and
+        # backoff retries); repeating a request is a no-op while in flight.
+        replay_link_title_fetches(cached.fetch_urls)
+        return cached.html
+
+    recorder = _DependencyRecorder(context)
+    with recording_link_title_fetches() as fetch_urls:
+        rendered = _render_note_view_html(
+            rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks,
+            context=recorder.context(),
+        )
+    if _REMOTE_IMAGE_PROXY_MARKER not in rendered:
+        _VIEW_RENDER_MEMO.store(key, _CachedViewRender(rendered, tuple(fetch_urls), recorder.freeze()))
+    return rendered
 
 
 def _render_view_note(
@@ -625,22 +718,23 @@ def _render_view_note(
     assert isinstance(rec.content, str)
     assert isinstance(rec.tags, str)
     assert isinstance(rec.proposed_tags, str)
-    collapsed_preview_source = extract_collapsed_preview_source_html(rec.content)
+    # One preview-head lookup serves all four collapsibility checks.
+    collapsed_preview_source, preview_has_more = collapsed_preview_head(rec.content)
     content_is_collapsible = False
     if collapsed_preview_source != "":
-        if collapsed_preview_source_has_media(rec.content):
+        if preview_html_has_media(collapsed_preview_source):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_image_file_embed(
-            content_html=rec.content,
+        elif preview_html_has_image_file_embed(
+            preview_source_html=collapsed_preview_source,
             context=embed_render_context,
         ):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_note_embed(
-            content_html=rec.content,
+        elif preview_html_has_note_embed(
+            preview_source_html=collapsed_preview_source,
             context=embed_render_context,
         ):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_hidden_content(rec.content):
+        elif preview_has_more:
             content_is_collapsible = True
     has_children = bool(traversal_cache.get_children(rec.id))
     is_collapsible = has_children
@@ -679,8 +773,8 @@ def _render_view_note(
         # Identity keys are exact only for immutable records; any other record
         # type (e.g. test doubles) could change in place and renders directly.
         rendered_content = _cached_note_view_html(
-            _IdentityKey(rec), bool(flags["isCollapsed"]), note_store.has_backlinks(rec.id),
-            _IdentityKey(get_ontology_if_ready()),
+            rec=rec, is_collapsed=bool(flags["isCollapsed"]),
+            has_backlinks=note_store.has_backlinks(rec.id), context=embed_render_context,
         )
     else:
         rendered_content = _render_note_view_html(
@@ -789,7 +883,8 @@ def build_view_state(
                 "tags": rec.tags,
                 "proposedTags": rec.proposed_tags,
                 "flags": flags,
-                "metadata": traversal_cache.build_metadata(rec.id),
+                # Same values build_metadata would produce, already formatted in flags.
+                "metadata": {"createdAt": flags["createdAt"], "updatedAt": flags["updatedAt"]},
                 "hash": h,
             }
             hash_by_id[rec.id] = h

@@ -60,8 +60,8 @@ def test_snapshot_reads_each_hierarchy_branch_once(monkeypatch):
     monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
     monkeypatch.setattr(
         snapshot_module,
-        "extract_collapsed_preview_source_html",
-        lambda _content: "",
+        "collapsed_preview_head",
+        lambda _content: ("", False),
     )
     monkeypatch.setattr(
         snapshot_module,
