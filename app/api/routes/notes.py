@@ -242,7 +242,8 @@ def view_diff(payload: ViewDiffRequest):
     tab_id = payload["tabId"]
     undo_context = payload["undoContext"]
     tab_view_empty = payload["tabViewEmpty"]
-    anchor_root_id = payload["visibleRootAnchorId"]
+    visible_top_root_id = payload["visibleTopRootId"]
+    visible_bottom_root_id = payload["visibleBottomRootId"]
     is_untagged_view = payload["isUntaggedView"]
     if not isinstance(is_untagged_view, bool):
         raise TypeError("isUntaggedView must be a boolean")
@@ -286,18 +287,14 @@ def view_diff(payload: ViewDiffRequest):
     client_known_note_ids: set[str] = set()
     if warm_view is not None:
         client_known_note_ids = set(warm_view.hash_by_id)
-        if not anchor_root_id and None in warm_view.children_by_parent:
-            last_roots = warm_view.children_by_parent[None]
-            if last_roots:
-                anchor_root_id = last_roots[-1]
 
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         search=normalized_search,
         sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
-        client_seen_root_ids=set(),
-        anchor_root_id=anchor_root_id,
+        visible_top_root_id=visible_top_root_id,
+        visible_bottom_root_id=visible_bottom_root_id,
         is_untagged_view=is_untagged_view,
     )
     update_uuid = get_current_sync_uuid()
@@ -316,6 +313,9 @@ def view_diff(payload: ViewDiffRequest):
         "rootCountTotal": state.metadata["rootCountTotal"],
         "searchRootCountTotal": state.metadata["searchRootCountTotal"],
         "rootSortBuckets": state.metadata["rootSortBuckets"],
+        "rootWindowStart": state.metadata["rootWindowStart"],
+        "rootBandMargin": state.metadata["rootBandMargin"],
+        "rootSortKeyBeforeWindow": state.metadata["rootSortKeyBeforeWindow"],
         "editingNoteId": normalized_editing_note_id,
     }
     if warm_view is None:

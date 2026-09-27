@@ -89,8 +89,8 @@ def test_negative_text_term_redacts_notes_containing_phrase(monkeypatch: pytest.
         search='-"AAB"',
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -138,8 +138,8 @@ def test_negative_text_term_redacts_forbidden_descendants(monkeypatch: pytest.Mo
         search='"AA" -"AAB"',
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -194,8 +194,8 @@ def test_or_search_keeps_negative_terms_local_to_their_clause(
         search="A OR B -blocked",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 

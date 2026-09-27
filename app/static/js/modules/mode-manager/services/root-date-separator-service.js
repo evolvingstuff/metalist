@@ -31,7 +31,7 @@ export function rebuildRootDateSeparators(snapshot) {
 
     const rootIds = snapshot.rootIds;
     const rootSortBuckets = snapshot.rootSortBuckets;
-    const plan = buildRootDateSeparatorPlan(rootIds, rootSortBuckets);
+    const plan = buildRootDateSeparatorPlan(rootIds, rootSortBuckets, snapshot.rootSortKeyBeforeWindow);
     for (const entry of plan) {
         const rootElement = document.querySelector(`[data-note-id="${entry.rootId}"]`);
         if (!(rootElement instanceof HTMLElement)) {

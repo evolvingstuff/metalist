@@ -56,6 +56,10 @@ class ModeContext {
         };
         this._tabOrder = ['0'];
         this._tabRootAnchors = Object.create(null);
+        // Per tab: top visible root (the anchor above is the bottom one) and
+        // where the loaded band of roots sits among all roots in the view.
+        this._tabVisibleTopRoots = Object.create(null);
+        this._tabRootWindows = Object.create(null);
         
         // Multi-device sync
         this._clientId = this._generateClientId();
@@ -115,6 +119,12 @@ class ModeContext {
         }
         if (!Object.hasOwn(this._tabRootAnchors, tabId)) {
             this._tabRootAnchors[tabId] = null;
+        }
+        if (!Object.hasOwn(this._tabVisibleTopRoots, tabId)) {
+            this._tabVisibleTopRoots[tabId] = null;
+        }
+        if (!Object.hasOwn(this._tabRootWindows, tabId)) {
+            this._tabRootWindows[tabId] = { start: 0, margin: 0 };
         }
         if (!Array.isArray(this._tabRootOrder[tabId])) {
             this._tabRootOrder[tabId] = [];
@@ -301,6 +311,7 @@ class ModeContext {
         if (this._tabSeenRootIds[tabId].size > 0) this._tabSeenRootIds[tabId].clear();
         if (this._tabRootOrder[tabId].length > 0) this._tabRootOrder[tabId] = [];
         if (this._tabRootAnchors[tabId] !== null) this._tabRootAnchors[tabId] = null;
+        if (this._tabVisibleTopRoots[tabId] !== null) this._tabVisibleTopRoots[tabId] = null;
         return this;
     }
 
@@ -326,6 +337,7 @@ class ModeContext {
         if (this._tabRootOrder[tabId].length > 0) this._tabRootOrder[tabId] = [];
         if (!preserveRootAnchor) {
             if (this._tabRootAnchors[tabId] !== null) this._tabRootAnchors[tabId] = null;
+            if (this._tabVisibleTopRoots[tabId] !== null) this._tabVisibleTopRoots[tabId] = null;
         }
         return this;
     }
@@ -1042,6 +1054,7 @@ class ModeContext {
             if (this._getActiveSeenRoots().size > 0) this._getActiveSeenRoots().clear();
             if (this._tabRootOrder[tabId].length > 0) this._tabRootOrder[tabId] = [];
             if (this._tabRootAnchors[tabId] !== null) this._tabRootAnchors[tabId] = null;
+            if (this._tabVisibleTopRoots[tabId] !== null) this._tabVisibleTopRoots[tabId] = null;
         }
         queueMicrotask(async () => {
             const module = await import('./services/infinite-scroll-service.js');
@@ -1131,6 +1144,72 @@ class ModeContext {
 		if (idx === -1) return false;
 		return (order.length - 1 - idx) <= distance;
 	}
+
+    // The browser reports the top and bottom visible roots; the server builds
+    // the band of loaded roots around them.
+    setVisibleRootRange(topRootId, bottomRootId) {
+        const tabId = this._activeTabId;
+        this._ensureTabContainers(tabId);
+        const top = typeof topRootId === 'string' && topRootId.length > 0 ? topRootId : null;
+        const bottom = typeof bottomRootId === 'string' && bottomRootId.length > 0 ? bottomRootId : null;
+        if (this._tabVisibleTopRoots[tabId] !== top) this._tabVisibleTopRoots[tabId] = top;
+        if (this._tabRootAnchors[tabId] !== bottom) this._tabRootAnchors[tabId] = bottom;
+        return this;
+    }
+
+    getVisibleRootRange() {
+        const tabId = this._activeTabId;
+        this._ensureTabContainers(tabId);
+        return { topRootId: this._tabVisibleTopRoots[tabId], bottomRootId: this.getRootAnchorId() };
+    }
+
+    setRootWindow(tabId, start, margin) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('setRootWindow requires tabId');
+        }
+        if (!Number.isInteger(start) || start < 0) {
+            throw new Error('rootWindowStart must be a non-negative integer');
+        }
+        if (!Number.isInteger(margin) || margin <= 0) {
+            throw new Error('rootBandMargin must be a positive integer');
+        }
+        this._ensureTabContainers(tabId);
+        const current = this._tabRootWindows[tabId];
+        if (current.start !== start || current.margin !== margin) this._tabRootWindows[tabId] = { start, margin };
+        return this;
+    }
+
+    // Roots exist above the loaded band (it does not start at the first root).
+    hasRootsAboveWindow() {
+        return this._tabRootWindows[this._activeTabId].start > 0;
+    }
+
+    hasRootsBelowWindow(totalRoots) {
+        if (!Number.isInteger(totalRoots) || totalRoots < 0) {
+            throw new Error('hasRootsBelowWindow requires a root total');
+        }
+        const order = this._tabRootOrder[this._activeTabId];
+        return this._tabRootWindows[this._activeTabId].start + order.length < totalRoots;
+    }
+
+    getRootWindowStart() {
+        return this._tabRootWindows[this._activeTabId].start;
+    }
+
+    // Distance, in loaded roots, at which the browser asks the server to move a
+    // band edge: the server keeps an edge until the viewport is this close.
+    getRootBandRefetchDistance() {
+        return Math.floor(this._tabRootWindows[this._activeTabId].margin / 2);
+    }
+
+    isAnchorNearStart(anchorId, distance) {
+        if (typeof anchorId !== 'string' || !anchorId) {
+            return false;
+        }
+        const idx = this._tabRootOrder[this._activeTabId].indexOf(anchorId);
+        if (idx === -1) return false;
+        return idx <= distance;
+    }
 
     setRootAnchorId(anchorId) {
         const tabId = this._activeTabId;
@@ -1504,6 +1583,20 @@ class ModeContext {
 
     shouldIgnoreScrollEvents() {
         return this._ignoreScrollEventsDepth > 0;
+    }
+
+    // Positions the active tab's restored DOM at its saved anchor right away,
+    // in the same task that swapped the DOM in, so the first painted frame is
+    // already correct instead of hopping after the refresh round trips.
+    restoreScrollForActiveTabNow() {
+        const tabId = this._activeTabId;
+        this.beginIgnoreScrollEvents();
+        restoreScrollFromAnchor(this.getTabScrollAnchor(tabId), { scrollYFallback: this.getTabScrollPosition(tabId) });
+        const entry = this._ensureTabEntry(tabId);
+        const observedScrollY = Math.max(0, Math.round(window.scrollY));
+        if (entry.scrollY !== observedScrollY) entry.scrollY = observedScrollY;
+        this.endIgnoreScrollEvents();
+        return this;
     }
 
 	restoreScrollForActiveTab() {

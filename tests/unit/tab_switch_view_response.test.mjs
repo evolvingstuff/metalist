@@ -30,18 +30,21 @@ function buildHarness() {
     const events = [];
     const heldFetch = deferred();
     let fetchCount = 0;
-    const snapshot = () => ({ diffOps: [], notes: {}, rootIds: [], rootCountTotal: 1, searchRootCountTotal: 1 });
+    const snapshot = () => ({ diffOps: [], notes: {}, rootIds: [], rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75 });
     const ModeContext = {
         activeTabId: 'A', tabOrder: ['A', 'B'], isEditing: false, isUntaggedView: false,
         activeTabSortMode: 'normal', currentNoteId: null, isInitialPageLoad: false,
         knownRootCount: 1, seenRootCount: 1, noteCount: 1,
         getExecutedSearchQuery: () => '', getRootAnchorId: () => null, getLastKnownRootId: () => null,
+        getVisibleRootRange: () => ({ topRootId: null, bottomRootId: null }), setRootWindow() {},
+        getTabNoteHashCount: () => 1, tabs: { A: { anchorRootId: null }, B: { anchorRootId: null } },
         getNoteHashPayload: () => ({}), syncNoteHashesFromSnapshot() {}, syncRootIds() {},
         getRootCountTotals: () => ({ rootCountTotal: 1, searchRootCountTotal: 1 }),
         setRootCountTotals() {}, hasNoteHash: () => false,
         beginIgnoreScrollEvents() {}, endIgnoreScrollEvents() {}, restoreScrollForActiveTab() {},
         resetTabDiffCache() {}, setUntaggedView() {},
         switchToTab(tabId) { events.push(`switch:${tabId}`); this.activeTabId = tabId; },
+        restoreScrollForActiveTabNow() { events.push(`scroll-now:${this.activeTabId}`); },
     };
     const uiDependencies = {
         ModeContext,
@@ -70,8 +73,10 @@ function buildHarness() {
         DOMUtils: { getNoteContentHTML: () => '', getNoteContent: () => ({}), setNoteEditable() {}, revealCaret() {}, focusNoteEdge() {} },
         updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateUntaggedViewIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
+        captureViewportRoot: () => null, holdViewportRoot() {},
     };
     const uiFunctionNames = ['actionRefreshAndMaybeSelect'];
+    if (/function resolveVisibleRootRange\(/.test(uiSource)) uiFunctionNames.push('resolveVisibleRootRange');
     if (/function waitForViewRequestIdle\(/.test(uiSource)) uiFunctionNames.push('waitForViewRequestIdle');
     const uiActions = new Function(
         ...Object.keys(uiDependencies),
@@ -92,7 +97,7 @@ function buildHarness() {
         clearCachedNotesDomForTab() {}, clearActiveNotesDom() {},
         async persistCurrentTabState() {}, async persistTabStateSnapshot() {},
         cacheNotesDomForTab(tabId) { events.push(`cache:${tabId}`); },
-        restoreNotesDomForTab(tabId) { events.push(`restore:${tabId}`); },
+        restoreNotesDomForTab(tabId) { events.push(`restore:${tabId}`); return { restored: true, moved: 1 }; },
         syncSearchInputField() {}, updateSearchContextsList() {},
     };
     const switchToTabContext = new Function(
@@ -113,4 +118,15 @@ test('tab switch applies an in-flight view response to its own tab before cachin
     assert.ok(events.includes('apply:A'), `tab A response was not applied: ${events.join(' ')}`);
     assert.ok(events.indexOf('apply:A') < events.indexOf('cache:A'), `tab A cached before its response applied: ${events.join(' ')}`);
     assert.ok(events.indexOf('apply:A') < events.indexOf('switch:B'));
+});
+
+test('tab switch positions the restored DOM before waiting on any refresh', async () => {
+    const { events, heldFetch, switchToTabContext } = buildHarness();
+    heldFetch.resolve();
+    await switchToTabContext('B', {});
+
+    const restoreIndex = events.indexOf('restore:B');
+    assert.ok(restoreIndex >= 0, events.join(' '));
+    assert.equal(events[restoreIndex + 1], 'scroll-now:B', events.join(' '));
+    assert.ok(events.indexOf('scroll-now:B') < events.indexOf('fetch:B'), events.join(' '));
 });

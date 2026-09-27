@@ -39,8 +39,11 @@ from app.security.sensitive_cache import SensitiveMemo
 from app.utils.text_utils import strip_html
 
 # Windowing constants (tuned later)
-ROOT_CHUNK_SIZE = 50
-ROOT_BUFFER_THRESHOLD = 25
+# The window is a band of roots around the ones the browser can see: this many
+# beyond the top and bottom visible roots. An edge stays put while it is
+# between half and twice this far from the visible roots, so ordinary
+# scrolling changes nothing and unloading happens far from the viewport.
+ROOT_BAND_MARGIN = 75
 _UUID_IN_TEXT_RE = re.compile(
     r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
@@ -345,55 +348,75 @@ def _compute_hash(
     return sha.hexdigest()
 
 
-def _determine_root_window_end(
+def _root_index_of_note(
+    note_id: str, root_index_map: Dict[str, int], traversal_cache: "_SnapshotTraversalCache",
+) -> Optional[int]:
+    if not note_store.has_note(note_id):
+        return None
+    current = traversal_cache.get_note(note_id)
+    visited: Set[str] = set()
+    while current.parent_id is not None:
+        if current.id in visited:
+            raise RuntimeError(f"Cycle in note ancestry for {note_id}")
+        visited.add(current.id)
+        current = traversal_cache.get_note(current.parent_id)
+    if current.id not in root_index_map:
+        return None
+    return root_index_map[current.id]
+
+
+def _keep_or_move_edge(*, current: int, near: int, far: int, target: int) -> int:
+    """Keep an existing band edge while it sits between near and far, else move it to target."""
+    low, high = min(near, far), max(near, far)
+    if low <= current <= high:
+        return current
+    return target
+
+
+def _determine_root_band(
+    *,
     ordered_root_ids: List[str],
     root_index_map: Dict[str, int],
     client_known_note_ids: Set[str],
-    seen_root_indices: Set[int],
-    editing_note_id: Optional[str],
-    anchor_root_id: Optional[str],
-) -> int:
-    if not ordered_root_ids:
-        return -1
-    window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
-    for note_id in client_known_note_ids:
-        if note_id not in root_index_map:
-            continue
-        window_end = max(window_end, root_index_map[note_id])
-    if editing_note_id:
-        # Expand to include the root containing the editing node
-        # Find root id by walking parents in store
-        current = note_store.get_note(editing_note_id)
-        while current.parent_id:
-            current = note_store.get_note(current.parent_id)
-        editing_root_id = current.id
-        if editing_root_id in root_index_map:
-            window_end = max(window_end, root_index_map[editing_root_id])
-    if seen_root_indices:
-        highest_seen_index = max(seen_root_indices)
-        while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
-            window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
-    if anchor_root_id:
-        anchor_index: Optional[int] = None
-        if anchor_root_id in root_index_map:
-            anchor_index = root_index_map[anchor_root_id]
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
+    editing_root_index: Optional[int],
+) -> Tuple[int, int]:
+    """Inclusive [start, end] root indices of the window; (0, -1) when there are no roots."""
+    last = len(ordered_root_ids) - 1
+    if last < 0:
+        return 0, -1
+    margin = ROOT_BAND_MARGIN
+    current_indices = [root_index_map[note_id] for note_id in client_known_note_ids if note_id in root_index_map]
+    visible = [
+        root_index_map[root_id]
+        for root_id in (visible_top_root_id, visible_bottom_root_id)
+        if root_id is not None and root_id in root_index_map
+    ]
+    if visible:
+        top, bottom = min(visible), max(visible)
+        target_start, target_end = max(0, top - margin), min(last, bottom + margin)
+        if current_indices:
+            start = _keep_or_move_edge(
+                current=min(current_indices), near=max(0, top - margin // 2),
+                far=max(0, top - 2 * margin), target=target_start,
+            )
+            end = _keep_or_move_edge(
+                current=max(current_indices), near=min(last, bottom + margin // 2),
+                far=min(last, bottom + 2 * margin), target=target_end,
+            )
         else:
-            known_root_indices = [
-                root_index_map[note_id]
-                for note_id in client_known_note_ids
-                if note_id in root_index_map
-            ]
-            if known_root_indices:
-                # The DOM anchor can disappear between polls. Continue from the
-                # furthest root that is still valid in the current view.
-                anchor_index = max(known_root_indices)
-        if anchor_index is not None:
-            while (
-                window_end < len(ordered_root_ids) - 1
-                and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
-            ):
-                window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
-    return window_end
+            start, end = target_start, target_end
+    elif current_indices:
+        # No viewport report (e.g. a refresh after an action): keep the band.
+        start, end = min(current_indices), max(current_indices)
+    else:
+        start, end = 0, min(last, margin)
+    if editing_root_index is not None and not start <= editing_root_index <= end:
+        # The edited note is what the user is looking at; centre on it.
+        start, end = max(0, editing_root_index - margin), min(last, editing_root_index + margin)
+    assert 0 <= start <= end <= last
+    return start, end
 
 
 def _timestamp_iso(record: object, field_name: str) -> str:
@@ -462,12 +485,14 @@ class _ViewSelection:
     scope: SearchScope
     visible_roots: List[str]
     forced_open_ids: Set[str]
+    window_start: int
+    root_before_window: Optional[str]
 
 
 def _select_view(
     *, editing_note_id: str | None, search: str | None, sort_mode: str,
-    client_known_note_ids: Set[str] | None, client_seen_root_ids: Set[str] | None,
-    anchor_root_id: str | None, is_untagged_view: bool,
+    client_known_note_ids: Set[str], visible_top_root_id: str | None,
+    visible_bottom_root_id: str | None, is_untagged_view: bool,
     traversal_cache: _SnapshotTraversalCache,
 ) -> _ViewSelection:
     normalized_sort_mode = normalize_sort_mode(sort_mode)
@@ -509,20 +534,20 @@ def _select_view(
         assert search_scope.allowed_note_ids is not None
         roots = search_scope.search_root_ids_ordered
     root_index = {root_id: index for index, root_id in enumerate(roots)}
-    # A first view request has no client baseline or previously seen roots.
-    known_ids = client_known_note_ids
-    if known_ids is None:
-        known_ids = set()
-    seen_roots = client_seen_root_ids
-    if seen_roots is None:
-        seen_roots = set()
-    seen_indices = {root_index[root_id] for root_id in seen_roots if root_id in root_index}
-    window_end = _determine_root_window_end(
-        roots, root_index, known_ids, seen_indices, editing_note_id, anchor_root_id,
+    editing_root_index = None
+    if editing_note_id is not None:
+        editing_root_index = _root_index_of_note(editing_note_id, root_index, traversal_cache)
+    window_start, window_end = _determine_root_band(
+        ordered_root_ids=roots, root_index_map=root_index, client_known_note_ids=client_known_note_ids,
+        visible_top_root_id=visible_top_root_id, visible_bottom_root_id=visible_bottom_root_id,
+        editing_root_index=editing_root_index,
     )
+    root_before_window = None
+    if window_start > 0:
+        root_before_window = roots[window_start - 1]
     return _ViewSelection(
         normalized_sort_mode, root_sort_timestamps, root_count_total, search_scope,
-        roots[:window_end + 1], forced_open_ids,
+        roots[window_start:window_end + 1], forced_open_ids, window_start, root_before_window,
     )
 
 
@@ -709,6 +734,17 @@ def _cached_note_view_html(
     return rendered
 
 
+def _sort_key_before_window(selection: _ViewSelection) -> str:
+    if selection.root_before_window is None:
+        return ""
+    buckets = build_root_sort_buckets(
+        [selection.root_before_window], selection.sort_mode, root_timestamps=selection.root_timestamps,
+    )
+    if selection.root_before_window not in buckets:
+        return ""
+    return buckets[selection.root_before_window]["key"]
+
+
 def _render_view_note(
     rec: NoteRecord, *, editing_note_id: str | None, is_search_redacted: bool,
     force_uncollapsed_ids: Set[str], filter_active: bool,
@@ -790,9 +826,9 @@ def build_view_state(
     editing_note_id: Optional[str],
     search: Optional[str],
     sort_mode: str,
-    client_known_note_ids: Optional[Set[str]],
-    client_seen_root_ids: Optional[Set[str]],
-    anchor_root_id: Optional[str],
+    client_known_note_ids: Set[str],
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
     is_untagged_view: bool,
 ) -> ViewState:
     if not isinstance(is_untagged_view, bool):
@@ -821,8 +857,8 @@ def build_view_state(
 
     selection = _select_view(
         editing_note_id=editing_note_id, search=search, sort_mode=sort_mode,
-        client_known_note_ids=client_known_note_ids, client_seen_root_ids=client_seen_root_ids,
-        anchor_root_id=anchor_root_id, is_untagged_view=is_untagged_view,
+        client_known_note_ids=client_known_note_ids, visible_top_root_id=visible_top_root_id,
+        visible_bottom_root_id=visible_bottom_root_id, is_untagged_view=is_untagged_view,
         traversal_cache=traversal_cache,
     )
     filter_active = selection.scope.search_active
@@ -917,6 +953,12 @@ def build_view_state(
             selection.sort_mode,
             root_timestamps=selection.root_timestamps,
         ),
+        # Index of the first windowed root among all roots in this view, and
+        # the date bucket just above the window, so the browser knows what lies
+        # beyond each edge and only starts a date header where the day changes.
+        "rootWindowStart": selection.window_start,
+        "rootBandMargin": ROOT_BAND_MARGIN,
+        "rootSortKeyBeforeWindow": _sort_key_before_window(selection),
     }
 
     if filter_active:
@@ -945,9 +987,9 @@ def build_view_snapshot(
     editing_note_id: Optional[str],
     search: Optional[str],
     sort_mode: str,
-    client_known_note_ids: Optional[Set[str]],
-    client_seen_root_ids: Optional[Set[str]],
-    anchor_root_id: Optional[str],
+    client_known_note_ids: Set[str],
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
     is_untagged_view: bool,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
@@ -955,8 +997,8 @@ def build_view_snapshot(
         search=search,
         sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
-        client_seen_root_ids=client_seen_root_ids,
-        anchor_root_id=anchor_root_id,
+        visible_top_root_id=visible_top_root_id,
+        visible_bottom_root_id=visible_bottom_root_id,
         is_untagged_view=is_untagged_view,
     )
     return state.structure, state.payloads, state.locks

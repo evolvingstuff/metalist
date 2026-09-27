@@ -74,8 +74,8 @@ def test_snapshot_reads_each_hierarchy_branch_once(monkeypatch):
         search=None,
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -84,20 +84,73 @@ def test_snapshot_reads_each_hierarchy_branch_once(monkeypatch):
     assert store.get_note_calls == note_count
 
 
-def test_stale_anchor_extends_from_last_known_root():
-    ordered_root_ids = [f"root-{index}" for index in range(120)]
-    root_index_map = {
-        root_id: index
-        for index, root_id in enumerate(ordered_root_ids)
-    }
-
-    window_end = snapshot_module._determine_root_window_end(
-        ordered_root_ids=ordered_root_ids,
-        root_index_map=root_index_map,
-        client_known_note_ids={"root-49"},
-        seen_root_indices=set(),
-        editing_note_id=None,
-        anchor_root_id="deleted-root",
+def _band(*, count, known, top, bottom, editing):
+    roots = [f"root-{index}" for index in range(count)]
+    index_map = {root_id: index for index, root_id in enumerate(roots)}
+    top_id = None
+    if top is not None:
+        top_id = f"root-{top}"
+    bottom_id = None
+    if bottom is not None:
+        bottom_id = f"root-{bottom}"
+    return snapshot_module._determine_root_band(
+        ordered_root_ids=roots, root_index_map=index_map,
+        client_known_note_ids={f"root-{index}" for index in known},
+        visible_top_root_id=top_id, visible_bottom_root_id=bottom_id,
+        editing_root_index=editing,
     )
 
-    assert window_end == 99
+
+def test_band_starts_at_top_without_viewport_or_warm_view():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    assert _band(count=1000, known=(), top=None, bottom=None, editing=None) == (0, margin)
+    assert _band(count=10, known=(), top=None, bottom=None, editing=None) == (0, 9)
+    assert _band(count=0, known=(), top=None, bottom=None, editing=None) == (0, -1)
+
+
+def test_band_surrounds_visible_roots_by_margin():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    assert _band(count=1000, known=(), top=500, bottom=504, editing=None) == (500 - margin, 504 + margin)
+    assert _band(count=1000, known=(), top=3, bottom=5, editing=None) == (0, 5 + margin)
+    assert _band(count=520, known=(), top=500, bottom=510, editing=None) == (500 - margin, 519)
+
+
+def test_band_edges_stay_put_while_viewport_moves_inside():
+    # Both edges are between half and twice the margin from the visible roots.
+    assert _band(count=1000, known=range(400, 601), top=480, bottom=484, editing=None) == (400, 600)
+
+
+def test_band_edge_moves_out_when_viewport_nears_it():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    # The bottom edge is within half the margin of the viewport, so it moves out;
+    # the top edge is still within twice the margin, so it stays.
+    assert _band(count=1000, known=range(430, 601), top=580, bottom=584, editing=None) == (430, 584 + margin)
+
+
+def test_band_unloads_edge_left_far_behind():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    # The top edge is more than twice the margin above the viewport: pull it in.
+    assert _band(count=1000, known=range(400, 661), top=580, bottom=584, editing=None) == (580 - margin, 660)
+
+
+def test_band_far_jump_rebuilds_around_viewport():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    assert _band(count=1000, known=range(0, 150), top=800, bottom=805, editing=None) == (800 - margin, 805 + margin)
+
+
+def test_band_keeps_warm_window_when_visible_roots_are_unknown():
+    assert _band(count=1000, known=range(300, 451), top=None, bottom=None, editing=None) == (300, 450)
+    # Visible roots that no longer exist count as unknown.
+    roots = [f"root-{index}" for index in range(1000)]
+    index_map = {root_id: index for index, root_id in enumerate(roots)}
+    assert snapshot_module._determine_root_band(
+        ordered_root_ids=roots, root_index_map=index_map,
+        client_known_note_ids={f"root-{index}" for index in range(300, 451)},
+        visible_top_root_id="deleted-root", visible_bottom_root_id="deleted-root",
+        editing_root_index=None,
+    ) == (300, 450)
+
+
+def test_band_recentres_on_edited_root_outside_it():
+    margin = snapshot_module.ROOT_BAND_MARGIN
+    assert _band(count=1000, known=range(400, 601), top=480, bottom=484, editing=0) == (0, margin)

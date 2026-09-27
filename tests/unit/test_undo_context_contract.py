@@ -25,7 +25,8 @@ def _view_request(undo_context: str) -> dict[str, object]:
         "tabId": "tab-1",
         "undoContext": undo_context,
         "tabViewEmpty": True,
-        "visibleRootAnchorId": None,
+        "visibleTopRootId": None,
+            "visibleBottomRootId": None,
         "isUntaggedView": False,
     }
 

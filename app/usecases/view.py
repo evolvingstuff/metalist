@@ -21,8 +21,8 @@ class CmdView(QueryCommand):
             editing_note_id=self.editing_note_id,
             search=self.search,
             sort_mode="normal",
-            client_known_note_ids=None,
-            client_seen_root_ids=None,
-            anchor_root_id=None,
+            client_known_note_ids=set(),
+            visible_top_root_id=None,
+            visible_bottom_root_id=None,
             is_untagged_view=False,
         )

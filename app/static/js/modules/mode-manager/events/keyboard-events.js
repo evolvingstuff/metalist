@@ -3228,7 +3228,10 @@ export async function switchToTabContext(tabId, options) {
 		if (!dismissedUntaggedView) {
 			cacheNotesDomForTab(previousTabId);
 		}
-		restoreNotesDomForTab(tabId);
+		const restoredDom = restoreNotesDomForTab(tabId);
+		if (restoredDom.restored) {
+			ModeContext.restoreScrollForActiveTabNow();
+		}
 
 		syncSearchInputField();
 		updateSearchContextsList();

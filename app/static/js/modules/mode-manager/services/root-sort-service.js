@@ -58,7 +58,9 @@ export function isRootDateBucketSortMode(sortMode) {
     return false;
 }
 
-export function buildRootDateSeparatorPlan(rootIds, rootSortBuckets) {
+// sortKeyBeforeWindow: the date bucket of the root just above the loaded band
+// ('' at the first root), so a band that starts mid-day shows no header.
+export function buildRootDateSeparatorPlan(rootIds, rootSortBuckets, sortKeyBeforeWindow) {
     if (!Array.isArray(rootIds)) {
         throw new Error('rootIds must be an array');
     }
@@ -66,8 +68,11 @@ export function buildRootDateSeparatorPlan(rootIds, rootSortBuckets) {
         throw new Error('rootSortBuckets must be an object');
     }
 
+    if (typeof sortKeyBeforeWindow !== 'string') {
+        throw new Error('sortKeyBeforeWindow must be a string');
+    }
     const plan = [];
-    let previousKey = null;
+    let previousKey = sortKeyBeforeWindow === '' ? null : sortKeyBeforeWindow;
     for (const rootId of rootIds) {
         if (typeof rootId !== 'string' || rootId.length === 0) {
             throw new Error('rootIds entries must be non-empty strings');

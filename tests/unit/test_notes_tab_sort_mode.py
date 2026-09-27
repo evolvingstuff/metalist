@@ -66,7 +66,8 @@ def test_view_diff_returns_400_for_invalid_search_before_undo_reset(
                 "tabId": "tab-1",
                 "undoContext": "tab:tab-1|search:|epoch:0",
                 "tabViewEmpty": True,
-                "visibleRootAnchorId": None,
+                "visibleTopRootId": None,
+            "visibleBottomRootId": None,
                 "isUntaggedView": False,
             }
         )

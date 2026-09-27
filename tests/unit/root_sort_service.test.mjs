@@ -25,6 +25,7 @@ test('buildRootDateSeparatorPlan emits one separator per day bucket transition',
             'root-c': { key: '2026-04-18', label: '2026/04/18 - Saturday' },
             'root-d': { key: '2026-04-17', label: '2026/04/17 - Friday' },
         },
+        '',
     );
 
     assert.deepEqual(plan, [
@@ -40,4 +41,15 @@ test('getRootSortModeIndicatorLabel returns dismissible pill text for sorted mod
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.UPDATED), 'Sorted by datetime last updated');
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.ALPHABETICAL), 'Sorted alphabetically');
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.CONTENT_VOLUME), 'Sorted by content volume');
+});
+
+test('buildRootDateSeparatorPlan continues the day bucket from above the loaded band', () => {
+    const buckets = {
+        'root-b': { key: '2026-04-19', label: '2026/04/19 - Sunday' },
+        'root-c': { key: '2026-04-18', label: '2026/04/18 - Saturday' },
+    };
+    const plan = buildRootDateSeparatorPlan(['root-b', 'root-c'], buckets, '2026-04-19');
+
+    assert.deepEqual(plan.map((entry) => entry.rootId), ['root-c']);
+    assert.deepEqual(buildRootDateSeparatorPlan(['root-b'], buckets, '2026-04-20').map((entry) => entry.rootId), ['root-b']);
 });

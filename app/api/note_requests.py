@@ -57,7 +57,8 @@ class ViewDiffRequest(TypedDict):
     tabId: Identifier
     undoContext: UndoContext
     tabViewEmpty: bool
-    visibleRootAnchorId: Text | None
+    visibleTopRootId: Text | None
+    visibleBottomRootId: Text | None
     isUntaggedView: bool
 
 @with_config(ConfigDict(strict=True))

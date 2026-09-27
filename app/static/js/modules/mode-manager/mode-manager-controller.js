@@ -1,6 +1,7 @@
 console.log('+++ ModeManager: Module loaded');
 
 import { ModeContextInstance as ModeContext } from './mode-context.js';
+import { CommandGate } from './services/command-gate-service.js';
 import * as Logger from './mode-logger.js';
 
 import { initKeyboardEvents } from './events/keyboard-events.js';
@@ -58,7 +59,13 @@ const ModeManager = {
         await initializeSearchEvents();
         startPolling();
         startInfiniteScrollMonitor();
-        initializeScrollToTopButton();
+        initializeScrollToTopButton({
+            hasRootsAboveWindow: () => ModeContext.hasRootsAboveWindow(),
+            jumpToListTop: () => CommandGate.run('scrollToTop.list', async () => {
+                const { actionJumpToListTop } = await import('./actions/ui-actions.js');
+                await actionJumpToListTop('scrollToTop');
+            }),
+        });
                     
         Logger.logDebug('Event handlers registered', { config });
     },

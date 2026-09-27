@@ -89,8 +89,8 @@ def test_untagged_view_shows_notes_without_non_meta_effective_tags(
         search="journal",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=True,
     )
 
@@ -147,8 +147,8 @@ def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyP
         search="asdf",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -201,8 +201,8 @@ def test_search_snapshot_does_not_include_children_of_collapsed_root(monkeypatch
         search="asdf",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -258,8 +258,8 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
         search="asdf",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -344,8 +344,8 @@ def test_or_query_for_two_child_uuids_redacts_unrelated_same_root_sibling(
         search=f"{first_match_id} OR {second_match_id}",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -400,8 +400,8 @@ def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pyt
         search="scratchpad",
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
