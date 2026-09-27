@@ -145,7 +145,10 @@ export async function createTabOnServer(copyFromTabId) {
     if (typeof copyFromTabId !== 'string' || copyFromTabId.length === 0) {
         throw new Error('copyFromTabId must be a non-empty string');
     }
-    const response = await callTabStateApiAt(TAB_STATE_NEW_TAB_ENDPOINT, 'POST', { copyFromTabId });
+    const response = await callTabStateApiAt(TAB_STATE_NEW_TAB_ENDPOINT, 'POST', {
+        copyFromTabId,
+        clientId: ModeContext.clientId,
+    });
     captureServerSignature(response);
     return response;
 }

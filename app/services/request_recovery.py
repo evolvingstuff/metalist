@@ -34,10 +34,14 @@ def register_runtime_recovery() -> None:
         dek = encryption.dek
     undo = capture_undo_state()
     sync = capture_sync_state()
+    # A failed request never delivered its view, so the browser still shows the
+    # warm view recorded before the request.
+    warm_views = view_cache.capture()
 
     def recover() -> None:
         restore_undo_state(undo)
         restore_sync_state(sync)
+        view_cache.restore(warm_views)
         if not (state.did_write or state.recoveries):
             return
         recovered = False

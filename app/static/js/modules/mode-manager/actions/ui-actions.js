@@ -54,6 +54,25 @@ function updateSearchResultsCount(snapshot, tabId) {
     el.textContent = total.toLocaleString('en-US');
 }
 
+export function isViewRequestInFlight() {
+    return moduleState.viewRequestInFlight;
+}
+
+// Resolves once no notes.view request is in flight, i.e. its response has been
+// applied. Anything that changes the active tab must await this first.
+export async function waitForViewRequestIdle() {
+    const waitStartedAt = performance.now();
+    while (moduleState.viewRequestInFlight) {
+        const waitedMs = performance.now() - waitStartedAt;
+        if (waitedMs > 5000) {
+            throw new Error('notes.view blocked >5s waiting for in-flight request');
+        }
+        await new Promise((resolve) => {
+            window.setTimeout(resolve, 25);
+        });
+    }
+}
+
 export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
@@ -89,16 +108,7 @@ export async function actionRefreshAndMaybeSelect(options) {
             return null;
         }
 
-        const waitStartedAt = performance.now();
-        while (moduleState.viewRequestInFlight) {
-            const waitedMs = performance.now() - waitStartedAt;
-            if (waitedMs > 5000) {
-                throw new Error('notes.view blocked >5s waiting for in-flight request');
-            }
-            await new Promise((resolve) => {
-                window.setTimeout(resolve, 25);
-            });
-        }
+        await waitForViewRequestIdle();
     }
 
     if (resetViewCacheBeforeFetch) {
@@ -123,12 +133,12 @@ export async function actionRefreshAndMaybeSelect(options) {
         if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
             throw new Error('notes.view response missing snapshot payload');
         }
+        // The server has already recorded this response as the tab's warm view,
+        // so it must be applied. Tab changes wait for in-flight view requests.
         if (ModeContext.activeTabId !== requestTabId) {
-            Logger.logDebug('Discarding snapshot for inactive tab', {
-                requestTabId,
-                activeTabId: ModeContext.activeTabId,
-            });
-            return null;
+            throw new Error(
+                `notes.view response for tab ${requestTabId} arrived after the active tab changed to ${ModeContext.activeTabId}`,
+            );
         }
         const { snapshot } = viewResponse;
         const hasDiffOps = Array.isArray(snapshot.diffOps);

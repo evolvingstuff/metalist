@@ -3175,10 +3175,19 @@ export function updateSearchContextsList() {
     updateReferenceSourceIndicator();
 }
 
+// The server records each notes.view response as the requesting tab's warm
+// view, so a response must land in its own tab. Anything that changes which
+// tab is active, or clears tab DOM, first lets in-flight view requests apply.
+async function settleViewRequestsBeforeTabChange() {
+    const { waitForViewRequestIdle } = await import('../actions/ui-actions.js');
+    await waitForViewRequestIdle();
+}
+
 export async function switchToTabContext(tabId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('switchToTabContext requires options object');
 	}
+    await settleViewRequestsBeforeTabChange();
     const canAnimatePreviousView = !ModeContext.isUntaggedView
         && ModeContext.activeTabSortMode === 'normal'
         && !isViewingReferenceSource();
@@ -3214,6 +3223,7 @@ export async function switchToTabContext(tabId, options) {
 	await (async () => {
 		await persistCurrentTabState();
 
+		await settleViewRequestsBeforeTabChange();
 		ModeContext.switchToTab(tabId, { force: true });
 		if (!dismissedUntaggedView) {
 			cacheNotesDomForTab(previousTabId);
@@ -3344,6 +3354,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
         ...getDuplicateTabCloneOptions(sourceHashCount),
     });
 
+    await settleViewRequestsBeforeTabChange();
     ModeContext.hydrateTabState(response);
     ModeContext.cloneTabRedactedReveals(sourceTabId, newTabId);
 
@@ -3411,6 +3422,7 @@ async function createBlankSearchContextFromHover() {
     newTab.scrollAnchor = null;
     newTab.anchorRootId = null;
 
+    await settleViewRequestsBeforeTabChange();
     ModeContext.hydrateTabState(response);
     ModeContext.resetTabDiffCache(newTabId, { preserveRootAnchor: false });
 
@@ -3604,6 +3616,7 @@ async function deleteTabContext(deleteTabId) {
 	if (ModeContext.isEditing) {
 		await actionSaveAndExitEditingWithoutRefreshing();
 	}
+    await settleViewRequestsBeforeTabChange();
     if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
         throw new Error('deleteTabId is required for tab deletion');
     }
@@ -3640,6 +3653,7 @@ async function deleteTabContext(deleteTabId) {
     await persistTabStateSnapshot();
 
     const response = await deleteTabOnServer(deleteTabId);
+    await settleViewRequestsBeforeTabChange();
     ModeContext.hydrateTabState(response, {
         preserveActiveRootTracking: deleteTabId !== activeBeforeDelete,
     });

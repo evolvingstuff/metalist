@@ -12,7 +12,6 @@ from app.services.ontology_rules_store import rename_tag_everywhere
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.tag_rename import rename_tag_in_tag_bar
-from app.services.view_cache import view_cache
 
 
 def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
@@ -72,7 +71,6 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
         cache_note_tags(note_id, tags)
         store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
 
-    view_cache.clear()
     update_uuid = generate_new_uuid()
     return {
         'ok': True,

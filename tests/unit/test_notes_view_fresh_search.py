@@ -45,7 +45,7 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
             "search": "journal",
             "tabId": "0",
             "undoContext": "tab:0|search:journal|epoch:0",
-            "clientNoteUuidHashes": {},
+            "tabViewEmpty": True,
             "visibleRootAnchorId": None,
             "isUntaggedView": False,
         }
@@ -103,7 +103,7 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
             "search": "journal",
             "tabId": "0",
             "undoContext": "tab:0|search:journal|epoch:0",
-            "clientNoteUuidHashes": {"root-a": "old-hash"},
+            "tabViewEmpty": False,
             "visibleRootAnchorId": None,
             "isUntaggedView": False,
         }

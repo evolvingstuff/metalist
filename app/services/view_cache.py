@@ -1,122 +1,99 @@
 from __future__ import annotations
 
-from collections import OrderedDict
+from dataclasses import dataclass
 from threading import RLock
-from time import monotonic
-from app.services.resource_limits import VIEW_BYTES, CLIENT_ENTRIES, CLIENT_IDLE_SECONDS, retained_bytes
-
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.services.view_state import ViewState
 
 
-class ViewCache:
-    """In-memory cache mapping each client tab/view context to its last rendered state."""
+@dataclass(frozen=True)
+class WarmView:
+    """What one browser tab currently displays: the last view the server sent it.
 
-    def __init__(self) -> None:
-        self._cache = OrderedDict()
-        self._sizes = {}
-        self._used = {}
-        self._lock = RLock()
-        self._hits = self._misses = self._evictions = 0
+    Holds only what diffing needs (hierarchy, per-note hashes, locks), never
+    rendered note HTML, so a large window stays small.
+    """
 
-    @staticmethod
-    def _normalize(value: Optional[str]) -> str:
-        if value is None:
-            return ''
-        return value
+    children_by_parent: Dict[Optional[str], List[str]]
+    hash_by_id: Dict[str, str]
+    locks: Dict[str, str]
 
-    def _key(
-        self,
-        client_id: str,
-        tab_id: Optional[str],
-        search: Optional[str],
-        sort_mode: str,
-        is_untagged_view: bool,
-    ) -> Tuple[str, str, str, str, bool]:
-        normalized_tab = tab_id
-        if normalized_tab is None:
-            normalized_tab = '0'
-        normalized_search = self._normalize(search)
-        return (
-            client_id,
-            normalized_tab,
-            normalized_search,
-            sort_mode,
-            is_untagged_view,
+    @classmethod
+    def from_view_state(cls, state: ViewState) -> "WarmView":
+        return cls(
+            children_by_parent=state.children_by_parent,
+            hash_by_id=state.hash_by_id,
+            locks=state.locks,
         )
 
-    def get(
-        self,
-        *,
-        client_id: str,
-        tab_id: Optional[str],
-        search: Optional[str],
-        sort_mode: str,
-        is_untagged_view: bool,
-    ) -> Optional[ViewState]:
-        key = self._key(client_id, tab_id, search, sort_mode, is_untagged_view)
+
+class ViewCache:
+    """Warm view per (client, tab), kept for the tab's lifetime.
+
+    Every notes.view response is diffed against the tab's warm view and then
+    becomes the new one, so the browser never sends its state. Entries are
+    removed only when their tab is deleted or the session ends (login,
+    passwordless claim, logout, lock, restore); a tab with no warm view gets
+    its initial window (structure plus every windowed note).
+    """
+
+    def __init__(self) -> None:
+        self._views: Dict[Tuple[str, str], WarmView] = {}
+        self._lock = RLock()
+
+    @staticmethod
+    def _key(client_id: str, tab_id: str) -> Tuple[str, str]:
+        if not isinstance(client_id, str) or client_id == "":
+            raise TypeError("client_id must be a non-empty string")
+        if not isinstance(tab_id, str) or tab_id == "":
+            raise TypeError("tab_id must be a non-empty string")
+        return client_id, tab_id
+
+    def get(self, *, client_id: str, tab_id: str) -> WarmView | None:
+        key = self._key(client_id, tab_id)
         with self._lock:
-            self._prune()
-            if key not in self._cache:
-                self._misses += 1
+            if key not in self._views:
                 return None
-            self._hits += 1
-            self._cache.move_to_end(key)
-            self._used[key] = monotonic()
-            return self._cache[key]
+            return self._views[key]
 
-    def set(
-        self,
-        *,
-        client_id: str,
-        tab_id: Optional[str],
-        search: Optional[str],
-        sort_mode: str,
-        is_untagged_view: bool,
-        state: ViewState,
-    ) -> None:
-        key = self._key(client_id, tab_id, search, sort_mode, is_untagged_view)
-        size = retained_bytes((key, state))
+    def set(self, *, client_id: str, tab_id: str, state: ViewState) -> None:
+        key = self._key(client_id, tab_id)
+        warm_view = WarmView.from_view_state(state)
         with self._lock:
-            for old in tuple(self._cache):
-                if old[:2] == key[:2]:
-                    self._discard(old)
-            if size > VIEW_BYTES:
-                return  # A missing baseline uses the existing full-snapshot protocol.
-            self._cache[key] = state
-            self._sizes[key] = size
-            self._used[key] = monotonic()
-            self._prune()
+            self._views[key] = warm_view
 
-    def _discard(self, key):
-        del self._cache[key], self._sizes[key], self._used[key]
-        self._evictions += 1
-
-    def _prune(self):
-        now = monotonic()
-        for key in tuple(self._cache):
-            if now - self._used[key] >= CLIENT_IDLE_SECONDS:
-                self._discard(key)
-        while len(self._cache) > CLIENT_ENTRIES or sum(self._sizes.values()) > VIEW_BYTES:
-            self._discard(next(iter(self._cache)))
+    def copy_tab(self, *, client_id: str, source_tab_id: str, target_tab_id: str) -> None:
+        """Seed a duplicated tab, whose DOM is cloned from the source tab."""
+        source_key = self._key(client_id, source_tab_id)
+        target_key = self._key(client_id, target_tab_id)
+        with self._lock:
+            if source_key in self._views:
+                self._views[target_key] = self._views[source_key]
 
     def discard_tab(self, tab_id: str) -> None:
         with self._lock:
-            for key in tuple(self._cache):
+            for key in tuple(self._views):
                 if key[1] == tab_id:
-                    self._discard(key)
+                    del self._views[key]
+
+    def capture(self) -> Dict[Tuple[str, str], WarmView]:
+        # WarmView entries are immutable; a shallow copy is an exact snapshot.
+        with self._lock:
+            return dict(self._views)
+
+    def restore(self, snapshot: Dict[Tuple[str, str], WarmView]) -> None:
+        with self._lock:
+            self._views.clear()
+            self._views.update(snapshot)
 
     def diagnostics(self) -> dict:
         with self._lock:
-            self._prune()
-            return dict(entries=len(self._cache), bytes=sum(self._sizes.values()), hits=self._hits, misses=self._misses, evictions=self._evictions)
+            return dict(entries=len(self._views), notes=sum(len(view.hash_by_id) for view in self._views.values()))
 
     def clear(self) -> None:
         with self._lock:
-            self._cache.clear()
-            self._sizes.clear()
-            self._used.clear()
+            self._views.clear()
 
 
 view_cache = ViewCache()

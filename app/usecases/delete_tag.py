@@ -10,7 +10,6 @@ from app.services.ontology_rules_store import delete_tag_everywhere as delete_ta
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.tag_rename import delete_tag_from_tag_bar
-from app.services.view_cache import view_cache
 
 
 def apply_delete_tag_everywhere(*, tag: str, token: str) -> dict:
@@ -57,7 +56,6 @@ def apply_delete_tag_everywhere(*, tag: str, token: str) -> dict:
         store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
 
     note_store.rebuild_search_index_tag_terms()
-    view_cache.clear()
     return {
         'ok': True,
         'deletedNoteCount': len(updates),

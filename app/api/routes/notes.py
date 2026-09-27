@@ -241,16 +241,15 @@ def view_diff(payload: ViewDiffRequest):
     search = payload["search"]
     tab_id = payload["tabId"]
     undo_context = payload["undoContext"]
-    client_note_uuid_hashes = payload["clientNoteUuidHashes"]
+    tab_view_empty = payload["tabViewEmpty"]
     anchor_root_id = payload["visibleRootAnchorId"]
     is_untagged_view = payload["isUntaggedView"]
     if not isinstance(is_untagged_view, bool):
         raise TypeError("isUntaggedView must be a boolean")
+    if not isinstance(tab_view_empty, bool):
+        raise TypeError("tabViewEmpty must be a boolean")
 
     sort_mode = _resolve_tab_sort_mode(tab_id)
-    if not isinstance(client_note_uuid_hashes, dict):
-        raise TypeError("clientNoteUuidHashes must be an object")
-
     normalized_search = search
     if isinstance(normalized_search, str) and normalized_search == "":
         normalized_search = None
@@ -278,164 +277,59 @@ def view_diff(payload: ViewDiffRequest):
         if not note_store.has_note(normalized_editing_note_id):
             normalized_editing_note_id = None
 
-    # Known hashes plus a viewport anchor so the server can extend the window
-    client_hashes = {
-        k: v for k, v in client_note_uuid_hashes.items() if k
-    }
-    # Fallback: if client didn't provide an anchor, use the last known root from cached state
-    cache_key = {
-        "client_id": client_id,
-        "tab_id": tab_id,
-        "search": normalized_search,
-        "sort_mode": sort_mode,
-        "is_untagged_view": is_untagged_view,
-    }
-    cached_state = view_cache.get(**cache_key)
-    if not anchor_root_id and cached_state and client_hashes:
-        last_roots = list(cached_state.children_by_parent.get(None, []))
-        if last_roots:
-            anchor_root_id = last_roots[-1]
+    # The server keeps each tab's warm view (what that browser tab displays),
+    # so the browser sends only where it is. A tab with no warm view, or one
+    # whose browser shows nothing for it, gets its initial window.
+    warm_view = view_cache.get(client_id=client_id, tab_id=tab_id)
+    if tab_view_empty:
+        warm_view = None
+    client_known_note_ids: set[str] = set()
+    if warm_view is not None:
+        client_known_note_ids = set(warm_view.hash_by_id)
+        if not anchor_root_id and None in warm_view.children_by_parent:
+            last_roots = warm_view.children_by_parent[None]
+            if last_roots:
+                anchor_root_id = last_roots[-1]
 
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         search=normalized_search,
         sort_mode=sort_mode,
-        client_known_note_ids=set(client_hashes.keys()),
+        client_known_note_ids=client_known_note_ids,
         client_seen_root_ids=set(),
         anchor_root_id=anchor_root_id,
         is_untagged_view=is_untagged_view,
     )
     update_uuid = get_current_sync_uuid()
     root_ids = list(state.children_by_parent.get(None, []))
-    root_count_total = state.metadata["rootCountTotal"]
-    search_root_count_total = state.metadata["searchRootCountTotal"]
-
-    client_note_ids = set(client_hashes.keys())
-    current_note_ids = set(state.hash_by_id.keys())
-    if cached_state is None:
-        cached_note_ids = set()
-    else:
-        cached_note_ids = set(cached_state.hash_by_id.keys())
-    extra_client_ids = _unknown_client_note_ids(
-        client_note_ids=client_note_ids,
-        current_note_ids=current_note_ids,
-        cached_note_ids=cached_note_ids,
-    )
-    force_full_snapshot = bool(extra_client_ids)
-    if force_full_snapshot:
-        logger.info(
-            "notes.view forcing full snapshot (client has unknown ids): extra_count=%s",
-            len(extra_client_ids),
-        )
-
-    client_has_state = bool(client_hashes)
-
-    if not cached_state or force_full_snapshot:
-        view_cache.set(state=state, **cache_key)
-        if force_full_snapshot:
-            filtered_notes = dict(state.payloads)
-        else:
-            filtered_notes = {
-                note_id: data
-                for note_id, data in state.payloads.items()
-                if client_hashes.get(note_id) != data.get("hash")
-            }
-
-        # Optimization: when the server cache is cold but the client already has a
-        # complete, matching hash map for the visible window, avoid resending the
-        # full structure + note payloads. This is common when a new tab is created
-        # by cloning the existing DOM.
-        if client_has_state and not filtered_notes and not force_full_snapshot:
-            response_snapshot = {
-                "diffOps": [],
-                "notes": {},
-                "locks": state.locks,
-                "rootIds": root_ids,
-                "lockDiffs": {},
-                "updateUUID": update_uuid,
-                "version": VERSION,
-                "currentClientId": client_id,
-                "searchQuery": search,
-                "sortMode": sort_mode,
-                "isUntaggedView": is_untagged_view,
-                "rootCountTotal": root_count_total,
-                "searchRootCountTotal": search_root_count_total,
-                "rootSortBuckets": state.metadata["rootSortBuckets"],
-                "editingNoteId": normalized_editing_note_id,
-            }
-            return {"snapshot": response_snapshot, "updateUUID": update_uuid}
-
-        response_snapshot = {
-            "structure": state.structure,
-            "notes": filtered_notes,
-            "locks": state.locks,
-            "rootIds": root_ids,
-            "updateUUID": update_uuid,
-            "version": VERSION,
-            "currentClientId": client_id,
-            "searchQuery": search,
-            "sortMode": sort_mode,
-            "isUntaggedView": is_untagged_view,
-            "rootCountTotal": root_count_total,
-            "searchRootCountTotal": search_root_count_total,
-            "rootSortBuckets": state.metadata["rootSortBuckets"],
-            "editingNoteId": normalized_editing_note_id,
-        }
-        return {"snapshot": response_snapshot, "updateUUID": update_uuid}
-
-    if not client_has_state:
-        view_cache.set(state=state, **cache_key)
-        filtered_notes = {
-            note_id: data
-            for note_id, data in state.payloads.items()
-            if client_hashes.get(note_id) != data.get("hash")
-        }
-        response_snapshot = {
-            "structure": state.structure,
-            "notes": filtered_notes,
-            "locks": state.locks,
-            "rootIds": root_ids,
-            "updateUUID": update_uuid,
-            "version": VERSION,
-            "currentClientId": client_id,
-            "searchQuery": search,
-            "sortMode": sort_mode,
-            "isUntaggedView": is_untagged_view,
-            "rootCountTotal": root_count_total,
-            "searchRootCountTotal": search_root_count_total,
-            "rootSortBuckets": state.metadata["rootSortBuckets"],
-            "editingNoteId": normalized_editing_note_id,
-        }
-        return {"snapshot": response_snapshot, "updateUUID": update_uuid}
-
-    diff_ops = generate_diff_ops(cached_state, state)
-    note_updates = {
-        note_id: payload
-        for note_id, payload in state.payloads.items()
-        if cached_state.hash_by_id.get(note_id) != payload["hash"]
-    }
-
-    view_cache.set(state=state, **cache_key)
-
-    lock_diff = _compute_lock_diff(cached_state.locks, state.locks)
-
+    view_cache.set(client_id=client_id, tab_id=tab_id, state=state)
     response_snapshot = {
-        "diffOps": diff_ops,
-        "notes": note_updates,
+        "notes": {},
         "locks": state.locks,
         "rootIds": root_ids,
-        "lockDiffs": lock_diff,
         "updateUUID": update_uuid,
         "version": VERSION,
         "currentClientId": client_id,
         "searchQuery": search,
         "sortMode": sort_mode,
         "isUntaggedView": is_untagged_view,
-        "rootCountTotal": root_count_total,
-        "searchRootCountTotal": search_root_count_total,
+        "rootCountTotal": state.metadata["rootCountTotal"],
+        "searchRootCountTotal": state.metadata["searchRootCountTotal"],
         "rootSortBuckets": state.metadata["rootSortBuckets"],
         "editingNoteId": normalized_editing_note_id,
     }
+    if warm_view is None:
+        response_snapshot["structure"] = state.structure
+        response_snapshot["notes"] = dict(state.payloads)
+        return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+    response_snapshot["diffOps"] = generate_diff_ops(warm_view, state)
+    response_snapshot["notes"] = {
+        note_id: note_payload
+        for note_id, note_payload in state.payloads.items()
+        if note_id not in warm_view.hash_by_id or warm_view.hash_by_id[note_id] != note_payload["hash"]
+    }
+    response_snapshot["lockDiffs"] = _compute_lock_diff(warm_view.locks, state.locks)
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
 
@@ -501,6 +395,11 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
         response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
     if capture.captured_exception is not None:
         raise HTTPException(status_code=400, detail="Invalid or stale tab state") from capture.captured_exception
+    # The browser clones the source tab's DOM into the new tab, so the new tab
+    # starts from the source tab's warm view.
+    view_cache.copy_tab(
+        client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=response["newTabId"],
+    )
     return response
 
 
@@ -788,16 +687,6 @@ def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dic
         if note_id not in current:
             diff[note_id] = ""
     return diff
-
-
-def _unknown_client_note_ids(
-    *,
-    client_note_ids: set[str],
-    current_note_ids: set[str],
-    cached_note_ids: set[str],
-) -> set[str]:
-    stale_deleted_ids = client_note_ids - current_note_ids
-    return stale_deleted_ids - cached_note_ids
 
 
 # Stub endpoints for the rest of the notes API (501 Not Implemented)

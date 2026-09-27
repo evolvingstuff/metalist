@@ -683,7 +683,10 @@ export const NotesAPI = {
             search: searchQuery,
             tabId,
             isUntaggedView: ModeContext.isUntaggedView,
-            clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
+            // The server keeps this tab's warm view, so the browser sends only
+            // where it is. A tab holding no view (fresh, or reset locally)
+            // gets its initial window instead of a diff.
+            tabViewEmpty: ModeContext.getTabNoteHashCount(tabId) === 0,
             visibleRootAnchorId,
         };
 

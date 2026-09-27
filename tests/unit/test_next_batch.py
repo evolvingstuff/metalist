@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import pytest
-from app.services import view_cache as view_module, root_sorting
+from app.services import root_sorting
 from app.services.hierarchy import hierarchy_depths, validate_database_parent, HierarchyError
 from app.models.utils import render_note_data_read_only, note_data_to_html, note_data_to_plain_text
 from app.models import database as database_module
@@ -24,13 +24,13 @@ from app.usecases import copy_note
 from app.services import windows_process_control
 
 
-def test_view_cache_retains_only_current_search_per_tab():
+def test_view_cache_keeps_one_warm_view_per_tab():
     cache = ViewCache()
-    state = ViewState([], {}, {}, {}, {}, {})
     for number in range(200):
-        cache.set(client_id='client', tab_id='tab', search=str(number), sort_mode='normal', is_untagged_view=False, state=state)
-    assert len(cache._cache) == 1
-    assert cache.get(client_id='client', tab_id='tab', search='old', sort_mode='normal', is_untagged_view=False) is None
+        cache.set(client_id='client', tab_id='tab', state=ViewState([], {}, {}, {None: [str(number)]}, {str(number): 'h'}, {}))
+    assert cache.diagnostics()['entries'] == 1
+    assert cache.get(client_id='client', tab_id='tab').hash_by_id == {'199': 'h'}
+    assert cache.get(client_id='client', tab_id='other') is None
 
 
 def test_undo_history_discards_complete_old_operations():
@@ -42,11 +42,13 @@ def test_undo_history_discards_complete_old_operations():
     undo_state.reset_all_undo_state()
 
 
-def test_view_byte_budget_does_not_retain_oversized_baseline(monkeypatch):
-    monkeypatch.setattr(view_module, 'VIEW_BYTES', 4096)
+def test_warm_view_retains_structure_and_hashes_but_no_rendered_html():
     cache = ViewCache()
-    cache.set(client_id='client',tab_id='tab',search='',sort_mode='normal',is_untagged_view=False,state=ViewState([],{}, {},{}, {},{'large':'x'*8192}))
-    assert cache.diagnostics()['bytes'] == 0
+    rendered = {'note': {'content': 'x' * 8192, 'hash': 'h'}}
+    cache.set(client_id='client', tab_id='tab', state=ViewState([{'id': 'note'}], rendered, {}, {None: ['note']}, {'note': 'h'}, {}))
+    warm = cache.get(client_id='client', tab_id='tab')
+    assert warm.hash_by_id == {'note': 'h'}
+    assert not hasattr(warm, 'payloads')
 
 
 def test_oversized_undo_operation_clears_history_without_splitting(monkeypatch):
@@ -210,21 +212,46 @@ def test_protected_middleware_does_not_open_database_connections(monkeypatch):
     assert response.json() == {'ok': True}
 
 
-def test_client_expiry_releases_clipboard_locks_and_view_baselines(monkeypatch):
+def test_client_expiry_releases_clipboard_and_locks(monkeypatch):
     now = [0.0]
     monkeypatch.setattr(sync, 'monotonic', lambda: now[0])
-    monkeypatch.setattr(view_module, 'monotonic', lambda: now[0])
     sync.reset_state()
     sync.acquire_note_lock('note', 'old-client')
     sync.set_clipboard('old-client', [{'content':'private'}])
-    cache = ViewCache()
-    cache.set(client_id='old-client',tab_id='tab',search='',sort_mode='normal',is_untagged_view=False,state=ViewState([],{}, {},{}, {},{}))
     now[0] = 1801
     sync.touch_client('new-client')
     assert sync.get_all_locks() == {}
     assert sync._clipboards == {}
-    assert cache.diagnostics()['entries'] == 0
     sync.reset_state()
+
+
+def test_warm_views_last_for_the_tab_and_end_with_the_tab_or_session():
+    cache = ViewCache()
+    state = ViewState([], {}, {}, {None: ['root']}, {'root': 'h'}, {})
+    cache.set(client_id='client', tab_id='tab', state=state)
+    cache.set(client_id='client', tab_id='other', state=state)
+    # No idle or byte-budget eviction: a tab's warm view is what its browser shows.
+    assert cache.get(client_id='client', tab_id='tab') is not None
+    cache.discard_tab('other')
+    assert cache.get(client_id='client', tab_id='other') is None
+    cache.clear()
+    assert cache.diagnostics()['entries'] == 0
+
+
+def test_duplicated_tab_starts_from_source_warm_view():
+    cache = ViewCache()
+    cache.set(client_id='client', tab_id='source', state=ViewState([], {}, {}, {None: ['root']}, {'root': 'h'}, {}))
+    cache.copy_tab(client_id='client', source_tab_id='source', target_tab_id='copy')
+    assert cache.get(client_id='client', tab_id='copy') is cache.get(client_id='client', tab_id='source')
+
+
+def test_failed_request_restores_previous_warm_views():
+    cache = ViewCache()
+    cache.set(client_id='client', tab_id='tab', state=ViewState([], {}, {}, {None: ['before']}, {'before': 'h'}, {}))
+    snapshot = cache.capture()
+    cache.set(client_id='client', tab_id='tab', state=ViewState([], {}, {}, {None: ['after']}, {'after': 'h'}, {}))
+    cache.restore(snapshot)
+    assert cache.get(client_id='client', tab_id='tab').hash_by_id == {'before': 'h'}
 
 
 def test_cycles_fail_in_view_copy_and_export(monkeypatch, deep_store):

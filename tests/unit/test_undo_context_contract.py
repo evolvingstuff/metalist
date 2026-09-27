@@ -24,7 +24,7 @@ def _view_request(undo_context: str) -> dict[str, object]:
         "search": None,
         "tabId": "tab-1",
         "undoContext": undo_context,
-        "clientNoteUuidHashes": {},
+        "tabViewEmpty": True,
         "visibleRootAnchorId": None,
         "isUntaggedView": False,
     }
