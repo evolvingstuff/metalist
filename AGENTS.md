@@ -147,6 +147,12 @@ If the user says `PLAN:` (optionally followed by context):
 
 ### Testing and Commits
 
+#### Windows Line Endings
+Windows CI runners check out with `core.autocrlf=true`, which rewrites LF to CRLF in text files. Local runs on macOS or Linux never see this, so a test that hashes, compares or byte-reads committed files can pass locally and fail only on Windows. This happened with 0.10.0: vendored bundle checksums mismatched on Windows.
+
+- Before pushing a change that adds or alters such a test, or adds files whose exact bytes matter, run the Python unit suite in a Windows-style clone: `git -c core.autocrlf=true clone --branch <branch> . /tmp/metalist-crlf`. Then run `python -m pytest -q tests/unit` inside it. The clone contains only committed files, so commit first or copy the changed files in.
+- Files whose bytes are pinned or reviewed belong under a `-text` rule in `.gitattributes` (as `app/static/js/vendor/**` is), so every platform checks out identical bytes. Do not make a test tolerate line-ending differences instead.
+
 #### If Testing Fails
 If the user tests the code and reports failure:
 1. Suggest doing a `git reset --hard HEAD` to undo the changes.

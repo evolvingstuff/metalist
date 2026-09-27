@@ -1,0 +1,4 @@
+# Vendored JavaScript is reviewed bytes whose SHA-256 is pinned in
+# docs/security/vendor-manifest.json. Never convert its line endings, so
+# checkouts on Windows (core.autocrlf=true) hold the same bytes as everywhere else.
+app/static/js/vendor/** -text
