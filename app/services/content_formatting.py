@@ -1276,6 +1276,15 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
 
 
 def _tokenize_tag_bar(tags: str) -> List[str]:
+    # Without comments or wrapper openers the scanner below only splits on
+    # whitespace (str.isspace, the same set str.split uses), so take the
+    # C-speed path for plain tag strings.
+    if "/*" not in tags and not any(opener in tags for opener in _OPEN_TO_CLOSE):
+        return tags.split()
+    return _scan_tag_bar_tokens(tags)
+
+
+def _scan_tag_bar_tokens(tags: str) -> List[str]:
     tokens: List[str] = []
     index = 0
     while index < len(tags):

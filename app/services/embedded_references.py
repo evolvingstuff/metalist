@@ -558,14 +558,15 @@ def _collect_reference_tokens_in_text(
 
 
 def _find_next_reference_token_start(*, text: str, start: int) -> tuple[Optional[int], int, bool]:
-    index = start
-    while index < len(text):
-        if text.startswith("![[", index):
-            return index, 3, True
-        if text.startswith("[[", index):
-            return index, 2, False
-        index += 1
-    return None, 0, False
+    # An embed "![[" at i implies "[[" at i + 1, so the earliest token begins at
+    # the first "[[" or one character before it when that character is "!".
+    assert start >= 0
+    bracket_index = text.find("[[", start)
+    if bracket_index == -1:
+        return None, 0, False
+    if bracket_index > start and text[bracket_index - 1] == "!":
+        return bracket_index - 1, 3, True
+    return bracket_index, 2, False
 
 
 def _is_valid_embed_note_id(note_id: str) -> bool:

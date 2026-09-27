@@ -125,6 +125,8 @@ class SearchRecord:
 def extract_ordered_tags_for_search(tags: str) -> tuple[str, ...]:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
+    if tags == "":
+        return ()
 
     ordered_terms: list[str] = []
     seen_terms: set[str] = set()
@@ -204,13 +206,22 @@ class SearchIndex:
 
             processed = 0
             last_reported = 0
+            # Rebuild-local memos: notes repeat tag strings, and inherited tag
+            # sets repeat the same terms, so parse and casefold each only once.
+            explicit_terms_by_tags: Dict[str, FrozenSet[str]] = {}
+            casefold_by_term: Dict[str, str] = {}
             for record in materialized:
+                if record.tags not in explicit_terms_by_tags:
+                    explicit_terms_by_tags[record.tags] = extract_tags_for_search(record.tags)
+                explicit_tag_terms = explicit_terms_by_tags[record.tags]
                 self._insert_new_locked(
                     record.note_id,
                     record.content_text,
                     record.tags,
+                    explicit_tag_terms,
                     raw_tag_terms_by_id[record.note_id],
                     record.tag_terms,
+                    casefold_by_term,
                 )
                 processed += 1
                 if processed - last_reported >= progress_interval:
@@ -259,8 +270,10 @@ class SearchIndex:
                     note_id,
                     content_text,
                     tags,
+                    extract_tags_for_search(tags),
                     raw_tag_terms,
                     tag_terms,
+                    {},
                 )
 
             self._revision += 1
@@ -737,29 +750,38 @@ class SearchIndex:
         note_id: str,
         content_text: str,
         tags: str,
+        explicit_tag_terms: FrozenSet[str],
         raw_tag_terms: FrozenSet[str],
         tag_terms: FrozenSet[str],
+        casefold_by_term: Dict[str, str],
     ) -> None:
+        assert isinstance(explicit_tag_terms, frozenset)
         note_int_id = len(self._id_to_uuid)
         self._uuid_to_id[note_id] = note_int_id
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
         text_casefold = self._build_note_text_casefold(content_text, tags)
-        explicit_tag_terms = extract_tags_for_search(tags)
         self._note_text_casefold.append(text_casefold)
         self._note_explicit_tag_terms.append(explicit_tag_terms)
         self._note_raw_tag_terms.append(raw_tag_terms)
         self._note_tag_terms.append(tag_terms)
-        self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
 
         for term in explicit_tag_terms:
             self._explicit_tag_notes[term].add(note_int_id)
         for term in raw_tag_terms:
-            self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+            if term not in casefold_by_term:
+                casefold_by_term[term] = term.casefold()
+            self._raw_tag_notes_casefold[casefold_by_term[term]].add(note_int_id)
+        tag_terms_casefold = []
         for term in tag_terms:
+            if term not in casefold_by_term:
+                casefold_by_term[term] = term.casefold()
+            term_casefold = casefold_by_term[term]
+            tag_terms_casefold.append(term_casefold)
             self._tag_notes[term].add(note_int_id)
-            self._tag_notes_casefold[term.casefold()].add(note_int_id)
+            self._tag_notes_casefold[term_casefold].add(note_int_id)
+        self._note_tag_terms_casefold.append(frozenset(tag_terms_casefold))
 
     def _update_existing_locked(
         self,

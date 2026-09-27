@@ -1,6 +1,5 @@
 """Text processing utilities for the application."""
 
-import re
 from html.parser import HTMLParser
 
 
@@ -112,6 +111,6 @@ def strip_html(html_content: str) -> str:
     stripper.feed(html_content)
     text = stripper.get_data()
     
-    # Clean up extra whitespace
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    # Collapse whitespace runs. str.split() uses the same Unicode whitespace
+    # set as regex \s but runs several times faster on large notes.
+    return " ".join(text.split())

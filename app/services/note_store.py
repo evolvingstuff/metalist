@@ -7,7 +7,6 @@ metadata that the rest of the application relies on.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import RLock
@@ -39,20 +38,97 @@ from app.utils.text_utils import strip_html
 
 
 def _derive_own_tag_terms(*, tags: str, content_html: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
-    tag_terms = extract_tags_for_search(tags) | infer_image_tag_terms(
+    return _combine_own_tag_terms(
+        explicit_terms=_parse_tag_string_terms(tags),
+        content_html=content_html,
+    )
+
+
+def _combine_own_tag_terms(
+    *, explicit_terms: tuple[FrozenSet[str], FrozenSet[str]], content_html: str,
+) -> tuple[FrozenSet[str], FrozenSet[str]]:
+    tag_terms, non_meta_tag_terms = explicit_terms
+    image_terms = infer_image_tag_terms(
         content_html=content_html,
         is_image_file=file_registry.has_image_file,
     )
+    # Inferred image tags are meta tags, so they never change non-meta terms.
+    assert all(term.startswith("@") for term in image_terms)
+    if image_terms:
+        tag_terms = tag_terms | image_terms
+    return tag_terms, non_meta_tag_terms
+
+
+def _parse_tag_string_terms(tag_string: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
+    if not isinstance(tag_string, str):
+        raise TypeError("tag_string must be a string")
+    tag_terms = extract_tags_for_search(tag_string)
     non_meta_tag_terms = frozenset(term for term in tag_terms if not term.startswith("@"))
     return tag_terms, non_meta_tag_terms
 
 
-def _derive_proposed_tag_terms(proposed_tags: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
-    if not isinstance(proposed_tags, str):
-        raise TypeError("proposed_tags must be a string")
-    tag_terms = extract_tags_for_search(proposed_tags)
-    non_meta_tag_terms = frozenset(term for term in tag_terms if not term.startswith("@"))
-    return tag_terms, non_meta_tag_terms
+def _components_sources_first(dependencies: Mapping[str, Set[str]]) -> List[List[str]]:
+    """Strongly connected components of note -> source edges, sources first.
+
+    Iterative Tarjan: a component is emitted only after every component it
+    draws from, so one pass in emission order sees finalized sources.
+    """
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    on_stack: set[str] = set()
+    components: List[List[str]] = []
+    for root in dependencies:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(dependencies[root]))]
+        while work:
+            node, sources = work[-1]
+            descended = False
+            for source in sources:
+                if source not in dependencies:
+                    continue
+                if source not in index:
+                    index[source] = low[source] = len(index)
+                    stack.append(source)
+                    on_stack.add(source)
+                    work.append((source, iter(dependencies[source])))
+                    descended = True
+                    break
+                if source in on_stack:
+                    low[node] = min(low[node], index[source])
+            if descended:
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] != index[node]:
+                continue
+            component: List[str] = []
+            while True:
+                member = stack.pop()
+                on_stack.remove(member)
+                component.append(member)
+                if member == node:
+                    break
+            components.append(component)
+    assert len(index) == len(dependencies) and not stack
+    return components
+
+
+def _union_term_sets(parts: List[FrozenSet[str]]) -> FrozenSet[str]:
+    # Start from the largest set and reuse it when the rest add nothing, so
+    # children that inherit nothing new share their parent's set object.
+    assert parts
+    result = max(parts, key=len)
+    for part in parts:
+        if part is not result and not part <= result:
+            result = result | part
+    return result
 
 
 def _escape_search_phrase(phrase: str) -> str:
@@ -248,30 +324,27 @@ class NoteStore:
     ) -> None:
         # Callers reset the affected closure to direct contributions first, so
         # cycles converge to the least fixed point even when tags are removed.
-        dependents: Dict[str, set[str]] = {note_id: set() for note_id in dependencies}
-        for note_id, sources in dependencies.items():
-            assert note_id in accepted_terms and note_id in proposed_terms
-            for source_id in sources:
-                if source_id in dependencies:
-                    dependents[source_id].add(note_id)
-                else:
-                    accepted_terms[note_id] |= accepted_terms[source_id]
-                    proposed_terms[note_id] |= proposed_terms[source_id]
-        pending = deque(dependencies)
-        queued = set(dependencies)
-        while pending:
-            source_id = pending.popleft()
-            queued.remove(source_id)
-            for note_id in dependents[source_id]:
-                accepted = accepted_terms[note_id] | accepted_terms[source_id]
-                proposed = proposed_terms[note_id] | proposed_terms[source_id]
-                if accepted == accepted_terms[note_id] and proposed == proposed_terms[note_id]:
-                    continue
+        # Every member of a strongly connected component reaches every other,
+        # so each component's fixed point is one shared union of its members'
+        # direct terms and its (already final) outside sources.
+        for component in _components_sources_first(dependencies):
+            members = set(component)
+            accepted_parts: List[FrozenSet[str]] = []
+            proposed_parts: List[FrozenSet[str]] = []
+            for note_id in component:
+                assert note_id in accepted_terms and note_id in proposed_terms
+                accepted_parts.append(accepted_terms[note_id])
+                proposed_parts.append(proposed_terms[note_id])
+                for source_id in dependencies[note_id]:
+                    if source_id in members:
+                        continue
+                    accepted_parts.append(accepted_terms[source_id])
+                    proposed_parts.append(proposed_terms[source_id])
+            accepted = _union_term_sets(accepted_parts)
+            proposed = _union_term_sets(proposed_parts)
+            for note_id in component:
                 accepted_terms[note_id] = accepted
                 proposed_terms[note_id] = proposed
-                if note_id not in queued:
-                    pending.append(note_id)
-                    queued.add(note_id)
 
     def _publish_tag_updates(self, raw_terms_by_id: Dict[str, FrozenSet[str]]) -> None:
         if not raw_terms_by_id:
@@ -473,19 +546,22 @@ class NoteStore:
                 total=len(rows),
             )
 
+        # Tag strings repeat across notes; parse each distinct string once.
+        terms_by_tag_string: Dict[str, tuple[FrozenSet[str], FrozenSet[str]]] = {}
         for row in rows:
             note = SimpleNamespace(**row)
             plaintext = get_cached_content(note.id)
             tags = get_cached_tags(note.id)
             proposed_tags = get_cached_proposed_tags(note.id)
             content_text_by_id[note.id] = get_cached_text(note.id)
-            tag_terms, non_meta_tag_terms = _derive_own_tag_terms(
-                tags=tags,
+            for tag_string in (tags, proposed_tags):
+                if tag_string not in terms_by_tag_string:
+                    terms_by_tag_string[tag_string] = _parse_tag_string_terms(tag_string)
+            tag_terms, non_meta_tag_terms = _combine_own_tag_terms(
+                explicit_terms=terms_by_tag_string[tags],
                 content_html=plaintext,
             )
-            proposed_tag_terms, proposed_non_meta_tag_terms = _derive_proposed_tag_terms(
-                proposed_tags
-            )
+            proposed_tag_terms, proposed_non_meta_tag_terms = terms_by_tag_string[proposed_tags]
 
             note_map[note.id] = NoteRecord(
                 id=note.id,
@@ -657,7 +733,7 @@ class NoteStore:
             tags=tags,
             content_html=plaintext,
         )
-        proposed_tag_terms, proposed_non_meta_tag_terms = _derive_proposed_tag_terms(
+        proposed_tag_terms, proposed_non_meta_tag_terms = _parse_tag_string_terms(
             proposed_tags
         )
         content_text = strip_html(plaintext)
@@ -729,7 +805,7 @@ class NoteStore:
                 tags=tags,
                 content_html=plaintext,
             )
-            proposed_tag_terms, proposed_non_meta_tag_terms = _derive_proposed_tag_terms(
+            proposed_tag_terms, proposed_non_meta_tag_terms = _parse_tag_string_terms(
                 proposed_tags
             )
             updated = NoteRecord(
@@ -1036,7 +1112,7 @@ class NoteStore:
                 if record.tags != tags:
                     self._backlink_index.upsert(note_id, record.content, tags)
                 own, non_meta = _derive_own_tag_terms(tags=tags, content_html=record.content)
-                proposed, proposed_non_meta = _derive_proposed_tag_terms(proposed_tags)
+                proposed, proposed_non_meta = _parse_tag_string_terms(proposed_tags)
                 replacements[note_id] = replace(record, tags=tags, proposed_tags=proposed_tags,
                     tag_terms=own, non_meta_tag_terms=non_meta,
                     proposed_tag_terms=proposed, proposed_non_meta_tag_terms=proposed_non_meta)

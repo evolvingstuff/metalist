@@ -5,6 +5,7 @@ import os
 from typing import Optional, Tuple
 from argon2.low_level import ARGON2_VERSION, Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from app.config import (
     KDF_MEMORY_COST_KIB,
@@ -16,9 +17,29 @@ from app.config import (
 class EncryptionService:
     """Service for encrypting and decrypting note content using AES-256-GCM with DEK architecture."""
     
+    _GCM_TAG_LENGTH = 16
+
     def __init__(self):
         self.master_key: Optional[bytes] = None  # Derived from password, used to encrypt DEK
-        self.dek: Optional[bytes] = None  # Data Encryption Key, used for note encryption
+        self._dek: Optional[bytes] = None  # Data Encryption Key, used for note encryption
+        self._dek_aead: Optional[AESGCM] = None
+
+    @property
+    def dek(self) -> Optional[bytes]:
+        return self._dek
+
+    @dek.setter
+    def dek(self, value: Optional[bytes]) -> None:
+        # The cached AEAD holds key material; it must never outlive its DEK.
+        self._dek = value
+        self._dek_aead = None
+
+    def _require_dek_aead(self) -> AESGCM:
+        if self._dek is None:
+            raise ValueError("No DEK set - ensure password has been provided")
+        if self._dek_aead is None:
+            self._dek_aead = AESGCM(self._dek)
+        return self._dek_aead
         
     def derive_master_key(
         self,
@@ -256,9 +277,10 @@ class EncryptionService:
             ValueError: If no DEK is set
             Exception: If decryption fails (wrong password or corrupted data)
         """
-        if self.dek is None:
-            raise ValueError("No DEK set - ensure password has been provided")
-            
+        aead = self._require_dek_aead()
+        if len(tag) != self._GCM_TAG_LENGTH:
+            raise ValueError(f"GCM tag must be {self._GCM_TAG_LENGTH} bytes, got {len(tag)}")
+
         # Normalize padding for base64 strings
         normalized = ciphertext_base64.strip()
         missing_padding = (-len(normalized)) % 4
@@ -266,14 +288,9 @@ class EncryptionService:
             normalized += "=" * missing_padding
 
         ciphertext = base64.b64decode(normalized)
-
-        cipher = Cipher(
-            algorithms.AES(self.dek),
-            modes.GCM(nonce, tag),
-            backend=default_backend()
-        )
-        decryptor = cipher.decryptor()
-        plaintext_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+        # One-shot AEAD over a cached key avoids per-call Cipher construction,
+        # which dominated hydration of every encrypted note field.
+        plaintext_bytes = aead.decrypt(nonce, ciphertext + tag, None)
         return plaintext_bytes.decode('utf-8')
 
     def decrypt_bytes(self, ciphertext: bytes, nonce: bytes, tag: bytes) -> bytes:
