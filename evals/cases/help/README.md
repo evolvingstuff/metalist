@@ -1,7 +1,7 @@
 # MetaList help and menu cases
 
-105 synthetic cases: 27 skill-routing decisions, 54 menu destinations, 11 context/
-permission cases, and 13 judged explanations. No personal notes or exports.
+The synthetic suite covers skill routing, menu destinations, context/permission
+boundaries, and judged explanations. No personal notes or executable captured prompts.
 All five-run measured results, including failures, are in [RESULTS.md](RESULTS.md).
 
 ```bash
@@ -24,6 +24,10 @@ check that the answer does not claim a setting was changed.
 Output cases use an Instructor-validated LLM judge for detailed feature knowledge:
 search, inheritance, formatting, references, privacy, context, proposals and
 backups. A judge verdict can be wrong; preserve and inspect its reason.
+The diagram-help output regression also uses the production `MetaListHelpResponse`
+schema, which rejects an unclosed Markdown code fence before the judge runs. This
+reproduces the reported equal-length nested Mermaid-fence failure with current
+production prompts and skills.
 
 Six encryption regressions add the exact reported at-rest question, backup
 snapshot/password history, plaintext structural metadata versus encrypted file

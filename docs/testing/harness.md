@@ -327,6 +327,18 @@ SDK/Instructor history, session-bound/single-use API acknowledgments, disconnect
 cleanup and browser timeouts. JS tests cover every destination, scope changes,
 modals, cancellation, visibility and no execution of highlighted commands.
 
+`MetaListHelpResponse` validates balanced CommonMark backtick and tilde fences
+before a help answer can reach the browser. The deterministic regression reproduces
+the reported equal-length nested Mermaid failure and accepts a longer outer fence.
+The live `help-output-diagram-code-fences` case builds the current production help
+prompt and formatting skill, then checks both factual accuracy and fence structure.
+With the copyable four-backtick outer-fence contract, Luna passed **5/5** live runs
+with zero provider errors on September 27, 2026. The other two cases whose requests
+load the formatting skill also ran five times; the final affected set passed
+**15/15** with zero provider errors. An earlier **14/15** run is preserved in the
+results record: it caught a false claim that Mermaid source shared Excalidraw's
+AI-visibility limitation, which the skill and source documentation now disambiguate.
+
 `BROWSER_TEST_SUITE=agent-help npm run test:browser` uses a disposable namespace.
 It opens all 54 targets, rejects stale scope, closes/reopens settings with deferred
 responses, and runs a simulated chat stream through the real controller and
@@ -340,8 +352,8 @@ destinations plus chat acknowledgment/lifecycle checks passed **Chrome 131** and
 sdist checks verified 457 runtime files, packaged help registry/catalog imports,
 and absence of `evals/` and `tests/`. This is not release-matrix validation.
 
-Live Luna tests were explicitly run **five times per case**, keeping the default
-at ten and adding `--repetitions 5`. Initial help: **480/495 (96.97%)**, 15
+Live Luna tests were explicitly run **five times per case**, which is also the CLI
+default. Initial help: **480/495 (96.97%)**, 15
 incorrect, zero errors. Four revised help checks: **20/20**, reported separately.
 Existing routing: raw **105/120**; two overly restrictive topic expectations were
 corrected after reviewing skill content, and rescoring the same outputs gives

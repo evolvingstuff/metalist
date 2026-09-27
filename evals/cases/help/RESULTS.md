@@ -193,3 +193,40 @@ Local full baseline: `/tmp/metalist-encryption-help-baseline-20260917/report.jso
 Local full candidate: `/tmp/metalist-encryption-help-candidate-20260917/report.json`.
 
 The privacy skill is still loaded only on demand. Its expansion covers encrypted attachments/tags/state, plaintext structural metadata, unprotected namespaces, immutable backup state/passwords, logs and unlocked memory. This adds knowledge, not an encryption implementation change or an audit of personal databases.
+
+## Diagram code-fence correction (September 27, 2026)
+
+The reported answer placed a triple-backtick Mermaid block inside an equal-length
+outer fence. The first closing fence ended the outer block and the intended outer
+closer opened a new unclosed block, so later prose rendered as code. The candidate
+adds deterministic production-schema validation and a formatting-skill instruction
+to show copyable Mermaid source inside a four-backtick outer fence.
+
+All measured five-run iterations are retained below. The direct-fence iteration
+was structurally valid but rejected as the product design because AI chat renders
+that fence as a diagram instead of showing the source to copy.
+
+| Candidate | Scope | Correct | Incorrect | Errors | Finding |
+| --- | --- | ---: | ---: | ---: | --- |
+| Validator + permissive nesting instruction | new diagram case | 1/5 | 1 | 3 | Luna repeated invalid equal-length nesting after structured retries. |
+| Direct Mermaid fence | new diagram case | 5/5 | 0 | 0 | Valid, but rendered the diagram instead of copyable source. |
+| Required four-backtick outer fence | new diagram case | 4/5 | 1 | 0 | One answer invented named Mermaid-family support not established by the skill. |
+| Tightened formatting skill | new diagram case | 5/5 | 0 | 0 | Copyable fence and factual criteria passed. |
+| First complete affected-skill run | 3 formatting cases | 14/15 | 1 | 0 | One answer incorrectly applied Excalidraw's hidden-text limitation to Mermaid source. |
+| Clarified Mermaid source behavior | 3 formatting cases | 15/15 | 0 | 0 | Final candidate; every affected case passed five times. |
+
+The three affected cases are `help-guard-hidden-shell`, `help-output-formatting`,
+and `help-output-diagram-code-fences`. They are the complete current set whose
+production help request loads `help_formatting_v1`; no shared help or global agent
+prompt changed in the final candidate. The final run used current production prompts,
+skill content, response schema and judge, with four-way concurrency and the default
+five repetitions.
+
+Local reports:
+
+- `/tmp/metalist-fence-live-20260927b/report.json`
+- `/tmp/metalist-fence-live-20260927c/report.json`
+- `/tmp/metalist-fence-live-20260927d/report.json`
+- `/tmp/metalist-fence-live-20260927e/report.json`
+- `/tmp/metalist-formatting-skill-live-20260927/report.json`
+- `/tmp/metalist-formatting-skill-live-20260927b/report.json`

@@ -143,6 +143,9 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
 - Fenced `mermaid` blocks render as responsive SVG diagrams in the app. The pinned Mermaid runtime loads locally and only when a visible note contains a Mermaid fence; no diagram source is sent to a CDN or external service.
+- In a help answer, show the literal Mermaid source the user must type: open an outer `text` block with four backticks, put the triple-backtick `mermaid` block inside it, close that inner block with three backticks, and close the outer block with four backticks before returning to prose. Never use only three backticks for the outer block. A direct `mermaid` fence renders as a diagram in AI chat instead of displaying its source.
+- Do not promise support for named Mermaid diagram families that this reference does not document. Use a basic flowchart for the example and describe Mermaid support generically.
+- Mermaid source remains ordinary stored note text. It is searchable and can enter AI note context when that note is otherwise permitted. Do not transfer Excalidraw's hidden embedded-text limitation to Mermaid source.
 - Mermaid uses strict security mode and follows the active light/dark theme when rendering. Invalid Mermaid syntax remains visible as a code block with an `Invalid Mermaid diagram` badge.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
 - Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.

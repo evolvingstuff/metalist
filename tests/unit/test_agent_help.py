@@ -71,6 +71,41 @@ def test_unknown_menu_commands_are_not_executable(menu_id):
         MetaListHelpResponse(answer='Try this', menu_id=menu_id)
 
 
+def test_help_response_rejects_unclosed_fence_from_nested_mermaid_example():
+    malformed = """Use a fenced Mermaid block:
+
+```text
+```mermaid
+graph TD
+  A --> B
+```
+```
+
+This prose must not become code.
+"""
+
+    with pytest.raises(ValidationError, match='Markdown code fence'):
+        MetaListHelpResponse(answer=malformed, menu_id='none')
+
+
+def test_help_response_accepts_longer_outer_fence_around_literal_mermaid_fence():
+    valid = """Use a fenced Mermaid block:
+
+````text
+```mermaid
+graph TD
+  A --> B
+```
+````
+
+This prose remains prose.
+"""
+
+    response = MetaListHelpResponse(answer=valid, menu_id='none')
+
+    assert response.answer == valid
+
+
 def test_menu_acknowledgments_are_session_bound_single_use_and_cleaned_up():
     async def run():
         store = MenuActionStore()

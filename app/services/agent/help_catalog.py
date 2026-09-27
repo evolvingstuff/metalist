@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services.agent.markdown_validation import validate_balanced_markdown_fences
+
 
 HELP_TOPICS = {
     'notes': ('Notes and editing', 'Hierarchy, editing, moving, copying, undo and keyboard/mouse controls.'),
@@ -37,7 +39,7 @@ class MetaListHelpResponse(BaseModel):
     def reject_blank_answer(cls, value: str) -> str:
         if not value.strip():
             raise ValueError('Help answer must not be blank')
-        return value
+        return validate_balanced_markdown_fences(value)
 
 
 HELP_RESPONSE_INSTRUCTION = files('app.services.agent.prompts').joinpath('help-response.md').read_text(encoding='utf-8').rstrip('\n')
