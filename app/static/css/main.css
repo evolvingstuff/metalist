@@ -3883,7 +3883,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria
     width: 7.5em !important;
     max-height: 4.5em !important;
     max-width: 7.5em !important;
-    object-fit: cover !important;
+    object-fit: contain !important;
     object-position: center center;
     border-radius: 4px;
     margin-right: 0.35rem;
