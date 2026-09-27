@@ -23,6 +23,7 @@ from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import NoteRecord, store as note_store
+from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
 from app.services.root_sorting import build_root_sort_buckets
 from app.services.root_sorting import get_root_ids_for_sort_mode
@@ -32,6 +33,7 @@ from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
+from app.security.sensitive_cache import sensitive_lru_cache
 from app.utils.text_utils import strip_html
 
 # Windowing constants (tuned later)
@@ -522,6 +524,98 @@ def _select_view(
     )
 
 
+# Rendered view HTML depends on shared state only through references ([[...]]:
+# other notes, files, embeds) and URLs (link titles, their fetch/retry side
+# effects, and remote-image proxy tokens). Notes containing none of these
+# markers, including entity-encoded ':' or '/', render purely from their own
+# record, collapse state, backlink presence, and the ontology.
+_UNCACHEABLE_RENDER_MARKERS = ("[[", "://", "&#", "&colon;", "&sol;")
+
+
+def _is_render_cacheable(content_html: str) -> bool:
+    return not any(marker in content_html for marker in _UNCACHEABLE_RENDER_MARKERS)
+
+
+class _IdentityKey:
+    """Cache-key part matching only the very same object.
+
+    The strong reference keeps the object alive, so its id cannot be reused
+    by another object while a cache entry holds this key.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def __hash__(self) -> int:
+        return id(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _IdentityKey) and other.value is self.value
+
+
+def _reference_free_render_context(note_id: str) -> EmbedRenderContext:
+    def has_note(candidate_id: str) -> bool:
+        if candidate_id != note_id:
+            raise RuntimeError(f"Cacheable render of {note_id} consulted note {candidate_id}")
+        return True
+
+    def forbidden(*args: object) -> object:
+        raise RuntimeError(f"Cacheable render of {note_id} consulted references: {args}")
+
+    return EmbedRenderContext(
+        has_note=has_note, get_note=forbidden, get_children=forbidden,
+        has_file=forbidden, get_file=forbidden,
+    )
+
+
+def _render_note_view_html(
+    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
+) -> str:
+    if is_collapsed:
+        rendered_content = render_collapsed_note_content_with_embeds(
+            note_id=rec.id,
+            content_html=rec.content,
+            tags=rec.tags,
+            context=context,
+            static_export=False,
+            redact_passwords=False,
+        )
+    else:
+        rendered_content = render_note_content_with_embeds(
+            note_id=rec.id,
+            content_html=rec.content,
+            tags=rec.tags,
+            context=context,
+            static_export=False,
+            redact_passwords=False,
+        )
+    return decorate_note_references(
+        note_id=rec.id, content_html=rec.content, tags=rec.tags,
+        rendered_content=rendered_content, context=context,
+        has_backlinks=has_backlinks,
+    )
+
+
+@sensitive_lru_cache(maxsize=65536, max_bytes=64 * 1024 * 1024)
+def _cached_note_view_html(
+    record_key: _IdentityKey, is_collapsed: bool, has_backlinks: bool, ontology_key: _IdentityKey,
+) -> str:
+    # NoteRecord is immutable and replaced on every change, so the record's
+    # identity pins content, tags, and every other field. The ontology object
+    # is likewise replaced whenever rules change; it only needs to be part of
+    # the key, since rendering reads the same current ontology.
+    rec = record_key.value
+    assert isinstance(rec, NoteRecord)
+    assert _is_render_cacheable(rec.content)
+    assert ontology_key.value is get_ontology_if_ready()
+    return _render_note_view_html(
+        rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks,
+        context=_reference_free_render_context(rec.id),
+    )
+
+
 def _render_view_note(
     rec: NoteRecord, *, editing_note_id: str | None, is_search_redacted: bool,
     force_uncollapsed_ids: Set[str], filter_active: bool,
@@ -581,30 +675,17 @@ def _render_view_note(
     is_editing = bool(flags["isEditing"])
     if is_editing:
         rendered_content = rec.content
+    elif type(rec) is NoteRecord and _is_render_cacheable(rec.content):
+        # Identity keys are exact only for immutable records; any other record
+        # type (e.g. test doubles) could change in place and renders directly.
+        rendered_content = _cached_note_view_html(
+            _IdentityKey(rec), bool(flags["isCollapsed"]), note_store.has_backlinks(rec.id),
+            _IdentityKey(get_ontology_if_ready()),
+        )
     else:
-        if flags["isCollapsed"]:
-            rendered_content = render_collapsed_note_content_with_embeds(
-                note_id=rec.id,
-                content_html=rec.content,
-                tags=rec.tags,
-                context=embed_render_context,
-                static_export=False,
-                redact_passwords=False,
-            )
-        else:
-            rendered_content = render_note_content_with_embeds(
-                note_id=rec.id,
-                content_html=rec.content,
-                tags=rec.tags,
-                context=embed_render_context,
-                static_export=False,
-                redact_passwords=False,
-            )
-
-        rendered_content = decorate_note_references(
-            note_id=rec.id, content_html=rec.content, tags=rec.tags,
-            rendered_content=rendered_content, context=embed_render_context,
-            has_backlinks=note_store.has_backlinks(rec.id),
+        rendered_content = _render_note_view_html(
+            rec=rec, is_collapsed=bool(flags["isCollapsed"]),
+            has_backlinks=note_store.has_backlinks(rec.id), context=embed_render_context,
         )
 
     return rendered_content, flags

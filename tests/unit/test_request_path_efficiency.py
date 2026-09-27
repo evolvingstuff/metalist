@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import dataclasses
 import random
 
 import pytest
 
+import app.security.sensitive_cache as sensitive_cache
 import app.services.embedded_references as embedded_references
+import app.services.snapshot as snapshot_module
 import app.services.sync as sync
 import app.services.undo_state as undo_state
 from app.services.embedded_references import collapsed_preview_source_has_hidden_content
 from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.note_store import NoteRecord
 from app.services.snapshot import _SnapshotTraversalCache
 
 
@@ -39,6 +43,7 @@ def test_collapsed_preview_head_stops_after_second_fragment(monkeypatch: pytest.
             yield fragment
 
     monkeypatch.setattr(embedded_references, "_iter_collapsed_preview_meaningful_fragments", counting)
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
     embedded_references._collapsed_preview_head.cache_clear()
     content = "".join(f"<div>line {index}</div>" for index in range(50))
 
@@ -103,3 +108,72 @@ def test_sync_capture_shares_immutable_clipboards_until_restore() -> None:
     assert sync._clipboards["fixture"] is not live
     assert sync._clipboards["fixture"] == live
     sync.reset_state()
+
+
+
+def _record(note_id: str, content: str) -> NoteRecord:
+    return NoteRecord(
+        id=note_id, parent_id=None, prev_id=None, next_id=None, is_collapsed=False,
+        content=content, tags="", proposed_tags="", tag_terms=frozenset(), non_meta_tag_terms=frozenset(),
+        proposed_tag_terms=frozenset(), proposed_non_meta_tag_terms=frozenset(), created_at=None, updated_at=None,
+    )
+
+
+@pytest.mark.parametrize("content", [
+    "see [[00000000-0000-0000-0000-000000000000]]",
+    "https://example.test/page",
+    "<a href=\"http://x.test\">x</a>",
+    "https&#58;//example.test",
+    "https&colon;//example.test",
+    "https:&sol;&sol;example.test",
+])
+def test_notes_with_references_or_urls_are_never_render_cached(content: str) -> None:
+    assert not snapshot_module._is_render_cacheable(content)
+
+
+def test_plain_formatted_notes_are_render_cacheable() -> None:
+    assert snapshot_module._is_render_cacheable("<div><b>plain</b> &amp; &nbsp; <img src=\"data:image/png;base64,AA==\"></div>")
+
+
+def test_render_cache_rerenders_whenever_an_input_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    renders: list[tuple[str, bool, bool]] = []
+
+    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+        renders.append((rec.content, is_collapsed, has_backlinks))
+        return f"{rec.content}|{is_collapsed}|{has_backlinks}"
+
+    ontology = [object()]
+    # Other tests lock the namespace, which disables sensitive caches globally.
+    monkeypatch.setattr(sensitive_cache, "_enabled", True)
+    monkeypatch.setattr(snapshot_module, "_render_note_view_html", fake_render)
+    monkeypatch.setattr(snapshot_module, "get_ontology_if_ready", lambda: ontology[0])
+    snapshot_module._cached_note_view_html.cache_clear()
+    key = snapshot_module._IdentityKey
+
+    def render(rec: NoteRecord, *, collapsed: bool, backlinks: bool) -> str:
+        return snapshot_module._cached_note_view_html(key(rec), collapsed, backlinks, key(ontology[0]))
+
+    original = _record("note", "<div>one</div>")
+    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert len(renders) == 1
+
+    # A replaced record re-renders even when it compares equal field by field.
+    assert render(dataclasses.replace(original), collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert render(_record("note", "<div>two</div>"), collapsed=False, backlinks=False) == "<div>two</div>|False|False"
+    assert render(original, collapsed=True, backlinks=False) == "<div>one</div>|True|False"
+    assert render(original, collapsed=False, backlinks=True) == "<div>one</div>|False|True"
+    ontology[0] = object()
+    assert render(original, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert len(renders) == 6
+    snapshot_module._cached_note_view_html.cache_clear()
+
+
+def test_cacheable_render_context_rejects_reference_lookups() -> None:
+    context = snapshot_module._reference_free_render_context("note")
+
+    assert context.has_note("note") is True
+    with pytest.raises(RuntimeError, match="consulted note other"):
+        context.has_note("other")
+    with pytest.raises(RuntimeError, match="consulted references"):
+        context.get_children("note")
