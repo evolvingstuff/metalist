@@ -11,6 +11,7 @@ from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
+from app.services.tag_term_matching import NormalizedContentMatchContext
 from app.services.tag_term_matching import TagContentMatch
 from app.services.tag_term_matching import build_normalized_content_match_context
 from app.services.tag_term_matching import list_significant_content_match_segments
@@ -478,13 +479,12 @@ def _summarize_note_group(note_ids: Iterable[str]) -> tuple[Counter[str], str]:
 def _collect_content_match_scores(
     *,
     candidate_terms: Iterable[str],
-    normalized_content: str,
+    context: NormalizedContentMatchContext,
     ontology,
 ) -> Dict[str, TagContentMatch]:
-    if normalized_content == "":
+    if not context.tokens:
         return {}
 
-    context = build_normalized_content_match_context(normalized_content=normalized_content)
     content_token_set = frozenset(context.token_positions.keys())
     matches: Dict[str, TagContentMatch] = {}
     for term in candidate_terms:
@@ -511,13 +511,12 @@ def _collect_content_match_scores(
 def _collect_direct_standalone_literal_terms(
     *,
     candidate_terms: Iterable[str],
-    normalized_content: str,
+    context: NormalizedContentMatchContext,
     ontology,
 ) -> FrozenSet[str]:
-    if normalized_content == "":
+    if not context.tokens:
         return frozenset()
 
-    context = build_normalized_content_match_context(normalized_content=normalized_content)
     direct_terms: set[str] = set()
     for term in candidate_terms:
         if len(normalize_tag_match_text(term)) < 2:
@@ -527,13 +526,10 @@ def _collect_direct_standalone_literal_terms(
         if len(equivalent_casefolds) > 1:
             continue
         raw_segments = split_tag_term_segments(term)
-        if not raw_segments or len(context.tokens) < len(raw_segments):
+        if not raw_segments:
             continue
-        for index in range(len(context.tokens) - len(raw_segments) + 1):
-            if not context.matches_phrase_at(raw_segments, index):
-                continue
+        if context.find_first_phrase_index(raw_segments) >= 0:
             direct_terms.add(term)
-            break
     return frozenset(direct_terms)
 
 
@@ -571,16 +567,15 @@ def _build_prefix_content_remainder(*, term: str, prefix: str) -> str:
 def _collect_prefix_remainder_content_match_scores(
     *,
     candidate_terms: Iterable[str],
-    normalized_content: str,
+    context: NormalizedContentMatchContext,
     ontology,
     prefix: str,
 ) -> Dict[str, TagContentMatch]:
-    if normalized_content == "":
+    if not context.tokens:
         return {}
     if not isinstance(prefix, str) or not prefix:
         raise TypeError("prefix must be a non-empty string")
 
-    context = build_normalized_content_match_context(normalized_content=normalized_content)
     content_token_set = frozenset(context.token_positions.keys())
     matches: Dict[str, TagContentMatch] = {}
     for term in candidate_terms:
@@ -615,15 +610,14 @@ def _collect_prefix_remainder_content_match_scores(
 def _collect_exact_synonym_content_hits(
     *,
     candidate_terms: Iterable[str],
-    normalized_content: str,
+    context: NormalizedContentMatchContext,
     ontology,
     suppressed_casefold: set[str],
     prefix: str,
 ) -> Dict[str, List[str]]:
-    if normalized_content == "":
+    if not context.tokens:
         return {}
 
-    context = build_normalized_content_match_context(normalized_content=normalized_content)
     content_token_set = frozenset(context.token_positions.keys())
     aliases_by_representative: Dict[str, List[tuple[str, TagContentMatch]]] = {}
     for term in candidate_terms:
@@ -680,12 +674,8 @@ def _term_has_required_content_overlap(*, term: str, content_token_set: FrozenSe
 def _collect_undercovered_content_overlap_terms(
     *,
     candidate_terms: Iterable[str],
-    normalized_content: str,
+    context: NormalizedContentMatchContext,
 ) -> FrozenSet[str]:
-    if normalized_content == "":
-        return frozenset()
-
-    context = build_normalized_content_match_context(normalized_content=normalized_content)
     content_token_set = frozenset(context.token_positions)
     if not content_token_set:
         return frozenset()
@@ -721,7 +711,9 @@ def _rank_terms_by_local_context(
 
     current_note_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
-        normalized_content=normalize_tag_match_text(strip_html(current_record.content)),
+        context=build_normalized_content_match_context(
+            normalized_content=normalize_tag_match_text(strip_html(current_record.content)),
+        ),
         ontology=ontology,
     )
     for term, match in current_note_content_matches.items():
@@ -737,7 +729,7 @@ def _rank_terms_by_local_context(
         local_scores[canonical_term] += 12000 + (count * 200)
     descendant_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
-        normalized_content=descendant_content,
+        context=build_normalized_content_match_context(normalized_content=descendant_content),
         ontology=ontology,
     )
     for term, match in descendant_content_matches.items():
@@ -759,7 +751,7 @@ def _rank_terms_by_local_context(
         local_scores[canonical_term] += 6000 + (count * 150)
     sibling_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
-        normalized_content=sibling_content,
+        context=build_normalized_content_match_context(normalized_content=sibling_content),
         ontology=ontology,
     )
     for term, match in sibling_content_matches.items():
@@ -769,7 +761,7 @@ def _rank_terms_by_local_context(
     _, ancestor_content = _summarize_note_group(ancestor_ids)
     ancestor_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
-        normalized_content=ancestor_content,
+        context=build_normalized_content_match_context(normalized_content=ancestor_content),
         ontology=ontology,
     )
     for term, match in ancestor_content_matches.items():
@@ -963,20 +955,21 @@ def _score_content_candidates(
     inherited_non_meta: FrozenSet[str],
 ) -> _ContentCandidates:
     has_prefix = prefix != ""
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
     content_match_scores = _collect_content_match_scores(
         candidate_terms=candidate_terms,
-        normalized_content=normalized_content,
+        context=context,
         ontology=ontology,
     )
     direct_standalone_literal_terms = _collect_direct_standalone_literal_terms(
         candidate_terms=candidate_terms,
-        normalized_content=normalized_content,
+        context=context,
         ontology=ontology,
     )
     if has_prefix:
         prefix_remainder_scores = _collect_prefix_remainder_content_match_scores(
             candidate_terms=candidate_terms,
-            normalized_content=normalized_content,
+            context=context,
             ontology=ontology,
             prefix=prefix,
         )
@@ -989,7 +982,7 @@ def _score_content_candidates(
                 content_match_scores[term] = match
     exact_synonym_content_hits = _collect_exact_synonym_content_hits(
         candidate_terms=candidate_terms,
-        normalized_content=normalized_content,
+        context=context,
         ontology=ontology,
         suppressed_casefold=suppressed_casefold,
         prefix=prefix,
@@ -998,7 +991,7 @@ def _score_content_candidates(
     if not has_prefix:
         undercovered_content_overlap_terms = _collect_undercovered_content_overlap_terms(
             candidate_terms=candidate_terms,
-            normalized_content=normalized_content,
+            context=context,
         )
 
     if TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS and not has_prefix:
