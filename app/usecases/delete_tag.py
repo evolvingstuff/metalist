@@ -10,7 +10,6 @@ from app.services.ontology_rules_store import delete_tag_everywhere as delete_ta
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.tag_rename import delete_tag_from_tag_bar
-from app.services.view_cache import view_cache
 
 
 def apply_delete_tag_everywhere(*, tag: str, token: str) -> dict:
@@ -49,15 +48,19 @@ def apply_delete_tag_everywhere(*, tag: str, token: str) -> dict:
                 tags_encryption_tag=tags_tag,
             )
 
-    for note_id, content, tags in updates:
-        record = store.get(note_id)
+    tag_changes = {}
+    for note_id, _content, tags in updates:
+        record = note_store.get_note(note_id)
         if record.updated_at is None:
             raise RuntimeError(f"Cannot preserve missing updated_at while deleting tag: {note_id}")
         cache_note_tags(note_id, tags)
-        store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
-
-    note_store.rebuild_search_index_tag_terms()
-    view_cache.clear()
+        tag_changes[note_id] = (tags, record.proposed_tags)
+    # One incremental recompute for every edited note. Removed ontology rules
+    # can change inferred tags on notes that were not edited, so only then is
+    # the whole index re-derived.
+    note_store.apply_bulk_tag_sources(tag_changes)
+    if deleted_rule_count > 0:
+        note_store.rebuild_search_index_tag_terms()
     return {
         'ok': True,
         'deletedNoteCount': len(updates),

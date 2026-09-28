@@ -12,6 +12,7 @@ const moduleState = ApplicationState.createFields('polling-service', {
     lastTokenRefreshAt: 0,
     lastLinkTitleRevision: 0,
     linkTitleRefreshTimer: null,
+    visibilityListener: null,
 });
 
 
@@ -41,15 +42,31 @@ function _isRestoreTransitionActive() {
     return true;
 }
 
+function runConnectivityCheck() {
+    checkConnectivityAndUpdates().catch((error) => {
+        rethrowUnexpectedError(error);
+        ErrorHandler.handleApiError(error, null);
+        Logger.logError('Sync polling error', error);
+    });
+}
+
+function handleVisibilityChange() {
+    // Hidden tabs skip polls; check at once on return so session and
+    // connectivity changes surface as soon as the user can see them.
+    if (!document.hidden) runConnectivityCheck();
+}
+
 export function startPolling() {
-    // Unified polling: check connectivity and updates
+    // Unified polling: check connectivity and updates. Status polls do not
+    // extend sessions, so pausing them in hidden tabs changes no timeouts.
     moduleState.pollingInterval = setInterval(() => {
-        checkConnectivityAndUpdates().catch((error) => {
-            rethrowUnexpectedError(error);
-            ErrorHandler.handleApiError(error, null);
-            Logger.logError('Sync polling error', error);
-        });
+        if (document.hidden) return;
+        runConnectivityCheck();
     }, CONFIG.SYNC.POLL_INTERVAL_MS);
+    if (moduleState.visibilityListener === null) {
+        moduleState.visibilityListener = handleVisibilityChange;
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
 
     Logger.logInit('Unified polling started (connectivity + updates)');
 }
@@ -63,6 +80,10 @@ export function stopPolling() {
     if (moduleState.linkTitleRefreshTimer !== null) {
         window.clearTimeout(moduleState.linkTitleRefreshTimer);
         moduleState.linkTitleRefreshTimer = null;
+    }
+    if (moduleState.visibilityListener !== null) {
+        document.removeEventListener('visibilitychange', moduleState.visibilityListener);
+        moduleState.visibilityListener = null;
     }
 }
 

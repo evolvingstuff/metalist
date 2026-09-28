@@ -140,7 +140,11 @@ def reset_state() -> None:
 
 @_synchronized
 def capture_sync_state() -> tuple:
-    return _update_uuid, dict(_locks), deepcopy(_clipboards), dict(_clients_seen)
+    # Stored clipboard lists are never mutated in place: set_clipboard stores a
+    # fresh deep copy and get_clipboard hands out copies. A shallow capture is
+    # therefore exact and keeps every request from deep-copying clipboards;
+    # restore_sync_state makes the isolating copy on the rare rollback path.
+    return _update_uuid, dict(_locks), dict(_clipboards), dict(_clients_seen)
 
 
 @_synchronized
@@ -150,6 +154,8 @@ def restore_sync_state(snapshot: tuple) -> None:
     _locks.clear()
     _locks.update(locks)
     _clipboards.clear()
+    # Restore runs only on rollback; copy here so the live store never shares
+    # nested records with a snapshot that callers still hold.
     _clipboards.update(deepcopy(clipboards))
     _clients_seen.clear()
     _clients_seen.update(clients_seen)

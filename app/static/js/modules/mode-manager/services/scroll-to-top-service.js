@@ -1,7 +1,13 @@
-export function initializeScrollToTopButton() {
+// hasRootsAboveWindow / jumpToListTop: with roots unloaded above the loaded
+// band, pixel 0 is only the band's start, so the button rebuilds the view from
+// the first root instead of scrolling.
+export function initializeScrollToTopButton({ hasRootsAboveWindow, jumpToListTop }) {
     const button = document.getElementById('scroll-to-top-button');
     if (!button) {
         throw new Error('scroll-to-top-button not found');
+    }
+    if (typeof hasRootsAboveWindow !== 'function' || typeof jumpToListTop !== 'function') {
+        throw new Error('initializeScrollToTopButton requires band callbacks');
     }
 
     const SCROLL_PIXELS_PER_MS = 20;
@@ -15,7 +21,7 @@ export function initializeScrollToTopButton() {
 
     const syncVisibility = () => {
         const pageAtTop = window.scrollY <= 0;
-        const shouldDisable = pageAtTop;
+        const shouldDisable = pageAtTop && !hasRootsAboveWindow();
         if (shouldDisable === lastDisabled) {
             return;
         }
@@ -36,6 +42,11 @@ export function initializeScrollToTopButton() {
     window.addEventListener('scroll', scheduleSyncVisibility, { passive: true });
 
     button.addEventListener('click', () => {
+        if (hasRootsAboveWindow()) {
+            button.blur();
+            void jumpToListTop().then(syncVisibility);
+            return;
+        }
         const startY = window.scrollY;
         if (startY <= 0) {
             syncVisibility();

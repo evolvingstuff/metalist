@@ -679,9 +679,18 @@ def _audit_payloads(
         needed_columns = {spec.value_column, spec.nonce_column, spec.tag_column}
         if not needed_columns.issubset(actual_columns):
             continue
+        value_expression = spec.value_column
+        if spec.storage_kind == "bytes":
+            # Binary checks need only the storage type: stand an empty BLOB in
+            # for each BLOB so file contents are never read into memory.
+            value_expression = (
+                f"CASE WHEN typeof({spec.value_column}) = 'blob' THEN zeroblob(0) "
+                f"ELSE {spec.value_column} END AS {spec.value_column}"
+            )
+        # Stream rows: payload tables can be far larger than memory should hold.
         rows = connection.execute(
-            f"SELECT {spec.value_column}, {spec.nonce_column}, {spec.tag_column} FROM {spec.table}"
-        ).fetchall()
+            f"SELECT {value_expression}, {spec.nonce_column}, {spec.tag_column} FROM {spec.table}"
+        )
         for row in rows:
             _audit_payload_row(
                 row=row,

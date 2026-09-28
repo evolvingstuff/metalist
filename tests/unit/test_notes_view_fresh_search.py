@@ -19,6 +19,9 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
             "rootCountTotal": 1,
             "searchRootCountTotal": 1,
             "rootSortBuckets": [],
+            "rootWindowStart": 0,
+            "rootBandMargin": 75,
+            "rootSortKeyBeforeWindow": "",
         },
         hash_by_id={"root-a": "new-hash"},
         payloads={"root-a": {"hash": "new-hash", "content": "Root A"}},
@@ -45,13 +48,15 @@ def test_view_diff_does_not_use_cached_anchor_without_client_render_state(monkey
             "search": "journal",
             "tabId": "0",
             "undoContext": "tab:0|search:journal|epoch:0",
-            "clientNoteUuidHashes": {},
-            "visibleRootAnchorId": None,
+            "tabViewEmpty": True,
+            "visibleTopRootId": None,
+            "visibleBottomRootId": None,
             "isUntaggedView": False,
         }
     )
 
-    assert captured["anchor_root_id"] is None
+    # A tab showing nothing starts fresh: nothing is treated as already loaded.
+    assert captured["client_known_note_ids"] == set()
     assert result["snapshot"]["structure"] == [{"id": "root-a", "parentId": None, "hash": "new-hash"}]
     assert "resultApproximateTokenCount" not in result["snapshot"]
 
@@ -70,6 +75,9 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
             "rootCountTotal": 2,
             "searchRootCountTotal": 2,
             "rootSortBuckets": [],
+            "rootWindowStart": 0,
+            "rootBandMargin": 75,
+            "rootSortKeyBeforeWindow": "",
         },
         hash_by_id={"root-a": "new-hash", "deep-root": "deep-hash"},
         payloads={
@@ -103,12 +111,16 @@ def test_view_diff_can_use_cached_anchor_when_client_has_render_state(monkeypatc
             "search": "journal",
             "tabId": "0",
             "undoContext": "tab:0|search:journal|epoch:0",
-            "clientNoteUuidHashes": {"root-a": "old-hash"},
-            "visibleRootAnchorId": None,
+            "tabViewEmpty": False,
+            "visibleTopRootId": None,
+            "visibleBottomRootId": None,
             "isUntaggedView": False,
         }
     )
 
-    assert captured["anchor_root_id"] == "deep-root"
+    # The warm view's notes are what the tab already holds; the band starts from them.
+    assert captured["client_known_note_ids"] == {"root-a", "deep-root"}
+    assert captured["visible_top_root_id"] is None
+    assert captured["visible_bottom_root_id"] is None
     assert result["snapshot"]["diffOps"] == []
     assert "resultApproximateTokenCount" not in result["snapshot"]

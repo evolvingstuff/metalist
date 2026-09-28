@@ -1,5 +1,8 @@
+import random
+
 import pytest
 
+from app.services.tag_term_matching import build_normalized_content_match_context
 from app.services.tag_term_matching import list_significant_content_match_segments
 from app.services.tag_term_matching import match_tag_term_in_normalized_content
 from app.services.tag_term_matching import normalize_tag_match_text
@@ -180,3 +183,37 @@ def test_ignoring_numeric_chunks_preserves_weak_overlap_rejection(term: str, con
     assert match_tag_term_in_normalized_content(
         term=term, normalized_content=normalize_tag_match_text(content),
     ) is None
+
+
+def _linear_first_phrase_index(context, segments: tuple[str, ...]) -> int:
+    for index in range(len(context.tokens) - len(segments) + 1):
+        if context.matches_phrase_at(segments, index):
+            return index
+    return -1
+
+
+def test_indexed_phrase_lookup_matches_linear_scan() -> None:
+    rng = random.Random(20260927)
+    vocabulary = ["alpha", "beta", "julie", "julie's", "o'neill", "o'neill's", "7", "the", "x's", "'s"]
+    for _ in range(400):
+        tokens = [rng.choice(vocabulary) for _ in range(rng.randint(0, 40))]
+        context = build_normalized_content_match_context(normalized_content=" ".join(tokens))
+        for _ in range(20):
+            segments = tuple(rng.choice(vocabulary + ["x", "missing"]) for _ in range(rng.randint(1, 3)))
+            assert context.find_first_phrase_index(segments) == _linear_first_phrase_index(context, segments)
+
+
+def test_indexed_phrase_lookup_finds_phrase_ending_the_content() -> None:
+    context = build_normalized_content_match_context(normalized_content="beta alpha beta julie's")
+
+    assert context.find_first_phrase_index(("beta", "julie")) == 2
+    assert context.find_first_phrase_index(("alpha", "beta", "julie's")) == 1
+    assert context.find_first_phrase_index(("julie", "beta")) == -1
+
+
+def test_token_positions_record_first_segment_match() -> None:
+    context = build_normalized_content_match_context(normalized_content="alpha julie's beta julie")
+
+    assert context.token_positions["julie"] == 1
+    assert context.token_positions["julie's"] == 1
+    assert context.segment_match_indexes["julie"] == (1, 3)

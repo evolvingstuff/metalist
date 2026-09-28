@@ -14,6 +14,7 @@ import { rebuildRootDateSeparators } from '../services/root-date-separator-servi
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
+import { captureViewportRoot, holdViewportRoot } from '../services/viewport-hold-service.js';
 
 const moduleState = ApplicationState.createFields('ui-actions', {
     viewRequestInFlight: false,
@@ -54,6 +55,25 @@ function updateSearchResultsCount(snapshot, tabId) {
     el.textContent = total.toLocaleString('en-US');
 }
 
+export function isViewRequestInFlight() {
+    return moduleState.viewRequestInFlight;
+}
+
+// Resolves once no notes.view request is in flight, i.e. its response has been
+// applied. Anything that changes the active tab must await this first.
+export async function waitForViewRequestIdle() {
+    const waitStartedAt = performance.now();
+    while (moduleState.viewRequestInFlight) {
+        const waitedMs = performance.now() - waitStartedAt;
+        if (waitedMs > 5000) {
+            throw new Error('notes.view blocked >5s waiting for in-flight request');
+        }
+        await new Promise((resolve) => {
+            window.setTimeout(resolve, 25);
+        });
+    }
+}
+
 export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
@@ -89,16 +109,7 @@ export async function actionRefreshAndMaybeSelect(options) {
             return null;
         }
 
-        const waitStartedAt = performance.now();
-        while (moduleState.viewRequestInFlight) {
-            const waitedMs = performance.now() - waitStartedAt;
-            if (waitedMs > 5000) {
-                throw new Error('notes.view blocked >5s waiting for in-flight request');
-            }
-            await new Promise((resolve) => {
-                window.setTimeout(resolve, 25);
-            });
-        }
+        await waitForViewRequestIdle();
     }
 
     if (resetViewCacheBeforeFetch) {
@@ -109,28 +120,20 @@ export async function actionRefreshAndMaybeSelect(options) {
     moduleState.viewRequestInFlight = true;
     return await (async () => {
         const requestStartedAt = performance.now();
-        const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
-            ? options.visibleRootAnchorId
-            : null;
-        let anchorId = forcedAnchorId;
-        if (!anchorId) {
-            anchorId = ModeContext.getRootAnchorId();
-        }
-        if (!anchorId) {
-            anchorId = ModeContext.getLastKnownRootId();
-        }
-        const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
+        const visibleRootRange = resolveVisibleRootRange(options, requestTabId);
+        const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, visibleRootRange);
         if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
             throw new Error('notes.view response missing snapshot payload');
         }
+        // The server has already recorded this response as the tab's warm view,
+        // so it must be applied. Tab changes wait for in-flight view requests.
         if (ModeContext.activeTabId !== requestTabId) {
-            Logger.logDebug('Discarding snapshot for inactive tab', {
-                requestTabId,
-                activeTabId: ModeContext.activeTabId,
-            });
-            return null;
+            throw new Error(
+                `notes.view response for tab ${requestTabId} arrived after the active tab changed to ${ModeContext.activeTabId}`,
+            );
         }
         const { snapshot } = viewResponse;
+        ModeContext.setRootWindow(requestTabId, snapshot.rootWindowStart, snapshot.rootBandMargin);
         const hasDiffOps = Array.isArray(snapshot.diffOps);
         const previousHashes = ModeContext.getNoteHashPayload();
         if (!hasDiffOps) {
@@ -157,9 +160,11 @@ export async function actionRefreshAndMaybeSelect(options) {
             ? Object.keys(snapshot.notes).length
             : 0;
         const roundtripMs = performance.now() - requestStartedAt;
-        console.log(' [PERF] notes.view roundtrip:', {
-            ms: Number(roundtripMs.toFixed(2))
-        });
+        if (CONFIG.DEBUG.LOG_API_CALLS) {
+            console.log(' [PERF] notes.view roundtrip:', {
+                ms: Number(roundtripMs.toFixed(2))
+            });
+        }
 
         if (CONFIG.DEBUG.LOG_API_CALLS) {
             console.log(' [SNAPSHOT] notes.view summary:', {
@@ -172,12 +177,16 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
 
         const renderStartedAt = performance.now();
+        // Roots entering or leaving the band above the viewport must not move
+        // what the user is reading. A render that ends at the top needs no hold.
+        const viewportRoot = scrollToTopAfterRender ? null : captureViewportRoot();
         const diffResult = applyDifferentialView(snapshot, { previousHashes, animateNoteChanges });
         const notesContainer = diffResult.notesContainer;
         if (!notesContainer) {
             throw new Error('Notes container not found after diff application');
         }
         rebuildRootDateSeparators(snapshot);
+        holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.
         const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId)
@@ -281,4 +290,42 @@ export async function actionRefreshAndMaybeSelect(options) {
     })().finally(() => {
         moduleState.viewRequestInFlight = false;
     });
+}
+
+// Roots the browser can see; the server builds the band of loaded roots
+// around them. The page's first view has no live viewport yet, so it opens
+// the band at the tab's saved anchor root; resets (search, sort, jump to
+// top) send no roots and start at the first root.
+function resolveVisibleRootRange(options, tabId) {
+    if (options.startAtListTop === true) {
+        return { topRootId: null, bottomRootId: null };
+    }
+    if (typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0) {
+        return { topRootId: options.visibleRootAnchorId, bottomRootId: options.visibleRootAnchorId };
+    }
+    const live = ModeContext.getVisibleRootRange();
+    if (live.topRootId !== null || live.bottomRootId !== null) {
+        return live;
+    }
+    if (ModeContext.isInitialPageLoad) {
+        const savedAnchorRootId = ModeContext.tabs[tabId].anchorRootId;
+        if (typeof savedAnchorRootId === 'string' && savedAnchorRootId.length > 0) {
+            return { topRootId: savedAnchorRootId, bottomRootId: savedAnchorRootId };
+        }
+    }
+    return { topRootId: null, bottomRootId: null };
+}
+
+// Returns to the first root. With roots unloaded above the band, scrolling to
+// pixel 0 would only reach the band start, so the tab's view is rebuilt from
+// the first root instead.
+export async function actionJumpToListTop(context) {
+    if (!ModeContext.hasRootsAboveWindow()) {
+        return false;
+    }
+    ModeContext.resetTabDiffCache(ModeContext.activeTabId, { preserveRootAnchor: false });
+    await actionRefreshAndMaybeSelect({
+        context, requireExecution: true, startAtListTop: true, scrollToTopAfterRender: true,
+    });
+    return true;
 }

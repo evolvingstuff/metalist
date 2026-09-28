@@ -11,7 +11,6 @@ from app.api.transactions import transactional_route
 from app.services.search_index import search_index
 from app.services.note_store import store as note_store
 from app.services.sync import generate_new_uuid
-from app.services.view_cache import view_cache
 from app.services.tag_ontology import RegexAtom, TagAtom, TextAtom, parse_rules_text
 from app.services.ontology_rules_store import (
     build_direct_edge_rule_map,
@@ -155,7 +154,6 @@ def create_rule(request: Request, payload: RuleTextRequest) -> dict:
     rule_id, normalized = create_rule_line(text=text, token=token)
     if note_store.loaded:
         note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
-        view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"id": rule_id, "text": normalized, "updateUUID": update_uuid}
     return {"id": rule_id, "text": normalized}
@@ -193,7 +191,6 @@ def update_rule(request: Request, rule_id: int, payload: RuleTextRequest) -> dic
     updated_id, normalized = update_rule_line(rule_id=rule_id, text=text, token=token)
     if note_store.loaded:
         note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
-        view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"id": updated_id, "text": normalized, "updateUUID": update_uuid}
     return {"id": updated_id, "text": normalized}
@@ -224,7 +221,6 @@ def delete_rule(rule_id: int) -> dict:
     delete_rule_line(rule_id=rule_id)
     if note_store.loaded:
         note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
-        view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"ok": True, "updateUUID": update_uuid}
     return {"ok": True}

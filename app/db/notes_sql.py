@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
-import time
 from datetime import datetime
 from typing import Iterable, Optional, Any
 
 from .engine import GuardedConnection
 from .schema import NOTES_TABLE
 from app.services.hierarchy import validate_database_parent
+
+
+_DELETE_CHUNK_SIZE = 900
 
 
 def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
@@ -403,14 +405,13 @@ def delete_notes(
     identifiers = list(note_ids)
     if not identifiers:
         return
-    placeholders = ",".join(["?"] * len(identifiers))
-    sql = f"DELETE FROM {NOTES_TABLE} WHERE id IN ({placeholders})"
-    print('DEBUG CHECKPOINT 1')
-    t1 = time.perf_counter()
     conn = _conn(connection)
-    conn.execute(sql, tuple(identifiers))
-    t2 = time.perf_counter()
-    print(f'DEBUG CHECKPOINT 2 took {(t2-t1)} seconds')
+    # Chunk below SQLite's bound-variable limit (999 on older builds) so large
+    # subtree deletes do not fail; the caller's transaction keeps it atomic.
+    for start in range(0, len(identifiers), _DELETE_CHUNK_SIZE):
+        chunk = identifiers[start : start + _DELETE_CHUNK_SIZE]
+        placeholders = ",".join(["?"] * len(chunk))
+        conn.execute(f"DELETE FROM {NOTES_TABLE} WHERE id IN ({placeholders})", tuple(chunk))
 
 
 def fetch_note(

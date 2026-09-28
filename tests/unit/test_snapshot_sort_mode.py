@@ -113,8 +113,8 @@ def test_build_view_state_uses_root_creation_timestamp_despite_newer_child(
         search=None,
         sort_mode="created",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -176,8 +176,8 @@ def test_build_view_state_uses_newest_updated_timestamp_in_root_subtree(
         search=None,
         sort_mode="updated",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -239,8 +239,8 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
         search=None,
         sort_mode="alphabetical",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 
@@ -313,8 +313,8 @@ def test_build_view_state_sorts_roots_by_plain_text_volume_across_subtree(
         search=None,
         sort_mode="content-volume",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 

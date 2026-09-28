@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
+from contextvars import ContextVar
 from decimal import Decimal
 import html
 import json
@@ -8,7 +10,7 @@ import re
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
+from typing import Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
 
 # Keep existing formatting helper imports available to callers during this extraction.
 from app.services.structured_note_renderers import (
@@ -670,6 +672,37 @@ def _render_footnote_url_title_match(match: re.Match[str]) -> str:
     return _render_plain_url_anchor(text=escaped_url, link_text=escaped_url, href_value=escaped_url)
 
 
+# Rendering requests link-title fetches as a side effect (first lookup and
+# backoff retries). Cached renders record those requests so a cache hit can
+# replay exactly the calls a fresh render would make.
+_LINK_TITLE_FETCH_RECORDER: ContextVar[List[str] | None] = ContextVar(
+    "link_title_fetch_recorder", default=None,
+)
+
+
+def _request_link_title_fetch(url: str) -> None:
+    recorded = _LINK_TITLE_FETCH_RECORDER.get()
+    if recorded is not None:
+        recorded.append(url)
+    link_title_store.maybe_enqueue_fetch(url)
+
+
+@contextmanager
+def recording_link_title_fetches() -> Iterator[List[str]]:
+    assert _LINK_TITLE_FETCH_RECORDER.get() is None, "link-title fetch recording does not nest"
+    recorded: List[str] = []
+    reset_token = _LINK_TITLE_FETCH_RECORDER.set(recorded)
+    try:
+        yield recorded
+    finally:
+        _LINK_TITLE_FETCH_RECORDER.reset(reset_token)
+
+
+def replay_link_title_fetches(urls: Tuple[str, ...]) -> None:
+    for url in urls:
+        link_title_store.maybe_enqueue_fetch(url)
+
+
 def render_standalone_link_title_html(text: str) -> str | None:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
@@ -686,7 +719,7 @@ def render_standalone_link_title_html(text: str) -> str | None:
 
     title = link_title_store.get_ok_title(link_text)
     if title is None:
-        link_title_store.maybe_enqueue_fetch(link_text)
+        _request_link_title_fetch(link_text)
         return None
 
     escaped_title = html.escape(title)
@@ -1276,6 +1309,15 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
 
 
 def _tokenize_tag_bar(tags: str) -> List[str]:
+    # Without comments or wrapper openers the scanner below only splits on
+    # whitespace (str.isspace, the same set str.split uses), so take the
+    # C-speed path for plain tag strings.
+    if "/*" not in tags and not any(opener in tags for opener in _OPEN_TO_CLOSE):
+        return tags.split()
+    return _scan_tag_bar_tokens(tags)
+
+
+def _scan_tag_bar_tokens(tags: str) -> List[str]:
     tokens: List[str] = []
     index = 0
     while index < len(tags):

@@ -1,7 +1,6 @@
 import app.services.view_diff as view_diff_module
 from app.services.view_diff import generate_diff_ops
 from app.services.view_state import ViewState
-from app.api.routes.notes import _unknown_client_note_ids
 
 
 def build_state(children_by_parent, hash_by_id):
@@ -60,13 +59,3 @@ def test_generate_diff_ops_skips_branch_diff_when_structure_is_identical(monkeyp
     monkeypatch.setattr(view_diff_module, '_diff_sibling_order', fail_sibling_diff)
 
     assert generate_diff_ops(previous, current) == []
-
-
-def test_unknown_client_note_ids_ignores_cached_deleted_ids():
-    unknown_ids = _unknown_client_note_ids(
-        client_note_ids={'a', 'deleted', 'foreign'},
-        current_note_ids={'a'},
-        cached_note_ids={'a', 'deleted'},
-    )
-
-    assert unknown_ids == {'foreign'}

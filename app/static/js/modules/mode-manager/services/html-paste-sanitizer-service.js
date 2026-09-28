@@ -1054,9 +1054,11 @@ function sanitizeTree(rootNode, imageSourceFrequencyMap) {
         throw new Error('sanitizeTree expects imageSourceFrequencyMap Map');
     }
 
+    // Breadth-first walk with a moving head: Array.shift() is O(n) per call,
+    // which made large pastes quadratic. The loop only ever appends.
     const queue = Array.from(rootNode.childNodes);
-    while (queue.length > 0) {
-        const node = queue.shift();
+    for (let head = 0; head < queue.length; head += 1) {
+        const node = queue[head];
         if (!node) {
             continue;
         }

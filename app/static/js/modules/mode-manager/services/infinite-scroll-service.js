@@ -4,7 +4,6 @@ import * as Logger from '../mode-logger.js';
 import { CommandGate } from './command-gate-service.js';
 
 const POLL_INTERVAL_MS = 800;
-const ROOT_BUFFER_THRESHOLD = 25;
 
 const moduleState = ApplicationState.createFields('infinite-scroll-service', {
     tabPollState: {},
@@ -54,9 +53,7 @@ function getActiveTabState() {
     if (!moduleState.tabPollState[key]) {
         moduleState.tabPollState[key] = {
             pendingFetch: false,
-            lastKnownCount: 0,
             lastFetchTime: 0,
-            noMoreRoots: false,
         };
     }
     return moduleState.tabPollState[key];
@@ -82,7 +79,7 @@ export function stopInfiniteScrollMonitor() {
 // setter requests. Replace only the changed per-context snapshot.
 function receivePollReset(resetFetchTime) {
     const current = getActiveTabState();
-    const next = { ...current, lastKnownCount: ModeContext.knownRootCount, pendingFetch: false, noMoreRoots: false };
+    const next = { ...current, pendingFetch: false };
     if (resetFetchTime) next.lastFetchTime = 0;
     if (!stateValuesEqual(current, next)) {
         const key = `${ModeContext.activeTabId}::${ModeContext.searchQuery}`;
@@ -99,7 +96,10 @@ export function handleTabSwitch() {
 }
 
 function collectRootVisibility() {
-    const rootElements = document.querySelectorAll('.note');
+    // Root notes are direct children of the container; scanning every nested
+    // note each tick only to discard children made the poll scale with the
+    // whole rendered tree. The parent-id check below still guards roots.
+    const rootElements = document.querySelectorAll('#notes-container > .note');
     const viewportHeight = window.innerHeight;
     const visible = [];
     const past = [];
@@ -137,41 +137,39 @@ async function handlePoll() {
     }
 
     const state = getActiveTabState();
-    if (state.noMoreRoots) {
-        return;
-    }
     const { visible, past } = collectRootVisibility();
     if (visible.length > 0) {
-        const anchorId = visible[visible.length - 1];
-        // Visibility checks run repeatedly while the same root remains the viewport anchor.
-        if (ModeContext.getRootAnchorId() !== anchorId) {
-            ModeContext.setRootAnchorId(anchorId);
-        }
+        ModeContext.setVisibleRootRange(visible[0], visible[visible.length - 1]);
     }
-
     ModeContext.markRootsAsSeen([...visible, ...past]);
+    if (ModeContext.knownRootCount === 0 || visible.length === 0) return;
 
-    const knownCount = ModeContext.knownRootCount;
-    if (knownCount === 0) return;
-    if (state.lastKnownCount === 0 || state.lastKnownCount > knownCount) {
-        state.lastKnownCount = knownCount;
-    } else if (knownCount > state.lastKnownCount) {
-        state.lastKnownCount = knownCount;
-        if (state.noMoreRoots) state.noMoreRoots = false;
-    }
-
-    const anchorId = visible.length > 0 ? visible[visible.length - 1] : null;
-    const nearEnd = anchorId ? ModeContext.isAnchorNearEnd(anchorId, ROOT_BUFFER_THRESHOLD) : false;
-    const unseenCount = ModeContext.getUnseenRootCount();
-    // Be conservative: only fetch when user is at the end AND we have low buffer
-    if (nearEnd && unseenCount <= ROOT_BUFFER_THRESHOLD) {
-        await maybeFetchMore(state, knownCount, nearEnd);
+    // The loaded roots are a band around the viewport. Ask the server to move
+    // a band edge once the viewport is within the refetch distance of it and
+    // more roots exist beyond that edge.
+    const totalRoots = currentTotalRoots();
+    // Strictly closer than the server's keep distance, so every request moves an edge.
+    const distance = ModeContext.getRootBandRefetchDistance() - 1;
+    const needsRootsBelow = ModeContext.isAnchorNearEnd(visible[visible.length - 1], distance)
+        && ModeContext.hasRootsBelowWindow(totalRoots);
+    const needsRootsAbove = ModeContext.isAnchorNearStart(visible[0], distance)
+        && ModeContext.hasRootsAboveWindow();
+    if (needsRootsBelow || needsRootsAbove) {
+        await maybeMoveBand(state, { needsRootsAbove, needsRootsBelow });
     }
 }
 
-async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
+function currentTotalRoots() {
+    return selectInfiniteScrollRootTotal({
+        searchQuery: (ModeContext.searchQuery || '').toString(),
+        isUntaggedView: ModeContext.isUntaggedView,
+        rootCountTotal: ModeContext.rootCountTotal,
+        searchRootCountTotal: ModeContext.searchRootCountTotal,
+    });
+}
+
+async function maybeMoveBand(state, { needsRootsAbove, needsRootsBelow }) {
     if (state.pendingFetch) return;
-    if (state.noMoreRoots) return;
 
     const now = Date.now();
     if (now - state.lastFetchTime < POLL_INTERVAL_MS) return;
@@ -189,29 +187,20 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
         throw new Error(`activeTabId not present in ModeContext.tabOrder: ${ModeContext.activeTabId}`);
     }
     const context = `infiniteScroll tab#${activeIndex + 1}`;
+    const startBefore = ModeContext.getRootWindowStart();
+    const endBefore = startBefore + ModeContext.knownRootCount;
 
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect({ startedAt, context });
-    const currentKnown = ModeContext.knownRootCount;
-    if (currentKnown > previousKnownCount) {
-        if (state.lastKnownCount !== currentKnown) state.lastKnownCount = currentKnown;
-        if (state.noMoreRoots) state.noMoreRoots = false;
-    } else if (nearEndFlag) {
-        const totalRoots = selectInfiniteScrollRootTotal({
-            searchQuery: (ModeContext.searchQuery || '').toString(),
-            isUntaggedView: ModeContext.isUntaggedView,
-            rootCountTotal: ModeContext.rootCountTotal,
-            searchRootCountTotal: ModeContext.searchRootCountTotal,
-        });
-        if (totalRoots < currentKnown) {
-            throw new Error(`Invariant violation: knownRootCount (${currentKnown}) exceeds totalRoots (${totalRoots})`);
-        }
-        if (totalRoots === currentKnown) {
-            state.noMoreRoots = true;
-        } else {
-            // Fail fast: at visual end, but server did not extend
-            throw new Error('Infinite scroll blocked: near end but server returned no new roots');
-        }
+    // Band shifts add and drop roots at the edges; animating those removals
+    // would shrink content above the viewport over several frames.
+    await actionRefreshAndMaybeSelect({ startedAt, context, animateNoteChanges: false });
+    const startAfter = ModeContext.getRootWindowStart();
+    const endAfter = startAfter + ModeContext.knownRootCount;
+    if (needsRootsAbove && !(startAfter < startBefore) && ModeContext.hasRootsAboveWindow()) {
+        throw new Error('Infinite scroll blocked: near the band start but the server loaded no roots above');
+    }
+    if (needsRootsBelow && !(endAfter > endBefore) && ModeContext.hasRootsBelowWindow(currentTotalRoots())) {
+        throw new Error('Infinite scroll blocked: near the band end but the server loaded no roots below');
     }
     state.pendingFetch = false;
 }

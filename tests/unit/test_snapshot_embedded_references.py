@@ -113,12 +113,13 @@ def test_snapshot_finds_offscreen_backlinks_without_reading_offscreen_notes(monk
     monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
     state = build_view_state(
         editing_note_id=None, search=None, sort_mode="normal",
-        client_known_note_ids=set(), client_seen_root_ids=set(),
-        anchor_root_id=None, is_untagged_view=False,
+        client_known_note_ids=set(), visible_top_root_id=None,
+        visible_bottom_root_id=None, is_untagged_view=False,
     )
-    assert len(state.payloads) == 50
+    first_window = snapshot_module.ROOT_BAND_MARGIN + 1
+    assert len(state.payloads) == first_window
     assert "note-backlinks-link" in state.payloads[ids[0]]["content"]
-    assert read_ids == set(ids[:50])
+    assert read_ids == set(ids[:first_window])
 
 
 def _state_for(
@@ -144,8 +145,8 @@ def _state_for(
         search=None,
         sort_mode="normal",
         client_known_note_ids=set(),
-        client_seen_root_ids=set(),
-        anchor_root_id=None,
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
         is_untagged_view=False,
     )
 

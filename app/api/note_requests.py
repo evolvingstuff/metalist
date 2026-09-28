@@ -56,8 +56,9 @@ class ViewDiffRequest(TypedDict):
     search: Text | None
     tabId: Identifier
     undoContext: UndoContext
-    clientNoteUuidHashes: dict[Identifier, Text]
-    visibleRootAnchorId: Text | None
+    tabViewEmpty: bool
+    visibleTopRootId: Text | None
+    visibleBottomRootId: Text | None
     isUntaggedView: bool
 
 @with_config(ConfigDict(strict=True))
@@ -76,6 +77,7 @@ class UpdateTabSortModeRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
+    clientId: Identifier
 
 @with_config(ConfigDict(strict=True))
 class DeleteTabRequest(TypedDict):

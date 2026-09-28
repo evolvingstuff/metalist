@@ -129,7 +129,7 @@ def test_required_request_schema_rejects_bad_input_before_route():
     assert client.post('/view', json={}).status_code == 422
     assert client.post('/view', json={'clientId': 'PRIVATE_CANARY'}).status_code == 422
     schema = app.openapi()['components']['schemas']['ViewDiffRequest']
-    assert set(schema['required']) == {'clientId','editingNoteId','search','tabId','undoContext','clientNoteUuidHashes','visibleRootAnchorId','isUntaggedView'}
+    assert set(schema['required']) == {'clientId','editingNoteId','search','tabId','undoContext','tabViewEmpty','visibleTopRootId','visibleBottomRootId','isUntaggedView'}
 
 
 @pytest.fixture
@@ -374,10 +374,10 @@ for header, value in [("Host", "[broken"), ("Origin", "http://[broken")]:
 assert client.post("/api/obsolete", headers=headers).status_code == 410
 assert not any("/sounds" in path for path in app.openapi()["paths"])
 assert client.post(API_PREFIX + "/ontology/rules", headers=headers, json={}).status_code == 422
-assert client.post(API_PREFIX + "/notes/tab-state/new-tab", headers=headers, json={"copyFromTabId":"stale"}).status_code == 400
+assert client.post(API_PREFIX + "/notes/tab-state/new-tab", headers=headers, json={"copyFromTabId":"stale","clientId":"client"}).status_code == 400
 assert client.post(API_PREFIX + "/reminders/evaluate", headers=headers, json={"now":"bad-date","local_date":"bad-date","activity_kind":"visible"}).status_code == 400
 state = client.get(API_PREFIX + "/notes/tab-state", headers=headers).json()
-view = {"clientId":"client", "editingNoteId":None, "search":None, "tabId":state["activeTabId"], "undoContext":"client", "clientNoteUuidHashes":{}, "visibleRootAnchorId":None,"isUntaggedView":False}
+view = {"clientId":"client", "editingNoteId":None, "search":None, "tabId":state["activeTabId"], "undoContext":"client", "tabViewEmpty":True, "visibleTopRootId":None, "visibleBottomRootId":None,"isUntaggedView":False}
 response = client.post(API_PREFIX + "/notes/view", headers=headers, json=view)
 assert response.status_code == 200, (response.status_code, response.text)
 '''

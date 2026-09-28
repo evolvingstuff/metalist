@@ -108,6 +108,10 @@ class TagContentMatch:
 class NormalizedContentMatchContext:
     tokens: tuple[str, ...]
     token_positions: dict[str, int]
+    # Every ascending index where a segment matches a token (the token itself
+    # or its possessive), so phrase lookups visit only real candidate starts
+    # instead of scanning every content position.
+    segment_match_indexes: dict[str, tuple[int, ...]]
 
     def matches_phrase_at(self, segments: tuple[str, ...], index: int) -> bool:
         assert segments
@@ -119,6 +123,17 @@ class NormalizedContentMatchContext:
             token == segment or token == segment + "'s"
             for token, segment in zip(tokens, segments)
         )
+
+    def find_first_phrase_index(self, segments: tuple[str, ...]) -> int:
+        """Return the earliest index where `segments` match, or -1."""
+        assert segments
+        for segment in segments:
+            if segment not in self.segment_match_indexes:
+                return -1
+        for index in self.segment_match_indexes[segments[0]]:
+            if self.matches_phrase_at(segments, index):
+                return index
+        return -1
 
 
 def normalize_tag_match_text(text: str) -> str:
@@ -257,16 +272,19 @@ def build_normalized_content_match_context(*, normalized_content: str) -> Normal
         raise TypeError("normalized_content must be a string")
 
     content_tokens = tuple(normalized_content.split())
-    token_positions: dict[str, int] = {}
+    match_indexes: dict[str, list[int]] = {}
     for index, token in enumerate(content_tokens):
-        if token not in token_positions:
-            token_positions[token] = index
+        match_indexes.setdefault(token, []).append(index)
         # Keep the full token available for tags that contain an apostrophe.
         if token.endswith("'s") and len(token) > 2:
-            base_token = token[:-2]
-            if base_token not in token_positions:
-                token_positions[base_token] = index
-    return NormalizedContentMatchContext(tokens=content_tokens, token_positions=token_positions)
+            match_indexes.setdefault(token[:-2], []).append(index)
+    segment_match_indexes = {segment: tuple(indexes) for segment, indexes in match_indexes.items()}
+    token_positions = {segment: indexes[0] for segment, indexes in segment_match_indexes.items()}
+    return NormalizedContentMatchContext(
+        tokens=content_tokens,
+        token_positions=token_positions,
+        segment_match_indexes=segment_match_indexes,
+    )
 
 
 def match_tag_term_in_content_match_context(
@@ -284,14 +302,8 @@ def match_tag_term_in_content_match_context(
     if not segments:
         return None
 
-    raw_phrase_match = False
-    raw_phrase_position = -1
-    if len(context.tokens) >= len(raw_segments):
-        for index in range(len(context.tokens) - len(raw_segments) + 1):
-            if context.matches_phrase_at(raw_segments, index):
-                raw_phrase_match = True
-                raw_phrase_position = index
-                break
+    raw_phrase_position = context.find_first_phrase_index(raw_segments)
+    raw_phrase_match = raw_phrase_position >= 0
 
     raw_partial_phrase_match = False
     raw_partial_phrase_segment_count = 0
@@ -307,28 +319,18 @@ def match_tag_term_in_content_match_context(
             ):
                 continue
             raw_partial_phrase = raw_segments[raw_start_index:raw_end_index]
-            if len(context.tokens) < partial_phrase_segment_count:
+            content_index = context.find_first_phrase_index(raw_partial_phrase)
+            if content_index < 0:
                 continue
-            for content_index in range(len(context.tokens) - partial_phrase_segment_count + 1):
-                if not context.matches_phrase_at(raw_partial_phrase, content_index):
-                    continue
-                raw_partial_phrase_match = True
-                raw_partial_phrase_segment_count = partial_phrase_segment_count
-                raw_partial_phrase_position = content_index
-                break
-            if raw_partial_phrase_match:
-                break
+            raw_partial_phrase_match = True
+            raw_partial_phrase_segment_count = partial_phrase_segment_count
+            raw_partial_phrase_position = content_index
+            break
 
     phrase = " ".join(segments)
 
-    phrase_match = False
-    phrase_position = -1
-    if len(context.tokens) >= len(segments):
-        for index in range(len(context.tokens) - len(segments) + 1):
-            if context.matches_phrase_at(segments, index):
-                phrase_match = True
-                phrase_position = index
-                break
+    phrase_position = context.find_first_phrase_index(segments)
+    phrase_match = phrase_position >= 0
 
     matched_segments: list[str] = []
     matched_segment_count = 0

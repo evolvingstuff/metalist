@@ -3,7 +3,7 @@ from app.models.database import SafeSession
 from app.models import note_crud, list_operations
 from app.services import store as adapter_module
 from app.security import encryption
-from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
+from app.usecases.delete_subtree import _snapshot_subtree, apply_delete_subtree, apply_restore_records
 from app.usecases.move import apply_move
 
 import pytest
@@ -120,3 +120,20 @@ def test_database_cross_parent_move_and_undo_delete_restore(database_store):
     assert store.get_children(None) == ['head','middle','tail']
     store.load_from_db(session, prefetched_rows=None)
     assert store.get_children(None) == ['head','middle','tail']
+
+
+def test_undo_delete_restores_a_note_with_several_children(database_store):
+    store, session = database_store
+    list_operations.ListOperations.move_note(session, 'middle', 'head', None, None)
+    list_operations.ListOperations.move_note(session, 'tail', 'head', 'middle', 'after')
+    session.commit()
+    assert store.get_children('head') == ['middle', 'tail']
+    snapshot = _snapshot_subtree('head')
+
+    apply_delete_subtree('head')
+    apply_restore_records(snapshot, '')
+
+    assert store.get_children(None) == ['head']
+    assert store.get_children('head') == ['middle', 'tail']
+    store.load_from_db(session, prefetched_rows=None)
+    assert store.get_children('head') == ['middle', 'tail']

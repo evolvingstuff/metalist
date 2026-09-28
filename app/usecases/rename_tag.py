@@ -12,7 +12,6 @@ from app.services.ontology_rules_store import rename_tag_everywhere
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.tag_rename import rename_tag_in_tag_bar
-from app.services.view_cache import view_cache
 
 
 def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
@@ -65,14 +64,16 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
                 tags_encryption_tag=tags_tag,
             )
 
-    for note_id, content, tags in updates:
-        record = store.get(note_id)
+    tag_changes = {}
+    for note_id, _content, tags in updates:
+        record = note_store.get_note(note_id)
         if record.updated_at is None:
             raise RuntimeError(f"Cannot preserve missing updated_at while renaming tag: {note_id}")
         cache_note_tags(note_id, tags)
-        store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
+        tag_changes[note_id] = (tags, record.proposed_tags)
+    # One incremental recompute for every renamed note, not one per note.
+    note_store.apply_bulk_tag_sources(tag_changes)
 
-    view_cache.clear()
     update_uuid = generate_new_uuid()
     return {
         'ok': True,

@@ -108,6 +108,7 @@ class _AdapterStore:
     def restore_subtree(self, records: List[NodeRecord]) -> None:
         # Preorder restoration can reference a sibling restored later in this batch.
         pending_ids = {record.id for record in records}
+        entries = []
         for rec in records:
             pending_ids.remove(rec.id)
             next_id = rec.next_id
@@ -125,7 +126,8 @@ class _AdapterStore:
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
             assert isinstance(rec.proposed_tags, str)
-            _note_store.add_note_from_db(row, rec.content, rec.tags, rec.proposed_tags)
+            entries.append((row, rec.content, rec.tags, rec.proposed_tags))
+        _note_store.add_notes_from_db(entries)
 
     def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
         # Determine next based on prev in destination parent

@@ -29,7 +29,9 @@ def _collect_subtree_ids(root_id: str) -> List[str]:
             continue
         seen.add(nid)
         ids.append(nid)
-        for cid in store.children(nid):
+        # Push in reverse so siblings pop in order: restore relies on true
+        # preorder, where each note's previous sibling is already back.
+        for cid in reversed(store.children(nid)):
             stack.append(cid)
     return ids
 

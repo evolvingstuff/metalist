@@ -37,11 +37,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     )
     assert all(path.endswith("/") for path in PUBLIC_PREFIX_PATHS)
     
-    # Paths to suppress verbose logging for (frequent polling endpoints)
-    QUIET_PATHS = [
-        f"{API_PREFIX}/auth/status",
-    ]
-    
     # Background/automated paths that should NOT refresh tokens (not user activity)
     NO_TOKEN_REFRESH_PATHS = [
         f"{API_PREFIX}/auth/status",  # Polling service pings this for connectivity
@@ -75,19 +70,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Redirect all other requests to maintenance page
             return RedirectResponse(url="/maintenance", status_code=302)
         
-        # Check if this is a quiet path (suppress verbose logging)
-        is_quiet = any(path.startswith(quiet) for quiet in self.QUIET_PATHS)
-        
-        if not is_quiet:
-            print(f"Middleware checking path: {path}")
-        
         if self.is_public_path(path=path):
-            if not is_quiet:
-                print(f"Path {path} is explicitly public, skipping auth")
             return await call_next(request)
-        
-        if not is_quiet:
-            print(f"Path {path} is NOT public, checking auth")
         
         # Startup and recoverable password transitions publish this memory-owned flag.
         if path == f"{API_PREFIX}/auth/settings/password/create" and not is_encryption_required():

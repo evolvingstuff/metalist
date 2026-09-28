@@ -179,3 +179,22 @@ def test_legacy_tab_payload_discards_removed_calendar_state() -> None:
     assert "calendarMetric" not in normalized_tab
     assert "calendarScrollTop" not in normalized_tab
     assert "calendarScrollPinnedToNewest" not in normalized_tab
+
+
+def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = TabStateStore()
+    snapshot = store.snapshot()
+    tab_id = snapshot["activeTabId"]
+    snapshot["tabs"][tab_id]["scrollY"] = 120
+    changed = store.update(active_tab_id=tab_id, tabs=snapshot["tabs"], tab_order=snapshot["tabOrder"])
+    writes: list[bool] = []
+    monkeypatch.setattr(store, "_persist_locked", lambda **_kwargs: writes.append(True))
+
+    unchanged = store.update(active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"])
+
+    assert unchanged["version"] == changed["version"]
+    assert writes == []
+    changed["tabs"][tab_id]["scrollY"] = 240
+    moved = store.update(active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"])
+    assert moved["version"] == changed["version"] + 1
+    assert writes == [True]

@@ -58,7 +58,9 @@ function rectsShareRenderedLine(firstRect, secondRect) {
     return overlapHeight >= shorterRectHeight * SAME_LINE_VERTICAL_OVERLAP_RATIO;
 }
 
-function countRenderedLineBoxes(contentElement) {
+// Returns the number of rendered line boxes, stopping at 2: callers only ask
+// whether content spans more than one line, and line groups never merge.
+function countRenderedLineBoxesUpToTwo(contentElement) {
     if (!globalThis.document || typeof globalThis.document.createRange !== 'function') {
         return null;
     }
@@ -88,6 +90,9 @@ function countRenderedLineBoxes(contentElement) {
             renderedLines[matchingLineIndex].push(rect);
         } else {
             renderedLines.push([rect]);
+            if (renderedLines.length === 2) {
+                return 2;
+            }
         }
     }
     return renderedLines.length;
@@ -110,7 +115,7 @@ export function doesRenderedContentNeedCollapse(contentElement) {
     }
 
     const measurementElement = getCollapseMeasurementElement(contentElement);
-    const renderedLineBoxCount = countRenderedLineBoxes(measurementElement);
+    const renderedLineBoxCount = countRenderedLineBoxesUpToTwo(measurementElement);
     if (renderedLineBoxCount !== null) {
         return renderedLineBoxCount > 1;
     }
@@ -163,7 +168,7 @@ export function updateCollapseAffordanceForNote(noteElement) {
     }
     const contentElement = noteElement.querySelector(':scope > ' + NOTE_CONTENT_SELECTOR);
     if (!contentElement) {
-        noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = 'false';
+        setDatasetValue(noteElement, CAN_COLLAPSE_DATA_KEY, 'false');
         return;
     }
 
@@ -172,6 +177,44 @@ export function updateCollapseAffordanceForNote(noteElement) {
     const hasChildren = noteElement.dataset.hasChildren === 'true';
     const isSearchRedacted = noteElement.dataset.searchRedacted === 'true';
     const serverCanCollapse = resolveCanCollapseFromDataset(noteElement.dataset);
+    // The rendered measurement decides only when nothing else does. Skipping it
+    // otherwise also skips its forced layout, which dominated page inserts.
+    let canCollapse = false;
+    if (!isSearchRedacted) {
+        if (isEditing) {
+            canCollapse = hasChildren;
+        } else if (serverCanCollapse) {
+            canCollapse = true;
+        } else {
+            canCollapse = measureRenderedContentNeedsCollapse(noteElement, contentElement);
+        }
+    }
+
+    setDatasetValue(noteElement, CAN_COLLAPSE_DATA_KEY, canCollapse ? 'true' : 'false');
+    const shouldApplyCollapsedClass = isCollapsed && canCollapse;
+
+    // Ensure the DOM class matches the dataset for consistent styling. Writes
+    // happen only on change: redundant writes still invalidate style and make
+    // the next note's measurement relayout the whole page.
+    if (noteElement.classList.contains('collapsed') !== shouldApplyCollapsedClass) {
+        if (shouldApplyCollapsedClass) {
+            noteElement.classList.add('collapsed');
+        } else {
+            noteElement.classList.remove('collapsed');
+        }
+    }
+
+    const collapseToggle = noteElement.querySelector(':scope > .note-collapse-toggle');
+    if (collapseToggle) {
+        // No stylesheet selects on these attributes, so writing them never
+        // invalidates style.
+        collapseToggle.setAttribute('aria-label', shouldApplyCollapsedClass ? 'Expand note' : 'Collapse note');
+        collapseToggle.removeAttribute('title');
+    }
+}
+
+function measureRenderedContentNeedsCollapse(noteElement, contentElement) {
+    // Measure the note as it would render expanded.
     const wasCollapsed = noteElement.classList.contains('collapsed');
     if (wasCollapsed) {
         noteElement.classList.remove('collapsed');
@@ -180,26 +223,12 @@ export function updateCollapseAffordanceForNote(noteElement) {
     if (wasCollapsed) {
         noteElement.classList.add('collapsed');
     }
-    const canCollapse = !isSearchRedacted && (
-        isEditing
-            ? hasChildren
-            : (serverCanCollapse || renderedContentNeedsCollapse)
-    );
+    return renderedContentNeedsCollapse;
+}
 
-    noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
-    const shouldApplyCollapsedClass = isCollapsed && canCollapse;
-
-    // Ensure the DOM class matches the dataset for consistent styling.
-    if (shouldApplyCollapsedClass) {
-        noteElement.classList.add('collapsed');
-    } else {
-        noteElement.classList.remove('collapsed');
-    }
-
-    const collapseToggle = noteElement.querySelector(':scope > .note-collapse-toggle');
-    if (collapseToggle) {
-        collapseToggle.setAttribute('aria-label', shouldApplyCollapsedClass ? 'Expand note' : 'Collapse note');
-        collapseToggle.removeAttribute('title');
+function setDatasetValue(element, key, value) {
+    if (element.dataset[key] !== value) {
+        element.dataset[key] = value;
     }
 }
 

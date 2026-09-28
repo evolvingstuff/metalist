@@ -466,8 +466,13 @@ async function createNoteWithPlacement(placeAtTop) {
         }, Logger.LogCategory.DEBUG);
         data = await NotesAPI.createSibling(currentNoteId, ModeContext.searchQuery);
     } else {
+        // The first loaded note is the list's first root only when the band of
+        // loaded roots starts there; otherwise ask the server for the true top.
+        // Editing the new note then centres the band on it.
         const firstVisibleNote = document.querySelector('.note');
-        const firstVisibleNoteId = firstVisibleNote ? firstVisibleNote.dataset.noteId : '';
+        const firstVisibleNoteId = firstVisibleNote && !ModeContext.hasRootsAboveWindow()
+            ? firstVisibleNote.dataset.noteId
+            : '';
 
         Logger.logDebug('Creating new note at top of list', {
             firstVisibleNoteId,

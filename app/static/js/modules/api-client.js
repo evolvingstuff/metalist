@@ -664,7 +664,7 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
-    async fetchView(noteId, searchQuery, tabId, visibleRootAnchorId) {
+    async fetchView(noteId, searchQuery, tabId, visibleRootRange) {
         if (typeof noteId === 'undefined') {
             throw new Error('NotesAPI.fetchView requires noteId (use null when not editing)');
         }
@@ -674,8 +674,10 @@ export const NotesAPI = {
         if (typeof tabId !== 'string') {
             throw new Error('NotesAPI.fetchView requires tabId string');
         }
-        if (typeof visibleRootAnchorId === 'undefined') {
-            throw new Error('NotesAPI.fetchView requires visibleRootAnchorId (use null when unknown)');
+        if (!visibleRootRange || typeof visibleRootRange !== 'object'
+            || typeof visibleRootRange.topRootId === 'undefined'
+            || typeof visibleRootRange.bottomRootId === 'undefined') {
+            throw new Error('NotesAPI.fetchView requires visibleRootRange {topRootId, bottomRootId} (null when unknown)');
         }
         const payload = {
             clientId: ModeContext.clientId,
@@ -683,8 +685,12 @@ export const NotesAPI = {
             search: searchQuery,
             tabId,
             isUntaggedView: ModeContext.isUntaggedView,
-            clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
-            visibleRootAnchorId,
+            // The server keeps this tab's warm view, so the browser sends only
+            // where it is. A tab holding no view (fresh, or reset locally)
+            // gets its initial window instead of a diff.
+            tabViewEmpty: ModeContext.getTabNoteHashCount(tabId) === 0,
+            visibleTopRootId: visibleRootRange.topRootId,
+            visibleBottomRootId: visibleRootRange.bottomRootId,
         };
 
         const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {

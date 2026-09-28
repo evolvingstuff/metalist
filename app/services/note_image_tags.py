@@ -53,4 +53,15 @@ def content_contains_image(*, content_html: str, is_image_file: Callable[[str], 
 
 
 def _contains_inline_image_markup(content_html: str) -> bool:
+    # Cheap substring prefilter before the case-insensitive regex scan. Under
+    # re.IGNORECASE the pattern's "i" also matches U+0130/U+0131, which
+    # str.lower() does not fold to "i", so those always take the regex path.
+    lowered = content_html.lower()
+    if (
+        "<img" not in lowered
+        and "data:image/" not in lowered
+        and "İ" not in content_html
+        and "ı" not in content_html
+    ):
+        return False
     return _INLINE_IMAGE_RE.search(content_html) is not None

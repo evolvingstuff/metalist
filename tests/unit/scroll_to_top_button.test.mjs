@@ -82,7 +82,7 @@ test('scroll-to-top button starts disabled at the page top and enables after scr
         '../../app/static/js/modules/mode-manager/services/scroll-to-top-service.js'
     );
 
-    initializeScrollToTopButton();
+    initializeScrollToTopButton({ hasRootsAboveWindow: () => false, jumpToListTop: async () => {} });
 
     assert.equal(harness.button.disabled, true);
     globalThis.window.scrollY = 240;
@@ -102,7 +102,7 @@ test('scroll-to-top button immediately reaches the top when reduced motion is pr
         '../../app/static/js/modules/mode-manager/services/scroll-to-top-service.js'
     );
 
-    initializeScrollToTopButton();
+    initializeScrollToTopButton({ hasRootsAboveWindow: () => false, jumpToListTop: async () => {} });
     assert.equal(harness.button.disabled, false);
 
     harness.button.click();

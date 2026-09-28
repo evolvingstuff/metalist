@@ -219,6 +219,10 @@ class LinkTitleStore:
         self._state: _LinkTitleState | None = None
         self._in_flight: set[str] = set()
         self._revision = 0
+        # Bumped on every change a rendered link can observe (records, whole
+        # state swaps, and in-flight lookups shown as diagnostics), including
+        # the ones that do not advance the client-facing revision.
+        self._render_generation = 0
 
     def bootstrap(self, *, connection) -> None:
         rows = fetch_all_link_title_rows(connection)
@@ -232,6 +236,7 @@ class LinkTitleStore:
         with self._lock:
             self._state = state
             self._in_flight.clear()
+            self._render_generation += 1
             if did_sanitize:
                 self._revision += 1
 
@@ -255,16 +260,22 @@ class LinkTitleStore:
                 if result.did_update:
                     self._revision += 1
             self._state = state
+            self._render_generation += 1
 
     def reset(self) -> None:
         with self._lock:
             self._state = None
             self._in_flight.clear()
             self._revision = 0
+            self._render_generation += 1
 
     def get_revision(self) -> int:
         with self._lock:
             return self._revision
+
+    def get_render_generation(self) -> int:
+        with self._lock:
+            return self._render_generation
 
     def get_ok_title(self, url: str) -> str | None:
         normalized_url = normalize_url_for_link_title(url)
@@ -294,6 +305,7 @@ class LinkTitleStore:
             if not self._is_fetch_eligible_locked(normalized_url=normalized_url):
                 return
             self._in_flight.add(normalized_url)
+            self._render_generation += 1
         link_title_fetcher.submit(normalized_url, generation)
 
     def apply_current_fetch_result(self, result: _LinkTitleFetchResult, generation: int) -> None:
@@ -314,9 +326,11 @@ class LinkTitleStore:
             state = self._state
             if state is None:
                 self._in_flight.discard(normalized_url)
+                self._render_generation += 1
                 return
             if not state.is_decrypted:
                 self._in_flight.discard(normalized_url)
+                self._render_generation += 1
                 return
             previous = state.records_by_url.get(normalized_url)
             next_record = _build_next_record(
@@ -346,6 +360,7 @@ class LinkTitleStore:
             )
             self._in_flight.discard(normalized_url)
             self._revision += 1
+            self._render_generation += 1
 
     def discard_in_flight(self, url: str) -> None:
         normalized_url = normalize_url_for_link_title(url)
@@ -353,6 +368,7 @@ class LinkTitleStore:
             return
         with self._lock:
             self._in_flight.discard(normalized_url)
+            self._render_generation += 1
 
     def _is_fetch_eligible_locked(self, *, normalized_url: str) -> bool:
         state = self._state

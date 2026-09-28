@@ -3,8 +3,9 @@
 ## Overview
 - `POST /api2/notes/view` now serves two flows:
   - **Bootstrap**: the server returns a compact `structure` chunk for initial load.
-  - **Incremental**: after bootstrap, the server caches each tab’s view and returns `diffOps` (insert/move/remove/update instructions) plus sparse payloads.
-- Clients no longer re-send the entire structure every time; hashes identify stale nodes and a single `visibleRootAnchorId` tells the server where to extend the window.
+  - **Incremental**: after bootstrap, the server diffs against the tab’s warm view and returns `diffOps` (insert/move/remove instructions) plus sparse payloads.
+- The server keeps a **warm view** per `(clientId, tabId)`: the last view it sent that tab (hierarchy, per-note hashes, locks). The browser therefore sends no hashes or structure, only which roots it can currently see.
+- The loaded roots form a **band** around the visible roots, so the DOM, the warm view, and per-request render work stay bounded however far the user scrolls.
 - Legacy `/api/*` routes remain blocked.
 
 ## Request Shape
@@ -15,25 +16,26 @@
   "undoContext": "tab:tab-uuid|search:optional query",
   "search": "optional query",
   "tabId": "tab-uuid",
-  "visibleRootAnchorId": "root-uuid-13",
-  "clientNoteUuidHashes": {
-    "note-uuid-1": "expandedHashWithFlags",
-    "note-uuid-2": "expandedHashWithFlags"
-  }
+  "tabViewEmpty": false,
+  "visibleTopRootId": "root-uuid-13",
+  "visibleBottomRootId": "root-uuid-15",
+  "isUntaggedView": false
 }
 ```
 
 ### Notes
 - Keys above are required.
-- `visibleRootAnchorId`: the root note currently near the center of the viewport. The server expands the window around this anchor (plus a buffer) so infinite scroll is driven entirely on the backend.
-- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache.
-  - Omit entries the client does not currently have rendered.
-  - The cache is **tab-scoped**.
-  - When a new search query is executed, the client should clear this cache first so the server does not suppress payloads for nodes that are about to be inserted.
-  - After deleting a note, the client removes that note/subtree from this cache before refreshing so the next `/notes/view` request can stay incremental.
+- `visibleTopRootId` / `visibleBottomRootId`: the first and last root notes the browser can see (`null` when unknown, e.g. on first load). The server builds the band from them:
+  - The band spans `ROOT_BAND_MARGIN` (75, `app/services/snapshot.py`) roots beyond each visible root.
+  - An existing band edge stays put while it lies between half and twice the margin from the visible roots, so ordinary scrolling changes nothing and roots load or unload far from the viewport.
+  - With no viewport report (a refresh after an action) the band is kept; a note being edited always lies inside it.
+  - The response's `rootWindowStart` and `rootBandMargin` tell the client where the band starts, for scroll metrics.
+- `tabViewEmpty`: `true` when the browser holds nothing for this tab (a fresh tab, or one reset locally). The server then ignores its warm view and bootstraps.
+- `isUntaggedView`: restricts the view to notes without tags.
+- The warm view is kept for the tab's lifetime. It is dropped only when the tab is deleted or the session ends (login, passwordless claim, logout, lock, restore); a duplicated tab starts from a copy of its source's warm view.
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
-- `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
+- `tabId`: client-maintained active tab UUID; the server keeps one warm view per `(clientId, tabId)`. Search, sort, and untagged changes simply diff against it.
 - A companion `/api2/notes/tab-state` + tab create/delete endpoints keep each tab's search + scroll metadata in the namespace SQLite DB so reconnects and server restarts can hydrate the same contexts before the next `/notes/view` call.
 - When the namespace is password-protected, the persisted tab-state payload is encrypted at rest with the active DEK; passwordless namespaces keep the same row in plaintext.
 
@@ -78,8 +80,8 @@
 ```
 
 ### Notes
-- `snapshot.structure` includes every visible node in the current window. This path is only used when the server lacks a cached view for `(clientId, tabId, search)`.
-- `snapshot.notes` is sparse: only nodes whose `hash` differs from the client’s reported hashes.
+- `snapshot.structure` includes every visible node in the current band. This path is only used when the server has no warm view for `(clientId, tabId)` or the request sets `tabViewEmpty`.
+- `snapshot.notes` holds every note in the band on bootstrap; incremental responses are sparse (see below).
 - Each note payload includes:
   - `content`: HTML that is **rendered for view mode** unless the note is actively being edited by the current client.
     - When `flags.isEditing` is true (and the lock owner is the current client), the server sends **raw editable HTML** so wrapper delimiters like `{{...}}` remain visible.
@@ -118,34 +120,35 @@
 ```
 
 ### Notes
-- `diffOps` is an ordered list of DOM operations generated by diffing the cached view with the latest store state:
+- `diffOps` is an ordered list of DOM operations generated by diffing the warm view with the latest store state:
   - `remove`: delete the note (and its subtree) at `fromIndex` under `parentId`.
   - `insert`: create a new note at `toIndex` under `parentId` (payload supplied via `snapshot.notes`).
   - `move`: reparent/reorder an existing note under `parentId`.
-- `notes` remains sparse and only includes nodes whose hash changed or newly inserted nodes.
-- If the client still reports a note id that is gone from the current view but was present in the server's cached prior view, the server treats it as a normal deletion and returns a `remove` diff instead of forcing a full snapshot.
-- `lockDiffs` only lists locks that changed since the cached view. `locks` still contains the full visible lock map for reference.
+- `notes` remains sparse: only notes whose hash differs from the warm view, plus newly inserted notes.
+- Roots leaving the band arrive as ordinary `remove` ops and roots entering it as `insert` ops.
+- `lockDiffs` only lists locks that changed since the warm view. `locks` still contains the full visible lock map for reference.
 - `rootIds` keeps infinite-scroll metrics in sync without re-sending the full structure array.
-- The server stores the newly generated view in-memory per `(clientId, tabId, search)` so subsequent requests can stay incremental.
+- Every response becomes the tab's new warm view, so it must be applied: the client never discards a view response, and tab switches wait for an in-flight view request.
 
 ## Reconciliation Efficiency
 - Snapshot construction uses a request-local traversal cache for note records, ordered child lists, ancestor paths, and descendant counts. A hierarchy branch is read once even though rendering and per-note metadata both need it.
-- If a viewport anchor disappears between client polling and server reconciliation, windowing continues from the furthest client-known root still present in the current view so infinite scrolling can keep extending.
+- Rendered view HTML is cached per note for notes without references, and for link/reference notes keyed on what they reference, so an unchanged band re-renders almost nothing. Notes with remote images are never cached because their proxy tokens are random and expire.
 - If the cached and current `children_by_parent` maps are identical, the server skips branch-by-branch structural diffing and only computes sparse note/lock updates.
 - An incremental response with no structural, note, or lock changes returns from client reconciliation immediately. Lock-only and structure-only responses also skip media hydration unless note content was actually replaced.
 
 ## Client Reconciliation
 - Tab switch optimization: clients may detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile diffs.
-- If a persisted tab is restored after a server restart but its detached DOM cache is gone, tab duplication falls back to an empty client cache and lets the next `/notes/view` round-trip bootstrap the new tab from server state.
-- Bootstrap path: identical to the legacy behavior (diff against `snapshot.structure`, update DOM and hash cache, reset root tracking).
+- If a persisted tab is restored after a server restart but its detached DOM cache is gone, the tab reports `tabViewEmpty` and the next `/notes/view` round-trip bootstraps it from server state.
+- Bootstrap path: diff against `snapshot.structure`, update the DOM and the tab's note-id tracking, reset root tracking.
 - Incremental path:
   - Apply `diffOps` in order (remove/move/insert) directly to the DOM.
-  - Removed notes animate through an identity-free placeholder clone: the live note node is removed from `[data-note-id]` lookup and client hash caches immediately, while the clone collapses out of the layout before being discarded.
-  - For each affected note id present in `snapshot.notes`, refresh the DOM content, flags, and cached hash.
+  - Removed notes animate through an identity-free placeholder clone: the live note node is removed from `[data-note-id]` lookup and the tab's note tracking immediately, while the clone collapses out of the layout before being discarded.
+  - For each affected note id present in `snapshot.notes`, refresh the DOM content and flags.
+  - When roots enter or leave the band above the viewport, the client keeps the top visible root at the same screen position (`viewport-hold-service.js`), re-checking briefly while images and diagrams settle, and stops as soon as the user scrolls.
   - Apply `lockDiffs` by toggling lock styling/editability without re-rendering content.
   - Update `ModeContext`’s root tracking via the provided `rootIds` array.
 - Active editor preservation: when a note is being edited by the current client and the edit session has user edits, `/notes/view` refreshes may update flags, locks, collapse state, and the snapshot hash, but must not replace the note content DOM. The DOM content hash remains tied to the actual rendered editor content until the client intentionally saves or exits editing.
-- Both paths keep the `clientNoteUuidHashes` map authoritative so follow-up requests remain incremental. Because caches are tab-scoped, a tab switch simply swaps the active map—no mass invalidation necessary and each `/notes/view` request only sends hashes for what that tab rendered last time.
+- The server's warm view, not the browser, is the diff baseline. Because it is tab-scoped, a tab switch needs no invalidation.
 
 ### Scroll State Note
 - When caching/restoring the notes DOM during a tab switch, the browser can temporarily clamp `window.scrollY` if the page height changes. Scroll persistence should be suppressed during the switch so per-tab `scrollY` snapshots are not overwritten.
@@ -159,5 +162,5 @@
 - Collapse/expand toggles: child containers + flags stay accurate.
 - Undo/redo flows: structure diff realigns with no stale nodes.
 - Search: query round-trips per tab and updates `undoContext` boundaries.
-- Search filtering: server-side and windowed by root notes (infinite scroll extends matching roots as needed).
+- Search filtering: server-side and banded by root notes (scrolling moves the band of matching roots).
 - Lock acquisition/release: lock icons/styling update without full refresh.

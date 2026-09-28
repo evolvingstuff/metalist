@@ -1,5 +1,8 @@
+import random
+
 import pytest
 
+from app.services import search_index as search_index_module
 from app.services.search_index import (
     SearchIndex,
     SearchRecord,
@@ -435,3 +438,25 @@ def test_search_index_tracks_raw_inherited_frequency_separately_from_ontology() 
 
     index.remove_many({"n2"})
     assert "money" not in index.list_raw_tag_frequencies_by_casefold()
+
+
+def test_suggestion_co_occurrence_strategies_rank_identically(monkeypatch: pytest.MonkeyPatch) -> None:
+    rng = random.Random(11)
+    vocabulary = [f"tag{index}" for index in range(30)] + ["Mixed", "mixed", "tag-long"]
+    records = []
+    for index in range(300):
+        tags = frozenset(rng.sample(vocabulary, rng.randrange(1, 8)))
+        records.append(SearchRecord(f"n{index}", "", " ".join(sorted(tags)), tags))
+    index = _build_index(records)
+    queries = [
+        "tag0 ", "Mixed ", "tag1 tag2 ", "tag1 tag2 tag3 ", "tag0 ta", "tag4 -tag5 ", "tag6 tag7 t", "nosuch ", "tag8 m",
+    ]
+    rankings = []
+    for ratio in (0, 10**9):
+        monkeypatch.setattr(search_index_module, "SUGGESTION_INTERSECT_COST_RATIO", ratio)
+        rankings.append([
+            (index.suggest_tag_completions(query=query, limit=40), index.suggest_all_tag_completions(query=query))
+            for query in queries
+        ])
+    assert rankings[0] == rankings[1]
+    assert any(suggestions for suggestions, _ in rankings[0])

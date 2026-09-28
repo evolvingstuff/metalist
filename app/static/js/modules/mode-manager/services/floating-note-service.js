@@ -156,6 +156,8 @@ async function refreshWindow(id) {
 }
 
 export async function refreshFloatingNotes() {
+    // Hidden tabs skip refreshes; the next visible tick catches up.
+    if (document.hidden) return;
     if (moduleState.refreshing || CommandGate.isBusy() || moduleState.order.length === 0) return;
     moduleState.refreshing = true;
     await Promise.all([...moduleState.order].map(refreshWindow)).finally(() => {

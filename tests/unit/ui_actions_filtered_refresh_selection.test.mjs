@@ -11,14 +11,14 @@ const uiSource = readFileSync(new URL(
 ), 'utf8');
 const refreshStart = uiSource.indexOf('export async function actionRefreshAndMaybeSelect(options)');
 assert.ok(refreshStart >= 0);
-const refreshSource = uiSource.slice(refreshStart).replace('export ', '');
+const refreshSource = uiSource.slice(refreshStart).replace(/^export /gm, '');
 
 function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
     const calls = [];
     const noteElement = { id: 'edited-note' };
     const hashes = new Set(['edited-note']);
     let isElementPresent = true;
-    const snapshot = { notes: {}, rootCountTotal: 1, searchRootCountTotal: 1 };
+    const snapshot = { notes: {}, rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75 };
     if (isFullSnapshot) {
         snapshot.structure = isRemoved ? [] : [{ id: 'edited-note', hash: 'new' }];
     } else {
@@ -30,6 +30,8 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         knownRootCount: 1, seenRootCount: 1, noteCount: 1,
         getExecutedSearchQuery: () => 'implied-tag',
         getRootAnchorId: () => 'edited-note',
+        getVisibleRootRange: () => ({ topRootId: 'edited-note', bottomRootId: 'edited-note' }),
+        setRootWindow() {},
         getNoteHashPayload: () => ({ 'edited-note': 'old' }),
         getRootCountTotals: () => ({ rootCountTotal: 1, searchRootCountTotal: 1 }),
         hasNoteHash: (id) => hashes.has(id),
@@ -68,6 +70,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         },
         updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateUntaggedViewIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
+        captureViewportRoot: () => null, holdViewportRoot() {},
     };
     const refresh = new Function(...Object.keys(dependencies),
         `let viewRequestInFlight = false;\n${refreshSource}\nreturn actionRefreshAndMaybeSelect;`,

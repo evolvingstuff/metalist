@@ -174,7 +174,8 @@ export const CONFIG = {
 
     DEBUG: {
         LOG_API_CALLS: false,
-        LOG_STATE_CHANGES: false
+        LOG_STATE_CHANGES: false,
+        LOG_VDOM_OPS: false
     },
 
     LOADING: {

@@ -92,9 +92,6 @@ function handleInput(event) {
         throw new Error('Input event missing target element');
     }
 
-    console.log('[InputEvents] Input event fired, last key:', ModeContext.lastKeyPressed, 
-        'inputType:', event.inputType, 'data:', event.data);
-
     if (ModeContext.isLoading) {
         Logger.logNoop('Input event ignored while system is loading', {
             targetElement: event.target.tagName,

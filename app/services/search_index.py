@@ -15,6 +15,9 @@ from app.services.search_text import build_searchable_text_casefold_from_plainte
 
 
 _QUOTE_CHARS = {"'", '"'}
+# Walking one anchor-note term in Python costs roughly this many times less
+# than one C set intersection per suggestion candidate (measured on 107k notes).
+SUGGESTION_INTERSECT_COST_RATIO = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +128,8 @@ class SearchRecord:
 def extract_ordered_tags_for_search(tags: str) -> tuple[str, ...]:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
+    if tags == "":
+        return ()
 
     ordered_terms: list[str] = []
     seen_terms: set[str] = set()
@@ -204,13 +209,22 @@ class SearchIndex:
 
             processed = 0
             last_reported = 0
+            # Rebuild-local memos: notes repeat tag strings, and inherited tag
+            # sets repeat the same terms, so parse and casefold each only once.
+            explicit_terms_by_tags: Dict[str, FrozenSet[str]] = {}
+            casefold_by_term: Dict[str, str] = {}
             for record in materialized:
+                if record.tags not in explicit_terms_by_tags:
+                    explicit_terms_by_tags[record.tags] = extract_tags_for_search(record.tags)
+                explicit_tag_terms = explicit_terms_by_tags[record.tags]
                 self._insert_new_locked(
                     record.note_id,
                     record.content_text,
                     record.tags,
+                    explicit_tag_terms,
                     raw_tag_terms_by_id[record.note_id],
                     record.tag_terms,
+                    casefold_by_term,
                 )
                 processed += 1
                 if processed - last_reported >= progress_interval:
@@ -259,8 +273,10 @@ class SearchIndex:
                     note_id,
                     content_text,
                     tags,
+                    extract_tags_for_search(tags),
                     raw_tag_terms,
                     tag_terms,
+                    {},
                 )
 
             self._revision += 1
@@ -292,22 +308,26 @@ class SearchIndex:
                 if old_tag_terms == new_tag_terms:
                     continue
 
-                for term in old_tag_terms:
+                # Touch only the terms that changed: inherited term sets are
+                # large and mostly stable, so remove-all/add-all dominated.
+                for term in old_tag_terms - new_tag_terms:
                     bucket = self._tag_notes.get(term)
                     if bucket is None:
                         continue
                     bucket.discard(note_int_id)
-                    folded_bucket = self._tag_notes_casefold.get(term.casefold())
+                new_casefold = frozenset(term.casefold() for term in new_tag_terms)
+                old_casefold = self._note_tag_terms_casefold[note_int_id]
+                for term_casefold in old_casefold - new_casefold:
+                    folded_bucket = self._tag_notes_casefold.get(term_casefold)
                     if folded_bucket is not None:
                         folded_bucket.discard(note_int_id)
-                for term in new_tag_terms:
+                for term in new_tag_terms - old_tag_terms:
                     self._tag_notes[term].add(note_int_id)
-                    self._tag_notes_casefold[term.casefold()].add(note_int_id)
+                for term_casefold in new_casefold - old_casefold:
+                    self._tag_notes_casefold[term_casefold].add(note_int_id)
 
                 self._note_tag_terms[note_int_id] = new_tag_terms
-                self._note_tag_terms_casefold[note_int_id] = frozenset(
-                    term.casefold() for term in new_tag_terms
-                )
+                self._note_tag_terms_casefold[note_int_id] = new_casefold
                 touched += 1
 
             if touched:
@@ -339,12 +359,14 @@ class SearchIndex:
                 if old_raw_tag_terms == new_raw_tag_terms:
                     continue
 
-                for term in old_raw_tag_terms:
-                    bucket = self._raw_tag_notes_casefold.get(term.casefold())
+                old_raw_casefold = {term.casefold() for term in old_raw_tag_terms}
+                new_raw_casefold = {term.casefold() for term in new_raw_tag_terms}
+                for term_casefold in old_raw_casefold - new_raw_casefold:
+                    bucket = self._raw_tag_notes_casefold.get(term_casefold)
                     if bucket is not None:
                         bucket.discard(note_int_id)
-                for term in new_raw_tag_terms:
-                    self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+                for term_casefold in new_raw_casefold - old_raw_casefold:
+                    self._raw_tag_notes_casefold[term_casefold].add(note_int_id)
 
                 self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
                 touched += 1
@@ -498,55 +520,46 @@ class SearchIndex:
                     for term_casefold in candidate_casefolds[:limit]
                 ]
 
-            note_count = len(self._note_tag_terms)
-            anchor_counts = [0] * note_count
+            # Postings hold only live notes (removal discards them). Group the
+            # notes carrying anchors by how many they carry; each candidate's
+            # co-occurrence is then a set intersection per group.
+            anchor_counts: DefaultDict[int, int] = defaultdict(int)
             for anchor_casefold in anchor_casefold_set:
-                note_ids = self._tag_notes_casefold.get(anchor_casefold)
-                if not note_ids:
+                if anchor_casefold not in self._tag_notes_casefold:
                     continue
-                for note_id in note_ids:
-                    if note_id in self._alive:
-                        anchor_counts[note_id] += 1
+                for note_id in self._tag_notes_casefold[anchor_casefold]:
+                    anchor_counts[note_id] += 1
 
             max_anchor_count = len(anchor_casefold_set)
-            counts_by_anchor = [0] * (max_anchor_count + 1)
-            for note_id in self._alive:
-                count = anchor_counts[note_id]
-                if count > max_anchor_count:
-                    count = max_anchor_count
-                counts_by_anchor[count] += 1
+            notes_by_anchor_count: List[Set[int]] = [set() for _ in range(max_anchor_count + 1)]
+            for note_id, count in anchor_counts.items():
+                assert 0 < count <= max_anchor_count
+                notes_by_anchor_count[count].add(note_id)
 
             support_counts = [0] * (max_anchor_count + 1)
             running = 0
             for k in range(max_anchor_count, 0, -1):
-                running += counts_by_anchor[k]
+                running += len(notes_by_anchor_count[k])
                 support_counts[k] = running
+
+            # term -> (most anchors one of its notes carries, notes carrying that many)
+            co_occurrence = self._suggestion_co_occurrence_locked(
+                candidate_casefolds=candidate_casefolds,
+                anchor_counts=anchor_counts,
+                notes_by_anchor_count=notes_by_anchor_count,
+            )
 
             scored: List[Tuple[int, float, int, str]] = []
             for term_casefold in candidate_casefolds:
-                note_ids = self._tag_notes_casefold.get(term_casefold)
-                if not note_ids:
+                if term_casefold not in self._tag_notes_casefold:
                     continue
-                candidate_count = 0
-                max_k = 0
-                intersection_count = 0
-                for note_id in note_ids:
-                    if note_id not in self._alive:
-                        continue
-                    candidate_count += 1
-                    count = anchor_counts[note_id]
-                    if count > max_k:
-                        max_k = count
-                        if count > 0:
-                            intersection_count = 1
-                        else:
-                            intersection_count = 0
-                    elif count == max_k and count > 0:
-                        intersection_count += 1
-
+                candidate_count = len(self._tag_notes_casefold[term_casefold])
                 if candidate_count == 0:
                     continue
 
+                max_k, intersection_count = 0, 0
+                if term_casefold in co_occurrence:
+                    max_k, intersection_count = co_occurrence[term_casefold]
                 if max_k == 0 and partial_prefix == "":
                     continue
 
@@ -562,6 +575,41 @@ class SearchIndex:
 
             scored.sort()
             return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
+
+    def _suggestion_co_occurrence_locked(
+        self,
+        *,
+        candidate_casefolds: List[str],
+        anchor_counts: Dict[int, int],
+        notes_by_anchor_count: List[Set[int]],
+    ) -> Dict[str, Tuple[int, int]]:
+        """Map each co-occurring candidate to (max anchors on one note, notes with that many).
+
+        Few anchor notes: walk their own terms. Many: intersect each candidate's
+        postings with the anchor-count groups, which runs in C.
+        """
+        co_occurrence: Dict[str, Tuple[int, int]] = {}
+        anchor_terms_size = sum(len(self._note_tag_terms_casefold[note_id]) for note_id in anchor_counts)
+        if anchor_terms_size <= SUGGESTION_INTERSECT_COST_RATIO * len(candidate_casefolds):
+            candidate_set = set(candidate_casefolds)
+            for note_id, count in anchor_counts.items():
+                for term_casefold in self._note_tag_terms_casefold[note_id] & candidate_set:
+                    if term_casefold not in co_occurrence or count > co_occurrence[term_casefold][0]:
+                        co_occurrence[term_casefold] = (count, 1)
+                    elif count == co_occurrence[term_casefold][0]:
+                        co_occurrence[term_casefold] = (count, co_occurrence[term_casefold][1] + 1)
+            return co_occurrence
+        for term_casefold in candidate_casefolds:
+            if term_casefold not in self._tag_notes_casefold:
+                continue
+            note_ids = self._tag_notes_casefold[term_casefold]
+            for k in range(len(notes_by_anchor_count) - 1, 0, -1):
+                if notes_by_anchor_count[k]:
+                    shared = len(note_ids & notes_by_anchor_count[k])
+                    if shared:
+                        co_occurrence[term_casefold] = (k, shared)
+                        break
+        return co_occurrence
 
     def suggest_all_tag_completions(self, *, query: str) -> List[str]:
         """Return ranked search completions with real matches, before UI truncation.
@@ -737,29 +785,38 @@ class SearchIndex:
         note_id: str,
         content_text: str,
         tags: str,
+        explicit_tag_terms: FrozenSet[str],
         raw_tag_terms: FrozenSet[str],
         tag_terms: FrozenSet[str],
+        casefold_by_term: Dict[str, str],
     ) -> None:
+        assert isinstance(explicit_tag_terms, frozenset)
         note_int_id = len(self._id_to_uuid)
         self._uuid_to_id[note_id] = note_int_id
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
         text_casefold = self._build_note_text_casefold(content_text, tags)
-        explicit_tag_terms = extract_tags_for_search(tags)
         self._note_text_casefold.append(text_casefold)
         self._note_explicit_tag_terms.append(explicit_tag_terms)
         self._note_raw_tag_terms.append(raw_tag_terms)
         self._note_tag_terms.append(tag_terms)
-        self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
 
         for term in explicit_tag_terms:
             self._explicit_tag_notes[term].add(note_int_id)
         for term in raw_tag_terms:
-            self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+            if term not in casefold_by_term:
+                casefold_by_term[term] = term.casefold()
+            self._raw_tag_notes_casefold[casefold_by_term[term]].add(note_int_id)
+        tag_terms_casefold = []
         for term in tag_terms:
+            if term not in casefold_by_term:
+                casefold_by_term[term] = term.casefold()
+            term_casefold = casefold_by_term[term]
+            tag_terms_casefold.append(term_casefold)
             self._tag_notes[term].add(note_int_id)
-            self._tag_notes_casefold[term.casefold()].add(note_int_id)
+            self._tag_notes_casefold[term_casefold].add(note_int_id)
+        self._note_tag_terms_casefold.append(frozenset(tag_terms_casefold))
 
     def _update_existing_locked(
         self,

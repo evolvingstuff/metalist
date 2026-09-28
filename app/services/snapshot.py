@@ -12,17 +12,20 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 from loguru import logger
 
 from app.services.content_formatting import find_list_style
-from app.services.embedded_references import collapsed_preview_source_has_image_file_embed
-from app.services.embedded_references import collapsed_preview_source_has_hidden_content
-from app.services.embedded_references import collapsed_preview_source_has_media
-from app.services.embedded_references import collapsed_preview_source_has_note_embed
+from app.services.content_formatting import recording_link_title_fetches
+from app.services.content_formatting import replay_link_title_fetches
+from app.services.embedded_references import collapsed_preview_head
 from app.services.embedded_references import EmbedRenderContext
-from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.embedded_references import preview_html_has_image_file_embed
+from app.services.embedded_references import preview_html_has_media
+from app.services.embedded_references import preview_html_has_note_embed
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
+from app.services.link_titles import link_title_store
 from app.services.note_store import NoteRecord, store as note_store
+from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
 from app.services.root_sorting import build_root_sort_buckets
 from app.services.root_sorting import get_root_ids_for_sort_mode
@@ -32,11 +35,15 @@ from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
+from app.security.sensitive_cache import SensitiveMemo
 from app.utils.text_utils import strip_html
 
 # Windowing constants (tuned later)
-ROOT_CHUNK_SIZE = 50
-ROOT_BUFFER_THRESHOLD = 25
+# The window is a band of roots around the ones the browser can see: this many
+# beyond the top and bottom visible roots. An edge stays put while it is
+# between half and twice this far from the visible roots, so ordinary
+# scrolling changes nothing and unloading happens far from the viewport.
+ROOT_BAND_MARGIN = 75
 _UUID_IN_TEXT_RE = re.compile(
     r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
@@ -147,8 +154,11 @@ def _resolve_clause_note_sets(
     if has_positive_terms:
         positively_matched_note_ids = set(search_index.query_clause_note_ids(clause))
     else:
-        positively_matched_note_ids = set(ordered_root_ids)
-        _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
+        # Exclusion-only clause: every root and all its descendants is every
+        # note (the store keeps all notes reachable from a root), so take the
+        # ids directly instead of walking the whole tree.
+        assert len(ordered_root_ids) == len(note_store.get_children(None)), "clauses resolve against all roots"
+        positively_matched_note_ids = set(note_store.list_note_ids())
 
     positively_matched_note_ids.update(direct_uuid_note_ids)
     allowed_note_ids = set(positively_matched_note_ids)
@@ -159,9 +169,9 @@ def _resolve_clause_note_sets(
     for phrase in clause.forbidden_text:
         excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
 
-    _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
-    if not has_positive_terms:
-        _include_descendants(allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+    # With every note already allowed, ancestor/descendant closure is a no-op.
+    if has_positive_terms:
+        _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
     if excluded_note_ids:
         allowed_note_ids.difference_update(excluded_note_ids)
         positively_matched_note_ids.difference_update(excluded_note_ids)
@@ -341,55 +351,75 @@ def _compute_hash(
     return sha.hexdigest()
 
 
-def _determine_root_window_end(
+def _root_index_of_note(
+    note_id: str, root_index_map: Dict[str, int], traversal_cache: "_SnapshotTraversalCache",
+) -> Optional[int]:
+    if not note_store.has_note(note_id):
+        return None
+    current = traversal_cache.get_note(note_id)
+    visited: Set[str] = set()
+    while current.parent_id is not None:
+        if current.id in visited:
+            raise RuntimeError(f"Cycle in note ancestry for {note_id}")
+        visited.add(current.id)
+        current = traversal_cache.get_note(current.parent_id)
+    if current.id not in root_index_map:
+        return None
+    return root_index_map[current.id]
+
+
+def _keep_or_move_edge(*, current: int, near: int, far: int, target: int) -> int:
+    """Keep an existing band edge while it sits between near and far, else move it to target."""
+    low, high = min(near, far), max(near, far)
+    if low <= current <= high:
+        return current
+    return target
+
+
+def _determine_root_band(
+    *,
     ordered_root_ids: List[str],
     root_index_map: Dict[str, int],
     client_known_note_ids: Set[str],
-    seen_root_indices: Set[int],
-    editing_note_id: Optional[str],
-    anchor_root_id: Optional[str],
-) -> int:
-    if not ordered_root_ids:
-        return -1
-    window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
-    for note_id in client_known_note_ids:
-        if note_id not in root_index_map:
-            continue
-        window_end = max(window_end, root_index_map[note_id])
-    if editing_note_id:
-        # Expand to include the root containing the editing node
-        # Find root id by walking parents in store
-        current = note_store.get_note(editing_note_id)
-        while current.parent_id:
-            current = note_store.get_note(current.parent_id)
-        editing_root_id = current.id
-        if editing_root_id in root_index_map:
-            window_end = max(window_end, root_index_map[editing_root_id])
-    if seen_root_indices:
-        highest_seen_index = max(seen_root_indices)
-        while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
-            window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
-    if anchor_root_id:
-        anchor_index: Optional[int] = None
-        if anchor_root_id in root_index_map:
-            anchor_index = root_index_map[anchor_root_id]
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
+    editing_root_index: Optional[int],
+) -> Tuple[int, int]:
+    """Inclusive [start, end] root indices of the window; (0, -1) when there are no roots."""
+    last = len(ordered_root_ids) - 1
+    if last < 0:
+        return 0, -1
+    margin = ROOT_BAND_MARGIN
+    current_indices = [root_index_map[note_id] for note_id in client_known_note_ids if note_id in root_index_map]
+    visible = [
+        root_index_map[root_id]
+        for root_id in (visible_top_root_id, visible_bottom_root_id)
+        if root_id is not None and root_id in root_index_map
+    ]
+    if visible:
+        top, bottom = min(visible), max(visible)
+        target_start, target_end = max(0, top - margin), min(last, bottom + margin)
+        if current_indices:
+            start = _keep_or_move_edge(
+                current=min(current_indices), near=max(0, top - margin // 2),
+                far=max(0, top - 2 * margin), target=target_start,
+            )
+            end = _keep_or_move_edge(
+                current=max(current_indices), near=min(last, bottom + margin // 2),
+                far=min(last, bottom + 2 * margin), target=target_end,
+            )
         else:
-            known_root_indices = [
-                root_index_map[note_id]
-                for note_id in client_known_note_ids
-                if note_id in root_index_map
-            ]
-            if known_root_indices:
-                # The DOM anchor can disappear between polls. Continue from the
-                # furthest root that is still valid in the current view.
-                anchor_index = max(known_root_indices)
-        if anchor_index is not None:
-            while (
-                window_end < len(ordered_root_ids) - 1
-                and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
-            ):
-                window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
-    return window_end
+            start, end = target_start, target_end
+    elif current_indices:
+        # No viewport report (e.g. a refresh after an action): keep the band.
+        start, end = min(current_indices), max(current_indices)
+    else:
+        start, end = 0, min(last, margin)
+    if editing_root_index is not None and not start <= editing_root_index <= end:
+        # The edited note is what the user is looking at; centre on it.
+        start, end = max(0, editing_root_index - margin), min(last, editing_root_index + margin)
+    assert 0 <= start <= end <= last
+    return start, end
 
 
 def _timestamp_iso(record: object, field_name: str) -> str:
@@ -405,8 +435,6 @@ class _SnapshotTraversalCache:
     def __init__(self) -> None:
         self._children_by_parent: Dict[Optional[str], List[str]] = {}
         self._record_by_id: Dict[str, object] = {}
-        self._path_by_id: Dict[str, List[Dict[str, str]]] = {}
-        self._descendant_count_by_id: Dict[str, int] = {}
         self._proposal_subtree_count_by_id: Dict[str, int] = {}
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
@@ -419,73 +447,14 @@ class _SnapshotTraversalCache:
             self._record_by_id[note_id] = note_store.get_note(note_id)
         return self._record_by_id[note_id]
 
-    def _build_path(self, note_id: str) -> List[Dict[str, str]]:
-        if note_id in self._path_by_id:
-            return self._path_by_id[note_id]
-
-        uncached_records: List[object] = []
-        current_id = note_id
-        visited_ids: Set[str] = set()
-        while current_id not in self._path_by_id:
-            if current_id in visited_ids:
-                raise RuntimeError(f"Hierarchy cycle detected while building path for {note_id}")
-            visited_ids.add(current_id)
-            record = self.get_note(current_id)
-            uncached_records.append(record)
-            if record.parent_id is None:
-                path: List[Dict[str, str]] = []
-                break
-            current_id = record.parent_id
-        else:
-            path = list(self._path_by_id[current_id])
-
-        for record in reversed(uncached_records):
-            path.append({
-                "id": record.id,
-                "label": strip_html(record.content).strip()[:80],
-            })
-            self._path_by_id[record.id] = list(path)
-        return self._path_by_id[note_id]
-
-    def _count_descendants(self, note_id: str) -> int:
-        if note_id in self._descendant_count_by_id:
-            return self._descendant_count_by_id[note_id]
-
-        stack: List[Tuple[str, bool]] = [(note_id, False)]
-        visiting: Set[str] = set()
-        while stack:
-            current_id, is_expanded = stack.pop()
-            if current_id in self._descendant_count_by_id:
-                continue
-            if is_expanded:
-                children = self.get_children(current_id)
-                self._descendant_count_by_id[current_id] = sum(
-                    1 + self._descendant_count_by_id[child_id]
-                    for child_id in children
-                )
-                visiting.remove(current_id)
-                continue
-            if current_id in visiting:
-                raise RuntimeError(
-                    f"Hierarchy cycle detected while counting descendants for {note_id}"
-                )
-            visiting.add(current_id)
-            stack.append((current_id, True))
-            for child_id in reversed(self.get_children(current_id)):
-                if child_id not in self._descendant_count_by_id:
-                    stack.append((child_id, False))
-        return self._descendant_count_by_id[note_id]
-
-    def build_metadata(self, note_id: str) -> Dict[str, object]:
+    def build_metadata(self, note_id: str) -> Dict[str, str]:
+        # The client reads only the timestamps (note-timestamp-hover-service).
+        # Paths, counts, and inherited tags were computed per visible note on
+        # every view, including a full subtree walk, and never read.
         record = self.get_note(note_id)
-        inherited_tags = sorted(note_store.get_inherited_non_meta_tag_terms(note_id))
         return {
             "createdAt": _timestamp_iso(record, "created_at"),
             "updatedAt": _timestamp_iso(record, "updated_at"),
-            "inheritedTags": inherited_tags,
-            "path": self._build_path(note_id),
-            "childCount": len(self.get_children(note_id)),
-            "subtreeCount": self._count_descendants(note_id),
         }
 
     def count_proposals_in_subtree(
@@ -519,12 +488,14 @@ class _ViewSelection:
     scope: SearchScope
     visible_roots: List[str]
     forced_open_ids: Set[str]
+    window_start: int
+    root_before_window: Optional[str]
 
 
 def _select_view(
     *, editing_note_id: str | None, search: str | None, sort_mode: str,
-    client_known_note_ids: Set[str] | None, client_seen_root_ids: Set[str] | None,
-    anchor_root_id: str | None, is_untagged_view: bool,
+    client_known_note_ids: Set[str], visible_top_root_id: str | None,
+    visible_bottom_root_id: str | None, is_untagged_view: bool,
     traversal_cache: _SnapshotTraversalCache,
 ) -> _ViewSelection:
     normalized_sort_mode = normalize_sort_mode(sort_mode)
@@ -566,21 +537,215 @@ def _select_view(
         assert search_scope.allowed_note_ids is not None
         roots = search_scope.search_root_ids_ordered
     root_index = {root_id: index for index, root_id in enumerate(roots)}
-    # A first view request has no client baseline or previously seen roots.
-    known_ids = client_known_note_ids
-    if known_ids is None:
-        known_ids = set()
-    seen_roots = client_seen_root_ids
-    if seen_roots is None:
-        seen_roots = set()
-    seen_indices = {root_index[root_id] for root_id in seen_roots if root_id in root_index}
-    window_end = _determine_root_window_end(
-        roots, root_index, known_ids, seen_indices, editing_note_id, anchor_root_id,
+    editing_root_index = None
+    if editing_note_id is not None:
+        editing_root_index = _root_index_of_note(editing_note_id, root_index, traversal_cache)
+    window_start, window_end = _determine_root_band(
+        ordered_root_ids=roots, root_index_map=root_index, client_known_note_ids=client_known_note_ids,
+        visible_top_root_id=visible_top_root_id, visible_bottom_root_id=visible_bottom_root_id,
+        editing_root_index=editing_root_index,
     )
+    root_before_window = None
+    if window_start > 0:
+        root_before_window = roots[window_start - 1]
     return _ViewSelection(
         normalized_sort_mode, root_sort_timestamps, root_count_total, search_scope,
-        roots[:window_end + 1], forced_open_ids,
+        roots[window_start:window_end + 1], forced_open_ids, window_start, root_before_window,
     )
+
+
+# Rendered view HTML reads shared state only through the render context
+# (other notes, their children, files), link titles, the ontology, and
+# remote-image proxy tokens. The cache key pins the note record, collapse
+# state, backlink presence, ontology, and link-title render generation; every
+# context lookup a render makes is recorded and re-checked before reuse, and
+# the link-title fetches it requested are replayed. Proxy tokens are random and
+# evictable, so renders that use them are never cached: notes whose own
+# content has a literal URL image source are skipped up front, and renders
+# that still emitted a proxy source (e.g. from an embedded note) are not stored.
+_REMOTE_IMAGE_PROXY_MARKER = "data-remote-image-proxy-src="
+_VIEW_RENDER_MEMO = SensitiveMemo(maxsize=65536, max_bytes=64 * 1024 * 1024)
+
+
+def _is_render_cacheable(content_html: str) -> bool:
+    return not ("://" in content_html and "<img" in content_html.lower())
+
+
+class _IdentityKey:
+    """Cache-key part matching only the very same object.
+
+    The strong reference keeps the object alive, so its id cannot be reused
+    by another object while a cache entry holds this key.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def __hash__(self) -> int:
+        return id(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _IdentityKey) and other.value is self.value
+
+
+@dataclass(frozen=True)
+class _RenderDependencies:
+    note_presence: Tuple[Tuple[str, bool], ...]
+    note_records: Tuple[Tuple[str, _IdentityKey], ...]
+    children: Tuple[Tuple[Optional[str], Tuple[str, ...]], ...]
+    file_presence: Tuple[Tuple[str, bool], ...]
+    file_records: Tuple[Tuple[str, object], ...]
+
+
+class _DependencyRecorder:
+    """Render context that forwards to the live context and records each lookup."""
+
+    def __init__(self, live: EmbedRenderContext) -> None:
+        self._live = live
+        self._note_presence: Dict[str, bool] = {}
+        self._note_records: Dict[str, _IdentityKey] = {}
+        self._children: Dict[Optional[str], Tuple[str, ...]] = {}
+        self._file_presence: Dict[str, bool] = {}
+        self._file_records: Dict[str, object] = {}
+
+    def context(self) -> EmbedRenderContext:
+        return EmbedRenderContext(
+            has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
+            has_file=self._has_file, get_file=self._get_file,
+        )
+
+    def _has_note(self, note_id: str) -> bool:
+        present = self._live.has_note(note_id)
+        self._note_presence[note_id] = present
+        return present
+
+    def _get_note(self, note_id: str) -> object:
+        record = self._live.get_note(note_id)
+        self._note_records[note_id] = _IdentityKey(record)
+        return record
+
+    def _get_children(self, parent_id: Optional[str]) -> List[str]:
+        child_ids = self._live.get_children(parent_id)
+        self._children[parent_id] = tuple(child_ids)
+        return child_ids
+
+    def _has_file(self, file_id: str) -> bool:
+        present = self._live.has_file(file_id)
+        self._file_presence[file_id] = present
+        return present
+
+    def _get_file(self, file_id: str) -> object:
+        record = self._live.get_file(file_id)
+        self._file_records[file_id] = record
+        return record
+
+    def freeze(self) -> _RenderDependencies:
+        return _RenderDependencies(
+            note_presence=tuple(self._note_presence.items()),
+            note_records=tuple(self._note_records.items()),
+            children=tuple(self._children.items()),
+            file_presence=tuple(self._file_presence.items()),
+            file_records=tuple(self._file_records.items()),
+        )
+
+
+def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderContext) -> bool:
+    for note_id, present in dependencies.note_presence:
+        if live.has_note(note_id) != present:
+            return False
+    for note_id, record_key in dependencies.note_records:
+        if not live.has_note(note_id) or live.get_note(note_id) is not record_key.value:
+            return False
+    for parent_id, child_ids in dependencies.children:
+        if parent_id is not None and not live.has_note(parent_id):
+            return False
+        if tuple(live.get_children(parent_id)) != child_ids:
+            return False
+    for file_id, present in dependencies.file_presence:
+        if live.has_file(file_id) != present:
+            return False
+    for file_id, file_record in dependencies.file_records:
+        if not live.has_file(file_id) or live.get_file(file_id) != file_record:
+            return False
+    return True
+
+
+@dataclass(frozen=True)
+class _CachedViewRender:
+    html: str
+    fetch_urls: Tuple[str, ...]
+    dependencies: _RenderDependencies
+
+
+def _render_note_view_html(
+    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
+) -> str:
+    if is_collapsed:
+        rendered_content = render_collapsed_note_content_with_embeds(
+            note_id=rec.id,
+            content_html=rec.content,
+            tags=rec.tags,
+            context=context,
+            static_export=False,
+            redact_passwords=False,
+        )
+    else:
+        rendered_content = render_note_content_with_embeds(
+            note_id=rec.id,
+            content_html=rec.content,
+            tags=rec.tags,
+            context=context,
+            static_export=False,
+            redact_passwords=False,
+        )
+    return decorate_note_references(
+        note_id=rec.id, content_html=rec.content, tags=rec.tags,
+        rendered_content=rendered_content, context=context,
+        has_backlinks=has_backlinks,
+    )
+
+
+def _cached_note_view_html(
+    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
+) -> str:
+    # NoteRecord is immutable and replaced on every change, so its identity
+    # pins content, tags, and every other field; the ontology object is
+    # likewise replaced whenever rules change.
+    assert type(rec) is NoteRecord
+    assert _is_render_cacheable(rec.content)
+    key = (
+        _IdentityKey(rec), is_collapsed, has_backlinks,
+        _IdentityKey(get_ontology_if_ready()), link_title_store.get_render_generation(),
+    )
+    found, cached = _VIEW_RENDER_MEMO.lookup(key)
+    if found and _dependencies_hold(cached.dependencies, context):
+        # A fresh render requests these fetches every time (first lookups and
+        # backoff retries); repeating a request is a no-op while in flight.
+        replay_link_title_fetches(cached.fetch_urls)
+        return cached.html
+
+    recorder = _DependencyRecorder(context)
+    with recording_link_title_fetches() as fetch_urls:
+        rendered = _render_note_view_html(
+            rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks,
+            context=recorder.context(),
+        )
+    if _REMOTE_IMAGE_PROXY_MARKER not in rendered:
+        _VIEW_RENDER_MEMO.store(key, _CachedViewRender(rendered, tuple(fetch_urls), recorder.freeze()))
+    return rendered
+
+
+def _sort_key_before_window(selection: _ViewSelection) -> str:
+    if selection.root_before_window is None:
+        return ""
+    buckets = build_root_sort_buckets(
+        [selection.root_before_window], selection.sort_mode, root_timestamps=selection.root_timestamps,
+    )
+    if selection.root_before_window not in buckets:
+        return ""
+    return buckets[selection.root_before_window]["key"]
 
 
 def _render_view_note(
@@ -592,22 +757,23 @@ def _render_view_note(
     assert isinstance(rec.content, str)
     assert isinstance(rec.tags, str)
     assert isinstance(rec.proposed_tags, str)
-    collapsed_preview_source = extract_collapsed_preview_source_html(rec.content)
+    # One preview-head lookup serves all four collapsibility checks.
+    collapsed_preview_source, preview_has_more = collapsed_preview_head(rec.content)
     content_is_collapsible = False
     if collapsed_preview_source != "":
-        if collapsed_preview_source_has_media(rec.content):
+        if preview_html_has_media(collapsed_preview_source):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_image_file_embed(
-            content_html=rec.content,
+        elif preview_html_has_image_file_embed(
+            preview_source_html=collapsed_preview_source,
             context=embed_render_context,
         ):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_note_embed(
-            content_html=rec.content,
+        elif preview_html_has_note_embed(
+            preview_source_html=collapsed_preview_source,
             context=embed_render_context,
         ):
             content_is_collapsible = True
-        elif collapsed_preview_source_has_hidden_content(rec.content):
+        elif preview_has_more:
             content_is_collapsible = True
     has_children = bool(traversal_cache.get_children(rec.id))
     is_collapsible = has_children
@@ -642,30 +808,17 @@ def _render_view_note(
     is_editing = bool(flags["isEditing"])
     if is_editing:
         rendered_content = rec.content
+    elif type(rec) is NoteRecord and _is_render_cacheable(rec.content):
+        # Identity keys are exact only for immutable records; any other record
+        # type (e.g. test doubles) could change in place and renders directly.
+        rendered_content = _cached_note_view_html(
+            rec=rec, is_collapsed=bool(flags["isCollapsed"]),
+            has_backlinks=note_store.has_backlinks(rec.id), context=embed_render_context,
+        )
     else:
-        if flags["isCollapsed"]:
-            rendered_content = render_collapsed_note_content_with_embeds(
-                note_id=rec.id,
-                content_html=rec.content,
-                tags=rec.tags,
-                context=embed_render_context,
-                static_export=False,
-                redact_passwords=False,
-            )
-        else:
-            rendered_content = render_note_content_with_embeds(
-                note_id=rec.id,
-                content_html=rec.content,
-                tags=rec.tags,
-                context=embed_render_context,
-                static_export=False,
-                redact_passwords=False,
-            )
-
-        rendered_content = decorate_note_references(
-            note_id=rec.id, content_html=rec.content, tags=rec.tags,
-            rendered_content=rendered_content, context=embed_render_context,
-            has_backlinks=note_store.has_backlinks(rec.id),
+        rendered_content = _render_note_view_html(
+            rec=rec, is_collapsed=bool(flags["isCollapsed"]),
+            has_backlinks=note_store.has_backlinks(rec.id), context=embed_render_context,
         )
 
     return rendered_content, flags
@@ -676,9 +829,9 @@ def build_view_state(
     editing_note_id: Optional[str],
     search: Optional[str],
     sort_mode: str,
-    client_known_note_ids: Optional[Set[str]],
-    client_seen_root_ids: Optional[Set[str]],
-    anchor_root_id: Optional[str],
+    client_known_note_ids: Set[str],
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
     is_untagged_view: bool,
 ) -> ViewState:
     if not isinstance(is_untagged_view, bool):
@@ -707,8 +860,8 @@ def build_view_state(
 
     selection = _select_view(
         editing_note_id=editing_note_id, search=search, sort_mode=sort_mode,
-        client_known_note_ids=client_known_note_ids, client_seen_root_ids=client_seen_root_ids,
-        anchor_root_id=anchor_root_id, is_untagged_view=is_untagged_view,
+        client_known_note_ids=client_known_note_ids, visible_top_root_id=visible_top_root_id,
+        visible_bottom_root_id=visible_bottom_root_id, is_untagged_view=is_untagged_view,
         traversal_cache=traversal_cache,
     )
     filter_active = selection.scope.search_active
@@ -769,7 +922,8 @@ def build_view_state(
                 "tags": rec.tags,
                 "proposedTags": rec.proposed_tags,
                 "flags": flags,
-                "metadata": traversal_cache.build_metadata(rec.id),
+                # Same values build_metadata would produce, already formatted in flags.
+                "metadata": {"createdAt": flags["createdAt"], "updatedAt": flags["updatedAt"]},
                 "hash": h,
             }
             hash_by_id[rec.id] = h
@@ -802,6 +956,12 @@ def build_view_state(
             selection.sort_mode,
             root_timestamps=selection.root_timestamps,
         ),
+        # Index of the first windowed root among all roots in this view, and
+        # the date bucket just above the window, so the browser knows what lies
+        # beyond each edge and only starts a date header where the day changes.
+        "rootWindowStart": selection.window_start,
+        "rootBandMargin": ROOT_BAND_MARGIN,
+        "rootSortKeyBeforeWindow": _sort_key_before_window(selection),
     }
 
     if filter_active:
@@ -830,9 +990,9 @@ def build_view_snapshot(
     editing_note_id: Optional[str],
     search: Optional[str],
     sort_mode: str,
-    client_known_note_ids: Optional[Set[str]],
-    client_seen_root_ids: Optional[Set[str]],
-    anchor_root_id: Optional[str],
+    client_known_note_ids: Set[str],
+    visible_top_root_id: Optional[str],
+    visible_bottom_root_id: Optional[str],
     is_untagged_view: bool,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
@@ -840,8 +1000,8 @@ def build_view_snapshot(
         search=search,
         sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
-        client_seen_root_ids=client_seen_root_ids,
-        anchor_root_id=anchor_root_id,
+        visible_top_root_id=visible_top_root_id,
+        visible_bottom_root_id=visible_bottom_root_id,
         is_untagged_view=is_untagged_view,
     )
     return state.structure, state.payloads, state.locks
