@@ -49,3 +49,6 @@ test.db
 *.search-history.db
 .DS_Store
 certs/
+
+# Personal Claude Code settings
+.claude/settings.local.json
