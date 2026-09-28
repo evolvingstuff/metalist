@@ -180,6 +180,72 @@ test('repeated unauthenticated polling cancels only a pending revision refresh',
     assert.equal(timers.size, 0);
 });
 
+test('overlapping connectivity checks clear user activity once', async () => {
+    const source = moduleSource('mode-manager/services/polling-service.js');
+    // Mirrors ModeContext.setUserActivity: a redundant change is fatal.
+    const ModeContext = {
+        userActivity: true,
+        setUserActivity(active) {
+            if (this.userActivity === active) throw new Error(`Redundant state change: userActivity is already ${active}`);
+            this.userActivity = active;
+        },
+    };
+    const responses = [];
+    const fetch = () => new Promise(resolve => { responses.push(resolve); });
+    const dependencies = {
+        ApplicationState, ModeContext, fetch,
+        CONFIG: { API: { AUTH: { SESSIONS: '/sessions', STATUS: '/status' } } },
+        CommandGate: { isBusy: () => false },
+        Logger: { logDebug() {}, logError() {} },
+        ErrorHandler: { handleConnectionRestored() {}, handleApiError() {} },
+        buildSessionHeaders: () => ({}),
+        sessionStorage: { getItem: () => null },
+        window: { setTimeout: () => 1, clearTimeout() {} },
+    };
+    const check = new Function(...Object.keys(dependencies), `${source}\nreturn checkConnectivityAndUpdates;`)(...Object.values(dependencies));
+    // A tab returning to view checks at once while an interval tick is in flight.
+    const first = check();
+    const second = check();
+    const status = { ok: true, json: async () => ({ authenticated: false }) };
+    while (responses.length > 0) {
+        responses.shift()(status);
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    await Promise.all([first, second]);
+    assert.equal(ModeContext.userActivity, false);
+});
+
+test('tab-state persistence accepts a server echo of the state it already has', async () => {
+    const source = moduleSource('mode-manager/services/tab-state-service.js');
+    const serverState = {
+        activeTabId: 'tab-1', tabOrder: ['tab-1'], version: 7,
+        tabs: { 'tab-1': { searchQuery: '', scrollY: 120, anchorRootId: null, scrollAnchor: null, sortMode: 'normal' } },
+    };
+    // The browser's copy differs only in a detail the server normalises away
+    // (a fractional scroll position under display scaling), so the server
+    // reports no change and echoes the state and version it already had.
+    const browserState = structuredClone(serverState);
+    browserState.tabs['tab-1'].scrollY = 120.4;
+    const dependencies = {
+        ApplicationState,
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tab-state', TAB_STATE_NEW_TAB: '/new', TAB_STATE_DELETE_TAB: '/delete', TAB_STATE_SORT_MODE: '/sort' } } },
+        ModeContext: { tabStateVersion: 7, setTabStateVersion(version) { this.tabStateVersion = version; }, getTabStatePayload: () => browserState },
+        ErrorHandler: { handleApiError() {} },
+        HttpRequestError: Error,
+        buildSessionHeaders: () => ({}),
+        fetch: async () => ({ ok: true, json: async () => structuredClone(serverState) }),
+    };
+    const { captureServerSignature, persistTabStateSnapshot } = new Function(
+        ...Object.keys(dependencies),
+        `${source}\nreturn { captureServerSignature, persistTabStateSnapshot };`,
+    )(...Object.values(dependencies));
+    captureServerSignature(structuredClone(serverState));
+    await persistTabStateSnapshot();
+    await persistTabStateSnapshot();
+    // A later re-read of the same server state is not a change either.
+    captureServerSignature(structuredClone(serverState));
+});
+
 for (const kind of ['file', 'remote']) {
     test(`${kind} preview completion after page cleanup cannot repopulate caches`, async () => {
         let complete;

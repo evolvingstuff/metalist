@@ -13,6 +13,7 @@ const moduleState = ApplicationState.createFields('polling-service', {
     lastLinkTitleRevision: 0,
     linkTitleRefreshTimer: null,
     visibilityListener: null,
+    connectivityCheck: null,
 });
 
 
@@ -103,7 +104,21 @@ async function refreshTokenOnActivity() {
     ErrorHandler.handleApiError(null, response);
 }
 
+// One check at a time: a tab returning to view checks at once, and that
+// check can overlap an interval tick. Overlapping checks would each clear the
+// user-activity flag after the token refresh. A check arriving mid-flight is
+// skipped; the one in flight already covers it.
 async function checkConnectivityAndUpdates() {
+    if (moduleState.connectivityCheck !== null) {
+        return;
+    }
+    moduleState.connectivityCheck = performConnectivityCheck().finally(() => {
+        moduleState.connectivityCheck = null;
+    });
+    await moduleState.connectivityCheck;
+}
+
+async function performConnectivityCheck() {
     if (_isRestoreTransitionActive()) {
         return;
     }

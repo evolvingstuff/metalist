@@ -43,7 +43,7 @@ export async function initializeTabStateService() {
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
     restoreReferenceNavigationFromSession(serverState.tabs);
     setTabStateVersionFromServer(serverState.version);
-    moduleState.lastSignature = serializeState(canonicalizeState(serverState));
+    recordServerSignature(serverState);
     ModeContext.setTabStateUpdateHook(handleTabStateMutation);
     startScrollWatcher();
     startScrollPolling();
@@ -63,7 +63,7 @@ export async function persistTabStateSnapshot() {
     }
     moduleState.pendingPersistRequest = callTabStateApi('POST', snapshot).then(response => {
         setTabStateVersionFromServer(response.version);
-        moduleState.lastSignature = serializeState(canonicalizeState(response));
+        recordServerSignature(response);
     }).finally(() => {
         moduleState.pendingPersistRequest = null;
     });
@@ -108,7 +108,17 @@ function captureServerSignature(state) {
         throw new Error('tab-state response missing payload');
     }
     setTabStateVersionFromServer(state.version);
-    moduleState.lastSignature = serializeState(canonicalizeState(state));
+    recordServerSignature(state);
+}
+
+// The server answers a post that changes nothing (e.g. one differing only in
+// what it normalises away) with the state and version it already had, so its
+// signature can equal the recorded one.
+function recordServerSignature(state) {
+    const signature = serializeState(canonicalizeState(state));
+    if (moduleState.lastSignature !== signature) {
+        moduleState.lastSignature = signature;
+    }
 }
 
 async function fetchTabState() {
