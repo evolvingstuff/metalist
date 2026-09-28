@@ -344,7 +344,7 @@ def test_history_clears_after_commit_and_publication_only(monkeypatch, fail):
     monkeypatch.setattr(mutations, "store", SimpleNamespace(get_note=lambda _: SimpleNamespace(tags=""),
         apply_bulk_tag_sources=lambda changes: events.append("publish")))
     monkeypatch.setattr(mutations, "update_note_fields_preserving_updated_at", lambda *args, **kwargs: events.append("write"))
-    monkeypatch.setattr(mutations, "record_explicit_tag_additions", lambda **kwargs: None)
+    monkeypatch.setattr(mutations, "record_explicit_tag_addition_batch", lambda **kwargs: None)
     monkeypatch.setattr(mutations, "cache_note_tags", lambda *args: None)
     monkeypatch.setattr(mutations, "cache_note_proposed_tags", lambda *args: None)
     monkeypatch.setattr(mutations, "reset_all_undo_state", lambda: events.append("clear_history"))

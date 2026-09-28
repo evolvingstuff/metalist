@@ -154,8 +154,11 @@ def _resolve_clause_note_sets(
     if has_positive_terms:
         positively_matched_note_ids = set(search_index.query_clause_note_ids(clause))
     else:
-        positively_matched_note_ids = set(ordered_root_ids)
-        _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
+        # Exclusion-only clause: every root and all its descendants is every
+        # note (the store keeps all notes reachable from a root), so take the
+        # ids directly instead of walking the whole tree.
+        assert len(ordered_root_ids) == len(note_store.get_children(None)), "clauses resolve against all roots"
+        positively_matched_note_ids = set(note_store.list_note_ids())
 
     positively_matched_note_ids.update(direct_uuid_note_ids)
     allowed_note_ids = set(positively_matched_note_ids)
@@ -166,9 +169,9 @@ def _resolve_clause_note_sets(
     for phrase in clause.forbidden_text:
         excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
 
-    _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
-    if not has_positive_terms:
-        _include_descendants(allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+    # With every note already allowed, ancestor/descendant closure is a no-op.
+    if has_positive_terms:
+        _include_ancestors(allowed_note_ids, starting_ids=set(allowed_note_ids))
     if excluded_note_ids:
         allowed_note_ids.difference_update(excluded_note_ids)
         positively_matched_note_ids.difference_update(excluded_note_ids)

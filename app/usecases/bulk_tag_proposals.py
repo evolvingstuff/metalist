@@ -8,7 +8,7 @@ from app.security.encryption import encrypt
 from app.services.content_cache import cache_note_tags, cache_note_proposed_tags
 from app.services.content_formatting import _tokenize_tag_bar
 from app.services.note_store import store
-from app.services.search_history import current_local_date, record_explicit_tag_additions
+from app.services.search_history import current_local_date, record_explicit_tag_addition_batch
 from app.services.sync import generate_new_uuid, get_current_sync_uuid
 from app.services.undo_state import reset_all_undo_state
 from app.usecases.tag_proposals import _effective_accepted_tag_keys, _proposal_tokens
@@ -44,7 +44,10 @@ def prepare_proposal_changes(note_ids, action, tag_filter, proposals):
             if action == "accept":
                 accepted = {tag.casefold() for tag in _tokenize_tag_bar(record.tags)}
                 additions = [tag for tag in selected if tag.casefold() not in accepted]
-                tags = " ".join(part for part in (tags.strip(), *additions) if part)
+                # Rewrite the tag bar only when adding to it; normalising every
+                # note would "change" notes that have no proposals at all.
+                if additions:
+                    tags = " ".join(part for part in (tags.strip(), *additions) if part)
         proposed = " ".join(pending)
         if tags != record.tags or proposed != record.proposed_tags:
             changes[note_id] = (tags, proposed)
@@ -71,9 +74,10 @@ def apply_bulk_proposals(*, changes: dict[str, tuple[str, str]], token: str) -> 
         with begin_writer() as connection:
             for note_id, fields in encrypted.items():
                 update_note_fields_preserving_updated_at(connection, note_id, **fields)
-        for note_id, (tags, _) in changes.items():
-            record_explicit_tag_additions(before_tags=previous_tags[note_id], after_tags=tags,
-                                          token=token, interacted_on=current_local_date())
+        record_explicit_tag_addition_batch(
+            tag_changes=tuple((previous_tags[note_id], tags) for note_id, (tags, _) in changes.items()),
+            token=token, interacted_on=current_local_date(),
+        )
     # No await separates successful commit, publication, and history invalidation.
     store.apply_bulk_tag_sources(changes)
     for note_id, (tags, proposed) in changes.items():

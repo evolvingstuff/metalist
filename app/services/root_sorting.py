@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from threading import RLock
 
 from datetime import datetime
@@ -63,75 +64,140 @@ def _get_note_timestamp(note_id: str, sort_mode: str) -> datetime:
 
 
 _metric_lock = RLock()
-_metric_revision = -1
-_metric_store = None
-_metric_values = {}
-_metric_has_text = False
-_text_keys = {}
+
+
+class _RootMetrics:
+    """Per-root subtree aggregates ('updated' max, 'volume' sum) at one store revision.
+
+    Note records are immutable, so comparing the new snapshot with the previous
+    one by identity finds exactly the notes an edit touched; only the roots
+    above them (before and after the edit) are re-aggregated.
+    """
+
+    def __init__(self, store, records, *, include_text):
+        self.store = store
+        self.include_text = include_text
+        self.records = {}
+        self.children = defaultdict(set)
+        self.children[None] = set()
+        self.own = {}
+        self.text_keys = {}
+        self.roots = {}
+        self.revision = -1
+        for note_id, record in records.items():
+            if note_id not in self.children:
+                self.children[note_id] = set()
+            self.children[record.parent_id].add(note_id)
+            self.own[note_id] = self._own_values(note_id, record)
+        missing_parents = set(self.children) - set(records) - {None}
+        if missing_parents:
+            raise RuntimeError(f'Root sorting parents are missing: {sorted(missing_parents)[:5]}')
+        reached = 0
+        for root_id in self.children[None]:
+            self.roots[root_id], size = self._aggregate(root_id)
+            reached += size
+        # Notes no root reaches sit on disconnected cycles.
+        if reached != len(records):
+            raise RuntimeError('Disconnected cycle in root sorting hierarchy')
+        self.records = records
+
+    def _own_values(self, note_id, record):
+        volume = 0
+        if self.include_text:
+            if note_id in self.text_keys and self.text_keys[note_id][0] is record.content:
+                volume = self.text_keys[note_id][1]
+            else:
+                volume = len(strip_html(record.content))
+                self.text_keys[note_id] = (record.content, volume)
+        return record.updated_at, volume
+
+    @staticmethod
+    def _root_of(records, note_id):
+        steps = 0
+        while records[note_id].parent_id is not None:
+            parent_id = records[note_id].parent_id
+            if parent_id not in records:
+                raise RuntimeError(f'Root sorting parent {parent_id} of {note_id} is missing')
+            note_id = parent_id
+            steps += 1
+            if steps > len(records):
+                raise RuntimeError('Cycle in root sorting hierarchy')
+        return note_id
+
+    def _aggregate(self, root_id):
+        updated, volume = self.own[root_id]
+        pending = [root_id]
+        visited = {root_id}
+        while pending:
+            for child in self.children[pending.pop()]:
+                if child in visited:
+                    raise RuntimeError('Cycle in root sorting hierarchy')
+                visited.add(child)
+                pending.append(child)
+                child_updated, child_volume = self.own[child]
+                volume += child_volume
+                if not isinstance(updated, datetime) or not isinstance(child_updated, datetime):
+                    updated = None
+                elif child_updated > updated:
+                    updated = child_updated
+        return {'updated': updated, 'volume': volume}, len(visited)
+
+    def apply(self, records):
+        previous = self.records
+        changed = [note_id for note_id, record in records.items()
+                   if note_id not in previous or previous[note_id] is not record]
+        removed = [note_id for note_id in previous if note_id not in records]
+        dirty_roots = set()
+        for note_id in (*changed, *removed):
+            if note_id in previous:
+                dirty_roots.add(self._root_of(previous, note_id))
+                self.children[previous[note_id].parent_id].discard(note_id)
+        for note_id in removed:
+            del self.own[note_id]
+            del self.children[note_id]
+            if note_id in self.text_keys:
+                del self.text_keys[note_id]
+        for note_id in changed:
+            if note_id not in self.children:
+                self.children[note_id] = set()
+        for note_id in changed:
+            record = records[note_id]
+            # Any new cycle passes through a changed note, so this finds it.
+            dirty_roots.add(self._root_of(records, note_id))
+            self.children[record.parent_id].add(note_id)
+            self.own[note_id] = self._own_values(note_id, record)
+        for root_id in dirty_roots:
+            if root_id in records and records[root_id].parent_id is None:
+                self.roots[root_id], _ = self._aggregate(root_id)
+            elif root_id in self.roots:
+                del self.roots[root_id]
+        self.records = records
+        assert len(self.roots) == len(self.children[None])
+
+
+_metric_state = None
 
 
 def _metrics(*, include_text):
-    global _metric_revision, _metric_store, _metric_values, _text_keys, _metric_has_text
+    global _metric_state
     with _metric_lock:
         revision = note_store.revision
-        if _metric_store is note_store and _metric_revision == revision and (not include_text or _metric_has_text):
-            return _metric_values
-        records = note_store.snapshot()
-        text_keys = {}
-        values = {}
-        for note_id, record in records.items():
-            volume = 0
-            if include_text:
-                if note_id in _text_keys and _text_keys[note_id][0] is record.content:
-                    text_keys[note_id] = _text_keys[note_id]
-                else:
-                    text_keys[note_id] = (record.content, len(strip_html(record.content)))
-                volume = text_keys[note_id][1]
-            values[note_id] = {'updated':record.updated_at, 'volume':volume}
-        # Parent aggregation is postorder and visits every edge once.
-        children = {note_id: [] for note_id in records}
-        roots = []
-        for note_id, record in records.items():
-            if record.parent_id is None:
-                roots.append(note_id)
-            else:
-                children[record.parent_id].append(note_id)
-        pending = [(root, False) for root in roots]
-        visited = set()
-        while pending:
-            note_id, finishing = pending.pop()
-            if not finishing:
-                if note_id in visited:
-                    raise RuntimeError('Cycle in root sorting hierarchy')
-                visited.add(note_id)
-                pending.append((note_id, True))
-                pending.extend((child, False) for child in children[note_id])
-                continue
-            for child in children[note_id]:
-                values[note_id]['volume'] += values[child]['volume']
-                current, descendant = values[note_id]['updated'], values[child]['updated']
-                if not isinstance(current, datetime) or not isinstance(descendant, datetime):
-                    values[note_id]['updated'] = None
-                elif descendant > current:
-                    values[note_id]['updated'] = descendant
-        if len(visited) != len(records):
-            raise RuntimeError('Disconnected cycle in root sorting hierarchy')
-        _metric_values = values
-        if include_text:
-            _text_keys = text_keys
-        else:
-            _text_keys = {key: entry for key, entry in _text_keys.items() if key in records and entry[0] is records[key].content}
-        _metric_has_text = include_text
-        _metric_revision, _metric_store = revision, note_store
-        return values
+        state = _metric_state
+        if state is not None and state.store is note_store and (state.include_text or not include_text):
+            if state.revision != revision:
+                state.apply(note_store.snapshot())
+                state.revision = revision
+            return state.roots
+        state = _RootMetrics(note_store, note_store.snapshot(), include_text=include_text)
+        state.revision = revision
+        _metric_state = state
+        return state.roots
 
 
 def clear_root_sort_cache() -> None:
-    global _metric_revision, _metric_values, _text_keys
+    global _metric_state
     with _metric_lock:
-        _metric_revision = -1
-        _metric_values = {}
-        _text_keys = {}
+        _metric_state = None
         _alphabetical_key.cache_clear()
 
 

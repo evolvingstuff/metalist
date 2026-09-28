@@ -36,6 +36,9 @@ class _FakeNoteStore:
     def has_note(self, note_id: str) -> bool:
         return note_id in self._notes
 
+    def list_note_ids(self) -> List[str]:
+        return list(self._notes)
+
     def get_note(self, note_id: str) -> _Note:
         return self._notes[note_id]
 

@@ -4,7 +4,8 @@ from app.api.middleware import auth as auth_middleware
 from app.services import tokens
 import json
 import sqlite3
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import pytest
 from app.services import root_sorting
@@ -112,7 +113,8 @@ def test_root_metrics_reuse_work_and_invalidate_after_change(monkeypatch):
     assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['b','a']
     assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['b','a']
     assert store.snapshots == 1
-    records['a'].content = 'x'*20
+    # Store records are immutable; an edit replaces the record.
+    records['a'] = SimpleNamespace(content='x'*20,parent_id=None,created_at=now,updated_at=now)
     store.revision += 1
     assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['a','b']
     assert store.snapshots == 2
@@ -317,3 +319,59 @@ def test_creation_sort_reads_only_roots_without_snapshotting_descendants(monkeyp
     monkeypatch.setattr(root_sorting, 'note_store', store)
     monkeypatch.setattr(store, 'snapshot', lambda: pytest.fail('Creation sorting traversed descendants'))
     assert root_sorting.get_root_sort_timestamps('created') == {'0': now}
+
+
+def test_incremental_root_metrics_match_a_fresh_computation(monkeypatch):
+    rng = random.Random(7)
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    records = {}
+
+    def note(note_id, parent_id):
+        return SimpleNamespace(content=f'<p>{"x" * rng.randrange(40)}</p>', parent_id=parent_id,
+                               created_at=base, updated_at=base + timedelta(minutes=rng.randrange(10000)))
+
+    for index in range(200):
+        parent_id = None
+        if index >= 20:
+            parent_id = str(rng.randrange(index))
+        records[str(index)] = note(str(index), parent_id)
+
+    class Store:
+        revision = 0
+        def snapshot(self):
+            return dict(records)
+
+    def descendants(note_id):
+        found = [note_id]
+        for child_id, record in records.items():
+            if record.parent_id == note_id:
+                found.extend(descendants(child_id))
+        return found
+
+    store = Store()
+    monkeypatch.setattr(root_sorting, 'note_store', store)
+    root_sorting.clear_root_sort_cache()
+    next_id = len(records)
+    for _ in range(150):
+        action = rng.choice(['edit', 'move', 'add', 'delete', 'unroot'])
+        target = rng.choice(sorted(records))
+        if action == 'edit':
+            records[target] = SimpleNamespace(**{**vars(records[target]), 'content': 'y' * rng.randrange(60),
+                                                 'updated_at': base + timedelta(minutes=rng.randrange(20000))})
+        elif action in ('move', 'unroot'):
+            subtree = set(descendants(target))
+            parent_id = None
+            if action == 'move':
+                parent_id = rng.choice(sorted(set(records) - subtree))
+            records[target] = SimpleNamespace(**{**vars(records[target]), 'parent_id': parent_id})
+        elif action == 'add':
+            records[str(next_id)] = note(str(next_id), rng.choice([None, target]))
+            next_id += 1
+        elif len(records) > 30:
+            for note_id in descendants(target):
+                del records[note_id]
+        store.revision += 1
+        incremental = root_sorting._metrics(include_text=True)
+        root_sorting.clear_root_sort_cache()
+        assert root_sorting._metrics(include_text=True) == incremental
+    root_sorting.clear_root_sort_cache()

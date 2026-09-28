@@ -459,6 +459,43 @@ def test_audit_checks_file_database_and_nonce_reuse_across_databases(tmp_path: P
     assert any(finding.field == "title" for finding in report.findings)
 
 
+def test_audit_checks_binary_storage_type_without_reading_payloads(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    file_database_path = resolve_file_database_path(database_path)
+    connection = sqlite3.connect(file_database_path)
+    initialize_file_schema(connection)
+    for index, blob_data in enumerate((b"encrypted-blob", b"", "stored-as-text")):
+        connection.execute(
+            """
+            INSERT INTO files (
+                id, title, title_encryption_nonce, title_encryption_tag,
+                metadata_json, metadata_encryption_nonce, metadata_encryption_tag,
+                blob_data, blob_encryption_nonce, blob_encryption_tag,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"file-{index}", "dGl0bGU=", bytes([index, 1]) * 6, b"a" * 16,
+                "bWV0YWRhdGE=", bytes([index, 2]) * 6, b"b" * 16,
+                blob_data, bytes([index, 3]) * 6, b"c" * 16,
+                _NOW, _NOW,
+            ),
+        )
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    blob_findings = [finding for finding in report.findings if finding.field == "blob_data"]
+    assert [finding.message for finding in blob_findings] == ["encrypted binary payload must be stored as a BLOB"]
+    assert "stored-as-text" not in report.render_text()
+
+
 def test_audit_fails_closed_for_unknown_tables_and_columns(tmp_path: Path) -> None:
     namespaces_directory = tmp_path / "namespaces"
     database_path = _create_namespace_database(

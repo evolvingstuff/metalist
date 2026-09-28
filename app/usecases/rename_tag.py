@@ -64,12 +64,15 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
                 tags_encryption_tag=tags_tag,
             )
 
-    for note_id, content, tags in updates:
-        record = store.get(note_id)
+    tag_changes = {}
+    for note_id, _content, tags in updates:
+        record = note_store.get_note(note_id)
         if record.updated_at is None:
             raise RuntimeError(f"Cannot preserve missing updated_at while renaming tag: {note_id}")
         cache_note_tags(note_id, tags)
-        store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
+        tag_changes[note_id] = (tags, record.proposed_tags)
+    # One incremental recompute for every renamed note, not one per note.
+    note_store.apply_bulk_tag_sources(tag_changes)
 
     update_uuid = generate_new_uuid()
     return {

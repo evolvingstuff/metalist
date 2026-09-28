@@ -203,12 +203,17 @@ def _prune_counts_by_date(
     return retained
 
 
-def _increment_daily_tags(
+def _increment_daily_tag_groups(
     *,
     counts_by_date: dict[str, dict[str, int]],
     interacted_on: date,
-    tags: tuple[str, ...],
+    tag_groups: tuple[tuple[str, ...], ...],
 ) -> dict[str, dict[str, int]]:
+    """Credit each group's distinct tags once, in order, on one day.
+
+    Pruning is idempotent for a fixed day and a tag keeps the spelling it was
+    first counted under, so one pass equals one call per group.
+    """
     updated = _prune_counts_by_date(counts_by_date=counts_by_date, today=interacted_on)
     day_text = interacted_on.isoformat()
     if day_text in updated:
@@ -217,25 +222,27 @@ def _increment_daily_tags(
         daily_counts = {}
         updated[day_text] = daily_counts
 
-    unique_tags_by_casefold: dict[str, str] = {}
-    for tag_name in tags:
-        if not isinstance(tag_name, str) or tag_name == "":
-            raise TypeError("interaction tags must be non-empty strings")
-        tag_casefold = tag_name.casefold()
-        if tag_casefold not in unique_tags_by_casefold:
-            unique_tags_by_casefold[tag_casefold] = tag_name
-
     existing_key_by_casefold = {
         tag_name.casefold(): tag_name for tag_name in daily_counts
     }
-    for tag_casefold, tag_name in unique_tags_by_casefold.items():
-        if tag_casefold in existing_key_by_casefold:
-            stored_name = existing_key_by_casefold[tag_casefold]
-        else:
-            stored_name = tag_name
-        if stored_name not in daily_counts:
-            daily_counts[stored_name] = 0
-        daily_counts[stored_name] += 1
+    for tags in tag_groups:
+        unique_tags_by_casefold: dict[str, str] = {}
+        for tag_name in tags:
+            if not isinstance(tag_name, str) or tag_name == "":
+                raise TypeError("interaction tags must be non-empty strings")
+            tag_casefold = tag_name.casefold()
+            if tag_casefold not in unique_tags_by_casefold:
+                unique_tags_by_casefold[tag_casefold] = tag_name
+
+        for tag_casefold, tag_name in unique_tags_by_casefold.items():
+            if tag_casefold in existing_key_by_casefold:
+                stored_name = existing_key_by_casefold[tag_casefold]
+            else:
+                stored_name = tag_name
+                existing_key_by_casefold[tag_casefold] = stored_name
+            if stored_name not in daily_counts:
+                daily_counts[stored_name] = 0
+            daily_counts[stored_name] += 1
     return _prune_counts_by_date(counts_by_date=updated, today=interacted_on)
 
 
@@ -304,7 +311,24 @@ class SearchHistoryStore:
     ) -> bool:
         if not isinstance(tags, tuple):
             raise TypeError("tags must be a tuple")
-        if not tags:
+        return self.record_interactions(tag_groups=(tags,), token=token, interacted_on=interacted_on)
+
+    def record_interactions(
+        self,
+        *,
+        tag_groups: tuple[tuple[str, ...], ...],
+        token: str,
+        interacted_on: date,
+    ) -> bool:
+        """Apply several interactions in order and persist once.
+
+        Equivalent to one record_interaction per group; bulk operations use it
+        so the aggregate is not re-serialized, re-encrypted, and rewritten per note.
+        """
+        if not isinstance(tag_groups, tuple) or not all(isinstance(tags, tuple) for tags in tag_groups):
+            raise TypeError("tag_groups must be a tuple of tuples")
+        tag_groups = tuple(tags for tags in tag_groups if tags)
+        if not tag_groups:
             return False
         if not isinstance(interacted_on, date):
             raise TypeError("interacted_on must be a date")
@@ -319,10 +343,10 @@ class SearchHistoryStore:
             if self._state is not None:
                 counts_by_date = self._state.counts_by_date
                 storage_id = self._state.storage_id
-            updated_counts = _increment_daily_tags(
+            updated_counts = _increment_daily_tag_groups(
                 counts_by_date=counts_by_date,
                 interacted_on=interacted_on,
-                tags=tags,
+                tag_groups=tag_groups,
             )
             state = TagActivityState(
                 storage_id=storage_id,
@@ -465,6 +489,44 @@ def record_note_interaction(
     )
 
 
+def _explicit_tag_additions(*, before_tags: str, after_tags: str) -> tuple[str, ...]:
+    before_casefold = {
+        tag_name.casefold() for tag_name in extract_tags_for_search(before_tags)
+    }
+    added_by_casefold: dict[str, str] = {}
+    after_terms = sorted(
+        extract_tags_for_search(after_tags),
+        key=_tag_activity_case_sort_key,
+    )
+    for tag_name in after_terms:
+        tag_casefold = tag_name.casefold()
+        if tag_casefold in before_casefold or tag_casefold in added_by_casefold:
+            continue
+        added_by_casefold[tag_casefold] = tag_name
+    return tuple(added_by_casefold.values())
+
+
+def record_explicit_tag_addition_batch(
+    *,
+    tag_changes: tuple[tuple[str, str], ...],
+    token: str,
+    interacted_on: date,
+) -> bool:
+    """Credit newly added explicit tags for many (before, after) tag strings at once."""
+    if not isinstance(token, str) or token == "":
+        raise ValueError("token must be a non-empty string")
+    if not isinstance(interacted_on, date):
+        raise TypeError("interacted_on must be a date")
+    groups = []
+    for before_tags, after_tags in tag_changes:
+        if not isinstance(before_tags, str) or not isinstance(after_tags, str):
+            raise TypeError("tag changes must be (before, after) strings")
+        groups.append(_explicit_tag_additions(before_tags=before_tags, after_tags=after_tags))
+    return search_history_store.record_interactions(
+        tag_groups=tuple(groups), token=token, interacted_on=interacted_on,
+    )
+
+
 def record_explicit_tag_additions(
     *,
     before_tags: str,
@@ -481,21 +543,8 @@ def record_explicit_tag_additions(
     if not isinstance(interacted_on, date):
         raise TypeError("interacted_on must be a date")
 
-    before_casefold = {
-        tag_name.casefold() for tag_name in extract_tags_for_search(before_tags)
-    }
-    added_by_casefold: dict[str, str] = {}
-    after_terms = sorted(
-        extract_tags_for_search(after_tags),
-        key=_tag_activity_case_sort_key,
-    )
-    for tag_name in after_terms:
-        tag_casefold = tag_name.casefold()
-        if tag_casefold in before_casefold or tag_casefold in added_by_casefold:
-            continue
-        added_by_casefold[tag_casefold] = tag_name
     return search_history_store.record_interaction(
-        tags=tuple(added_by_casefold.values()),
+        tags=_explicit_tag_additions(before_tags=before_tags, after_tags=after_tags),
         token=token,
         interacted_on=interacted_on,
     )

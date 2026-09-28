@@ -17,6 +17,7 @@ from app.services.search_history import (
     list_recent_search_tag_selections_for_first_query,
     list_recent_search_tags_for_first_query,
     prioritize_first_search_tag_suggestions,
+    record_explicit_tag_addition_batch,
     record_explicit_tag_additions,
     record_note_interaction,
     record_search_suggestion_selection,
@@ -436,3 +437,28 @@ def test_search_suggestion_context_and_merge_preserve_base_order() -> None:
         recent_tags=["shortcut"],
         priority_slots=3,
     ) == ["shortcut", "short-story", "short-selling"]
+
+
+def test_batched_explicit_tag_additions_match_one_call_per_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    changes = (("", "Alpha beta"), ("alpha", "alpha Beta gamma"), ("x", "x"), ("", "BETA delta"))
+    day = date(2026, 8, 20)
+    _configure_memory_database(tmp_path, monkeypatch)
+    store = search_history_module.search_history_store
+    try:
+        for before_tags, after_tags in changes:
+            record_explicit_tag_additions(before_tags=before_tags, after_tags=after_tags, token="token", interacted_on=day)
+        one_by_one = store._state.counts_by_date
+        store.clear_persisted_state_for_tests()
+
+        writes = []
+        original_upsert = search_history_module._upsert_stored_row
+        monkeypatch.setattr(search_history_module, "_upsert_stored_row", lambda **kwargs: (writes.append(1), original_upsert(**kwargs))[1])
+        assert record_explicit_tag_addition_batch(tag_changes=changes, token="token", interacted_on=day) is True
+
+        assert store._state.counts_by_date == one_by_one
+        assert writes == [1]
+    finally:
+        store.clear_persisted_state_for_tests()

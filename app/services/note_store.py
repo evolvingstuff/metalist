@@ -781,6 +781,67 @@ class NoteStore:
 
         self._publish_tag_updates(tag_updates)
 
+    def add_notes_from_db(
+        self, entries: Sequence[tuple[SimpleNamespace, str, str, str]],
+    ) -> None:
+        """Insert several notes (e.g. an undone subtree deletion) in order.
+
+        Each note is linked exactly as add_note_from_db would; inheritance is
+        recomputed once for all of them and the search index updated once,
+        instead of re-publishing every affected note after each insertion.
+        """
+        if not self._loaded or not entries:
+            return
+        prepared = []
+        for note, plaintext, tags, proposed_tags in entries:
+            tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags=tags, content_html=plaintext)
+            proposed_tag_terms, proposed_non_meta_tag_terms = _parse_tag_string_terms(proposed_tags)
+            prepared.append((note, plaintext, tags, proposed_tags, tag_terms, non_meta_tag_terms,
+                             proposed_tag_terms, proposed_non_meta_tag_terms, strip_html(plaintext)))
+        with self._lock:
+            self._revision += 1
+            records = []
+            for (note, plaintext, tags, proposed_tags, tag_terms, non_meta_tag_terms,
+                 proposed_tag_terms, proposed_non_meta_tag_terms, _content_text) in prepared:
+                record = NoteRecord(
+                    id=note.id,
+                    parent_id=note.parent_id,
+                    prev_id=note.prev_id,
+                    next_id=note.next_id,
+                    is_collapsed=bool(getattr(note, "is_collapsed", False)),
+                    content=plaintext,
+                    tags=tags,
+                    proposed_tags=proposed_tags,
+                    tag_terms=tag_terms,
+                    non_meta_tag_terms=non_meta_tag_terms,
+                    proposed_tag_terms=proposed_tag_terms,
+                    proposed_non_meta_tag_terms=proposed_non_meta_tag_terms,
+                    created_at=getattr(note, "created_at", None),
+                    updated_at=getattr(note, "updated_at", None),
+                )
+                self._note_map[note.id] = record
+                self._backlink_index.upsert(record.id, record.content, record.tags)
+                self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
+                records.append(record)
+            tag_updates = self._recompute_effective_tag_terms_locked(
+                {record.id for record in records}, subtree_root_ids=())
+
+        ontology = get_ontology()
+        for record, entry in zip(records, prepared):
+            content_text = entry[-1]
+            effective_tag_terms = tag_updates.pop(record.id)
+            inferred_plaintext = ""
+            if ontology.matcher_rules:
+                inferred_plaintext = content_text
+            search_index.upsert(
+                note_id=record.id,
+                content_text=content_text,
+                tags=record.tags,
+                raw_tag_terms=effective_tag_terms,
+                tag_terms=ontology.infer_effective_tags(base_tags=effective_tag_terms, plaintext=inferred_plaintext),
+            )
+        self._publish_tag_updates(tag_updates)
+
     def update_note_from_db(
         self,
         note: SimpleNamespace,
@@ -993,10 +1054,10 @@ class NoteStore:
         if not self._loaded:
             return
         with self._lock:
-            self._revision += 1
             record = self._note_map.get(note_id)
             if not record or record.is_collapsed == collapsed:
                 return
+            self._revision += 1
             self._note_map[note_id] = NoteRecord(
                 id=record.id,
                 parent_id=record.parent_id,
@@ -1102,7 +1163,12 @@ class NoteStore:
                 note_id, self._effective_proposed_non_meta_tag_terms, self._subtree_proposed_non_meta_tag_terms)
 
     def apply_bulk_tag_sources(self, changes: Mapping[str, tuple[str, str]]) -> None:
-        """Publish sources together and rebuild inheritance once for the whole pass."""
+        """Publish many notes' tag sources with one incremental recompute.
+
+        Recomputing from all changed notes at once reaches the same state as
+        editing them one by one (or rebuilding everything), without repeating
+        the inheritance walk and search publication per note.
+        """
         assert self._loaded
         with self._lock:
             self._revision += 1
@@ -1117,15 +1183,18 @@ class NoteStore:
                     tag_terms=own, non_meta_tag_terms=non_meta,
                     proposed_tag_terms=proposed, proposed_non_meta_tag_terms=proposed_non_meta)
             self._note_map.update(replacements)
-            self.rebuild_search_index_tag_terms()
-            for note_id, record in replacements.items():
-                raw = (self._effective_non_meta_tag_terms[note_id]
-                       | self._effective_proposed_non_meta_tag_terms[note_id]
-                       | record.tag_terms | record.proposed_tag_terms)
-                plaintext = strip_html(record.content)
-                effective = get_ontology().infer_effective_tags(base_tags=raw, plaintext=plaintext)
-                search_index.upsert(note_id=note_id, content_text=plaintext,
-                                    tags=record.tags, raw_tag_terms=raw, tag_terms=effective)
+            tag_updates = self._recompute_effective_tag_terms_locked(set(replacements), subtree_root_ids=())
+        self._publish_tag_updates(tag_updates)
+        ontology = get_ontology()
+        for note_id, record in replacements.items():
+            raw = tag_updates[note_id]
+            plaintext = get_cached_text(note_id)
+            inferred_plaintext = ""
+            if ontology.matcher_rules:
+                inferred_plaintext = plaintext
+            effective = ontology.infer_effective_tags(base_tags=raw, plaintext=inferred_plaintext)
+            search_index.upsert(note_id=note_id, content_text=plaintext,
+                                tags=record.tags, raw_tag_terms=raw, tag_terms=effective)
 
     def rebuild_search_index_tag_terms(self) -> None:
         """Recompute search-index tag terms for all notes.
