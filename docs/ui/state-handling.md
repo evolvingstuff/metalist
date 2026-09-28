@@ -476,10 +476,10 @@ ModeContext = {
   server cache. Explicit logout still purges decrypted runtime state.
 - If password protection is enabled, that persisted tab-state payload is encrypted at rest;
   passwordless namespaces keep the same payload in plaintext.
-- **Diff cache isolation**: each tab now owns its own `clientNoteUuidHashes` map inside
-  `ModeContext`. Swapping tabs swaps the active hash map so `/notes/view` payloads only
-  contain nodes that tab has rendered—prevents the first tab from inheriting the
-  thousands of roots you just scrolled past in another tab.
+- **Diff isolation**: the server keeps a warm view per tab (what that tab displays), so
+  `/notes/view` diffs each tab against its own baseline and the browser sends only its
+  visible roots. Each tab loads only a band of roots around its viewport, so no tab
+  carries the roots you scrolled past in another.
 - With a single interactive client, this namespace-scoped persisted snapshot keeps
   persistence simple: new browser windows and restarted servers immediately reuse
   the stored tabs.

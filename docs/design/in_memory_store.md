@@ -42,12 +42,19 @@ At a high level (`app/main.py`):
 - Route: `POST /api2/notes/view` (`app/api/routes/notes.py`)
 - Snapshot builder: `app/services/snapshot.build_view_state(...)`
 - Diffing behavior:
-  - A cold tab/view cache returns authoritative `snapshot.structure`; a warm cache returns structural `snapshot.diffOps`.
-  - `snapshot.notes` is filtered to only include notes whose `hash` differs from the client’s `clientNoteUuidHashes`.
+  - A tab with no warm view gets authoritative `snapshot.structure`; otherwise the server diffs against the tab's warm view (`app/services/view_cache.py`) and returns `snapshot.diffOps`.
+  - `snapshot.notes` includes only notes whose `hash` differs from the warm view.
+  - Only a band of roots around the browser's visible roots is built, and rendered HTML is cached per note, so view cost does not grow with scrolling.
   - Snapshot rendering and metadata share request-local note/child/path/descendant caches so the hierarchy is not repeatedly walked.
   - Identical hierarchy maps bypass structural diff traversal.
 
 See `docs/design/differential-view-protocol.md` for the wire format.
+
+## Incremental Updates
+- Tag inheritance is recomputed incrementally: mutations pass the changed notes (and moved subtrees) to `_recompute_effective_tag_terms_locked`, which re-propagates only through affected components and publishes the resulting search-index updates in one batch.
+- Bulk operations (accept/remove proposals, rename/delete tag via `apply_bulk_tag_sources`, subtree restore via `add_notes_from_db`) apply all their changes, then recompute once, instead of per note or with a full rebuild.
+- The search index applies tag changes as diffs (terms removed and added), not by rewriting every posting of the note.
+- Incremental state must match a fresh hydration; the unit suite checks this against rebuilds.
 
 ## Read Guard
 The read guard rejects accidental runtime SELECTs, while explicit windows allow necessary persistence access:
@@ -62,7 +69,7 @@ Undo/redo workflows can legitimately need DB reads (e.g., replay validation or h
 
 Ordinary authenticated middleware uses in-memory key/session state. Auth status/version/settings, attachment retrieval, startup/unlock/restore, first session-timeout hydration, undo replay validation, and topology checks inside mutations intentionally access SQLite. Schema bootstrap runs once per live database identity and is invalidated on restore/recovery. Read permission uses `ContextVar`, so an allowed read in one task/thread cannot enable another task's reads.
 
-Immutable `NoteRecord` pointers are the ordering authority. `note_ordering.py` maintains derived boundaries; hydration and bulk metadata validate before publication. Sorted views reuse revision-aware subtree aggregates, and bounded view caches retain one current baseline per client/tab. See [refactor ownership](../REFACTORS.md) and [runtime budgets](../security/README.md#runtime-memory-and-shell-budgets-2026-09-12).
+Immutable `NoteRecord` pointers are the ordering authority. `note_ordering.py` maintains derived boundaries; hydration and bulk metadata validate before publication. Sorted views keep per-root subtree aggregates and, after an edit, re-aggregate only the roots whose notes changed (found by comparing immutable records by identity). The view cache holds one warm view per client/tab for the tab's lifetime. See [refactor ownership](../REFACTORS.md) and [runtime budgets](../security/README.md#runtime-memory-and-shell-budgets-2026-09-12).
 
 ## Testing Notes
 
