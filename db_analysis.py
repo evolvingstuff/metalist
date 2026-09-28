@@ -3,7 +3,6 @@
 
 import argparse
 import sqlite3
-from collections import defaultdict
 from typing import Dict, List, Tuple
 
 
@@ -92,8 +91,12 @@ def validate_parent_group(parent_id: str, children: List[sqlite3.Row], index: Di
 
 
 def collect_children(notes: List[sqlite3.Row]) -> Dict[str, List[sqlite3.Row]]:
-    grouped: Dict[str, List[sqlite3.Row]] = defaultdict(list)
+    # Every note gets an entry, so leaves read as having no children; a parent
+    # missing from the table (an anomaly this tool reports) is added on sight.
+    grouped: Dict[str, List[sqlite3.Row]] = {row["id"]: [] for row in notes}
     for row in notes:
+        if row["parent_id"] not in grouped:
+            grouped[row["parent_id"]] = []
         grouped[row["parent_id"]].append(row)
     return grouped
 

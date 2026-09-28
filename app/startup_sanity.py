@@ -326,7 +326,20 @@ class _StartupSanityChecker(ast.NodeVisitor):
         self._prefixes = _scope_prefixes(tree)
         self._relative_path = _path_rel(project_root, path)
         self._exception_aliases: dict[str, str] = {}
+        # Every spelling that calls collections.defaultdict in this module.
+        self._defaultdict_callees: set[str] = {"collections.defaultdict"}
         for statement in ast.walk(tree):
+            if isinstance(statement, ast.ImportFrom) and statement.module == "collections":
+                for name in statement.names:
+                    if name.name == "defaultdict":
+                        local_name = name.name
+                        if name.asname is not None:
+                            local_name = name.asname
+                        self._defaultdict_callees.add(local_name)
+            if isinstance(statement, ast.Import):
+                for name in statement.names:
+                    if name.name == "collections" and name.asname is not None:
+                        self._defaultdict_callees.add(f"{name.asname}.defaultdict")
             if isinstance(statement, ast.ImportFrom) and statement.module in {"contextlib", "app.services.exception_capture"}:
                 for name in statement.names:
                     local_name = name.name
@@ -791,7 +804,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
             if callee == "os.environ.get":
                 self._add(node=node, rule_id="PY003", message="os.environ.get(...) is forbidden")
                 return
-            if callee == "collections.defaultdict":
+            if callee in self._defaultdict_callees:
                 self._add(node=node, rule_id="PY003", message="collections.defaultdict(...) is forbidden")
                 return
             if callee == "next" and len(node.args) >= 2:

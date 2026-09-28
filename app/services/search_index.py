@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from threading import RLock
 import time
-from typing import Callable, DefaultDict, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from loguru import logger
 
@@ -26,6 +25,12 @@ class _SearchSuggestionContext:
     partial_prefix: str | None
     completed_clause: str
     is_exclusion: bool
+
+
+def _add_posting(postings: Dict[str, Set[int]], key: str, note_int_id: int) -> None:
+    if key not in postings:
+        postings[key] = set()
+    postings[key].add(note_int_id)
 
 
 def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext:
@@ -167,10 +172,10 @@ class SearchIndex:
         self._note_raw_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms_casefold: List[FrozenSet[str]] = []
-        self._explicit_tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
-        self._raw_tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
-        self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
-        self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
+        self._explicit_tag_notes: Dict[str, Set[int]] = {}
+        self._raw_tag_notes_casefold: Dict[str, Set[int]] = {}
+        self._tag_notes: Dict[str, Set[int]] = {}
+        self._tag_notes_casefold: Dict[str, Set[int]] = {}
 
         self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
         self._untagged_result_cache: tuple[int, FrozenSet[str]] | None = None
@@ -322,9 +327,9 @@ class SearchIndex:
                     if folded_bucket is not None:
                         folded_bucket.discard(note_int_id)
                 for term in new_tag_terms - old_tag_terms:
-                    self._tag_notes[term].add(note_int_id)
+                    _add_posting(self._tag_notes, term, note_int_id)
                 for term_casefold in new_casefold - old_casefold:
-                    self._tag_notes_casefold[term_casefold].add(note_int_id)
+                    _add_posting(self._tag_notes_casefold, term_casefold, note_int_id)
 
                 self._note_tag_terms[note_int_id] = new_tag_terms
                 self._note_tag_terms_casefold[note_int_id] = new_casefold
@@ -366,7 +371,7 @@ class SearchIndex:
                     if bucket is not None:
                         bucket.discard(note_int_id)
                 for term_casefold in new_raw_casefold - old_raw_casefold:
-                    self._raw_tag_notes_casefold[term_casefold].add(note_int_id)
+                    _add_posting(self._raw_tag_notes_casefold, term_casefold, note_int_id)
 
                 self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
                 touched += 1
@@ -523,11 +528,13 @@ class SearchIndex:
             # Postings hold only live notes (removal discards them). Group the
             # notes carrying anchors by how many they carry; each candidate's
             # co-occurrence is then a set intersection per group.
-            anchor_counts: DefaultDict[int, int] = defaultdict(int)
+            anchor_counts: Dict[int, int] = {}
             for anchor_casefold in anchor_casefold_set:
                 if anchor_casefold not in self._tag_notes_casefold:
                     continue
                 for note_id in self._tag_notes_casefold[anchor_casefold]:
+                    if note_id not in anchor_counts:
+                        anchor_counts[note_id] = 0
                     anchor_counts[note_id] += 1
 
             max_anchor_count = len(anchor_casefold_set)
@@ -803,19 +810,19 @@ class SearchIndex:
         self._note_tag_terms.append(tag_terms)
 
         for term in explicit_tag_terms:
-            self._explicit_tag_notes[term].add(note_int_id)
+            _add_posting(self._explicit_tag_notes, term, note_int_id)
         for term in raw_tag_terms:
             if term not in casefold_by_term:
                 casefold_by_term[term] = term.casefold()
-            self._raw_tag_notes_casefold[casefold_by_term[term]].add(note_int_id)
+            _add_posting(self._raw_tag_notes_casefold, casefold_by_term[term], note_int_id)
         tag_terms_casefold = []
         for term in tag_terms:
             if term not in casefold_by_term:
                 casefold_by_term[term] = term.casefold()
             term_casefold = casefold_by_term[term]
             tag_terms_casefold.append(term_casefold)
-            self._tag_notes[term].add(note_int_id)
-            self._tag_notes_casefold[term_casefold].add(note_int_id)
+            _add_posting(self._tag_notes, term, note_int_id)
+            _add_posting(self._tag_notes_casefold, term_casefold, note_int_id)
         self._note_tag_terms_casefold.append(frozenset(tag_terms_casefold))
 
     def _update_existing_locked(
@@ -842,7 +849,7 @@ class SearchIndex:
                     continue
                 bucket.discard(note_int_id)
             for term in new_explicit_tag_terms:
-                self._explicit_tag_notes[term].add(note_int_id)
+                _add_posting(self._explicit_tag_notes, term, note_int_id)
             self._note_explicit_tag_terms[note_int_id] = new_explicit_tag_terms
 
         if old_raw_tag_terms != new_raw_tag_terms:
@@ -851,7 +858,7 @@ class SearchIndex:
                 if bucket is not None:
                     bucket.discard(note_int_id)
             for term in new_raw_tag_terms:
-                self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+                _add_posting(self._raw_tag_notes_casefold, term.casefold(), note_int_id)
             self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
 
         if old_tag_terms != new_tag_terms:
@@ -864,8 +871,8 @@ class SearchIndex:
                 if folded_bucket is not None:
                     folded_bucket.discard(note_int_id)
             for term in new_tag_terms:
-                self._tag_notes[term].add(note_int_id)
-                self._tag_notes_casefold[term.casefold()].add(note_int_id)
+                _add_posting(self._tag_notes, term, note_int_id)
+                _add_posting(self._tag_notes_casefold, term.casefold(), note_int_id)
             self._note_tag_terms[note_int_id] = new_tag_terms
             self._note_tag_terms_casefold[note_int_id] = frozenset(
                 term.casefold() for term in new_tag_terms

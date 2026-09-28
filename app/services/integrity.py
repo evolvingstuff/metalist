@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Optional
 
 from app.db.schema import NOTES_TABLE
@@ -45,8 +44,10 @@ def assert_linked_list_integrity(db: SafeSession, operation: str) -> None:
         ).fetchall()
 
     records_by_id = {row["id"]: row for row in rows}
-    child_ids_by_parent: dict[str | None, list[str]] = defaultdict(list)
+    child_ids_by_parent: dict[str | None, list[str]] = {}
     for row in rows:
+        if row["parent_id"] not in child_ids_by_parent:
+            child_ids_by_parent[row["parent_id"]] = []
         child_ids_by_parent[row["parent_id"]].append(row["id"])
 
     for row in rows:

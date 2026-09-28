@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import DefaultDict
 from typing import Dict, List, Optional
 
 from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
@@ -156,8 +154,8 @@ def list_prioritize_tag_suggestions(
     normalized_prefix = query.strip()
     ordered_root_ids = store.children(None)
 
-    total_counts: DefaultDict[str, int] = defaultdict(int)
-    representative_counts: DefaultDict[str, Dict[str, int]] = defaultdict(dict)
+    total_counts: Dict[str, int] = {}
+    representative_counts: Dict[str, Dict[str, int]] = {}
     direct_prefix_matches: Dict[str, bool] = {}
     first_seen_indices: Dict[str, int] = {}
     next_index = 0
@@ -170,6 +168,9 @@ def list_prioritize_tag_suggestions(
             if normalized_prefix != "" and not tag_term_matches_prefix(term=tag, prefix=normalized_prefix):
                 continue
             tag_casefold = tag.casefold()
+            if tag_casefold not in total_counts:
+                total_counts[tag_casefold] = 0
+                representative_counts[tag_casefold] = {}
             total_counts[tag_casefold] += 1
             spelling_counts = representative_counts[tag_casefold]
             if tag not in spelling_counts:

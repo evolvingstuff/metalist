@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from threading import RLock
 
 from datetime import datetime
@@ -78,8 +77,7 @@ class _RootMetrics:
         self.store = store
         self.include_text = include_text
         self.records = {}
-        self.children = defaultdict(set)
-        self.children[None] = set()
+        self.children = {None: set()}
         self.own = {}
         self.text_keys = {}
         self.roots = {}
@@ -87,6 +85,8 @@ class _RootMetrics:
         for note_id, record in records.items():
             if note_id not in self.children:
                 self.children[note_id] = set()
+            if record.parent_id not in self.children:
+                self.children[record.parent_id] = set()
             self.children[record.parent_id].add(note_id)
             self.own[note_id] = self._own_values(note_id, record)
         missing_parents = set(self.children) - set(records) - {None}
@@ -164,6 +164,8 @@ class _RootMetrics:
             record = records[note_id]
             # Any new cycle passes through a changed note, so this finds it.
             dirty_roots.add(self._root_of(records, note_id))
+            if record.parent_id not in self.children:
+                raise RuntimeError(f'Root sorting parent {record.parent_id} of {note_id} is missing')
             self.children[record.parent_id].add(note_id)
             self.own[note_id] = self._own_values(note_id, record)
         for root_id in dirty_roots:

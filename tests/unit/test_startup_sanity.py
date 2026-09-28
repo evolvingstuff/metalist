@@ -285,3 +285,21 @@ def delete_oldest_backups_in_directory(backup_path):
     _, violations = collect_startup_sanity_violations(tmp_path)
 
     assert not any(violation.rule_id == "BKP001" for violation in violations)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import collections\n\ndef bad():\n    return collections.defaultdict(list)\n",
+        "from collections import defaultdict\n\ndef bad():\n    return defaultdict(list)\n",
+        "from collections import defaultdict as auto_dict\n\ndef bad():\n    return auto_dict(set)\n",
+        "import collections as c\n\ndef bad():\n    return c.defaultdict(int)\n",
+    ],
+)
+def test_startup_sanity_rejects_defaultdict_under_any_import_spelling(tmp_path: Path, source: str) -> None:
+    _write_file(tmp_path / "bad.py", source)
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert [violation.rule_id for violation in violations] == ["PY003"]
+    assert "defaultdict(...) is forbidden" in violations[0].message

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 import re
 import time
-from typing import DefaultDict, Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set
 
 from loguru import logger
 
@@ -839,7 +838,7 @@ def build_view_state(
     t0 = time.perf_counter()
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
-    children_by_parent: DefaultDict[Optional[str], List[str]] = defaultdict(list)
+    children_by_parent: Dict[Optional[str], List[str]] = {}
     hash_by_id: Dict[str, str] = {}
 
     file_record_cache: Dict[str, object] = {}
@@ -884,6 +883,8 @@ def build_view_state(
                 and parent_id is not None
                 and nid not in allowed_note_ids
             )
+            if parent_id not in children_by_parent:
+                children_by_parent[parent_id] = []
             children_by_parent[parent_id].append(nid)
             rec = traversal_cache.get_note(nid)
             if idx > 0:
