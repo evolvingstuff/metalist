@@ -12,6 +12,15 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.11.0
+
+- Large namespaces stay fast while scrolling: only a band of root notes around the viewport is loaded, the server remembers what each tab shows so the browser no longer sends note hashes, and rendered notes are cached.
+- Tag suggestions, searches with only exclusions (`-tag`), and the updated/content-volume sort orders respond much faster on large namespaces.
+- Accepting or removing tag proposals in bulk, renaming or deleting a tag, and undoing a large delete no longer rebuild every note's inherited tags.
+- Unlocking an encrypted namespace is faster, and the startup encryption audit no longer loads every attachment into memory.
+- Fixed undo of deleting a note whose children have several children, and "accept all" failing on tag bars with leading or trailing spaces.
+- Fixed crashes in the status check after returning to a tab and in scroll-position saving.
+
 ## Changes in 0.10.0
 
 - Excalidraw diagrams: add one from the note's right-click menu or the command palette, and double-click a diagram to edit it full screen. Diagrams autosave, show light and dark previews, resize like images, and each editing session is one undo step. The editor is bundled locally and needs no Node server.
