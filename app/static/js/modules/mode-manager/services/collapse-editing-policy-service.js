@@ -3,12 +3,16 @@ export function shouldExitEditingBeforeCollapseToggle({
     currentNoteId,
     targetNoteId,
     isTargetInsideCurrentEditSubtree,
+    collapsed,
 }) {
     if (typeof isEditing !== 'boolean') {
         throw new Error('shouldExitEditingBeforeCollapseToggle requires boolean isEditing');
     }
     if (typeof targetNoteId !== 'string' || targetNoteId.length === 0) {
         throw new Error('shouldExitEditingBeforeCollapseToggle requires targetNoteId');
+    }
+    if (typeof collapsed !== 'boolean') {
+        throw new Error('shouldExitEditingBeforeCollapseToggle requires collapsed boolean');
     }
 
     if (!isEditing) {
@@ -20,6 +24,10 @@ export function shouldExitEditingBeforeCollapseToggle({
     }
     if (typeof isTargetInsideCurrentEditSubtree !== 'boolean') {
         throw new Error('editing collapse toggle requires isTargetInsideCurrentEditSubtree boolean');
+    }
+
+    if (collapsed && targetNoteId === currentNoteId) {
+        return true;
     }
 
     return !isTargetInsideCurrentEditSubtree;

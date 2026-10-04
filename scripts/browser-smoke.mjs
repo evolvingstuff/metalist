@@ -190,31 +190,47 @@ try {
   });
   await page.keyboard.type(' editor-transition-check');
   await page.waitForFunction(() => document.querySelector('.note.editing .note-content').textContent.includes('editor-transition-check'));
-  for (const [isCollapsed, expectedExpandedPersisted] of [
-    [true, false],
-    [false, true],
-    [true, true],
-    [false, true],
-  ]) {
-    const editSession = await page.evaluate(async (noteId, shouldCollapse) => {
-      const actions = await import('/static/js/modules/mode-manager/actions/note-actions.js');
-      const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
-      if (shouldCollapse) await actions.collapseNote(noteId);
-      else await actions.expandNote(noteId);
-      return {
-        isEditing: ModeContextInstance.isEditing,
-        currentNoteId: ModeContextInstance.currentNoteId,
-        expandedPersisted: ModeContextInstance.editSessionExpandedPersisted,
-      };
-    }, noteId, isCollapsed);
-    assert.deepEqual(editSession, {
-      isEditing: true,
-      currentNoteId: noteId,
-      expandedPersisted: expectedExpandedPersisted,
+  const collapsedEditSession = await page.evaluate(async noteId => {
+    const {collapseNote} = await import('/static/js/modules/mode-manager/actions/note-actions.js');
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    await collapseNote(noteId);
+    return {
+      isEditing: ModeContextInstance.isEditing,
+      currentNoteId: ModeContextInstance.currentNoteId,
+      isCollapsed: document.querySelector(`[data-note-id="${noteId}"]`).classList.contains('collapsed'),
+    };
+  }, noteId);
+  assert.deepEqual(collapsedEditSession, {
+    isEditing: false,
+    currentNoteId: null,
+    isCollapsed: true,
+  });
+  await page.reload();
+  await page.waitForSelector('[data-app-ready="true"]');
+  assert.equal(await page.$eval(`[data-note-id="${noteId}"]`, note => note.classList.contains('collapsed')), true);
+  await page.click(`[data-note-id="${noteId}"] > .note-collapse-toggle`);
+  await page.waitForFunction(noteId => {
+    const note = document.querySelector(`[data-note-id="${noteId}"]`);
+    return !note.classList.contains('collapsed')
+      && note.querySelector('.note-content').textContent.includes('editor-transition-check');
+  }, {}, noteId);
+  console.log('PASS collapsing an edited note saves, exits editing, and persists the draft');
+  await page.evaluate(async noteId => {
+    const {actionSelectNote} = await import('/static/js/modules/mode-manager/actions/selection-actions.js');
+    await actionSelectNote(noteId, {
+      initialCaretVisibility: 'visible',
+      recordEditInteraction: false,
     });
-    assert.deepEqual(errors, []);
-  }
-  console.log('PASS repeated collapse/expand preserves one active edit session');
+  }, noteId);
+  await page.waitForFunction(async noteId => {
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return ModeContextInstance.isEditing
+      && ModeContextInstance.currentNoteId === noteId
+      && !ModeContextInstance.isLoading;
+  }, {}, noteId);
+  await page.keyboard.type(' post-collapse-undo-check');
+  await page.waitForFunction(() => document.querySelector('.note.editing .note-content').textContent.includes('post-collapse-undo-check'));
+  assert.deepEqual(errors, []);
   for (const endOffset of [4, 1]) {
     const expectedSelection = await page.evaluate(endOffset => {
       const content = document.querySelector('.note.editing .note-content');
@@ -253,7 +269,10 @@ try {
     const {actionUndo} = await import('/static/js/modules/mode-manager/actions/history-actions.js');
     await actionUndo();
   });
-  await page.waitForFunction(() => !document.body.textContent.includes('editor-transition-check'));
+  await page.waitForFunction(() => {
+    return document.body.textContent.includes('editor-transition-check')
+      && !document.body.textContent.includes('post-collapse-undo-check');
+  });
   assert.deepEqual(errors, []);
   console.log('PASS real editor input, save, deselection, and undo');
 

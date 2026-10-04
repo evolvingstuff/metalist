@@ -3,9 +3,8 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
-import { detachEditorSurface } from '../../editor-toolbar.js';
 import { ErrorHandler } from '../../error-handler.js';
-import { clearTagBar, getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
+import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
@@ -818,6 +817,7 @@ async function setNoteCollapse(noteId, collapsed) {
         currentNoteId: ModeContext.currentNoteId,
         targetNoteId: noteId,
         isTargetInsideCurrentEditSubtree,
+        collapsed,
     });
 
     if (shouldExitEditing) {
@@ -826,27 +826,13 @@ async function setNoteCollapse(noteId, collapsed) {
             throw new Error('Invariant violation: isEditing is true but currentNoteId is null');
         }
 
-        Logger.logDebug('Collapse toggle clicked outside current edit subtree; exiting edit mode first', {
+        Logger.logDebug('Collapse toggle requires exiting edit mode first', {
             editingNoteId,
             targetNoteId: noteId,
             collapsed
         }, Logger.LogCategory.EVENT);
 
-        if (ModeContext.editSessionHasEdits) {
-            await actionSaveNote(editingNoteId);
-        }
-
-        const editingNoteElement = DOMUtils.getNoteById(editingNoteId);
-        DOMUtils.setNoteEditable(editingNoteElement, false);
-        DOMUtils.revealCaret(editingNoteElement);
-        detachEditorSurface();
-        clearTagBar();
-
-        ModeContext.setEditing(false);
-        ModeContext.setCurrentNoteId(null);
-        if (ModeContext.currentContent !== null) {
-            ModeContext.setCurrentContent(null);
-        }
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
 
     if (collapsed) {
