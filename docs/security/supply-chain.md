@@ -1,5 +1,12 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-10-04 (America/Los_Angeles)
+
+The main-branch release audit failed on two newly published advisories:
+
+- `urllib3` 2.7.0 (PYSEC-2026-4175, -4176, -4177: streaming decompression limits and HTTPS-proxy TLS settings), fixed by locking `urllib3` **2.8.0** (`uv lock --upgrade-package urllib3`; exports regenerated).
+- DOMPurify 3.4.13 (GHSA-p98j-92pf-mc4p: `IN_PLACE` sanitizing with a node-removing `afterSanitize` hook), fixed by vendoring DOMPurify **3.4.16**. The npm archive's sha512 matched the registry integrity before `package/dist/purify.min.js` and `package/LICENSE` were copied. MetaList registers only an `uponSanitizeAttribute` hook and never uses `IN_PLACE`, so the advisory did not apply; the upgrade keeps the version-based audit clean.
+
 ## Audit dated 2026-09-12 (America/Los_Angeles)
 
 The review began at checkpoint `8150c089`. The final audit includes 94 locked Python package/version pairs: the existing 71-package runtime/development graph plus pinned release/audit tools. All platform-marker branches are included, even when they would not install on this macOS host. `pip-audit 2.10.1` reported **no known vulnerabilities**. This is advisory metadata coverage, not proof against undisclosed defects or malicious dependencies. [PyPA's audit contract](https://github.com/pypa/pip-audit) explains the distinction.
@@ -21,7 +28,7 @@ Each bundle was compared with an npm archive whose registry integrity digest was
 
 | npm package | Shipped version | Bundle SHA-256 |
 |---|---|---|
-| dompurify | 3.4.13 | `9ab3d44d73c3e3947f9ab72e0f0bc15c7f1931d60b365ba261fc85fe59013c56` |
+| dompurify | 3.4.16 | `2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2` |
 | mermaid | 11.16.1 | `18327bef70d96fb505fe7287d9f6a7362ebf07ff6576ddfaffb1a06f3e1a2954` |
 | markdown-it | 14.3.2 | `e32488403e2e565ac12a9669bfdf2b1b876eb0a5c84f8e0699884b562d18eb52` |
 | zxcvbn | 4.4.2 | `f42c651f40506acb6b662490f338dd47a5951d3312039c4ab8fe5090484f351a` |

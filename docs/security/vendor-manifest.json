@@ -1,14 +1,14 @@
 [
   {
     "name": "dompurify",
-    "version": "3.4.13",
-    "path": "app/static/js/vendor/dompurify-3.4.13.min.js",
-    "license": "app/static/js/vendor/dompurify-3.4.13.LICENSE.txt",
-    "sha256": "9ab3d44d73c3e3947f9ab72e0f0bc15c7f1931d60b365ba261fc85fe59013c56",
-    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.13.tgz",
-    "integrity": "sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==",
+    "version": "3.4.16",
+    "path": "app/static/js/vendor/dompurify-3.4.16.min.js",
+    "license": "app/static/js/vendor/dompurify-3.4.16.LICENSE.txt",
+    "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+    "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
+    "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==",
     "member": "package/dist/purify.min.js",
-    "upstream": "https://www.npmjs.com/package/dompurify/v/3.4.13"
+    "upstream": "https://www.npmjs.com/package/dompurify/v/3.4.16"
   },
   {
     "name": "mermaid",
