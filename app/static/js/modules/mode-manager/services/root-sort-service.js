@@ -27,6 +27,30 @@ export function isRootReorderLocked(sortMode) {
     return normalizeRootSortMode(sortMode) !== ROOT_SORT_MODES.NORMAL;
 }
 
+// Where a new root note may be added in a sorted tab (docs/ui/controls.md,
+// "Sorted tabs"). `placement` is 'top' (the top of the list) or 'below' (right
+// after a root note: Cmd+Enter, split, paste as sibling). Returns the banner
+// explaining a block, or null when allowed. Child notes are never blocked: the
+// root sort does not order them.
+export function rootNoteCreationBlockMessage(sortMode, placement) {
+    if (placement !== 'top' && placement !== 'below') {
+        throw new Error(`Unknown root note placement: ${placement}`);
+    }
+    const normalized = normalizeRootSortMode(sortMode);
+    if (normalized === ROOT_SORT_MODES.NORMAL) {
+        return null;
+    }
+    if (isRootDateBucketSortMode(normalized)) {
+        if (placement === 'top') {
+            return null;
+        }
+        return 'In this sort order new root notes can only be added at the top (press Enter outside edit mode). '
+            + 'Switch to Normal order to add one here; child notes can still be added.';
+    }
+    return 'New root notes cannot be added while this sort order is active, because they would land far from here. '
+        + 'Switch to Normal order, or add a child note.';
+}
+
 export function getRootSortModeIndicatorLabel(sortMode) {
     const normalized = normalizeRootSortMode(sortMode);
     if (normalized === ROOT_SORT_MODES.NORMAL) {

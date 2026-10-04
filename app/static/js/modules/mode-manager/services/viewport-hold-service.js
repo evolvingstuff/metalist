@@ -21,10 +21,22 @@ const MAX_HOLD_MS = 4000;
 // Characters of context recorded on each side of an anchored text position.
 const CONTEXT_CHARS = 30;
 const USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'mousedown', 'pointerdown'];
+// A "you are here" cue follows a hold only when the user's place had to move
+// this far, or could only be found approximately.
+const CUE_MIN_MOVE_PX = 40;
+const CUE_DURATION_MS = 600;
 
 const moduleState = ApplicationState.createFields('viewport-hold-service', {
     session: null,
+    // The cue shown for a hold reference; a hold restarted with the same
+    // reference (the refresh after saving re-holds it) keeps this cue.
+    lastCue: null,
 });
+
+// A note being edited keeps its `collapsed` class but shows its content.
+function isShownCollapsed(element) {
+    return element.classList.contains('collapsed') && !element.classList.contains('editing');
+}
 
 function notesContainer() {
     const container = document.getElementById('notes-container');
@@ -196,6 +208,83 @@ export function captureNoteAnchor(noteElement) {
     return { kind: 'top', noteId, top: noteTop, keepVisible: true };
 }
 
+// --- Sorted tabs ----------------------------------------------------------
+
+function rootElementOf(noteElement) {
+    const container = notesContainer();
+    let element = noteElement;
+    while (element.parentElement !== container) {
+        const parentNote = element.parentElement.closest('.note[data-note-id]');
+        if (parentNote === null) {
+            throw new Error('Note is not inside a root note of the notes container');
+        }
+        element = parentNote;
+    }
+    return element;
+}
+
+// The id of the root note right before or after `rootElement`, or null.
+function siblingInDirection(element, direction) {
+    if (direction === 'previous') {
+        return element.previousElementSibling;
+    }
+    if (direction === 'next') {
+        return element.nextElementSibling;
+    }
+    throw new Error(`Unknown direction: ${direction}`);
+}
+
+function adjacentRootId(rootElement, direction) {
+    let element = siblingInDirection(rootElement, direction);
+    while (element !== null && !element.matches('.note[data-note-id]')) {
+        element = siblingInDirection(element, direction);
+    }
+    if (element === null) {
+        return null;
+    }
+    return element.dataset.noteId;
+}
+
+// Leaving edit mode in a sorted tab moves the edited note's root to its sorted
+// place. While that root keeps its neighbours, hold the caret/reading-line
+// anchor as usual; once it has moved, hold the root that was below it (or
+// above, at the end of the list) so the surrounding notes stay on screen.
+export function captureSortedExitAnchor(noteElement) {
+    const primary = captureNoteAnchor(noteElement);
+    const root = rootElementOf(noteElement);
+    const previousRootId = adjacentRootId(root, 'previous');
+    const nextRootId = adjacentRootId(root, 'next');
+    let neighbourId = nextRootId;
+    if (neighbourId === null) {
+        neighbourId = previousRootId;
+    }
+    if (neighbourId === null) {
+        return primary;
+    }
+    const neighbourTop = findNoteElement(neighbourId).getBoundingClientRect().top;
+    return {
+        kind: 'sorted',
+        noteId: primary.noteId,
+        keepVisible: false,
+        primary,
+        rootId: root.dataset.noteId,
+        previousRootId,
+        nextRootId,
+        neighbour: { kind: 'top', noteId: neighbourId, top: neighbourTop, keepVisible: false },
+    };
+}
+
+function sortedRootMoved(reference) {
+    const root = findNoteElement(reference.rootId);
+    if (root === null) {
+        return true;
+    }
+    if (adjacentRootId(root, 'previous') !== reference.previousRootId) {
+        return true;
+    }
+    return adjacentRootId(root, 'next') !== reference.nextRootId;
+}
+
 // --- Holding --------------------------------------------------------------
 
 function validateReference(reference) {
@@ -206,6 +295,22 @@ function validateReference(reference) {
     if (reference.kind === 'top') {
         if (typeof reference.top !== 'number') {
             throw new Error('A top hold needs a numeric top');
+        }
+        return;
+    }
+    if (reference.kind === 'sorted') {
+        if (typeof reference.rootId !== 'string') {
+            throw new Error('A sorted hold needs the edited root id');
+        }
+        for (const field of ['previousRootId', 'nextRootId']) {
+            if (reference[field] !== null && typeof reference[field] !== 'string') {
+                throw new Error(`A sorted hold needs ${field} as a string or null`);
+            }
+        }
+        validateReference(reference.primary);
+        validateReference(reference.neighbour);
+        if (reference.primary.kind === 'sorted' || reference.neighbour.kind !== 'top') {
+            throw new Error('A sorted hold needs a primary anchor and a neighbour top');
         }
         return;
     }
@@ -223,21 +328,39 @@ function validateReference(reference) {
     throw new Error(`Unknown viewport hold kind: ${reference.kind}`);
 }
 
-// Scroll delta that puts the reference back in place, or null when its note is gone.
-function correctionDelta(reference) {
+// The scroll delta that puts the reference back in place, whether it was found
+// only approximately, whether a position cue may follow (only holds that keep
+// the user's place through an edit; band shifts while scrolling never do), and
+// the element to cue; null when its note is gone.
+function locateReference(reference) {
+    if (reference.kind === 'sorted') {
+        if (sortedRootMoved(reference)) {
+            return locateReference(reference.neighbour);
+        }
+        return locateReference(reference.primary);
+    }
     const element = findNoteElement(reference.noteId);
     if (!element) {
         return null;
     }
-    if (reference.kind === 'text' && !element.classList.contains('collapsed')) {
+    // Only a real text match places the view: a proportional guess (the text
+    // did not survive rendering, e.g. Mermaid source or Markdown syntax) can
+    // land anywhere in a formatted note, so the note's top is held instead.
+    if (reference.kind === 'text' && !isShownCollapsed(element)) {
         const content = noteContent(element);
         const found = findTextPosition(content.textContent, reference);
-        const y = textPositionToY(content, found.position);
-        if (y !== null) {
-            return y - reference.screenY;
+        if (found.exact) {
+            const y = textPositionToY(content, found.position);
+            if (y !== null) {
+                return {
+                    delta: y - reference.screenY, approximate: false, eligible: true,
+                    cueElement: blockAtTextPosition(content, found.position),
+                };
+            }
         }
     }
-    // A collapsed note's text is hidden: hold its top, keeping it in view.
+    // A collapsed note's text is hidden, and unmatched text has no place:
+    // hold the note's top, keeping it in view.
     const rect = element.getBoundingClientRect();
     let target = reference.kind === 'top' ? reference.top : reference.noteTop;
     if (reference.keepVisible) {
@@ -246,7 +369,88 @@ function correctionDelta(reference) {
             target = inset;
         }
     }
-    return rect.top - target;
+    let eligible = reference.keepVisible;
+    if (reference.kind === 'text') {
+        eligible = true;
+    }
+    // A note that collapsed again changed shape: the user's exact place is
+    // hidden, so it always counts as approximate (and is cued).
+    const approximate = isShownCollapsed(element);
+    return { delta: rect.top - target, approximate, eligible, cueElement: element };
+}
+
+// The block-level element (paragraph, list item, heading…) holding a text position.
+function blockAtTextPosition(content, position) {
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    let consumed = 0;
+    let node = walker.nextNode();
+    while (node !== null) {
+        if (consumed + node.data.length >= position) {
+            let element = node.parentElement;
+            while (element !== content && getComputedStyle(element).display.startsWith('inline')) {
+                element = element.parentElement;
+            }
+            return element;
+        }
+        consumed += node.data.length;
+        node = walker.nextNode();
+    }
+    return content;
+}
+
+export function shouldShowPositionCue({ eligible, approximate, movedPx }) {
+    if (typeof eligible !== 'boolean' || typeof approximate !== 'boolean' || typeof movedPx !== 'number') {
+        throw new Error('shouldShowPositionCue requires eligible, approximate and movedPx');
+    }
+    return eligible && (approximate || Math.abs(movedPx) > CUE_MIN_MOVE_PX);
+}
+
+// A highlight over where the user's place landed: shown at full strength in
+// the same frame the note lands (so it never "appears" on its own), then
+// fading. An overlay anchored to the page, so it scrolls with the text and the
+// note itself never changes; skipped under reduced motion or when the
+// "position cue" preference is off. Returns the overlay, or null.
+function showPositionCue(element) {
+    if (!document.body.classList.contains('pref-position-cue')) {
+        return null;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return null;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
+        return null;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'note-position-cue';
+    overlay.setAttribute('aria-hidden', 'true');
+    const cue = { overlay, target: element };
+    placePositionCue(cue);
+    document.body.appendChild(overlay);
+    // Follow the target every frame while shown: a note that collapses again
+    // shrinks over several frames, and the hold may end before the fade does.
+    const follow = () => {
+        if (!overlay.isConnected) {
+            return;
+        }
+        if (!cue.target.isConnected) {
+            overlay.remove();
+            return;
+        }
+        placePositionCue(cue);
+        window.requestAnimationFrame(follow);
+    };
+    window.requestAnimationFrame(follow);
+    window.setTimeout(() => overlay.remove(), CUE_DURATION_MS);
+    return cue;
+}
+
+function placePositionCue(cue) {
+    const rect = cue.target.getBoundingClientRect();
+    cue.overlay.style.left = `${rect.left + window.scrollX - 6}px`;
+    cue.overlay.style.top = `${rect.top + window.scrollY - 3}px`;
+    cue.overlay.style.width = `${rect.width + 12}px`;
+    cue.overlay.style.height = `${Math.min(rect.height, window.innerHeight) + 6}px`;
 }
 
 function endHold() {
@@ -269,18 +473,40 @@ export function holdViewportRoot(reference) {
     const previousOverflowAnchor = root.style.overflowAnchor;
     root.style.overflowAnchor = 'none';
     let expectedScrollY = window.scrollY;
+    const startScrollY = window.scrollY;
     let quietTimer = null;
+    let cueShown = false;
+    let cue = null;
+    if (moduleState.lastCue !== null && moduleState.lastCue.reference === reference) {
+        cueShown = true;
+        cue = moduleState.lastCue.cue;
+    }
 
+    // Runs before paint (ResizeObserver), so a cue starts in the frame the
+    // corrected view is first shown.
     const correct = () => {
-        const delta = correctionDelta(reference);
-        if (delta === null) {
+        const located = locateReference(reference);
+        if (located === null) {
             endHold();
             return;
         }
-        if (Math.abs(delta) >= 1) {
-            window.scrollBy(0, delta);
+        if (Math.abs(located.delta) >= 1) {
+            window.scrollBy(0, located.delta);
         }
         expectedScrollY = window.scrollY;
+        // Follow the landing element as it settles (collapsing, or replaced
+        // by a re-render), so the cue never covers the notes around it.
+        if (cue !== null) {
+            cue.target = located.cueElement;
+            placePositionCue(cue);
+        }
+        if (!cueShown && shouldShowPositionCue({
+            eligible: located.eligible, approximate: located.approximate, movedPx: window.scrollY - startScrollY,
+        })) {
+            cueShown = true;
+            cue = showPositionCue(located.cueElement);
+            moduleState.lastCue = { reference, cue };
+        }
     };
     const scheduleQuietEnd = () => {
         window.clearTimeout(quietTimer);

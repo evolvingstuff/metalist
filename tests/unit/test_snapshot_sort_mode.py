@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from app.services.snapshot import build_view_state
+from app.services.snapshot import build_view_state, keep_edited_root_in_place
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ def test_build_view_state_uses_root_creation_timestamp_despite_newer_child(
         editing_note_id=None,
         search=None,
         sort_mode="created",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,
@@ -175,7 +175,7 @@ def test_build_view_state_uses_newest_updated_timestamp_in_root_subtree(
         editing_note_id=None,
         search=None,
         sort_mode="updated",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,
@@ -238,7 +238,7 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
         editing_note_id=None,
         search=None,
         sort_mode="alphabetical",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,
@@ -312,7 +312,7 @@ def test_build_view_state_sorts_roots_by_plain_text_volume_across_subtree(
         editing_note_id=None,
         search=None,
         sort_mode="content-volume",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,
@@ -325,3 +325,82 @@ def test_build_view_state_sorts_roots_by_plain_text_volume_across_subtree(
     ]
     assert state.metadata["sortMode"] == "content-volume"
     assert state.metadata["rootSortBuckets"] == {}
+
+
+# --- Sorted tabs keep the edited note's root in place while editing ---------
+
+
+def test_keep_edited_root_in_place_follows_its_previous_earlier_neighbour() -> None:
+    # The edited root "c" grew and now sorts first; the tab showed it after "b".
+    assert keep_edited_root_in_place(["c", "a", "b", "d"], "c", ["a", "b", "c", "d"]) == ["a", "b", "c", "d"]
+
+
+def test_keep_edited_root_in_place_skips_neighbours_no_longer_listed() -> None:
+    # "b" was deleted (or filtered out): "c" stays after "a", the nearest earlier root still listed.
+    assert keep_edited_root_in_place(["c", "a", "d"], "c", ["a", "b", "c", "d"]) == ["a", "c", "d"]
+
+
+def test_keep_edited_root_in_place_first_shown_root_stays_before_its_later_neighbour() -> None:
+    # The tab's band started at "c" (roots above it were not loaded).
+    assert keep_edited_root_in_place(["x", "a", "b", "d", "c"], "c", ["c", "d"]) == ["x", "a", "b", "c", "d"]
+
+
+def test_keep_edited_root_in_place_leaves_roots_the_tab_never_showed() -> None:
+    # A root the tab did not show (e.g. just created) takes its sorted place.
+    assert keep_edited_root_in_place(["a", "b", "new"], "new", ["a", "b"]) == ["a", "b", "new"]
+    assert keep_edited_root_in_place(["a", "b"], "gone", ["a", "gone", "b"]) == ["a", "b"]
+    assert keep_edited_root_in_place(["a", "b"], "a", []) == ["a", "b"]
+
+
+def _updated_sort_store() -> _FakeNoteStore:
+    def note(note_id: str, parent_id: Optional[str], updated_day: int) -> _Note:
+        return _Note(
+            id=note_id, parent_id=parent_id, prev_id=None, next_id=None, is_collapsed=False,
+            content=f"<div>{note_id}</div>", tags="",
+            created_at=datetime(2026, 4, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, updated_day, 20, 0, tzinfo=timezone.utc),
+        )
+    # "root-edited" was last shown second; its child was just saved, so the
+    # updated sort now puts it first.
+    notes = {
+        "root-top": note("root-top", None, 10),
+        "root-edited": note("root-edited", None, 5),
+        "child-edited": note("child-edited", "root-edited", 19),
+        "root-bottom": note("root-bottom", None, 3),
+    }
+    return _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root-top", "root-edited", "root-bottom"], "root-edited": ["child-edited"]},
+    )
+
+
+def _updated_view(editing_note_id: Optional[str]):
+    return build_view_state(
+        editing_note_id=editing_note_id,
+        search=None,
+        sort_mode="updated",
+        client_known_note_ids={"root-top", "root-edited", "child-edited", "root-bottom"},
+        previous_root_ids=["root-top", "root-edited", "root-bottom"],
+        visible_top_root_id=None,
+        visible_bottom_root_id=None,
+        is_untagged_view=False,
+    )
+
+
+def test_sorted_view_keeps_edited_root_in_place_while_a_child_is_edited(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_fake_store(monkeypatch, _updated_sort_store())
+
+    state = _updated_view("child-edited")
+
+    assert state.children_by_parent[None] == ["root-top", "root-edited", "root-bottom"]
+    # Held in place, it shows under its neighbour's date header meanwhile.
+    assert state.metadata["rootSortBuckets"]["root-edited"] == state.metadata["rootSortBuckets"]["root-top"]
+
+
+def test_sorted_view_moves_edited_root_to_its_sorted_place_after_editing(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_fake_store(monkeypatch, _updated_sort_store())
+
+    state = _updated_view(None)
+
+    assert state.children_by_parent[None] == ["root-edited", "root-top", "root-bottom"]
+    assert state.metadata["rootSortBuckets"]["root-edited"]["key"] == "2026-04-19"

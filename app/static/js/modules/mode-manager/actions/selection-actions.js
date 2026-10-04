@@ -8,7 +8,8 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
-import { captureNoteAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { captureNoteAnchor, captureSortedExitAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     recordNoteInteractionIfNew,
 } from '../services/search-interaction-service.js';
@@ -107,7 +108,13 @@ export async function actionDeselectNote() {
         // Keep the user's place (the caret, or the line being read) through
         // everything leaving edit mode changes: re-collapsing, the tag bar
         // closing, and the note re-rendering for viewing.
-        viewportHold = captureNoteAnchor(noteElement);
+        // In a sorted tab the note may then move to its sorted place; the
+        // surrounding notes stay on screen instead (docs/ui/controls.md).
+        if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
+            viewportHold = captureSortedExitAnchor(noteElement);
+        } else {
+            viewportHold = captureNoteAnchor(noteElement);
+        }
         holdViewportRoot(viewportHold);
         await actionSaveNote(noteId);
         restoreCollapsedStateLocallyIfNeeded(noteElement);

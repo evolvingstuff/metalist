@@ -2,6 +2,7 @@ import { FilesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { captureSelectionSnapshot, getActiveEditable, getActiveNoteId, restoreSelection } from '../../editor-selection.js';
 import { createNote, createNoteAtTop } from '../actions/note-actions.js';
+import { requireCreatedNoteId } from './root-note-creation-service.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionSelectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 
@@ -272,7 +273,7 @@ async function ensureAttachTargetNote(preferredNoteId, options) {
     const createAtTop = options.createAtTop === true;
 
     if (createAtTop) {
-        await createNoteAtTop();
+        requireCreatedNoteId(await createNoteAtTop(), 'attachFileNewTopNote');
     } else if (typeof preferredNoteId === 'string' && preferredNoteId.length > 0) {
         if (ModeContext.isEditing) {
             const currentNoteId = ModeContext.currentNoteId;
@@ -287,7 +288,7 @@ async function ensureAttachTargetNote(preferredNoteId, options) {
             await actionSelectNote(preferredNoteId, { initialCaretVisibility: 'visible' });
         }
     } else if (!ModeContext.isEditing) {
-        await createNote();
+        requireCreatedNoteId(await createNote(), 'attachFileNewNote');
     }
 
     if (!ModeContext.isEditing) {

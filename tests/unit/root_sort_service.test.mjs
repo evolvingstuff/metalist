@@ -6,6 +6,7 @@ import {
     buildRootDateSeparatorPlan,
     getRootSortModeIndicatorLabel,
     isRootReorderLocked,
+    rootNoteCreationBlockMessage,
 } from '../../app/static/js/modules/mode-manager/services/root-sort-service.js';
 
 test('isRootReorderLocked locks every non-normal sort mode', () => {
@@ -52,4 +53,23 @@ test('buildRootDateSeparatorPlan continues the day bucket from above the loaded 
 
     assert.deepEqual(plan.map((entry) => entry.rootId), ['root-c']);
     assert.deepEqual(buildRootDateSeparatorPlan(['root-b'], buckets, '2026-04-20').map((entry) => entry.rootId), ['root-b']);
+});
+
+test('rootNoteCreationBlockMessage allows new root notes only where they land in view', () => {
+    const allowed = (mode, placement) => rootNoteCreationBlockMessage(mode, placement) === null;
+    assert.equal(allowed(ROOT_SORT_MODES.NORMAL, 'top'), true);
+    assert.equal(allowed(ROOT_SORT_MODES.NORMAL, 'below'), true);
+    // Newest-first date sorts put a new note at the top, never below a root.
+    for (const mode of [ROOT_SORT_MODES.CREATED, ROOT_SORT_MODES.UPDATED]) {
+        assert.equal(allowed(mode, 'top'), true, mode);
+        assert.equal(allowed(mode, 'below'), false, mode);
+    }
+    // An empty note sorts far away in these.
+    for (const mode of [ROOT_SORT_MODES.ALPHABETICAL, ROOT_SORT_MODES.CONTENT_VOLUME]) {
+        assert.equal(allowed(mode, 'top'), false, mode);
+        assert.equal(allowed(mode, 'below'), false, mode);
+    }
+    assert.match(rootNoteCreationBlockMessage(ROOT_SORT_MODES.CONTENT_VOLUME, 'top'), /sort order/);
+    assert.match(rootNoteCreationBlockMessage(ROOT_SORT_MODES.CREATED, 'below'), /sort order/);
+    assert.throws(() => rootNoteCreationBlockMessage(ROOT_SORT_MODES.NORMAL, 'child'), /placement/);
 });

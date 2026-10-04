@@ -26,6 +26,7 @@ from app.services.link_titles import link_title_store
 from app.services.note_store import NoteRecord, store as note_store
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
+from app.services.inline_image_dimensions import add_inline_image_dimensions
 from app.services.root_sorting import build_root_sort_buckets
 from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
@@ -350,9 +351,7 @@ def _compute_hash(
     return sha.hexdigest()
 
 
-def _root_index_of_note(
-    note_id: str, root_index_map: Dict[str, int], traversal_cache: "_SnapshotTraversalCache",
-) -> Optional[int]:
+def _root_id_of_note(note_id: str, traversal_cache: "_SnapshotTraversalCache") -> Optional[str]:
     if not note_store.has_note(note_id):
         return None
     current = traversal_cache.get_note(note_id)
@@ -362,9 +361,43 @@ def _root_index_of_note(
             raise RuntimeError(f"Cycle in note ancestry for {note_id}")
         visited.add(current.id)
         current = traversal_cache.get_note(current.parent_id)
-    if current.id not in root_index_map:
+    return current.id
+
+
+def _root_index_of_note(
+    note_id: str, root_index_map: Dict[str, int], traversal_cache: "_SnapshotTraversalCache",
+) -> Optional[int]:
+    root_id = _root_id_of_note(note_id, traversal_cache)
+    if root_id is None or root_id not in root_index_map:
         return None
-    return root_index_map[current.id]
+    return root_index_map[root_id]
+
+
+def keep_edited_root_in_place(
+    roots: List[str], edited_root_id: str, previous_root_ids: List[str],
+) -> List[str]:
+    """Sorted roots with the edited note's root kept where the tab last showed it.
+
+    While a note is edited in a sorted tab, the root containing it stays right
+    after the nearest earlier root of the tab's previous view (or right before
+    the nearest later one) that is still listed, instead of jumping to its new
+    sorted place on every save. Unchanged when the root was not shown before
+    (e.g. just created) or is not listed (e.g. filtered out by a search).
+    """
+    if edited_root_id not in previous_root_ids or edited_root_id not in roots:
+        return roots
+    others = [root_id for root_id in roots if root_id != edited_root_id]
+    listed = set(others)
+    position = previous_root_ids.index(edited_root_id)
+    for earlier in reversed(previous_root_ids[:position]):
+        if earlier in listed:
+            index = others.index(earlier) + 1
+            return others[:index] + [edited_root_id] + others[index:]
+    for later in previous_root_ids[position + 1:]:
+        if later in listed:
+            index = others.index(later)
+            return others[:index] + [edited_root_id] + others[index:]
+    return roots
 
 
 def _keep_or_move_edge(*, current: int, near: int, far: int, target: int) -> int:
@@ -491,9 +524,25 @@ class _ViewSelection:
     root_before_window: Optional[str]
 
 
+def _share_neighbour_timestamp(
+    roots: List[str], edited_root_id: str, root_sort_timestamps: Dict[str, datetime],
+) -> Dict[str, datetime]:
+    """Date-bucketed sorts: a root held in place shows under its neighbour's date header."""
+    if edited_root_id not in root_sort_timestamps or edited_root_id not in roots or len(roots) < 2:
+        return root_sort_timestamps
+    index = roots.index(edited_root_id)
+    if index > 0:
+        neighbour = roots[index - 1]
+    else:
+        neighbour = roots[index + 1]
+    shared = dict(root_sort_timestamps)
+    shared[edited_root_id] = root_sort_timestamps[neighbour]
+    return shared
+
+
 def _select_view(
     *, editing_note_id: str | None, search: str | None, sort_mode: str,
-    client_known_note_ids: Set[str], visible_top_root_id: str | None,
+    client_known_note_ids: Set[str], previous_root_ids: List[str], visible_top_root_id: str | None,
     visible_bottom_root_id: str | None, is_untagged_view: bool,
     traversal_cache: _SnapshotTraversalCache,
 ) -> _ViewSelection:
@@ -535,6 +584,11 @@ def _select_view(
         assert search_scope.search_root_ids_ordered is not None
         assert search_scope.allowed_note_ids is not None
         roots = search_scope.search_root_ids_ordered
+    if normalized_sort_mode != "normal" and editing_note_id is not None:
+        edited_root_id = _root_id_of_note(editing_note_id, traversal_cache)
+        if edited_root_id is not None:
+            roots = keep_edited_root_in_place(roots, edited_root_id, previous_root_ids)
+            root_sort_timestamps = _share_neighbour_timestamp(roots, edited_root_id, root_sort_timestamps)
     root_index = {root_id: index for index, root_id in enumerate(roots)}
     editing_root_index = None
     if editing_note_id is not None:
@@ -699,6 +753,9 @@ def _render_note_view_html(
             static_export=False,
             redact_passwords=False,
         )
+    # Sized inline images keep their space while decoding, so text below them
+    # does not move after the note renders.
+    rendered_content = add_inline_image_dimensions(rendered_content)
     return decorate_note_references(
         note_id=rec.id, content_html=rec.content, tags=rec.tags,
         rendered_content=rendered_content, context=context,
@@ -829,6 +886,7 @@ def build_view_state(
     search: Optional[str],
     sort_mode: str,
     client_known_note_ids: Set[str],
+    previous_root_ids: List[str],
     visible_top_root_id: Optional[str],
     visible_bottom_root_id: Optional[str],
     is_untagged_view: bool,
@@ -859,7 +917,8 @@ def build_view_state(
 
     selection = _select_view(
         editing_note_id=editing_note_id, search=search, sort_mode=sort_mode,
-        client_known_note_ids=client_known_note_ids, visible_top_root_id=visible_top_root_id,
+        client_known_note_ids=client_known_note_ids, previous_root_ids=previous_root_ids,
+        visible_top_root_id=visible_top_root_id,
         visible_bottom_root_id=visible_bottom_root_id, is_untagged_view=is_untagged_view,
         traversal_cache=traversal_cache,
     )
@@ -1001,6 +1060,7 @@ def build_view_snapshot(
         search=search,
         sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
+        previous_root_ids=[],
         visible_top_root_id=visible_top_root_id,
         visible_bottom_root_id=visible_bottom_root_id,
         is_untagged_view=is_untagged_view,

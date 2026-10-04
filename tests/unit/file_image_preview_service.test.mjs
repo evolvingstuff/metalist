@@ -79,6 +79,11 @@ function installPreviewTestDom(t) {
             return child;
         }
 
+        // No collapsed-note or link-thumbnail ancestors in these fixtures.
+        closest() {
+            return null;
+        }
+
         querySelector(selector) {
             const matches = this.querySelectorAll(selector);
             return matches.length > 0 ? matches[0] : null;
@@ -101,6 +106,9 @@ function installPreviewTestDom(t) {
             super(classNames);
             this.src = '';
         }
+
+        // Images never finish loading here, so no size is recorded.
+        addEventListener() {}
     }
 
     const documentRoot = new FakeElement();

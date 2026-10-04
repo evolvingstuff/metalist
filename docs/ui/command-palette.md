@@ -33,6 +33,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - In alphabetical mode, root notes are ordered by root-note content without rewriting the stored manual order.
 - In content-volume mode, roots are ordered largest-first by the total plain-text character count of every note in each root subtree. HTML markup does not count, and equal totals preserve manual root order. Search phrases include `character count`, `content volume`, `length`, and `longest`.
 - The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
+- Sorted tabs limit new root notes and freeze the order while a note is edited; the full rules are in `docs/ui/controls.md` (Sorted tabs: adding and editing notes).
 - When a non-normal sort mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
 - Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.
 - Changing the search input resets the active tab's sort mode to Normal before executing the search.

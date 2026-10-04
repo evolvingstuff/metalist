@@ -493,11 +493,22 @@ html {
     width: min(560px, 92vw);
 }
 
-.drag-drop-visuals-modal-content {
+.visual-cues-modal-content {
     width: min(520px, 92vw);
 }
 
-.drag-drop-visuals-toggle {
+.visual-cues-section + .visual-cues-section {
+    margin-top: 22px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+}
+
+.visual-cues-section-title {
+    margin: 14px 0 0;
+    font-size: 0.95rem;
+}
+
+.visual-cues-toggle {
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -505,29 +516,29 @@ html {
     cursor: pointer;
 }
 
-.modal-content .drag-drop-visuals-toggle input {
+.modal-content .visual-cues-toggle input {
     width: 18px;
     height: 18px;
     margin: 2px 0 0;
     flex: 0 0 auto;
 }
 
-.drag-drop-visuals-text {
+.visual-cues-text {
     display: flex;
     flex-direction: column;
     gap: 3px;
 }
 
-.drag-drop-visuals-title {
+.visual-cues-title {
     font-weight: 600;
 }
 
-.drag-drop-visuals-description {
+.visual-cues-description {
     color: #6b7280;
     font-size: 0.9rem;
 }
 
-html[data-theme="dark"] .drag-drop-visuals-description {
+html[data-theme="dark"] .visual-cues-description {
     color: #9ca3af;
 }
 
@@ -6051,6 +6062,30 @@ body:not(.pref-drop-indicator) .note-drop-line {
     display: none !important;
 }
 
+/* "You are here" cue after leaving edit mode: a page overlay over the landing
+   block that fades out; it never changes the note itself. */
+/* Starts at full strength (no fade-in) and fades out; the left bar catches
+   the eye when the user is looking elsewhere. Keep the duration in step with
+   CUE_DURATION_MS in viewport-hold-service.js. */
+.note-position-cue {
+    position: absolute;
+    pointer-events: none;
+    z-index: 8999;
+    border-radius: 6px;
+    background-color: rgba(250, 204, 21, 0.4);
+    box-shadow: inset 4px 0 0 rgb(234, 179, 8);
+    animation: note-position-cue-fade 600ms ease-in forwards;
+}
+
+html[data-theme="dark"] .note-position-cue {
+    background-color: rgba(250, 204, 21, 0.28);
+}
+
+@keyframes note-position-cue-fade {
+    0%, 25% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */
 
 body.loading::after {
@@ -6724,11 +6759,22 @@ body.tab-drag-active * {
     display: block;
     max-width: 100%;
     margin: 0.55em 0;
-    padding: 10px 12px;
+    padding: 6px 8px;
     border: 1px solid rgba(0, 0, 0, 0.12);
     border-radius: 8px;
     background: #ffffff;
     overflow-x: auto;
+}
+
+/* A diagram about to render again keeps its last rendered size (set inline). */
+.meta-markdown .meta-mermaid-source.meta-mermaid-reserved {
+    box-sizing: border-box;
+    margin: 0.55em 0;
+    overflow: hidden;
+}
+
+.meta-markdown .meta-mermaid-source.meta-mermaid-reserved > * {
+    visibility: hidden;
 }
 
 .meta-mermaid-diagram svg {

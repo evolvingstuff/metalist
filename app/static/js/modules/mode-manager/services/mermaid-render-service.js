@@ -8,7 +8,40 @@ const moduleState = ApplicationState.createFields('mermaid-render-service', {
     mermaidLoadPromise: null,
     mermaidRenderQueue: Promise.resolve(),
     mermaidRenderSequence: 0,
+    // Rendered diagram height by (source hash, available width), for this page
+    // session: a diagram rendered again (e.g. after its note leaves edit mode)
+    // reserves its space before rendering, so text below it does not move.
+    renderedHeights: new Map(),
 });
+
+// FNV-1a: keys the size cache without keeping the diagram's text.
+function hashSource(source) {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < source.length; index += 1) {
+        hash ^= source.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16);
+}
+
+function sizeKey(source, sourceBlock) {
+    const container = sourceBlock.parentElement;
+    const width = container === null ? 0 : Math.round(container.clientWidth / 10) * 10;
+    return `${hashSource(source)}:${width}`;
+}
+
+// Hold each not-yet-rendered diagram's last rendered height in place of its source.
+function reserveMermaidSpace(rootElement) {
+    for (const codeElement of rootElement.querySelectorAll(MERMAID_CODE_SELECTOR)) {
+        const sourceBlock = codeElement.parentElement;
+        const key = sizeKey(codeElement.textContent, sourceBlock);
+        if (!moduleState.renderedHeights.has(key)) {
+            continue;
+        }
+        sourceBlock.classList.add('meta-mermaid-reserved');
+        sourceBlock.style.height = `${moduleState.renderedHeights.get(key)}px`;
+    }
+}
 
 
 function requireMermaidApi(mermaidApi) {
@@ -59,9 +92,18 @@ export function buildMermaidConfig(theme) {
         startOnLoad: false,
         securityLevel: 'strict',
         theme: theme === 'light' ? 'default' : theme,
+        // Compact layout: Mermaid's defaults (16px text, 50px between ranks
+        // and nodes, 15px label padding) spread small diagrams over a screen.
+        themeVariables: {
+            fontSize: '13px',
+        },
         flowchart: {
             htmlLabels: true,
             useMaxWidth: true,
+            nodeSpacing: 24,
+            rankSpacing: 28,
+            padding: 6,
+            diagramPadding: 4,
         },
     };
 }
@@ -176,7 +218,12 @@ export async function renderMermaidCodeElement(codeElement, mermaidApi) {
     diagram.setAttribute('aria-label', 'Mermaid diagram');
     diagram.setAttribute('data-mermaid-state', 'rendered');
     diagram.innerHTML = renderResult.svg;
+    const key = sizeKey(source, sourceBlock);
     sourceBlock.replaceWith(diagram);
+    const renderedHeight = Math.round(diagram.getBoundingClientRect().height);
+    if (renderedHeight > 0 && moduleState.renderedHeights.get(key) !== renderedHeight) {
+        moduleState.renderedHeights.set(key, renderedHeight);
+    }
     if (typeof renderResult.bindFunctions === 'function') {
         renderResult.bindFunctions(diagram);
     }
@@ -222,6 +269,8 @@ export async function renderMermaidDiagrams(rootElement, options) {
 }
 
 export function queueMermaidDiagramRendering(rootElement) {
+    // Synchronously, before the browser paints the newly inserted sources.
+    reserveMermaidSpace(rootElement);
     moduleState.mermaidRenderQueue = moduleState.mermaidRenderQueue.then(() => renderMermaidDiagrams(rootElement, {}));
     return moduleState.mermaidRenderQueue;
 }

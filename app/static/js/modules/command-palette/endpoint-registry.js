@@ -84,7 +84,7 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
-    const openDragDropVisuals = requireAction(actions, 'openDragDropVisuals');
+    const openVisualCues = requireAction(actions, 'openVisualCues');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
     const getIsUntaggedView = requireAction(actions, 'getIsUntaggedView');
@@ -374,10 +374,10 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => openNoteLayoutAppearance(),
         },
         {
-            id: 'form.drag_drop_visuals',
+            id: 'form.visual_cues',
             kind: 'form',
-            label: 'Drag & Drop Visuals',
-            execute: async () => openDragDropVisuals(),
+            label: 'Visual Cues',
+            execute: async () => openVisualCues(),
         },
         {
             id: 'form.switch_namespace',

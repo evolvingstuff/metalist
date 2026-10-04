@@ -130,7 +130,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
-- Fenced `mermaid` blocks render as responsive SVG diagrams in the app. The pinned Mermaid runtime loads locally and only when a visible note contains a Mermaid fence; no diagram source is sent to a CDN or external service.
+- Fenced `mermaid` blocks render as responsive SVG diagrams in the app. They use a compact layout (13 px labels and tight spacing between nodes and rows); diagrams are never capped or scaled to fit, so large ones keep all their detail. The pinned Mermaid runtime loads locally and only when a visible note contains a Mermaid fence; no diagram source is sent to a CDN or external service.
 - Mermaid source remains ordinary stored note text. It stays searchable and can be included in AI note context when that note is otherwise permitted; this differs from text drawn inside an Excalidraw attachment.
 - Mermaid uses strict security mode and follows the active light/dark theme when rendering. Invalid Mermaid syntax remains visible as a code block with an `Invalid Mermaid diagram` badge.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.

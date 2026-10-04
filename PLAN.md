@@ -30,8 +30,9 @@ mapping runs in reverse when you click into a rendered note to edit it.
 5. **User wins:** any user input (wheel, trackpad, key, pointer down) or user
    scroll ends all pending corrections immediately.
 6. **"You are here" cue:** shown only after a *significant* readjustment — the
-   anchor could only be mapped approximately, or the view had to move more
-   than ~40px from where it was. A faint highlight on the landing block that
+   note collapsed again, or the view had to move more than ~40px from where it
+   was. (Text that does not survive rendering is not guessed at: the note's top
+   is held until Phase 3 maps formatted notes exactly.) A faint highlight on the landing block that
    fades in ~600ms; off under reduced-motion; its own on/off option (in a small
    "Visual cues" section of the settings, on by default).
 
@@ -93,6 +94,48 @@ Folds in the uncommitted partial fix on this branch (hold any note by id,
 3. **Tests:** layout-shift measurement in the browser (anchored text stays put
    while an image/diagram finishes loading); render-output unit tests for the
    emitted dimensions; render-cache tests unchanged in behaviour.
+
+## Phase 2b — Sorted tabs: frozen order while editing (folded into the Phase 2 checkpoint)
+
+Reported crash: in a content-volume sorted tab, pressing Enter to add a note
+gave `FATAL: Infinite scroll blocked: near the band start but the server
+loaded no roots above`. The new, empty note sorts to the far end; while a note
+is edited the server centres the loaded band on it (`_determine_root_band`),
+so the band jumped away from the screen and every band-move request was
+re-centred on the edited note again. The server never sends the whole list
+(the band is at most 75 roots each side of the viewport), but the jump threw
+away the roots on screen and sent ~150 far-away ones instead.
+
+Agreed rules:
+
+| Sort | While editing | New root note at top | New root note below a root (Enter, split, paste sibling) |
+|---|---|---|---|
+| Normal | unchanged | allowed | allowed |
+| Created | frozen (editing never changes it anyway) | allowed (lands at the top) | blocked |
+| Updated | frozen | allowed (lands at the top) | blocked |
+| Alphabetical | frozen | blocked | blocked |
+| Content volume | frozen (also while editing a child) | blocked | blocked |
+
+- Child notes can always be added (the root sort does not order children).
+- Blocked actions do nothing and show an info banner, like the existing
+  "Root-note reordering is disabled while a sort order is active."
+- **Frozen order:** while a note is edited in a sorted tab, the server keeps
+  its root next to the root it followed in the tab's previous view (the warm
+  view's root order), instead of its new sorted place; in date-bucketed sorts
+  it shares that neighbour's date header meanwhile.
+- **Leaving edit mode (option b):** the root then moves to its sorted place and
+  the screen stays on the surrounding notes (like mail apps); the caret anchor
+  is used only when the root kept its neighbours.
+
+Tests: server unit tests for the freeze (each sort, child edits, search,
+first/last positions, no previous view); browser cases reproducing the crash
+(content-volume tab with more roots than the band, Enter on a root note), each
+creation rule per sort, the frozen position while typing, and the neighbours
+staying put after Escape.
+
+Docs: `docs/ui/controls.md`, AI help (`help-notes.md`, `help-menus.md` sort
+section), `docs/design/differential-view-protocol.md` (band + freeze),
+`docs/testing/harness.md`, `docs/AI-SUMMARY.md`.
 
 ## Phase 3 — Source mapping for formatted notes (idea 1)
 

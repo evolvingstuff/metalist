@@ -6,6 +6,10 @@ import { FilesAPI } from '../../api-client.js';
 const moduleState = ApplicationState.createFields('file-image-preview-service', {
     previewCache: new Map(),
     pendingPreviewRequests: new Map(),
+    // Natural size of each loaded image file, for this page session: when the
+    // same image renders again (e.g. after its note leaves edit mode) its frame
+    // is sized up front, so text below it does not move while it loads.
+    previewSizes: new Map(),
 
     cleanupRegistered: false,
 });
@@ -61,6 +65,13 @@ function applyPreviewObjectUrl(target, objectUrl) {
         throw new Error('Image file preview placeholder missing');
     }
 
+    const fileId = target.dataset.fileRefId;
+    imageElement.addEventListener('load', () => {
+        const size = `${imageElement.naturalWidth}/${imageElement.naturalHeight}`;
+        if (imageElement.naturalWidth > 0 && imageElement.naturalHeight > 0 && moduleState.previewSizes.get(fileId) !== size) {
+            moduleState.previewSizes.set(fileId, size);
+        }
+    }, { once: true });
     imageElement.src = objectUrl;
     imageElement.hidden = false;
     placeholderElement.textContent = '';
@@ -124,6 +135,19 @@ async function fetchPreviewObjectUrl(fileId) {
     return await request;
 }
 
+// Collapsed-note and link thumbnails have fixed sizes of their own.
+function reservePreviewSpace(target, fileId) {
+    if (!moduleState.previewSizes.has(fileId) || target.closest('.note.collapsed, .note-reference-link-thumbnail') !== null) {
+        return;
+    }
+    const frame = target.querySelector('.note-file-image-preview-frame');
+    if (!(frame instanceof HTMLElement)) {
+        throw new Error('Image file preview frame missing');
+    }
+    frame.style.aspectRatio = moduleState.previewSizes.get(fileId).replace('/', ' / ');
+    frame.style.minHeight = '0px';
+}
+
 export function hydrateImageFilePreviews(rootNode) {
     const targets = getImagePreviewTargets(rootNode);
     if (targets.length === 0) {
@@ -143,6 +167,7 @@ export function hydrateImageFilePreviews(rootNode) {
             continue;
         }
         setPreviewState(target, 'loading');
+        reservePreviewSpace(target, fileId);
         fileIds.add(fileId);
     }
 

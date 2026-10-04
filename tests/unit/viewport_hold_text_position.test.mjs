@@ -45,3 +45,14 @@ test('text that changed shape falls back to the same proportion, marked approxim
 test('an empty note maps to its start without looping', () => {
     assert.deepEqual(findTextPosition('', anchorAt('', 0)), { position: 0, exact: false });
 });
+
+test('the position cue follows only significant readjustments of edit-exit holds', async () => {
+    const { shouldShowPositionCue } = await import('../../app/static/js/modules/mode-manager/services/viewport-hold-service.js');
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: 0 }), false);
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: 40 }), false);
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: -41 }), true);
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: true, movedPx: 0 }), true);
+    // Band shifts while scrolling are never cued.
+    assert.equal(shouldShowPositionCue({ eligible: false, approximate: true, movedPx: 500 }), false);
+    assert.throws(() => shouldShowPositionCue({ eligible: true, approximate: false }));
+});
