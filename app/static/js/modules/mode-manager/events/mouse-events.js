@@ -5,6 +5,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
+import { captureClickAnchor } from '../services/viewport-hold-service.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
@@ -308,14 +309,20 @@ function handleNoteShellMouseDown(event, noteElement) {
         actionExitSearchMode();
     }
 
+    // Captured now, before anything changes: the clicked spot stays under
+    // the pointer once the note shows its editable source.
+    const enterEditOptions = {
+        initialCaretVisibility: 'hidden',
+        clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
+    };
     if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
         if (ModeContext.currentNoteId) {
             void CommandGate.run('mouse.switch_note', async () => {
-                await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+                await actionSwitchNotes(noteId, enterEditOptions);
             });
         } else {
             void CommandGate.run('mouse.select_note', async () => {
-                await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+                await actionSelectNote(noteId, enterEditOptions);
             });
         }
 
@@ -1498,6 +1505,12 @@ function handleClick(event) {
                 });
             }
 
+            // Captured now, before anything changes: the clicked spot stays under
+            // the pointer once the note shows its editable source.
+            const enterEditOptions = {
+                initialCaretVisibility: 'hidden',
+                clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
+            };
             if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
                 // Don't calculate or save cursor position when entering edit mode
                 // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully
@@ -1505,11 +1518,11 @@ function handleClick(event) {
 
                 if (ModeContext.currentNoteId) {
                     void CommandGate.run('mouse.switch_note', async () => {
-                        await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+                        await actionSwitchNotes(noteId, enterEditOptions);
                     });
                 } else {
                     void CommandGate.run('mouse.select_note', async () => {
-                        await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+                        await actionSelectNote(noteId, enterEditOptions);
                     });
                 }
 
@@ -1595,14 +1608,20 @@ function handleClick(event) {
             });
         }
 
+        // Captured now, before anything changes: the clicked spot stays under
+        // the pointer once the note shows its editable source.
+        const enterEditOptions = {
+            initialCaretVisibility: 'hidden',
+            clickAnchor: captureClickAnchor(noteElement, event.clientX, event.clientY),
+        };
         if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
             if (ModeContext.currentNoteId) {
                 void CommandGate.run('mouse.switch_note', async () => {
-                    await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+                    await actionSwitchNotes(noteId, enterEditOptions);
                 });
             } else {
                 void CommandGate.run('mouse.select_note', async () => {
-                    await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+                    await actionSelectNote(noteId, enterEditOptions);
                 });
             }
 

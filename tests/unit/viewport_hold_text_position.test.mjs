@@ -8,26 +8,33 @@ function anchorAt(text, offset) {
         textLength: text.length,
         before: text.slice(Math.max(0, offset - 30), offset),
         after: text.slice(offset, offset + 30),
+        affinity: 'backward',
     };
+}
+
+// Position and exactness only (the line-boundary affinity has its own test).
+function match(text, anchor) {
+    const { position, exact } = findTextPosition(text, anchor);
+    return { position, exact };
 }
 
 const editText = 'Alpha paragraph one. Beta paragraph two. Gamma paragraph three. Delta paragraph four.';
 
 test('an unchanged text maps exactly to the same position', () => {
     const offset = editText.indexOf('Gamma');
-    assert.deepEqual(findTextPosition(editText, anchorAt(editText, offset)), { position: offset, exact: true });
+    assert.deepEqual(match(editText, anchorAt(editText, offset)), { position: offset, exact: true });
 });
 
 test('text added or removed before the anchor shifts the position by the surrounding text', () => {
     const offset = editText.indexOf('Gamma');
     const viewText = 'Title. ' + editText.replace('{{x}}', '');
-    assert.deepEqual(findTextPosition(viewText, anchorAt(editText, offset)), { position: offset + 7, exact: true });
+    assert.deepEqual(match(viewText, anchorAt(editText, offset)), { position: offset + 7, exact: true });
 });
 
 test('a space typed at the caret and dropped by rendering still matches exactly', () => {
     const typed = editText + ' ';
     const anchor = anchorAt(typed, typed.length);
-    assert.deepEqual(findTextPosition(editText, anchor), { position: editText.length, exact: true });
+    assert.deepEqual(match(editText, anchor), { position: editText.length, exact: true });
 });
 
 test('repeated text picks the occurrence nearest the old position', () => {
@@ -39,20 +46,45 @@ test('repeated text picks the occurrence nearest the old position', () => {
 test('text that changed shape falls back to the same proportion, marked approximate', () => {
     const offset = Math.floor(editText.length / 2);
     const rendered = 'x'.repeat(editText.length * 2);
-    assert.deepEqual(findTextPosition(rendered, anchorAt(editText, offset)), { position: offset * 2, exact: false });
+    assert.deepEqual(match(rendered, anchorAt(editText, offset)), { position: offset * 2, exact: false });
 });
 
 test('an empty note maps to its start without looping', () => {
-    assert.deepEqual(findTextPosition('', anchorAt('', 0)), { position: 0, exact: false });
+    assert.deepEqual(match('', anchorAt('', 0)), { position: 0, exact: false });
 });
 
 test('the position cue follows only significant readjustments of edit-exit holds', async () => {
     const { shouldShowPositionCue } = await import('../../app/static/js/modules/mode-manager/services/viewport-hold-service.js');
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: 0 }), false);
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: 40 }), false);
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, movedPx: -41 }), true);
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: true, movedPx: 0 }), true);
-    // Band shifts while scrolling are never cued.
-    assert.equal(shouldShowPositionCue({ eligible: false, approximate: true, movedPx: 500 }), false);
+    // Scrolling that keeps the place still is not displacement: no cue.
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 0 }), false);
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 40 }), false);
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 41 }), true);
+    // A note that collapsed again is always cued.
+    assert.equal(shouldShowPositionCue({ eligible: true, approximate: true, displacedPx: 0 }), true);
+    // Entering edit mode, switching notes and band shifts are never cued.
+    assert.equal(shouldShowPositionCue({ eligible: false, approximate: true, displacedPx: 500 }), false);
     assert.throws(() => shouldShowPositionCue({ eligible: true, approximate: false }));
+});
+
+test('findTextPosition matches a clicked list item although the source adds list markers on both sides', () => {
+    // Rendered Markdown runs list items together; the source keeps "- " markers.
+    const viewText = 'there is text below your caret as well as above it.A short list itemAnother list itemA final list itemThe last paragraph ends the note.';
+    const sourceText = 'there is text below your caret as well as above it.- A short list item- Another list item- A final list itemThe last paragraph ends the note.';
+    for (const item of ['A short list item', 'Another list item']) {
+        const clicked = viewText.indexOf(item);
+        assert.deepEqual(match(sourceText, anchorAt(viewText, clicked)), { position: sourceText.indexOf(item), exact: true }, item);
+    }
+});
+
+test('findTextPosition keeps the side of a line boundary', () => {
+    // Line breaks add no text: "end of line one" and "start of line two" are one position.
+    const text = 'First line of the note.Second line of the note.';
+    const boundary = text.indexOf('Second');
+    // Clicked at the start of the second line: it stays on the second line.
+    assert.equal(findTextPosition(text, { ...anchorAt(text, boundary), affinity: 'forward' }).affinity, 'forward');
+    // Caret left at the end of the first line: it stays at that line's end.
+    assert.equal(findTextPosition(text, anchorAt(text, boundary)).affinity, 'backward');
+    // Matched only by the text after it: that text's line.
+    const changedBefore = { ...anchorAt(text, boundary), before: '- something else entirely here' };
+    assert.equal(findTextPosition(text, changedBefore).affinity, 'forward');
 });

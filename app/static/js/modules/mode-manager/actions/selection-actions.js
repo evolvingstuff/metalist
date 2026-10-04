@@ -35,6 +35,20 @@ function applyInitialCaretVisibility(initialCaretVisibility) {
     }
 }
 
+// A click that enters edit mode passes `clickAnchor` (captureClickAnchor, taken
+// before anything changes) so the clicked spot stays under the pointer and
+// the caret lands there; other ways of entering edit mode pass none.
+function clickAnchorOption(options, noteId) {
+    if (!Object.prototype.hasOwnProperty.call(options, 'clickAnchor')) {
+        return null;
+    }
+    const clickAnchor = options.clickAnchor;
+    if (clickAnchor === null || typeof clickAnchor !== 'object' || clickAnchor.noteId !== noteId) {
+        throw new Error('clickAnchor must be a click anchor for the note being entered');
+    }
+    return clickAnchor;
+}
+
 export async function actionSelectNote(noteId, options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionSelectNote requires options object');
@@ -69,6 +83,11 @@ export async function actionSelectNote(noteId, options) {
         await actionDeselectNote();
     }
 
+    const clickAnchor = clickAnchorOption(options, noteId);
+    if (clickAnchor !== null) {
+        holdViewportRoot(clickAnchor);
+    }
+
     ModeContext.setCurrentNoteId(noteId);
 
     ModeContext.setEditing(true);
@@ -79,7 +98,12 @@ export async function actionSelectNote(noteId, options) {
         await recordNoteInteractionIfNew(noteId, 'edit');
     }
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
+    const refreshOptions = {startedAt: startedAt};
+    if (clickAnchor !== null) {
+        refreshOptions.viewportHold = clickAnchor;
+        refreshOptions.clickAnchor = clickAnchor;
+    }
+    const newContent = await actionRefreshAndMaybeSelect(refreshOptions);
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -232,9 +256,13 @@ export async function actionSwitchNotes(newNoteId, options) {
 
     // Keep the clicked note (and so the clicked text) under the pointer while
     // the note being left saves, closes its tag bar, and re-renders above it.
+    const clickAnchor = clickAnchorOption(options, newNoteId);
     const clickedNoteElement = getNoteElementIfPresent(newNoteId);
     let viewportHold = null;
-    if (clickedNoteElement !== null) {
+    if (clickAnchor !== null) {
+        viewportHold = clickAnchor;
+        holdViewportRoot(viewportHold);
+    } else if (clickedNoteElement !== null) {
         viewportHold = {
             kind: 'top', noteId: newNoteId, top: clickedNoteElement.getBoundingClientRect().top, keepVisible: false,
         };
@@ -266,6 +294,9 @@ export async function actionSwitchNotes(newNoteId, options) {
     const refreshOptions = {startedAt: startedAt};
     if (viewportHold !== null) {
         refreshOptions.viewportHold = viewportHold;
+    }
+    if (clickAnchor !== null) {
+        refreshOptions.clickAnchor = clickAnchor;
     }
     const newContent = await actionRefreshAndMaybeSelect(refreshOptions);
     

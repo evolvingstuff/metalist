@@ -25,6 +25,8 @@ const USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'mousedown', 'point
 // this far, or could only be found approximately.
 const CUE_MIN_MOVE_PX = 40;
 const CUE_DURATION_MS = 600;
+// Shorter text fragments match too easily to count as the same place.
+const MIN_MATCH_CHARS = 8;
 
 const moduleState = ApplicationState.createFields('viewport-hold-service', {
     session: null,
@@ -78,27 +80,65 @@ function textOffsetOf(content, node, offset) {
 }
 
 // Screen Y of the character position `position` in content's text, or null.
-function textPositionToY(content, position) {
+// The text node and offset of character position `position` in content's
+// text. Line breaks add no text, so the end of one line and the start of the
+// next are the same position: `affinity` 'forward' picks the next line's
+// start (a click on a line, a source line), 'backward' the previous line's
+// end (a caret left after typing at a line's end).
+function textPositionToNodePoint(content, position, affinity) {
+    if (affinity !== 'forward' && affinity !== 'backward') {
+        throw new Error(`Unknown text affinity: ${affinity}`);
+    }
     const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
     let consumed = 0;
+    let last = null;
     let node = walker.nextNode();
     while (node !== null) {
-        const length = node.data.length;
-        if (consumed + length >= position) {
-            const range = document.createRange();
-            range.setStart(node, position - consumed);
-            range.collapse(true);
-            const rects = range.getClientRects();
-            if (rects.length > 0) {
-                return rects[0].top;
-            }
-            const parentRect = node.parentElement.getBoundingClientRect();
-            return parentRect.height > 0 ? parentRect.top : null;
+        const end = consumed + node.data.length;
+        if (position < end || (affinity === 'backward' && position === end)) {
+            return { node, offset: position - consumed };
         }
-        consumed += length;
+        consumed = end;
+        last = node;
         node = walker.nextNode();
     }
+    if (last !== null && position === consumed) {
+        return { node: last, offset: last.data.length };
+    }
     return null;
+}
+
+// Screen Y of character position `position` in content's text, or null.
+function textPositionToY(content, position, affinity) {
+    const point = textPositionToNodePoint(content, position, affinity);
+    if (point === null) {
+        return null;
+    }
+    const range = document.createRange();
+    range.setStart(point.node, point.offset);
+    range.collapse(true);
+    const rects = range.getClientRects();
+    if (rects.length > 0) {
+        return rects[0].top;
+    }
+    const parentRect = point.node.parentElement.getBoundingClientRect();
+    return parentRect.height > 0 ? parentRect.top : null;
+}
+
+// Only leaving edit mode may show a position cue (captureNoteAnchor records
+// the note's first line for exactly that); entering edit mode, switching
+// notes and band shifts never do.
+function isEditExitAnchor(reference) {
+    return Object.prototype.hasOwnProperty.call(reference, 'contentTop');
+}
+
+// Screen Y of the content's first line of text (its box top when it has no text).
+function firstLineTop(content) {
+    const y = textPositionToY(content, 0, 'forward');
+    if (y === null) {
+        return content.getBoundingClientRect().top;
+    }
+    return y;
 }
 
 // Where an anchored text position is in `text` (the note's text after it
@@ -125,24 +165,45 @@ export function findTextPosition(text, anchor) {
         return best;
     };
     const trimmedBefore = anchor.before.trimEnd();
+    const trimmedAfter = anchor.after.trimStart();
     for (const [needle, shift] of [
         [anchor.before + anchor.after, anchor.before.length],
         // Rendering can drop whitespace the user just typed next to the caret.
-        [trimmedBefore + anchor.after.trimStart(), trimmedBefore.length],
-        [trimmedBefore, trimmedBefore.length],
-        [anchor.after.trimStart(), 0],
+        [trimmedBefore + trimmedAfter, trimmedBefore.length],
     ]) {
-        // Short fragments match too easily to count as the same place.
-        if (needle.length < 8) {
-            continue;
+        if (needle.length >= MIN_MATCH_CHARS) {
+            const position = nearest(needle, shift);
+            if (position !== null) {
+                return { position, exact: true, affinity: anchor.affinity };
+            }
         }
-        const position = nearest(needle, shift);
+    }
+    // Source and rendering differ in markup next to the place (list markers,
+    // heading hashes, emphasis): match the longest run of the text right after
+    // it, then right before it, that survives.
+    for (let length = trimmedAfter.length; length >= MIN_MATCH_CHARS; length -= 1) {
+        const position = nearest(trimmedAfter.slice(0, length), 0);
         if (position !== null) {
-            return { position, exact: true };
+            return { position, exact: true, affinity: 'forward' };
+        }
+    }
+    for (let length = trimmedBefore.length; length >= MIN_MATCH_CHARS; length -= 1) {
+        const position = nearest(trimmedBefore.slice(trimmedBefore.length - length), length);
+        if (position !== null) {
+            return { position, exact: true, affinity: 'backward' };
         }
     }
     const proportional = Math.round(anchor.textOffset * text.length / Math.max(1, anchor.textLength));
-    return { position: Math.min(text.length, Math.max(0, proportional)), exact: false };
+    return { position: Math.min(text.length, Math.max(0, proportional)), exact: false, affinity: anchor.affinity };
+}
+
+// A DOM point at the very start of a text node belongs to that line; any
+// other point (e.g. the end of a line just typed) to the text before it.
+function affinityOfDomPoint(node, offset) {
+    if (node.nodeType === Node.TEXT_NODE && offset === 0) {
+        return 'forward';
+    }
+    return 'backward';
 }
 
 function caretPositionAt(x, y) {
@@ -168,12 +229,16 @@ export function captureNoteAnchor(noteElement) {
     }
     const content = noteContent(noteElement);
     const noteTop = noteElement.getBoundingClientRect().top;
+    // Where the note's first line of text is: a note that collapses again
+    // keeps its (first-line) row there.
+    const contentTop = firstLineTop(content);
     const inset = getViewportTopInset();
     const viewportBottom = window.innerHeight;
     const textAnchorAt = (node, offset) => {
         const text = content.textContent;
         const textOffset = textOffsetOf(content, node, offset);
-        const screenY = textPositionToY(content, textOffset);
+        const affinity = affinityOfDomPoint(node, offset);
+        const screenY = textPositionToY(content, textOffset, affinity);
         if (screenY === null) {
             return null;
         }
@@ -181,7 +246,7 @@ export function captureNoteAnchor(noteElement) {
             kind: 'text', noteId, screenY, textOffset, textLength: text.length,
             before: text.slice(Math.max(0, textOffset - CONTEXT_CHARS), textOffset),
             after: text.slice(textOffset, textOffset + CONTEXT_CHARS),
-            noteTop, keepVisible: true,
+            noteTop, contentTop, keepVisible: true, affinity,
         };
     };
 
@@ -205,7 +270,150 @@ export function captureNoteAnchor(noteElement) {
         }
     }
 
-    return { kind: 'top', noteId, top: noteTop, keepVisible: true };
+    return { kind: 'top', noteId, top: noteTop, contentTop, keepVisible: true };
+}
+
+// What to keep in place when a click enters edit mode: the clicked text (it
+// stays under the pointer once the note shows its editable source), or the
+// note's top when the click was not on text (e.g. a rendered diagram).
+export function captureClickAnchor(noteElement, x, y) {
+    if (typeof x !== 'number' || typeof y !== 'number') {
+        throw new Error('captureClickAnchor requires click coordinates');
+    }
+    const noteId = noteElement.dataset.noteId;
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('captureClickAnchor requires a note element with an id');
+    }
+    const noteTop = noteElement.getBoundingClientRect().top;
+    const content = noteContent(noteElement);
+    const diagramAnchor = captureDiagramClickAnchor({ content, noteId, noteTop, x, y });
+    if (diagramAnchor !== null) {
+        return diagramAnchor;
+    }
+    const position = caretPositionAt(x, y);
+    if (position !== null && position.node.nodeType === Node.TEXT_NODE && content.contains(position.node)) {
+        const text = content.textContent;
+        const textOffset = textOffsetOf(content, position.node, position.offset);
+        const affinity = affinityOfDomPoint(position.node, position.offset);
+        const screenY = textPositionToY(content, textOffset, affinity);
+        if (screenY !== null) {
+            return {
+                kind: 'text', noteId, screenY, textOffset, textLength: text.length,
+                before: text.slice(Math.max(0, textOffset - CONTEXT_CHARS), textOffset),
+                after: text.slice(textOffset, textOffset + CONTEXT_CHARS),
+                noteTop, keepVisible: false, clickX: x, clickY: y, affinity,
+            };
+        }
+    }
+    return { kind: 'top', noteId, top: noteTop, keepVisible: false, clickX: x, clickY: y };
+}
+
+const MERMAID_BLOCK_SELECTOR = '.meta-mermaid-diagram, pre.meta-mermaid-source';
+
+// How a Mermaid node's label can appear in its source: A[label], C{label},
+// D(label), quoted labels, and the other bracket shapes.
+function mermaidLabelNeedles(label) {
+    const needles = [];
+    for (const [open, close] of [
+        ['[', ']'], ['{', '}'], ['(', ')'], ['["', '"]'], ['{"', '"}'], ['("', '")'],
+        ['[[', ']]'], ['((', '))'], ['([', '])'], ['{{', '}}'], ['>', ']'],
+    ]) {
+        needles.push({ text: `${open}${label}${close}`, shift: open.length });
+    }
+    return needles;
+}
+
+// A click on a rendered Mermaid diagram: the browser's text hit-testing is
+// unreliable inside it and its text is in drawing order, so the diagram's own
+// structure says what was clicked. A box maps to its label in the source (that
+// source line goes under the pointer); anywhere else maps to the diagram's
+// ```mermaid line, held where the diagram's top was. Null when the click was
+// not on a diagram.
+function captureDiagramClickAnchor({ content, noteId, noteTop, x, y }) {
+    const hit = document.elementFromPoint(x, y);
+    if (hit === null) {
+        return null;
+    }
+    const block = hit.closest(MERMAID_BLOCK_SELECTOR);
+    if (block === null || !content.contains(block)) {
+        return null;
+    }
+    const base = { kind: 'source', noteId, noteTop, keepVisible: false, clickX: x, clickY: y };
+    const node = hit.closest('g.node');
+    if (node !== null) {
+        const labelElement = node.querySelector('.nodeLabel');
+        if (labelElement !== null && labelElement.textContent.trim().length > 0) {
+            return {
+                ...base, needles: mermaidLabelNeedles(labelElement.textContent.trim()), occurrence: 0,
+                screenY: labelElement.getBoundingClientRect().top,
+            };
+        }
+    }
+    const blocks = [...content.querySelectorAll(MERMAID_BLOCK_SELECTOR)];
+    return {
+        ...base, needles: [{ text: '```mermaid', shift: 0 }], occurrence: blocks.indexOf(block),
+        screenY: block.getBoundingClientRect().top,
+    };
+}
+
+// The text position a source anchor names: the `occurrence`-th match, in text
+// order, of any of its needles; null when absent (e.g. still the rendered view).
+function findSourcePosition(text, reference) {
+    const positions = [];
+    for (const needle of reference.needles) {
+        let index = text.indexOf(needle.text);
+        while (index !== -1) {
+            positions.push(index + needle.shift);
+            index = text.indexOf(needle.text, index + 1);
+        }
+    }
+    positions.sort((first, second) => first - second);
+    if (reference.occurrence >= positions.length) {
+        return null;
+    }
+    return positions[reference.occurrence];
+}
+
+
+// Puts the caret of the now-editable note where the user clicked, never
+// scrolling: at the clicked text when it is found exactly, otherwise at
+// whatever is under the pointer now that the view is held (e.g. the source of
+// a clicked diagram), otherwise at the start of the note.
+export function placeCaretAtClickAnchor(noteElement, reference) {
+    validateReference(reference);
+    if (typeof reference.clickX !== 'number' || typeof reference.clickY !== 'number') {
+        throw new Error('placeCaretAtClickAnchor requires a click anchor');
+    }
+    const content = noteContent(noteElement);
+    let point = null;
+    if (reference.kind === 'text') {
+        const found = findTextPosition(content.textContent, reference);
+        if (found.exact) {
+            point = textPositionToNodePoint(content, found.position, found.affinity);
+        }
+    }
+    if (reference.kind === 'source') {
+        const position = findSourcePosition(content.textContent, reference);
+        if (position !== null) {
+            point = textPositionToNodePoint(content, position, 'forward');
+        }
+    }
+    if (point === null) {
+        const underPointer = caretPositionAt(reference.clickX, reference.clickY);
+        if (underPointer !== null && content.contains(underPointer.node)) {
+            point = underPointer;
+        }
+    }
+    if (point === null) {
+        point = { node: content, offset: 0 };
+    }
+    const range = document.createRange();
+    range.setStart(point.node, point.offset);
+    range.collapse(true);
+    content.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
 }
 
 // --- Sorted tabs ----------------------------------------------------------
@@ -298,6 +506,22 @@ function validateReference(reference) {
         }
         return;
     }
+    if (reference.kind === 'source') {
+        if (!Array.isArray(reference.needles) || reference.needles.length === 0
+            || !reference.needles.every((needle) => typeof needle.text === 'string' && needle.text.length > 0
+                && Number.isInteger(needle.shift))) {
+            throw new Error('A source hold needs needles');
+        }
+        if (!Number.isInteger(reference.occurrence) || reference.occurrence < 0) {
+            throw new Error('A source hold needs an occurrence index');
+        }
+        for (const field of ['screenY', 'noteTop']) {
+            if (typeof reference[field] !== 'number') {
+                throw new Error(`A source hold needs a numeric ${field}`);
+            }
+        }
+        return;
+    }
     if (reference.kind === 'sorted') {
         if (typeof reference.rootId !== 'string') {
             throw new Error('A sorted hold needs the edited root id');
@@ -323,6 +547,9 @@ function validateReference(reference) {
         if (typeof reference.before !== 'string' || typeof reference.after !== 'string') {
             throw new Error('A text hold needs its surrounding text');
         }
+        if (reference.affinity !== 'forward' && reference.affinity !== 'backward') {
+            throw new Error('A text hold needs its affinity');
+        }
         return;
     }
     throw new Error(`Unknown viewport hold kind: ${reference.kind}`);
@@ -343,40 +570,67 @@ function locateReference(reference) {
     if (!element) {
         return null;
     }
+    if (reference.kind === 'source' && !isShownCollapsed(element)) {
+        const content = noteContent(element);
+        const position = findSourcePosition(content.textContent, reference);
+        if (position !== null) {
+            const y = textPositionToY(content, position, 'forward');
+            if (y !== null) {
+                return { delta: y - reference.screenY, displacedPx: 0, approximate: false, eligible: false, cueElement: element };
+            }
+        }
+    }
     // Only a real text match places the view: a proportional guess (the text
     // did not survive rendering, e.g. Mermaid source or Markdown syntax) can
     // land anywhere in a formatted note, so the note's top is held instead.
-    if (reference.kind === 'text' && !isShownCollapsed(element)) {
+    if (reference.kind === 'text') {
         const content = noteContent(element);
         const found = findTextPosition(content.textContent, reference);
         if (found.exact) {
-            const y = textPositionToY(content, found.position);
-            if (y !== null) {
+            const y = textPositionToY(content, found.position, found.affinity);
+            if (y !== null && !isShownCollapsed(element)) {
                 return {
-                    delta: y - reference.screenY, approximate: false, eligible: true,
-                    cueElement: blockAtTextPosition(content, found.position),
+                    delta: y - reference.screenY, displacedPx: 0, approximate: false,
+                    eligible: isEditExitAnchor(reference), cueElement: blockAtTextPosition(content, found.position),
                 };
             }
         }
     }
-    // A collapsed note's text is hidden, and unmatched text has no place:
-    // hold the note's top, keeping it in view.
     const rect = element.getBoundingClientRect();
-    let target = reference.kind === 'top' ? reference.top : reference.noteTop;
+    // A note that collapsed again: its first line of text stays where the
+    // note's first line was while editing, keeping the row in view.
+    if (isShownCollapsed(element) && Object.prototype.hasOwnProperty.call(reference, 'contentTop')) {
+        if (typeof reference.contentTop !== 'number') {
+            throw new Error('A hold contentTop must be a number');
+        }
+        const heldDelta = firstLineTop(noteContent(element)) - reference.contentTop;
+        let delta = heldDelta;
+        if (reference.keepVisible) {
+            const inset = getViewportTopInset();
+            if (rect.top - delta + rect.height < inset + MIN_VISIBLE_PX) {
+                delta = rect.top - inset;
+            }
+        }
+        return {
+            delta, displacedPx: Math.abs(delta - heldDelta), approximate: true,
+            eligible: isEditExitAnchor(reference), cueElement: element,
+        };
+    }
+    // Unmatched text has no place, and a hold without a first line to keep
+    // holds the note's top, keeping it in view.
+    const heldTarget = reference.kind === 'top' ? reference.top : reference.noteTop;
+    let target = heldTarget;
     if (reference.keepVisible) {
         const inset = getViewportTopInset();
         if (target + rect.height < inset + MIN_VISIBLE_PX) {
             target = inset;
         }
     }
-    let eligible = reference.keepVisible;
-    if (reference.kind === 'text') {
-        eligible = true;
-    }
+    const eligible = isEditExitAnchor(reference);
     // A note that collapsed again changed shape: the user's exact place is
     // hidden, so it always counts as approximate (and is cued).
     const approximate = isShownCollapsed(element);
-    return { delta: rect.top - target, approximate, eligible, cueElement: element };
+    return { delta: rect.top - target, displacedPx: Math.abs(target - heldTarget), approximate, eligible, cueElement: element };
 }
 
 // The block-level element (paragraph, list item, heading…) holding a text position.
@@ -398,11 +652,14 @@ function blockAtTextPosition(content, position) {
     return content;
 }
 
-export function shouldShowPositionCue({ eligible, approximate, movedPx }) {
-    if (typeof eligible !== 'boolean' || typeof approximate !== 'boolean' || typeof movedPx !== 'number') {
-        throw new Error('shouldShowPositionCue requires eligible, approximate and movedPx');
+// `displacedPx`: how far the user's place ends up from where it was on
+// screen (scrolling that keeps it still does not count). The cue marks only
+// a place that collapsed or could not be kept where it was.
+export function shouldShowPositionCue({ eligible, approximate, displacedPx }) {
+    if (typeof eligible !== 'boolean' || typeof approximate !== 'boolean' || typeof displacedPx !== 'number') {
+        throw new Error('shouldShowPositionCue requires eligible, approximate and displacedPx');
     }
-    return eligible && (approximate || Math.abs(movedPx) > CUE_MIN_MOVE_PX);
+    return eligible && (approximate || displacedPx > CUE_MIN_MOVE_PX);
 }
 
 // A highlight over where the user's place landed: shown at full strength in
@@ -473,7 +730,6 @@ export function holdViewportRoot(reference) {
     const previousOverflowAnchor = root.style.overflowAnchor;
     root.style.overflowAnchor = 'none';
     let expectedScrollY = window.scrollY;
-    const startScrollY = window.scrollY;
     let quietTimer = null;
     let cueShown = false;
     let cue = null;
@@ -490,9 +746,12 @@ export function holdViewportRoot(reference) {
             endHold();
             return;
         }
+        const scrolledFrom = window.scrollY;
         if (Math.abs(located.delta) >= 1) {
             window.scrollBy(0, located.delta);
         }
+        // What the page could not scroll (its top or bottom) leaves the place displaced.
+        const unscrolled = Math.abs(located.delta - (window.scrollY - scrolledFrom));
         expectedScrollY = window.scrollY;
         // Follow the landing element as it settles (collapsing, or replaced
         // by a re-render), so the cue never covers the notes around it.
@@ -501,7 +760,7 @@ export function holdViewportRoot(reference) {
             placePositionCue(cue);
         }
         if (!cueShown && shouldShowPositionCue({
-            eligible: located.eligible, approximate: located.approximate, movedPx: window.scrollY - startScrollY,
+            eligible: located.eligible, approximate: located.approximate, displacedPx: located.displacedPx + unscrolled,
         })) {
             cueShown = true;
             cue = showPositionCue(located.cueElement);

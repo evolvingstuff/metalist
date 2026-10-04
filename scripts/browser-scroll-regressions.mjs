@@ -170,11 +170,24 @@ function assertStayed(label, before, after, samples) {
   }
 }
 
+// Move the caret to the end of the note being edited (typing then scrolls there).
+function caretToEnd(page, noteId) {
+  return page.evaluate(noteId => {
+    const content = document.querySelector(`[data-note-id="${noteId}"] .note-content`);
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    range.collapse(false);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  }, noteId);
+}
+
 async function caretVisibleCase(page, longId, label) {
-  // Entering edit mode puts the caret at the end of the note; typing scrolls there.
+  // Edit at the end of the note; typing scrolls there.
   await scrollParagraphTo(page, 'Long paragraph 1:', 200);
   await clickParagraph(page, 'Long paragraph 1:');
   await waitForEditing(page, longId);
+  await caretToEnd(page, longId);
   await page.keyboard.type(' ');
   await pause(400);
   const tracked = 'Long paragraph 60:';
@@ -226,6 +239,15 @@ async function editAndExit(page, noteId, clickSelector) {
   }, clickSelector);
   await page.mouse.click(point.x, point.y);
   await waitForEditing(page, noteId);
+  // The caret lands where the click was; edit at the end of the note.
+  await page.evaluate(noteId => {
+    const content = document.querySelector(`[data-note-id="${noteId}"] .note-content`);
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    range.collapse(false);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  }, noteId);
   await page.keyboard.type(' ');
   await pause(400);
   await page.evaluate(() => {
@@ -351,6 +373,170 @@ async function compactMermaidCase(page, ids) {
   assert.ok(fontSize <= 14, `Mermaid labels use compact text: ${fontSize}px`);
 }
 
+// --- Entering edit mode: the clicked spot stays under the pointer ---------
+
+// Screen Y of the innermost paragraph/line (view or edit DOM) whose text contains `prefix`
+// (source lines keep markup such as "- " list markers).
+function lineY(page, noteId, prefix) {
+  return page.evaluate(({noteId, prefix}) => {
+    const candidates = [...document.querySelectorAll(`[data-note-id="${noteId}"] .note-content :is(p, div, li, h1, h2, h3)`)]
+      .filter(element => element.textContent.includes(prefix));
+    const line = candidates[candidates.length - 1];
+    return line ? line.getBoundingClientRect().top : null;
+  }, {noteId, prefix});
+}
+
+// Click near the start of that line, then wait for edit mode and samples.
+async function clickLineToEdit(page, noteId, prefix) {
+  const point = await page.evaluate(({noteId, prefix}) => {
+    const candidates = [...document.querySelectorAll(`[data-note-id="${noteId}"] .note-content :is(p, div, li, h1, h2, h3)`)]
+      .filter(element => element.textContent.includes(prefix));
+    const rect = candidates[candidates.length - 1].getBoundingClientRect();
+    return {x: rect.left + 20, y: rect.top + Math.min(8, rect.height / 2)};
+  }, {noteId, prefix});
+  await page.mouse.click(point.x, point.y);
+  await waitForEditing(page, noteId);
+  await pause(SETTLE_MS);
+  return point;
+}
+
+function caretLineText(page) {
+  return page.evaluate(() => {
+    const selection = window.getSelection();
+    if (selection.rangeCount === 0) return '';
+    let node = selection.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    return node.closest('div, p, li').textContent;
+  });
+}
+
+async function enterEditCase(page, noteId, prefix, label) {
+  const before = await lineY(page, noteId, prefix);
+  assert.notEqual(before, null, `${label}: "${prefix}" shown before editing`);
+  await clickLineToEdit(page, noteId, prefix);
+  const after = await lineY(page, noteId, prefix);
+  assert.notEqual(after, null, `${label}: "${prefix}" shown while editing`);
+  assert.ok(Math.abs(after - before) <= TOLERANCE_PX,
+    `${label}: the clicked line should stay under the pointer: y=${Math.round(before)} -> ${Math.round(after)}`);
+  const caretLine = await caretLineText(page);
+  assert.ok(caretLine.includes(prefix), `${label}: the caret should be on the clicked line, got "${caretLine.slice(0, 40)}"`);
+  // Leaving again: the line stays put and, as the note stays expanded, no cue
+  // appears (even when a diagram above grows back and the page scrolls).
+  const {cues} = await exitWithEscape(page, prefix, null);
+  assert.equal(cues, 0, `${label}: no position cue after leaving an expanded note`);
+  const back = await lineY(page, noteId, prefix);
+  assert.ok(Math.abs(back - before) <= TOLERANCE_PX, `${label}: after Escape the line is back where it was: y=${Math.round(before)} -> ${Math.round(back)}`);
+}
+
+async function enterEditCases(page, ids, longId) {
+  // Rich text: a paragraph in the middle of a long note.
+  await reload(page);
+  await scrollParagraphTo(page, 'Long paragraph 30:', 350);
+  await enterEditCase(page, longId, 'Long paragraph 30:', 'rich text');
+
+  // Markdown with a Mermaid diagram above the clicked paragraph: the diagram
+  // turns back into its (much shorter) source, yet the paragraph stays put.
+  const markdownId = await page.evaluate(async () => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const lines = ['# Release checklist', '', '```mermaid', 'flowchart TD',
+      '    A[Write the change] --> B[Run unit tests]', '    B --> C{Tests pass?}', '    C -- No --> A',
+      '    C -- Yes --> D[Run browser smoke]', '    D --> E{Smoke passes?}', '    E -- No --> A',
+      '    E -- Yes --> F[Human testing]', '    F --> G[Commit checkpoint]', '    G --> H[Merge to main]', '```', '',
+      'A paragraph before the list, ending above it.', '', '- A short list item', '- Another list item', '- A final list item', ''];
+    for (let index = 1; index <= 30; index += 1) lines.push(`Markdown paragraph ${index} after the diagram.`, '');
+    const note = await NotesAPI.createNote(null, '');
+    await NotesAPI.saveNote(note.id, lines.map(line => `<div>${line}</div>`).join(''), '@markdown');
+    // Notes above it, so the page can scroll either way around it.
+    const fillers = [];
+    for (let index = 0; index < 6; index += 1) {
+      const filler = await NotesAPI.createNote(null, '');
+      await NotesAPI.saveNote(filler.id, `<p>Filler note ${index} above the Markdown note.</p>`.repeat(3), '');
+      fillers.push(filler.id);
+    }
+    return {id: note.id, fillers};
+  }).then(({id, fillers}) => {
+    ids.push(...fillers);
+    return id;
+  });
+  ids.push(markdownId);
+  await reload(page);
+  await page.waitForSelector(`[data-note-id="${markdownId}"] [data-mermaid-state="rendered"]`);
+  const target = await lineY(page, markdownId, 'Markdown paragraph 12 after');
+  await page.evaluate(delta => window.scrollBy(0, delta), target - 350);
+  await pause(300);
+  await enterEditCase(page, markdownId, 'Markdown paragraph 12 after', 'markdown below a diagram');
+
+  // List items: the source adds "- " markers around the clicked text.
+  for (const item of ['A short list item', 'Another list item', 'A final list item']) {
+    await reload(page);
+    await page.waitForSelector(`[data-note-id="${markdownId}"] [data-mermaid-state="rendered"]`);
+    const itemY = await lineY(page, markdownId, item);
+    await page.evaluate(delta => window.scrollBy(0, delta), itemY - 350);
+    await pause(300);
+    await enterEditCase(page, markdownId, item, `markdown list item "${item}"`);
+  }
+
+  // Clicking a box of the diagram: the caret goes to that box's source line,
+  // which appears under the pointer; clicking elsewhere in the diagram leaves
+  // the note where it is. Either way nothing jumps away from the pointer.
+  const labels = await page.evaluate(noteId => [...document.querySelectorAll(
+    `[data-note-id="${noteId}"] [data-mermaid-state="rendered"] .nodeLabel`)].map(label => label.textContent), markdownId);
+  assert.ok(labels.length >= 5, 'the diagram has labelled boxes to click');
+  const diagramFailures = [];
+  for (const label of labels) {
+    await reload(page);
+    await page.waitForSelector(`[data-note-id="${markdownId}"] [data-mermaid-state="rendered"]`);
+    const point = await page.evaluate(({noteId, label}) => {
+      const element = [...document.querySelectorAll(`[data-note-id="${noteId}"] [data-mermaid-state="rendered"] .nodeLabel`)]
+        .find(candidate => candidate.textContent === label);
+      element.scrollIntoView({block: 'center'});
+      const rect = element.getBoundingClientRect();
+      return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+    }, {noteId: markdownId, label});
+    await pause(300);
+    await page.mouse.click(point.x, point.y);
+    await waitForEditing(page, markdownId);
+    await pause(SETTLE_MS);
+    const result = await page.evaluate(label => {
+      const selection = window.getSelection();
+      let node = selection.getRangeAt(0).startContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      const line = node.closest('div, p');
+      return {lineText: line.textContent, lineTop: line.getBoundingClientRect().top, lineBottom: line.getBoundingClientRect().bottom};
+    }, label);
+    const onLine = result.lineText.includes(label);
+    const underPointer = point.y >= result.lineTop - 4 && point.y <= result.lineBottom + 4;
+    if (!onLine || !underPointer) {
+      diagramFailures.push(`"${label}": caret line "${result.lineText.trim().slice(0, 40)}" at y=${Math.round(result.lineTop)}, click y=${Math.round(point.y)}`);
+    }
+    await page.keyboard.press('Escape');
+    await pause(SETTLE_MS);
+  }
+  assert.deepEqual(diagramFailures, [], `clicking a diagram box should put its source line, with the caret, under the pointer:\n${diagramFailures.join('\n')}`);
+
+  // Clicking empty space in the diagram: the diagram's ```mermaid source line
+  // takes the diagram's place (its top), with the caret on it.
+  await reload(page);
+  await page.waitForSelector(`[data-note-id="${markdownId}"] [data-mermaid-state="rendered"]`);
+  await page.evaluate(noteId => {
+    window.scrollBy(0, document.querySelector(`[data-note-id="${noteId}"]`).getBoundingClientRect().top - 120);
+  }, markdownId);
+  await pause(300);
+  const diagram = await page.evaluate(noteId => {
+    const rect = document.querySelector(`[data-note-id="${noteId}"] [data-mermaid-state="rendered"]`).getBoundingClientRect();
+    return {x: rect.left + 20, y: rect.top + 20, top: rect.top};
+  }, markdownId);
+  await page.mouse.click(diagram.x, diagram.y);
+  await waitForEditing(page, markdownId);
+  await pause(SETTLE_MS);
+  const fenceTop = await lineY(page, markdownId, '```mermaid');
+  assert.ok(Math.abs(fenceTop - diagram.top) <= 4,
+    `clicking empty diagram space: its source should start where the diagram did: y=${Math.round(diagram.top)} -> ${Math.round(fenceTop)}`);
+  assert.ok((await caretLineText(page)).includes('```mermaid'), 'clicking empty diagram space: the caret is at the start of its source');
+  await page.keyboard.press('Escape');
+  await pause(SETTLE_MS);
+}
+
 export async function checkExitEditScroll(page) {
   const ids = await createFixture(page);
   const longId = ids[12];
@@ -382,6 +568,7 @@ export async function checkExitEditScroll(page) {
       await scrollParagraphTo(page, 'Long paragraph 1:', 200);
       await clickParagraph(page, 'Long paragraph 1:');
       await waitForEditing(page, longId);
+      await caretToEnd(page, longId);
       await page.keyboard.type(' ');
       await pause(400);
       await exitWithEscape(page, 'Long paragraph 1:', null);
@@ -483,6 +670,7 @@ export async function checkExitEditScroll(page) {
     await check('late content', () => lateContentCase(page));
     await check('compact mermaid', () => compactMermaidCase(page, ids));
     await check('unmatched formatted text', () => unmatchedFormatCase(page, ids));
+    await check('entering edit mode', () => enterEditCases(page, ids, longId));
     assert.deepEqual(failures, [], `exit-edit scroll failures:\n${failures.join('\n')}`);
   } finally {
     await deleteFixture(page, ids);

@@ -157,6 +157,11 @@ section), `docs/design/differential-view-protocol.md` (band + freeze),
 
 ## Phase 4 — Symmetric mapping when entering edit mode (idea 6)
 
+Done early (before Phase 3): clicks hold a click anchor; clicked text found in the
+source stays under the pointer with the caret on it, otherwise the note does not
+move and the caret goes under the pointer. Remaining: formatted blocks via `data-src`.
+
+
 1. Clicking a rendered note: find the clicked block's `data-src` range and the
    click's position inside it; after the raw editable content arrives, place the
    caret at the corresponding raw-text offset and keep that spot at the click's
