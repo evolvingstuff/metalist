@@ -19,9 +19,9 @@ const DIRECTION_CURSOR_CLASSES = {
     indent: 'note-drag-cursor-indent',
     outdent: 'note-drag-cursor-outdent',
 };
-const NOOP_CURSOR_CLASS = 'note-drag-cursor-noop';
-
-function applyDirectionCursor(kind, isNoop) {
+// Only a move a release would make gets an icon; otherwise the cursor stays
+// the plain grabbing hand.
+function applyDirectionCursor(kind) {
     if (kind !== null && !Object.hasOwn(DIRECTION_CURSOR_CLASSES, kind)) {
         throw new Error(`Unknown drag direction cursor: ${kind}`);
     }
@@ -29,7 +29,6 @@ function applyDirectionCursor(kind, isNoop) {
     for (const [name, className] of Object.entries(DIRECTION_CURSOR_CLASSES)) {
         classes.toggle(className, name === kind);
     }
-    classes.toggle(NOOP_CURSOR_CLASS, kind !== null && isNoop);
 }
 
 function ensureOverlays() {
@@ -76,7 +75,7 @@ function hideOverlay(element) {
 // ghost: { rect, offsetX, offsetY } where rect is the dragged row's starting
 // viewport rect and the offsets are the axis-locked pointer movement.
 // drop: null, or { targetRect, line: { left, top, width } } in viewport pixels.
-// cursor: up|down|indent|outdent, the action a release would take.
+// cursor: up|down|indent|outdent for the move a release would make, or null.
 export function renderNoteDragIndicators({ ghost, drop, cursor }) {
     if (!ghost || typeof ghost !== 'object' || !ghost.rect) {
         throw new Error('renderNoteDragIndicators requires a ghost description');
@@ -88,9 +87,13 @@ export function renderNoteDragIndicators({ ghost, drop, cursor }) {
         width: ghost.rect.width,
         height: ghost.rect.height,
     });
-    // A release that would change nothing greys the ghost and cursor out.
+    // A release that would change nothing greys the ghost out; the caller
+    // passes no cursor for it, since that move is not possible from here.
     overlays.ghost.classList.toggle('is-noop', drop === null);
-    applyDirectionCursor(cursor, drop === null);
+    if (drop === null && cursor !== null) {
+        throw new Error('A drag with no possible drop must not show a direction cursor');
+    }
+    applyDirectionCursor(cursor);
     if (drop === null) {
         hideOverlay(overlays.target);
         hideOverlay(overlays.line);
@@ -104,7 +107,7 @@ export function renderNoteDragIndicators({ ghost, drop, cursor }) {
 }
 
 export function hideNoteDragIndicators() {
-    applyDirectionCursor(null, false);
+    applyDirectionCursor(null);
     if (moduleState.overlays === null) {
         return;
     }
