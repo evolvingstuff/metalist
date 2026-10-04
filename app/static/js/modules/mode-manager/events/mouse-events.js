@@ -27,6 +27,8 @@ import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
+import { hideNoteDragIndicators, renderNoteDragIndicators } from '../services/note-drag-indicator-service.js';
+import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     isViewModeNoteDisclosureToggle,
     isViewModeNoteLink,
@@ -61,6 +63,8 @@ const moduleState = ApplicationState.createFields('mouse-events', {
 
 const MOVE_DRAG_COMMIT_THRESHOLD_PX = 20;
 const MOVE_DRAG_COMMIT_THRESHOLD_SQ = MOVE_DRAG_COMMIT_THRESHOLD_PX * MOVE_DRAG_COMMIT_THRESHOLD_PX;
+// The cursor icon shown for each drag direction.
+const DRAG_DIRECTION_ICONS = { up: 'up', down: 'down', right: 'indent', left: 'outdent' };
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
 const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
@@ -83,6 +87,7 @@ export function initMouseEvents() {
     listen('mousedown', handleImmediateMouseDown, { capture: true });
     listen('mousedown', handleMoveDragMouseDown, { capture: true });
     listen('mousemove', handleMoveDragMouseMove, { capture: true });
+    listen('scroll', handleMoveDragScroll, { capture: true, passive: true });
     listen('mousemove', handleSearchSuggestionsPointerMove, { capture: true, passive: true });
     listen('mousemove', handleSearchContextsPointerMove, { capture: true, passive: true });
     listen('mouseup', handleMoveDragMouseUp, { capture: true });
@@ -487,6 +492,9 @@ function setMoveDragCursorActive(isActive) {
         throw new Error('Document body missing while toggling drag cursor');
     }
     body.classList.toggle('note-drag-active', Boolean(isActive));
+    if (!isActive) {
+        hideNoteDragIndicators();
+    }
 }
 
 function handleMoveDragMouseDown(event) {
@@ -555,6 +563,10 @@ function handleMoveDragMouseDown(event) {
         startY: event.clientY,
         dragActive: false,
         hasCrossedActivationThreshold: false,
+        // Viewport rect of the dragged row, measured once when the drag starts.
+        ghostRect: null,
+        lastX: event.clientX,
+        lastY: event.clientY,
     };
 }
 
@@ -601,7 +613,190 @@ function handleMoveDragMouseMove(event) {
         if (selection && selection.rangeCount > 0) {
             selection.removeAllRanges();
         }
+        if (context.lastX !== event.clientX) context.lastX = event.clientX;
+        if (context.lastY !== event.clientY) context.lastY = event.clientY;
+        renderMoveDragIndicators(context, event.target);
     }
+}
+
+// Scrolling mid-drag moves notes under a still pointer; re-resolve the drop.
+function handleMoveDragScroll() {
+    const context = moduleState.moveDragContext;
+    if (!context || !context.dragActive) {
+        return;
+    }
+    renderMoveDragIndicators(context, document.elementFromPoint(context.lastX, context.lastY));
+}
+
+// The dragged row's viewport rect, plus how far the ghost may travel: only as
+// far as a release could actually take the note.
+function measureDragGhostRect(noteElement) {
+    const noteRect = noteElement.getBoundingClientRect();
+    // The ghost outlines everything that moves: the note and its visible
+    // children (a collapsed note renders, and so moves, as just its row).
+    const height = noteRect.height;
+
+    // Vertical: reordering stays among siblings, from the first sibling's top
+    // to the bottom of the last sibling's subtree. Sorted views pin roots.
+    const siblings = getDirectSiblingNotes(noteElement);
+    if (siblings.length === 0) {
+        throw new Error('Dragged note is missing from its own sibling list');
+    }
+    const parentId = getNormalizedParentId(noteElement);
+    let minOffsetY = 0;
+    let maxOffsetY = 0;
+    if (parentId !== null || !isRootReorderLocked(ModeContext.activeTabSortMode)) {
+        minOffsetY = Math.min(0, siblings[0].getBoundingClientRect().top - noteRect.top);
+        maxOffsetY = Math.max(0, siblings[siblings.length - 1].getBoundingClientRect().bottom - height - noteRect.top);
+    }
+
+    // Horizontal: one level in (under the note above), one level out (to the
+    // parent's position).
+    let maxOffsetX = 0;
+    const previous = getPreviousSiblingNoteElement(noteElement);
+    if (previous !== null) {
+        maxOffsetX = Math.max(0, childContentLeft(previous) - noteRect.left);
+    }
+    let minOffsetX = 0;
+    if (parentId !== null) {
+        minOffsetX = Math.min(0, DOMUtils.getNoteById(parentId).getBoundingClientRect().left - noteRect.left);
+    }
+    return { left: noteRect.left, top: noteRect.top, width: noteRect.width, height, minOffsetX, maxOffsetX, minOffsetY, maxOffsetY };
+}
+
+function renderMoveDragIndicators(context, pointerTarget) {
+    // The ghost, drop indicator and direction icon are separate preferences
+    // (all on by default; CSS hides whichever is off). Drags work the same either way.
+    const bodyClasses = document.body.classList;
+    if (!['pref-drag-ghost', 'pref-drop-indicator', 'pref-drag-direction-icon'].some((name) => bodyClasses.contains(name))) {
+        return;
+    }
+    const noteElement = DOMUtils.getNoteById(context.noteId);
+    if (context.ghostRect === null) {
+        context.ghostRect = measureDragGhostRect(noteElement);
+    }
+    const dx = context.lastX - context.startX;
+    const dy = context.lastY - context.startY;
+    // The ghost moves only along the axis that decides the drop: vertical
+    // drags reorder, horizontal drags indent or outdent.
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    renderNoteDragIndicators({
+        ghost: {
+            rect: context.ghostRect,
+            offsetX: horizontal ? clamp(dx, context.ghostRect.minOffsetX, context.ghostRect.maxOffsetX) : 0,
+            offsetY: horizontal ? 0 : clamp(dy, context.ghostRect.minOffsetY, context.ghostRect.maxOffsetY),
+        },
+        drop: describeDropIndicator(noteElement, resolveMoveDragDrop(context.noteId, dx, dy, context.lastY, pointerTarget), pointerTarget),
+        cursor: DRAG_DIRECTION_ICONS[resolveDragDirection(dx, dy)],
+    });
+}
+
+function clamp(value, min, max) {
+    if (!(min <= max)) {
+        throw new Error(`clamp range is inverted: ${min} > ${max}`);
+    }
+    return Math.min(max, Math.max(min, value));
+}
+
+function viewportRect(element) {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+}
+
+// Left edge where a new child of parentElement would render.
+function childContentLeft(parentElement) {
+    const children = parentElement.querySelector(':scope > .note-children');
+    if (children && children.getBoundingClientRect().width > 0) {
+        return children.getBoundingClientRect().left;
+    }
+    // No children shown yet: resolve the indentation variable (any CSS unit)
+    // with a detached probe, so the parent itself is never touched.
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;height:0;width:var(--note-child-indentation)';
+    document.body.appendChild(probe);
+    const indentation = probe.getBoundingClientRect().width;
+    probe.remove();
+    if (!(indentation > 0)) {
+        throw new Error('--note-child-indentation did not resolve to a positive width');
+    }
+    const style = window.getComputedStyle(parentElement);
+    const contentLeft = parentElement.getBoundingClientRect().left
+        + Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft);
+    return contentLeft + indentation;
+}
+
+function getPreviousSiblingNoteElement(noteElement) {
+    let cursor = noteElement.previousElementSibling;
+    while (cursor && !cursor.classList.contains('note')) {
+        cursor = cursor.previousElementSibling;
+    }
+    return cursor;
+}
+
+// Where a release at this point would put the note, or null when it would
+// change nothing. Release and the live indicators share this one decision.
+function resolveMoveDragDrop(noteId, dx, dy, clientY, pointerTarget) {
+    if ((dx * dx) + (dy * dy) < MOVE_DRAG_COMMIT_THRESHOLD_SQ) {
+        return null;
+    }
+    const direction = resolveDragDirection(dx, dy);
+    if (direction === 'up' || direction === 'down') {
+        const destination = resolveVerticalMoveDestination(noteId, clientY, direction, pointerTarget);
+        if (!destination) {
+            return null;
+        }
+        return { kind: 'reorder', direction, ...destination };
+    }
+    if (direction === 'right') {
+        return { kind: 'indent' };
+    }
+    return { kind: 'outdent' };
+}
+
+// Overlay geometry for a resolved drop: the note it is placed relative to, and
+// a line where the note will land (at child depth for indent).
+function describeDropIndicator(noteElement, drop, pointerTarget) {
+    if (drop === null) {
+        return null;
+    }
+    if (drop.kind === 'reorder') {
+        if (drop.newParentId === null && isRootReorderLocked(ModeContext.activeTabSortMode)) {
+            return null;
+        }
+        const siblingRect = viewportRect(DOMUtils.getNoteById(drop.siblingId));
+        const lineTop = drop.position === 'BEFORE' ? siblingRect.top - 1 : siblingRect.top + siblingRect.height + 1;
+        // Outline the note under the pointer; the line already marks the gap.
+        const hoveredId = getHoveredDirectSiblingNoteId(noteElement, pointerTarget);
+        let targetRect = siblingRect;
+        if (hoveredId !== null) {
+            targetRect = viewportRect(DOMUtils.getNoteById(hoveredId));
+        }
+        return { targetRect, line: { left: siblingRect.left, top: lineTop, width: siblingRect.width } };
+    }
+    if (drop.kind === 'indent') {
+        // Indent makes the note the last child of the visible note above it.
+        const previous = getPreviousSiblingNoteElement(noteElement);
+        if (previous === null) {
+            return null;
+        }
+        const targetRect = viewportRect(previous);
+        const lineLeft = childContentLeft(previous);
+        const right = targetRect.left + targetRect.width;
+        return {
+            targetRect,
+            line: { left: lineLeft, top: targetRect.top + targetRect.height + 1, width: Math.max(24, right - lineLeft) },
+        };
+    }
+    if (drop.kind === 'outdent') {
+        // Outdent places the note right after its parent.
+        const parentId = getNormalizedParentId(noteElement);
+        if (parentId === null) {
+            return null;
+        }
+        const targetRect = viewportRect(DOMUtils.getNoteById(parentId));
+        return { targetRect, line: { left: targetRect.left, top: targetRect.top + targetRect.height + 1, width: targetRect.width } };
+    }
+    throw new Error(`Unknown drop kind: ${drop.kind}`);
 }
 
 function resolveDragDirection(dx, dy) {
@@ -740,12 +935,10 @@ function handleMoveDragMouseUp(event) {
         return;
     }
 
-    const direction = resolveDragDirection(dx, dy);
-
     if (!ModeContext.isConnected) {
         Logger.logNoop('Move drag ignored while disconnected from server', {
             noteId: context.noteId,
-            direction,
+            direction: resolveDragDirection(dx, dy),
             isConnected: false,
         });
         return;
@@ -755,38 +948,29 @@ function handleMoveDragMouseUp(event) {
         throw new Error('Move drag context missing noteId on mouseup');
     }
 
-    if (direction === 'up' || direction === 'down') {
-        const destination = resolveVerticalMoveDestination(context.noteId, event.clientY, direction, event.target);
-        if (!destination) {
-            return;
-        }
-        void CommandGate.run(`mouse.drag_reorder_${direction}`, async () => {
+    const drop = resolveMoveDragDrop(context.noteId, dx, dy, event.clientY, event.target);
+    if (drop === null) {
+        return;
+    }
+    if (drop.kind === 'reorder') {
+        void CommandGate.run(`mouse.drag_reorder_${drop.direction}`, async () => {
             await moveNoteToSiblingPosition(
                 context.noteId,
-                destination.siblingId,
-                destination.position,
-                destination.newParentId,
+                drop.siblingId,
+                drop.position,
+                drop.newParentId,
             );
         });
         return;
     }
-    if (direction === 'right') {
+    if (drop.kind === 'indent') {
         void CommandGate.run('mouse.drag_indent', async () => {
             await indentNote(context.noteId);
         });
         return;
     }
-    if (direction === 'left') {
-        void CommandGate.run('mouse.drag_outdent', async () => {
-            await outdentNote(context.noteId);
-        });
-        return;
-    }
-
-    Logger.logNoop('Move drag resolved to unknown direction', {
-        noteId: context.noteId,
-        dx,
-        dy,
+    void CommandGate.run('mouse.drag_outdent', async () => {
+        await outdentNote(context.noteId);
     });
 }
 
