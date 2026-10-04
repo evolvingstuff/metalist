@@ -125,6 +125,10 @@
       "tags": ["note", "notes", "layout", "appearance", "font", "size", "spacing", "indentation", "hierarchy", "display", "settings", "corners", "rounded", "radius", "tags", "pills"]
     },
     {
+      "id": "form.drag_drop_visuals",
+      "tags": ["drag", "drop", "dragging", "ghost", "indicator", "landing", "line", "cursor", "icon", "direction", "move", "reorder", "indent", "outdent", "visuals", "settings", "show", "hide", "toggle", "enable", "disable"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

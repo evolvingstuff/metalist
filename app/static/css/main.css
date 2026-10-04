@@ -493,6 +493,44 @@ html {
     width: min(560px, 92vw);
 }
 
+.drag-drop-visuals-modal-content {
+    width: min(520px, 92vw);
+}
+
+.drag-drop-visuals-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 16px 0 0;
+    cursor: pointer;
+}
+
+.modal-content .drag-drop-visuals-toggle input {
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+    flex: 0 0 auto;
+}
+
+.drag-drop-visuals-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.drag-drop-visuals-title {
+    font-weight: 600;
+}
+
+.drag-drop-visuals-description {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+html[data-theme="dark"] .drag-drop-visuals-description {
+    color: #9ca3af;
+}
+
 .search-suggestion-statistics-modal-content {
     width: min(720px, 94vw);
 }
@@ -5924,6 +5962,107 @@ body.note-drag-active * {
     cursor: grabbing !important;
     -webkit-user-select: none !important;
     user-select: none !important;
+}
+
+/* Note move-drag indicators: page overlays only, so the dragged and target
+   notes keep their own styling. They never take pointer events. */
+.note-drag-ghost,
+.note-drop-target,
+.note-drop-line {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9000;
+    box-sizing: border-box;
+}
+
+.note-drag-ghost {
+    border: 2px dashed rgba(0, 0, 0, 0.45);
+    border-radius: var(--note-corner-radius);
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.note-drop-target {
+    border: 1px solid rgba(0, 0, 0, 0.22);
+    border-radius: var(--note-corner-radius);
+}
+
+.note-drop-line {
+    border-radius: 1px;
+    background-color: rgba(0, 0, 0, 0.55);
+}
+
+.note-drag-ghost.is-noop {
+    border-color: rgba(0, 0, 0, 0.2);
+    background-color: transparent;
+}
+
+html[data-theme="dark"] .note-drag-ghost.is-noop {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: transparent;
+}
+
+html[data-theme="dark"] .note-drag-ghost {
+    border-color: rgba(255, 255, 255, 0.5);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .note-drop-target {
+    border-color: rgba(255, 255, 255, 0.22);
+}
+
+html[data-theme="dark"] .note-drop-line {
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+/* While dragging, the cursor names the action: the Move Note to Top arrow for
+   up, its mirror for down, and indent/outdent icons. A dark stroke on a white
+   halo reads on both themes; a release that changes nothing turns it grey.
+   Generated from the paths in note-drag-indicator-service.js. */
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up.note-drag-cursor-noop,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up.note-drag-cursor-noop * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down.note-drag-cursor-noop,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down.note-drag-cursor-noop * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent.note-drag-cursor-noop,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent.note-drag-cursor-noop * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent.note-drag-cursor-noop,
+body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent.note-drag-cursor-noop * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
+}
+
+/* Each indicator has its own preference. */
+body:not(.pref-drag-ghost) .note-drag-ghost,
+body:not(.pref-drop-indicator) .note-drop-target,
+body:not(.pref-drop-indicator) .note-drop-line {
+    display: none !important;
 }
 
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */

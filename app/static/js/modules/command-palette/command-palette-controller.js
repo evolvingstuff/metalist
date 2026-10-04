@@ -51,6 +51,7 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
+import { DragDropVisualsModal, DRAG_DROP_VISUAL_OPTIONS } from '../modals/drag-drop-visuals-modal.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
@@ -349,6 +350,7 @@ class CommandPaletteController {
 
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
+        this._dragDropVisualsModal = null;
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
         this._aiAgentSettingsModal = null;
@@ -423,6 +425,7 @@ class CommandPaletteController {
 
                 openVersionInfo: this.openVersionInfo.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
+                openDragDropVisuals: this.openDragDropVisuals.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
@@ -557,6 +560,15 @@ class CommandPaletteController {
 
         const animatedTransitions = this._getBoolean('pref.animated_transitions', true);
         document.body.classList.toggle('pref-animated-transitions', animatedTransitions);
+
+        const dragGhost = this._getBoolean('pref.drag_ghost', true);
+        document.body.classList.toggle('pref-drag-ghost', dragGhost);
+
+        const dropIndicator = this._getBoolean('pref.drop_indicator', true);
+        document.body.classList.toggle('pref-drop-indicator', dropIndicator);
+
+        const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
+        document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
 
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
@@ -2444,6 +2456,20 @@ class CommandPaletteController {
             );
         }
         await this._noteLayoutAppearanceModal.open();
+    }
+
+    async openDragDropVisuals() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openDragDropVisuals');
+        if (!isReady) {
+            return;
+        }
+        if (this._dragDropVisualsModal === null) {
+            this._dragDropVisualsModal = new DragDropVisualsModal(
+                () => Object.fromEntries(DRAG_DROP_VISUAL_OPTIONS.map((option) => [option.key, this._getBoolean(option.key, true)])),
+                (key, enabled) => this.applyPreference(key, enabled),
+            );
+        }
+        await this._dragDropVisualsModal.open();
     }
 
     async openAiAgentSettings(focusCloudPrivacy = false) {
