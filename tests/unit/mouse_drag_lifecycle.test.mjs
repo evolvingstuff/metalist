@@ -33,19 +33,30 @@ function harness() {
     noteElement.nextElementSibling = below;
     below.previousElementSibling = noteElement;
     noteElement.closest = selector => (selector === '#notes-container > .note' ? noteElement : null);
+    below.closest = selector => (selector === '#notes-container > .note' ? below : null);
     noteElement.parentElement = { children: [noteElement, below] };
+    below.parentElement = noteElement.parentElement;
     const dependencies = {
         DOMUtils: { getNoteById: id => (id === 'note-2' ? below : noteElement), getNoteId: element => element.dataset.noteId },
         renderNoteDragIndicators: description => indicators.push(description),
         hideNoteDragIndicators: () => indicators.push('hidden'),
         isRootReorderLocked: () => false,
+        // Records any move a release would start.
+        CommandGate: { run: name => actions.push(name) },
         HTMLElement: FakeElement,
         ApplicationState, resolveVerticalSiblingDropDestination, updateMoveDragGestureState, selectTagOnDoubleClick,
-        document: { addEventListener: register, body: { classList: {
+        document: {
+            addEventListener: register,
+            // A detached probe resolving the child indentation (32px).
+            createElement: () => ({ style: {}, getBoundingClientRect: () => ({ width: 32 }), remove() {} }),
+            body: { appendChild() {}, classList: {
             toggle: (name, active) => active ? classes.add(name) : classes.delete(name),
             contains: name => classes.has(name),
         } } },
-        window: { getSelection: () => null, addEventListener: register },
+        window: {
+            getSelection: () => null, addEventListener: register,
+            getComputedStyle: () => ({ borderLeftWidth: '1px', paddingLeft: '4px' }),
+        },
         ModeContext: { isEditing: false, isConnected: true, activeTabSortMode: 'normal' },
         performance: { now: () => now },
         Node: Object,
@@ -69,10 +80,10 @@ function harness() {
     };
 }
 
-function dragContext() {
+function dragContext(overrides = {}) {
     return {
         noteId: 'note-1', startX: 10, startY: 10, dragActive: false, hasCrossedActivationThreshold: false,
-        ghostRect: null, lastX: 10, lastY: 10,
+        ghostRect: null, lastX: 10, lastY: 10, ...overrides,
     };
 }
 
@@ -215,13 +226,48 @@ test('with all drag visuals turned off, a drag renders nothing', () => {
     assert.deepEqual(h.indicators, []);
 });
 
-test('the cursor names the drag direction', () => {
+test('the cursor names only moves a release could make', () => {
+    // The first root note: nothing above it to move past or nest under, no parent.
+    const first = harness();
+    first.state.moveDragContext = dragContext();
+    const firstCursors = [];
+    for (const [x, y] of [[12, -20], [60, 12], [-40, 12], [12, 280]]) {
+        first.move(event(x, y));
+        firstCursors.push(first.indicators.at(-1).cursor);
+    }
+    // Up, indent and outdent are impossible; down past the next sibling is not.
+    assert.deepEqual(firstCursors, [null, null, null, 'down']);
+
+    // The second root note can move above the first, or nest under it.
+    const second = harness();
+    second.state.moveDragContext = dragContext({ noteId: 'note-2', startY: 300, lastY: 300 });
+    second.move(event(12, 210));
+    assert.equal(second.indicators.at(-1).cursor, 'up');
+    second.move(event(70, 300));
+    assert.equal(second.indicators.at(-1).cursor, 'indent');
+});
+
+test('overshooting the sibling block moves the note to that end of its siblings', () => {
+    // note-1 is first of two; far below the block means "move to the end".
     const h = harness();
     h.state.moveDragContext = dragContext();
-    const kinds = [];
-    for (const [x, y] of [[12, 40], [12, -20], [60, 12], [-40, 12]]) {
-        h.move(event(x, y));
-        kinds.push(h.indicators.at(-1).cursor);
-    }
-    assert.deepEqual(kinds, ['down', 'up', 'indent', 'outdent']);
+    h.move(event(12, 400));
+    assert.equal(h.indicators.at(-1).cursor, 'down');
+    assert.notEqual(h.indicators.at(-1).drop, null);
+    h.up({ ...event(12, 400), target: undefined });
+    assert.deepEqual(h.actions, ['mouse.drag_reorder_down']);
+
+    // note-2 is last; far above the block means "move to the start".
+    const second = harness();
+    second.state.moveDragContext = dragContext({ noteId: 'note-2', startY: 300, lastY: 300 });
+    second.move(event(12, 150));
+    assert.equal(second.indicators.at(-1).cursor, 'up');
+
+    // Already last: overshooting below changes nothing, so no icon and no move.
+    const last = harness();
+    last.state.moveDragContext = dragContext({ noteId: 'note-2', startY: 300, lastY: 300 });
+    last.move(event(12, 500));
+    assert.equal(last.indicators.at(-1).cursor, null);
+    last.up({ ...event(12, 500), target: undefined });
+    assert.deepEqual(last.actions, []);
 });

@@ -5952,6 +5952,8 @@ body.restore-reconnect-loading * {
     cursor: wait !important;
 }
 
+/* The root element too: below short pages the pointer is over <html>. */
+html:has(> body.note-drag-active),
 body.note-drag-active {
     cursor: grabbing !important;
     -webkit-user-select: none !important;
@@ -6016,46 +6018,30 @@ html[data-theme="dark"] .note-drop-line {
 
 /* While dragging, the cursor names the action: the Move Note to Top arrow for
    up, its mirror for down, and indent/outdent icons. A dark stroke on a white
-   halo reads on both themes; a release that changes nothing turns it grey.
+   halo reads on both themes. Impossible moves keep the plain grabbing hand.
    Generated from the paths in note-drag-indicator-service.js. */
+html:has(> body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up),
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up,
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up * {
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
 }
 
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up.note-drag-cursor-noop,
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-up.note-drag-cursor-noop * {
-    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M12 20V5'/%3E%3Cpath d='M6 11l6-6 6 6'/%3E%3Cpath d='M5 4h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
-}
-
+html:has(> body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down),
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down,
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down * {
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
 }
 
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down.note-drag-cursor-noop,
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-down.note-drag-cursor-noop * {
-    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M12 4v15'/%3E%3Cpath d='M6 13l6 6 6-6'/%3E%3Cpath d='M5 20h14'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
-}
-
+html:has(> body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent),
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent,
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent * {
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
 }
 
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent.note-drag-cursor-noop,
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-indent.note-drag-cursor-noop * {
-    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M4 9l3 3-3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
-}
-
+html:has(> body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent),
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent,
 body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent * {
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3Cg stroke='%23222222' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
-}
-
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent.note-drag-cursor-noop,
-body.note-drag-active.pref-drag-direction-icon.note-drag-cursor-outdent.note-drag-cursor-noop * {
-    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='5'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3Cg stroke='%239a9a9a' stroke-width='2.2'%3E%3Cpath d='M4 5h16'/%3E%3Cpath d='M11 12h9'/%3E%3Cpath d='M4 19h16'/%3E%3Cpath d='M7 9l-3 3 3 3'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing !important;
 }
 
 /* Each indicator has its own preference. */

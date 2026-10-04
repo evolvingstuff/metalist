@@ -680,14 +680,20 @@ function renderMoveDragIndicators(context, pointerTarget) {
     // The ghost moves only along the axis that decides the drop: vertical
     // drags reorder, horizontal drags indent or outdent.
     const horizontal = Math.abs(dx) > Math.abs(dy);
+    const drop = describeDropIndicator(noteElement, resolveMoveDragDrop(context.noteId, dx, dy, context.lastY, pointerTarget), pointerTarget);
+    // Only a possible move gets a direction icon.
+    let cursor = null;
+    if (drop !== null) {
+        cursor = DRAG_DIRECTION_ICONS[resolveDragDirection(dx, dy)];
+    }
     renderNoteDragIndicators({
         ghost: {
             rect: context.ghostRect,
             offsetX: horizontal ? clamp(dx, context.ghostRect.minOffsetX, context.ghostRect.maxOffsetX) : 0,
             offsetY: horizontal ? 0 : clamp(dy, context.ghostRect.minOffsetY, context.ghostRect.maxOffsetY),
         },
-        drop: describeDropIndicator(noteElement, resolveMoveDragDrop(context.noteId, dx, dy, context.lastY, pointerTarget), pointerTarget),
-        cursor: DRAG_DIRECTION_ICONS[resolveDragDirection(dx, dy)],
+        drop,
+        cursor,
     });
 }
 
@@ -741,7 +747,20 @@ function resolveMoveDragDrop(noteId, dx, dy, clientY, pointerTarget) {
     }
     const direction = resolveDragDirection(dx, dy);
     if (direction === 'up' || direction === 'down') {
-        const destination = resolveVerticalMoveDestination(noteId, clientY, direction, pointerTarget);
+        // Reordering stays among siblings. Overshooting the block means "to that
+        // end": the pointer is clamped to the first sibling's top or the lowest
+        // sibling's bottom, where the ghost also stops.
+        const siblings = getDirectSiblingNotes(DOMUtils.getNoteById(noteId));
+        const blockTop = siblings[0].getBoundingClientRect().top;
+        const blockBottom = siblings[siblings.length - 1].getBoundingClientRect().bottom;
+        let dropY = clientY;
+        let dropTarget = pointerTarget;
+        if (clientY < blockTop || clientY > blockBottom) {
+            dropY = clamp(clientY, blockTop, blockBottom);
+            // Outside the block the pointer is over no sibling.
+            dropTarget = null;
+        }
+        const destination = resolveVerticalMoveDestination(noteId, dropY, direction, dropTarget);
         if (!destination) {
             return null;
         }
