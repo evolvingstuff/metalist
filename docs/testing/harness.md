@@ -119,6 +119,10 @@ See `docs/design/ontology-rules-v1.md`.
 
 The browser smoke waits for `data-app-ready`, verifies rendered edit/undo results and sibling move/delete/undo ordering after reload, uploads/downloads an attachment, creates a password, logs in, creates and restores an encrypted backup, observes the actual server restart, reauthenticates, verifies restored content and the unchanged archive hash, then logs out. HTTPS streaming has a separate deterministic real-TLS test in `test_phase_two_http.py`; the browser suite requires no AI provider.
 
+### Exit-edit scroll regressions
+
+`scripts/browser-scroll-regressions.mjs` builds a long note between short ones and checks that leaving edit mode with Escape keeps your place: the paragraph at the caret (sampled on every frame, so a one-frame jump fails) or at the reading line stays at the same height; a collapsed note, with or without an edit, shows collapsed again just below the search controls; the same holds in a content-volume sorted tab; and clicking another note while editing keeps the clicked paragraph under the pointer. All cases run and failures are reported together. Fixtures delete their notes afterwards. Run just these cases with `BROWSER_TEST_SUITE=exit-edit-scroll npm run test:browser`.
+
 ### Writing-assistant correction regressions
 
 `scripts/browser-writing-assistant-regressions.mjs` uses simulated Grammarly hosts with light DOM, open/closed shadow roots, pointer and keyboard activation. It verifies that corrections preserve the edit session and formatting, then persist through an ordinary outside click and reload. A separate case changes editor text without dispatching `input`, exits with Escape, and verifies storage after reload. Fixtures delete their notes so subsequent ordering tests remain independent. These tests do not install Grammarly or prove compatibility with a particular Grammarly release.

@@ -98,6 +98,18 @@ export async function actionRefreshAndMaybeSelect(options) {
     const requireExecution = options.requireExecution === true;
     const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
     const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
+    // A caller that knows which note the user is looking at (e.g. the note
+    // just left in edit mode) holds that note instead of the top visible root.
+    let viewportHold = null;
+    if (Object.prototype.hasOwnProperty.call(options, 'viewportHold')) {
+        viewportHold = options.viewportHold;
+        if (viewportHold === null || typeof viewportHold !== 'object') {
+            throw new Error('actionRefreshAndMaybeSelect viewportHold must be a viewport hold reference');
+        }
+        if (scrollToTopAfterRender) {
+            throw new Error('actionRefreshAndMaybeSelect cannot both hold a note and scroll to top');
+        }
+    }
     const animateNoteChanges = options.animateNoteChanges !== false;
 
     if (moduleState.viewRequestInFlight) {
@@ -179,7 +191,12 @@ export async function actionRefreshAndMaybeSelect(options) {
         const renderStartedAt = performance.now();
         // Roots entering or leaving the band above the viewport must not move
         // what the user is reading. A render that ends at the top needs no hold.
-        const viewportRoot = scrollToTopAfterRender ? null : captureViewportRoot();
+        let viewportRoot = null;
+        if (viewportHold !== null) {
+            viewportRoot = viewportHold;
+        } else if (!scrollToTopAfterRender) {
+            viewportRoot = captureViewportRoot();
+        }
         const diffResult = applyDifferentialView(snapshot, { previousHashes, animateNoteChanges });
         const notesContainer = diffResult.notesContainer;
         if (!notesContainer) {

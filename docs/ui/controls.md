@@ -5,7 +5,7 @@
 ### When Editing a Note
 | Shortcut | Action |
 |----------|--------|
-| `Esc` | Exit edit mode for current note |
+| `Esc` | Exit edit mode for current note. You keep your place: the text at the caret (if it is on screen), otherwise the line you were reading about a third of the way down, stays at the same height once the note renders, with no visible jump. A collapsed note shows collapsed again and stays in view (just below the search bar if it would otherwise be above it). |
 | `Tab` | Toggle focus between note content and tag bar (restores cursor position) |
 | `⌘ + Enter` | Add new sibling note below current note |
 | `⇧ + ⌘ + Enter` | Add new child note under current note |

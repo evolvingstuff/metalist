@@ -27,7 +27,8 @@ function getViewportReferenceY(anchorBias) {
     throw new Error(`Unsupported anchorBias: ${anchorBias}`);
 }
 
-function getViewportTopInset() {
+// Top of the usable viewport: just below the sticky search controls.
+export function getViewportTopInset() {
     const controls = document.querySelector('.controls');
     if (!controls) {
         return 0;

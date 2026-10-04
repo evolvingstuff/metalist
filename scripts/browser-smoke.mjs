@@ -21,6 +21,7 @@ import {checkFloatingNotes} from './browser-floating-note-regressions.mjs';
 import {checkAiHistoryExport} from './browser-ai-history-regressions.mjs';
 import {checkOpenAiSettings} from './browser-ai-settings-regressions.mjs';
 import {checkWritingAssistantCorrections} from './browser-writing-assistant-regressions.mjs';
+import {checkExitEditScroll} from './browser-scroll-regressions.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
 const probe = createServer();
@@ -66,7 +67,7 @@ try {
   });
   page.on('requestfailed', request => browserDiagnostics.push(`${new Date().toISOString()} failed ${request.url()} ${request.failure()?.errorText}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu'].includes(process.env.BROWSER_TEST_SUITE)) {
+  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -101,12 +102,17 @@ try {
     await checkWritingAssistantCorrections(page);
     assert.deepEqual(errors, []);
     console.log(`PASS writing-assistant regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'exit-edit-scroll') {
+    await checkExitEditScroll(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS exit-edit scroll regressions in ${await browser.version()}`);
   } else {
   assert(process.env.BROWSER_TEST_SUITE === undefined, 'Unknown BROWSER_TEST_SUITE');
   await checkAppUpdates(page, updateFixture);
   await checkOpenAiSettings(page);
   await checkAiHistoryExport(page);
   await checkWritingAssistantCorrections(page);
+  await checkExitEditScroll(page);
   await page.waitForNetworkIdle({idleTime:500});
   // Exercise initial document mouse movement, including stationary axes and
   // duplicate browser observations that must not become duplicate state writes.

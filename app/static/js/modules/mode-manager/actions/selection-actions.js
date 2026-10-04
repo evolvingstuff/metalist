@@ -8,6 +8,7 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
+import { captureNoteAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
 import {
     recordNoteInteractionIfNew,
 } from '../services/search-interaction-service.js';
@@ -101,7 +102,13 @@ export async function actionDeselectNote() {
     }
 
     const noteElement = getNoteElementIfPresent(noteId);
+    let viewportHold = null;
     if (noteElement !== null) {
+        // Keep the user's place (the caret, or the line being read) through
+        // everything leaving edit mode changes: re-collapsing, the tag bar
+        // closing, and the note re-rendering for viewing.
+        viewportHold = captureNoteAnchor(noteElement);
+        holdViewportRoot(viewportHold);
         await actionSaveNote(noteId);
         restoreCollapsedStateLocallyIfNeeded(noteElement);
     } else {
@@ -113,7 +120,11 @@ export async function actionDeselectNote() {
 
     clearSelectionStateForDeselect(ModeContext);
 
-    await actionRefreshAndMaybeSelect({startedAt: startedAt, requireExecution: true});
+    const refreshOptions = {startedAt: startedAt, requireExecution: true};
+    if (viewportHold !== null) {
+        refreshOptions.viewportHold = viewportHold;
+    }
+    await actionRefreshAndMaybeSelect(refreshOptions);
 
     ModeContext.validate();
 }
@@ -212,6 +223,17 @@ export async function actionSwitchNotes(newNoteId, options) {
         return;
 	    }
 
+    // Keep the clicked note (and so the clicked text) under the pointer while
+    // the note being left saves, closes its tag bar, and re-renders above it.
+    const clickedNoteElement = getNoteElementIfPresent(newNoteId);
+    let viewportHold = null;
+    if (clickedNoteElement !== null) {
+        viewportHold = {
+            kind: 'top', noteId: newNoteId, top: clickedNoteElement.getBoundingClientRect().top, keepVisible: false,
+        };
+        holdViewportRoot(viewportHold);
+    }
+
         await actionSaveNote(currentNoteId);
         await recordNoteInteractionIfNew(newNoteId, 'edit');
 
@@ -234,7 +256,11 @@ export async function actionSwitchNotes(newNoteId, options) {
 
     applyInitialCaretVisibility(initialCaretVisibility);
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
+    const refreshOptions = {startedAt: startedAt};
+    if (viewportHold !== null) {
+        refreshOptions.viewportHold = viewportHold;
+    }
+    const newContent = await actionRefreshAndMaybeSelect(refreshOptions);
     
     ModeContext.setCurrentContent(newContent);
   
