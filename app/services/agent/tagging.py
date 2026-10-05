@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,16 +13,6 @@ from app.services.tag_ontology import is_valid_tag_token
 
 TAGGING_POLICY_KEY = "pref.ai.tagging.vocabulary"
 TAGGING_FOCUS_KEY = "pref.ai.tagging.focus"
-
-
-class TagOperationIntent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    action: Literal["generate", "accept", "remove", "clarify"]
-    scope: Literal["current", "namespace"]
-    focus: Literal["existing", "new", "both", "unspecified"] = Field(
-        ..., description="Always use unspecified. The application asks the user to choose the generation focus through its structured UI.")
-    tag_filter: str = Field(..., max_length=256, description="Exact tag for accept/remove; empty means all proposals.")
-    explanation: str = Field(..., max_length=2000)
 
 
 class NoteTagProposal(BaseModel):

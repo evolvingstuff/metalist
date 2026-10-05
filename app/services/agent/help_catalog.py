@@ -1,12 +1,8 @@
-"""Small routing catalog; detailed product knowledge is loaded only after selection."""
+"""Help topics and the menu catalog; detailed product knowledge lives in the help skills."""
 
 import json
 from importlib.resources import files
 from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-from app.services.agent.markdown_validation import validate_balanced_markdown_fences
 
 
 HELP_TOPICS = {
@@ -26,21 +22,3 @@ HelpTopic = Literal[tuple(HELP_TOPICS)]
 MENU_ACTIONS = json.loads(files('app').joinpath('static/config/agent-menu-actions.json').read_text(encoding='utf-8'))
 assert len({entry['id'] for entry in MENU_ACTIONS}) == len(MENU_ACTIONS)
 MENU_BY_ID = {entry['id']: entry for entry in MENU_ACTIONS}
-MenuId = Literal[('none', *MENU_BY_ID)]
-
-
-class MetaListHelpResponse(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-
-    answer: str = Field(..., min_length=1, max_length=24000)
-    menu_id: MenuId = Field(..., description='One supported menu destination to open, or none. Palette entries are highlighted only; opening never executes them.')
-
-    @field_validator('answer')
-    @classmethod
-    def reject_blank_answer(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError('Help answer must not be blank')
-        return validate_balanced_markdown_fences(value)
-
-
-HELP_RESPONSE_INSTRUCTION = files('app.services.agent.prompts').joinpath('help-response.md').read_text(encoding='utf-8').rstrip('\n')

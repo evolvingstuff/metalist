@@ -4,8 +4,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.services.agent.help_catalog import HelpTopic
-
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -82,34 +80,6 @@ class UnavailableSelectionFixture(StrictModel):
     reason: Literal["blacklisted", "not_whitelisted", "password_protected", "search_redacted", "not_found", "unspecified"]
 
 
-class RouteContext(StrictModel):
-    stage: Literal["route"]
-    scope: ScopeFixture
-    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
-
-
-class HelpContext(StrictModel):
-    stage: Literal["help"]
-    topics: list[HelpTopic] = Field(min_length=1)
-
-
-class RespondContext(StrictModel):
-    stage: Literal["respond"]
-    scope: ScopeFixture
-    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
-    basis: str = Field(min_length=1)
-
-
-class InvestigationContext(StrictModel):
-    stage: Literal["investigation"]
-    scope: ScopeFixture
-    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
-    basis: str = Field(min_length=1)
-    result_trees: list[dict]
-    evidence_note_ids: list[str]
-    result_tree_ids: list[str]
-
-
 class SummaryBatchContext(StrictModel):
     stage: Literal["summary_batch"]
     scope: ScopeFixture
@@ -131,49 +101,6 @@ class SummaryFinalContext(StrictModel):
     scope: ScopeFixture
     selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
     summaries: list[dict] = Field(min_length=1)
-
-
-class WebEvidenceFixture(StrictModel):
-    evidence_id: str = Field(min_length=1)
-    requested_url: str = Field(min_length=1)
-    final_url: str = Field(min_length=1)
-    title: str
-    content_text: str = Field(min_length=1)
-    fetched_at: str = Field(min_length=1)
-    truncated: bool
-    outgoing_references: list["WebCitationReferenceFixture"]
-
-
-class WebCitationReferenceFixture(StrictModel):
-    evidence_id: str = Field(min_length=1)
-    final_url: str = Field(min_length=1)
-    title: str
-    source_kind: Literal["page_link"]
-    source_page_evidence_id: str = Field(min_length=1)
-
-
-class WebToolExchangeFixture(StrictModel):
-    action_name: Literal["open_web_pages"]
-    action_payload: dict
-    result_payload: dict
-
-
-class WebActionContext(StrictModel):
-    stage: Literal["web_action"]
-    mode: Literal["contextual", "full"]
-    scope: ScopeFixture
-    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
-    retained_web_evidence: list[WebEvidenceFixture]
-    tool_exchanges: list[WebToolExchangeFixture]
-
-
-class WebRespondContext(StrictModel):
-    stage: Literal["web_respond"]
-    mode: Literal["contextual", "full"]
-    scope: ScopeFixture
-    selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
-    basis: str = Field(min_length=1)
-    web_evidence: list[WebEvidenceFixture] = Field(min_length=1)
 
 
 class Criterion(StrictModel):
@@ -202,9 +129,7 @@ class OutputExpectation(StrictModel):
 class Step(StrictModel):
     conversation: list[ConversationMessage | PreviousOutput] = Field(min_length=1)
     context: Annotated[
-        RouteContext | HelpContext | RespondContext | InvestigationContext
-        | SummaryBatchContext | SummaryFinalContext
-        | WebActionContext | WebRespondContext,
+        SummaryBatchContext | SummaryFinalContext,
         Field(discriminator="stage"),
     ]
     max_output_tokens: int = Field(ge=0)
@@ -214,9 +139,7 @@ class Step(StrictModel):
     def validate_contract(self):
         if self.conversation[-1].role != "user":
             raise ValueError("Conversation must end with the current user request")
-        is_structured = self.context.stage in {
-            "route", "help", "web_action", "summary_batch",
-        }
+        is_structured = self.context.stage == "summary_batch"
         if is_structured != (self.max_output_tokens == 0):
             raise ValueError("Structured steps use zero; text steps require a positive output limit")
         if self.expectation.kind == "action" and not is_structured:

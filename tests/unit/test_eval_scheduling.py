@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.agent.actions import ScopedRouteEnvelope
+from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.history import record_structured_call
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def arguments(prefix, suffix):
     return {"model": "gpt-5.6-luna", "thinking_level": "off",
         "messages": [{"role": "system", "content": prefix}, {"role": "user", "content": suffix}],
-        "response_model": ScopedRouteEnvelope}
+        "response_model": SummaryFindingsResult}
 
 
 def test_prefix_grouping_tracks_instructions_schema_and_model_but_not_scenario_suffix():
@@ -143,8 +143,14 @@ def test_cancelled_stream_releases_prefix_lock_and_closes_provider():
     asyncio.run(check())
 
 
+# A reply that satisfies the summary batch step's expectation.
+_FINDINGS = json.dumps({"findings": [{"text": "Both notes agree.", "supporting_note_ids": ["note-a", "note-b"]}]})
+
+
 def fixture_cases():
-    source = RegressionCase.model_validate_json((ROOT / "evals/cases/actions/hello.json").read_text())
+    """Single-step summary batch cases (structured, no judge needed) with distinct requests."""
+    complete = json.loads((ROOT / "evals/cases/staged-summary/complete-scope.json").read_text())
+    source = RegressionCase.model_validate(complete | {"steps": complete["steps"][:1]})
     cases = []
     for index in range(4):
         case = source.model_copy(deep=True)
@@ -163,7 +169,9 @@ def test_parallel_suite_keeps_trials_and_history_isolated_in_input_order():
             request = payload["current_user_request"]
             calls.append(request)
             await asyncio.sleep(0)
-            return SimpleNamespace(content=json.dumps({"kind": "respond", "reason": request}), thinking="", usage={})
+            # Echo the request so each trial's output can be traced back to its own case.
+            findings = {"findings": [{"text": request, "supporting_note_ids": ["note-a", "note-b"]}]}
+            return SimpleNamespace(content=json.dumps(findings), thinking="", usage={})
     cases = fixture_cases()
     outcomes, finished = [], []
     reports = asyncio.run(run_cases(cases, prepared_cases=[prepare_case(c) for c in cases],
@@ -177,7 +185,7 @@ def test_parallel_suite_keeps_trials_and_history_isolated_in_input_order():
         assert report["counts"] == {"correct": 5, "incorrect": 0, "error": 0}
         assert [o["repetition"] for o in report["outcomes"]] == [1, 2, 3, 4, 5]
         for outcome in report["outcomes"]:
-            assert json.loads(outcome["outputs"][0])["reason"] == f"request-{index}"
+            assert json.loads(outcome["outputs"][0])["findings"][0]["text"] == f"request-{index}"
             assert len(outcome["pairs"]) == 1
             captured = outcome["pairs"][0][0]["invocation"]["messages"]
             assert json.loads(captured[-1]["content"].split("\n", 1)[1])["current_user_request"] == f"request-{index}"
@@ -217,7 +225,7 @@ def test_cli_defaults_save_all_trials_and_actual_cached_usage(tmp_path, monkeypa
             await asyncio.sleep(0)
             self.costs.record(model=kwargs["model"], usage=OpenAITokenUsage(
                 prompt_tokens=2000, output_tokens=10, total_tokens=2010, cached_input_tokens=1500, cache_write_tokens=0))
-            return SimpleNamespace(content='{"kind":"respond","reason":"fixture"}')
+            return SimpleNamespace(content=_FINDINGS)
 
     paths = []
     for case in fixture_cases():

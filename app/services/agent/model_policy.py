@@ -6,8 +6,6 @@ from enum import Enum
 
 
 class InferencePurpose(str, Enum):
-    ACTION_SELECTION = "action-selection"
-    SEARCH_QUERY = "search-query"
     FINAL_RESPONSE = "final-response"
     SUMMARY_BATCH = "summary-batch"
     AGENT_TURN = "agent-turn"

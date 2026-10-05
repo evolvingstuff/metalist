@@ -22,6 +22,7 @@ application-level baseline (218/240 correct, 15 incorrect, 7 validation errors).
 | [tagging-help](tagging-help.json) | `metalist_help` | Asking how proposals work is not permission to generate them. |
 | [hypothetical-accept](hypothetical-accept.json) | `metalist_help` | A hypothetical acceptance question must not mutate proposals. |
 | [quoted-command](quoted-command.json) | `metalist_help` | An imperative inside quoted text is material to explain, not execute. |
+| [reported-release-features-question](reported-release-features-question.json) | `metalist_help` | A user-reported release question (asking for the GitHub changelog) is product help and must produce a valid route at High thinking. |
 | [acknowledge-correction](acknowledge-correction.json) | `respond` | A correction asking for acknowledgment does not require fresh evidence. |
 | [rewrite-conversation](rewrite-conversation.json) | `respond` | Rewriting an answer already present in history needs no investigation. |
 | [past-operation-count](past-operation-count.json) | `respond` | A count cannot establish which tags were changed; no new operation is authorized. |

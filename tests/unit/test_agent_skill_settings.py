@@ -4,16 +4,13 @@ from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skill_settings import validate_agent_skill_content
 
 
-def test_packaged_skill_describes_one_direct_evidence_payload() -> None:
-    skill = DEFAULT_AGENT_SKILLS.for_action("investigate_current_scope")
-    normalized = " ".join(skill.content.split())
-
-    assert "one authoritative evidence payload" in normalized
-    assert "full agent-visible content" in normalized
-    assert "longest leading prefix of complete result trees" in normalized
-    assert "[[note_id]]" in normalized
-    assert "working summary" not in normalized.casefold()
-    assert "next page" not in normalized.casefold()
+def test_packaged_skills_are_the_ones_the_agent_uses() -> None:
+    actions = [skill.trigger_action for skill in DEFAULT_AGENT_SKILLS.skills]
+    assert actions[:3] == ["summarize_current_scope", "tag_proposals", "web_browsing"]
+    assert all(action.startswith("help_") for action in actions[3:])
+    # The single-payload investigation skill went away with up-front routing.
+    with pytest.raises(KeyError):
+        DEFAULT_AGENT_SKILLS.for_action("investigate_current_scope")
 
 
 def test_skill_content_must_not_be_blank() -> None:

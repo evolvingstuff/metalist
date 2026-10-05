@@ -1,4 +1,4 @@
-"""Explicit CLI: python -m evals {from-export,run,compare}."""
+"""Explicit CLI: python -m evals {run,compare}."""
 
 import argparse
 import asyncio
@@ -11,7 +11,6 @@ from app.services.agent.openai_inference import OpenAIInferenceAdapter, validate
 from evals.models import JudgeConfig, RegressionCase
 from evals.runner import REPETITIONS, prepare_case
 from evals.scheduling import CONCURRENCY, run_cases
-from evals.scenarios import scenario_from_invocation
 from evals.selection import build_coverage, load_coverage, plan_selection
 
 
@@ -19,30 +18,6 @@ def write_new(path: Path, payload) -> None:
     with path.open("x", encoding="utf-8") as output:
         json.dump(payload, output, indent=2)
         output.write("\n")
-
-
-def from_export(arguments):
-    history = json.loads(arguments.history.read_text(encoding="utf-8"))
-    pair = history[arguments.pair]
-    request, _response = pair
-    if request["schema_version"] != 1:
-        raise ValueError("Unsupported export version")
-    invocation = request["invocation"]
-    # lint: allow-PY004 rationale="choose the editable case expectation shape by call kind"
-    expectation = ({"kind": "action", "alternatives": [{"REPLACE_WITH_EXPECTED_FIELD": "EXPECTED_VALUE"}]}
-                   if invocation["kind"] == "structured" else
-                   {"kind": "output", "criteria": [{"id": "correct", "instruction": "REPLACE_WITH_EXPECTED_BEHAVIOR"}],
-                    "reference_facts": ""})
-    case = RegressionCase.model_validate({
-        "schema_version": 2, "id": arguments.output.stem,
-        "description": "Describe this failure and the intended behavior.",
-        "reviewed": False, "model": invocation["model"],
-        "thinking_level": invocation["thinking_level"],
-        "steps": [scenario_from_invocation(invocation, expectation).model_dump()],
-        "provenance": {"export_pair_index": arguments.pair, "recorded_pair": pair},
-    })
-    write_new(arguments.output, case.model_dump())
-    print(f"Created {arguments.output}; set expectations and reviewed=true before running.")
 
 
 async def run(arguments):
@@ -153,10 +128,6 @@ def compare(arguments):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    extract = commands.add_parser("from-export")
-    extract.add_argument("history", type=Path)
-    extract.add_argument("--pair", type=int, required=True, help="Zero-based exported pair index")
-    extract.add_argument("--output", type=Path, required=True)
     execute = commands.add_parser("run")
     execute.add_argument("--repetitions", type=int, default=REPETITIONS, help="Independent trials per case (default: 5)")
     execute.add_argument("--concurrency", type=int, default=CONCURRENCY,
@@ -171,11 +142,7 @@ def main():
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("candidate", type=Path)
     arguments = parser.parse_args()
-    if arguments.command == "from-export":
-        if arguments.pair < 0:
-            parser.error("--pair must be nonnegative")
-        from_export(arguments)
-    elif arguments.command == "run":
+    if arguments.command == "run":
         asyncio.run(run(arguments))
     else:
         compare(arguments)

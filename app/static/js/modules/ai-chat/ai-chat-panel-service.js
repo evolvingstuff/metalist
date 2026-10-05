@@ -126,15 +126,10 @@ export function collapseCompletedActivityPairs(activities) {
             && previousAttempt === currentAttempt
             && ['model_request', 'validation'].includes(previous.action)
             && ['model_request', 'validation'].includes(activity.action);
-        const beginsPlannedModelRequest = previous
-            && previous.action === 'planning'
-            && previous.status === 'started'
-            && ['model_request', 'validation'].includes(activity.action);
         if (
             completesPrevious
             || updatesPreviousStartedLifecycle
             || advancesSameModelAttempt
-            || beginsPlannedModelRequest
         ) {
             displayedActivities[displayedActivities.length - 1] = activity;
         } else {

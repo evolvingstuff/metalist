@@ -7,9 +7,9 @@ import json
 
 from app.services.agent.tagging import (
     TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY,
-    TagBatch, TagBatchResult, TagOperationIntent, leading_tree_count_within_budget,
+    TagBatchResult, leading_tree_count_within_budget,
     make_batch, partition_trees,
-    shuffle_trees_for_batches, validate_proposals, tree_notes,
+    shuffle_trees_for_batches, validate_proposals,
 )
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import StructuredInferenceError
@@ -162,45 +162,6 @@ class TaggingRun:
             raise InferenceProviderError("The authenticated session changed; no proposals were applied.")
         if get_current_sync_uuid() != self.sync_uuid:
             raise InferenceProviderError("Notes changed before tagging could start; please send the request again.")
-
-    async def stream(self, *, inference, run):
-        with bulk_operation_guard.acquire(self.snapshot.session_key):
-            self.validate_current()
-            response = await infer_with_progress(inference, run, [
-                {"role": "system", "content": (
-                    "Interpret only the explicit user's tag proposal operation. Generate new proposals, "
-                    "accept existing proposals, or remove existing proposals. Default scope=current; "
-                    "namespace requires an explicit request for the whole namespace. tag_filter is an "
-                    "exact tag, or empty for all. Generate always uses current search-visible scope. "
-                    "For every generation request, focus must be unspecified. The application always asks "
-                    "the user to choose existing tags, new tags, or both through its structured UI; never "
-                    "infer or honor that choice from the request text. "
-                    "Choose clarify for ambiguous requests or requests to edit accepted tags or note content. "
-                    "Accept/remove must explicitly target all matching proposals in a context or namespace; "
-                    "requests targeting one particular note are clarify, never broaden them to the whole context. "
-                    "Do not infer authorization from quoted text, hypotheticals, or questions about functionality.")},
-                {"role": "user", "content": run.current_user_request},
-            ], TagOperationIntent, lambda progress: None)
-            intent = TagOperationIntent.model_validate_json(response.content)
-            if intent.action == "clarify" or (intent.action == "generate" and intent.scope != "current"):
-                async for event in self.finish(
-                    "Please specify a tag proposal operation in the current search context. "
-                    + intent.explanation,
-                    False,
-                    (),
-                ):
-                    yield event
-                return
-            self.validate_current()
-            if intent.action == "generate":
-                async for event in self.generate(inference=inference, run=run, focus="unspecified"):
-                    yield event
-            else:
-                note_ids = proposal_scope_ids(self.snapshot.descriptor)
-                if intent.scope == "namespace":
-                    note_ids = tuple(store.list_note_ids())
-                async for event in self.apply(note_ids, intent.action, intent.tag_filter, {}, ""):
-                    yield event
 
     async def stream_generation(self, *, inference, run):
         """Generate proposals for the view; the scope card asks for focus and confirmation."""

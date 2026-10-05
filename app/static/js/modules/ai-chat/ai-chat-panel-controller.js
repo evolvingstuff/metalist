@@ -143,7 +143,6 @@ export function captureActiveAgentScope() {
 
 
 const AI_ACTIVITY_ACTIONS = new Set([
-    'planning',
     'model_request',
     'validation',
     'retry',
@@ -153,21 +152,9 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'provider_runtime',
     'model_context',
     'scope',
-    'investigate_current_scope',
-    'summarize_current_scope',
-    'tag_proposals',
-    'metalist_help',
-    'evidence_selection',
-    'investigation_step',
     'investigation_evidence',
-    'investigation_facets',
-    'investigation_refinement',
     'investigation_sources',
     'evidence_root_prefix',
-    'context_narrowing',
-    'context_narrowing_plan',
-    'context_narrowing_test',
-    'web_planning',
     'open_web_pages',
     // Tool-using agent (agent_loop.py).
     'agent_turn',

@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
-from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL, load_skill
+from app.services.agent.skills import load_skill
 from app.services.agent.help_catalog import HELP_TOPICS
 
 
-SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v7"
 WEB_BROWSING_SKILL_ID = "web_browsing_v1"
 STAGED_SUMMARY_SKILL_ID = "staged_summary_v1"
 TAG_PROPOSALS_SKILL_ID = "tag_proposals_v1"
@@ -101,16 +100,6 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
             ),
             trigger_action="summarize_current_scope",
             content=load_skill("staged-summary.md"),
-        ),
-        AgentSkill(
-            skill_id=SCOPED_INVESTIGATION_SKILL_ID,
-            title="Investigate current scope",
-            description=(
-                "Answers directly from one ordered, token-bounded evidence payload "
-                "inside the frozen active MetaList result scope."
-            ),
-            trigger_action="investigate_current_scope",
-            content=SCOPED_INVESTIGATION_SKILL,
         ),
         AgentSkill(
             skill_id=TAG_PROPOSALS_SKILL_ID,

@@ -1,11 +1,11 @@
 import pytest
 
-from app.services.agent.actions import ContextualWebActionEnvelope
-from app.services.agent.actions import ScopedRouteEnvelope
 from app.services.agent.failure_explanations import FailureSetup
 from app.services.agent.failure_explanations import explain_structured_failure
-from app.services.agent.help_catalog import MetaListHelpResponse
 from app.services.agent.inference import InferenceAttempt
+from app.services.agent.staged_summary import SummaryBatchResult
+from app.services.agent.staged_summary import SummaryFindingsResult
+from app.services.agent.tagging import TagBatchResult
 
 
 _SETUP = FailureSetup(model="gpt-5.6-terra", thinking_level="medium", web_mode="none")
@@ -31,24 +31,24 @@ def _rejected_attempt(*, content: str, validation_errors: tuple[dict[str, str], 
             "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
             "usage": {"completion_tokens": 120, "completion_tokens_details": {"reasoning_tokens": 64}},
         },
-        error="ValidationError: 1 validation error for ScopedRouteEnvelope",
+        error="ValidationError: 1 validation error for SummaryBatchResult",
         duration_ms=1_500.0,
         validation_errors=validation_errors,
     )
 
 
-def test_a_routing_step_cut_off_by_thinking_is_explained_in_plain_words() -> None:
+def test_a_step_cut_off_by_thinking_is_explained_in_plain_words() -> None:
     message = explain_structured_failure(
-        response_model=ScopedRouteEnvelope,
+        response_model=SummaryFindingsResult,
         attempts=[
             _cut_off_attempt(limit=512, reasoning=512, content=""),
-            _cut_off_attempt(limit=512, reasoning=498, content='{"kind":"metal'),
+            _cut_off_attempt(limit=512, reasoning=498, content='{"findings":[{"te'),
         ],
         setup=_SETUP,
     )
 
     # Which step failed, what happened on each attempt, the setup, and what to try.
-    assert "deciding how to handle your request" in message
+    assert "summarizing your notes" in message
     assert "Attempt 1: the reply was cut off at the 512-token output limit; all 512 tokens went to thinking, so no answer was written." in message
     assert "Attempt 2: the reply was cut off at the 512-token output limit after 498 tokens of thinking, before the answer was complete." in message
     assert "Setup: gpt-5.6-terra, Medium thinking, web access off." in message
@@ -58,46 +58,34 @@ def test_a_routing_step_cut_off_by_thinking_is_explained_in_plain_words() -> Non
     assert not message.startswith("Open Agent Debug")
 
 
-def test_a_rejected_route_shows_what_the_model_chose_and_which_rule_it_broke() -> None:
+def test_a_rejected_reply_shows_what_the_model_chose_and_which_rule_it_broke() -> None:
     message = explain_structured_failure(
-        response_model=ScopedRouteEnvelope,
+        response_model=SummaryBatchResult,
         attempts=[
             _rejected_attempt(
-                content='{"kind":"respond","help_topics":["data"],"reason":"Needs the GitHub changelog"}',
-                validation_errors=({"field": "", "kind": "value_error",
-                                    "problem": "Only metalist_help requires nonempty help_topics", "value": ""},),
+                content='{"covered_root_ids":[],"findings":[]}',
+                validation_errors=({"field": "covered_root_ids", "kind": "too_short",
+                                    "problem": "List should have at least 1 item after validation, not 0", "value": ""},),
             ),
             _rejected_attempt(
-                content='{"kind":"metalist_help","help_topics":["release_notes"],"reason":"Product question"}',
-                validation_errors=({"field": "help_topics.0", "kind": "literal_error",
-                                    "problem": "Input should be 'notes', 'search', 'tags'", "value": "release_notes"},),
+                content='{"covered_root_ids":["root-9"],"findings":[]}',
+                validation_errors=({"field": "", "kind": "value_error",
+                                    "problem": "Covered roots must match the batch", "value": ""},),
             ),
         ],
         setup=_SETUP,
     )
 
-    assert ("Attempt 1: the answer did not match the required format: Only metalist_help requires nonempty help_topics. "
-            "It chose: kind=respond, help_topics=[data].") in message
-    assert ("Attempt 2: the answer did not match the required format: help_topics.0 was 'release_notes', "
-            "which is not one of the allowed values. It chose: kind=metalist_help, help_topics=[release_notes].") in message
+    assert ("Attempt 1: the answer did not match the required format: covered_root_ids: List should have at "
+            "least 1 item after validation, not 0. It chose: covered_root_ids=[], findings=[].") in message
+    assert ("Attempt 2: the answer did not match the required format: Covered roots must match the batch. "
+            "It chose: covered_root_ids=[root-9], findings=[].") in message
     assert "rephrase" in message
 
 
 def test_other_steps_and_setups_are_named() -> None:
-    web_message = explain_structured_failure(
-        response_model=ContextualWebActionEnvelope,
-        attempts=[_rejected_attempt(
-            content='{"kind":"open_web_pages","urls":[],"reason":"Look it up"}',
-            validation_errors=({"field": "", "kind": "value_error",
-                                "problem": "open_web_pages requires at least one URL", "value": ""},),
-        )],
-        setup=FailureSetup(model="gpt-5.6-sol", thinking_level="high", web_mode="full"),
-    )
-    assert "choosing which web pages to open" in web_message
-    assert "Setup: gpt-5.6-sol, High thinking, full web access." in web_message
-
-    help_message = explain_structured_failure(
-        response_model=MetaListHelpResponse,
+    tag_message = explain_structured_failure(
+        response_model=TagBatchResult,
         attempts=[InferenceAttempt(
             request={"max_completion_tokens": 8192},
             response={"choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}]},
@@ -105,11 +93,11 @@ def test_other_steps_and_setups_are_named() -> None:
             duration_ms=900.0,
             validation_errors=(),
         )],
-        setup=FailureSetup(model="gpt-5.6-luna", thinking_level="off", web_mode="contextual"),
+        setup=FailureSetup(model="gpt-5.6-sol", thinking_level="high", web_mode="full"),
     )
-    assert "answering from MetaList's built-in help" in help_message
-    assert "Attempt 1: the reply was empty." in help_message
-    assert "Setup: gpt-5.6-luna, thinking off, contextual web access." in help_message
+    assert "proposing tags" in tag_message
+    assert "Setup: gpt-5.6-sol, High thinking, full web access." in tag_message
+    assert "Attempt 1: the reply was empty." in tag_message
 
 
 def test_an_unknown_step_fails_loudly() -> None:

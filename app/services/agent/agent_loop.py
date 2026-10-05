@@ -13,7 +13,6 @@ status helpers; it adds no state of its own.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections.abc import AsyncIterator
 from contextlib import aclosing
@@ -118,6 +117,14 @@ class AgentLoopMixin:
         if frozen_scope.session_key != run.session_key:
             raise RuntimeError("Frozen scope belongs to another session")
         snapshot = frozen_scope
+        if snapshot.selected_note.status == "available" and (
+            estimate_input_tokens(snapshot.selected_note.as_payload())
+            > run.retrieval_settings.max_page_approximate_tokens
+        ):
+            raise AgentExecutionError(
+                "The note you are editing, with its whole tree, is larger than the evidence limit "
+                "in AI Agent Settings, so it was not sent. Raise the limit or select a smaller note."
+            )
         capabilities = build_web_url_capabilities(
             canonical_messages=canonical_messages, selected_note=snapshot.selected_note,
             investigation_evidence=None,
@@ -395,11 +402,11 @@ class AgentLoopMixin:
             selected_note_tokens = 0
             if snapshot.selected_note.status == "available":
                 selected_note_tokens = estimate_input_tokens(snapshot.selected_note.as_payload())
-            events = self._stream_scope_evidence_answer(
+            events = self._stream_view_summary(
                 run=run, canonical_messages=canonical_messages, snapshot=snapshot,
                 state=InvestigationState.start(snapshot=snapshot, settings=run.retrieval_settings),
-                selected_note_tokens=selected_note_tokens, kind="summarize_current_scope",
-                route_tokens=max(1, estimate_input_tokens(canonical_messages)), allows_web=False,
+                selected_note_tokens=selected_note_tokens,
+                route_tokens=max(1, estimate_input_tokens(canonical_messages)),
             )
         elif isinstance(arguments, ProposeTagGenerationArguments):
             skill = run.skills.for_action("tag_proposals")

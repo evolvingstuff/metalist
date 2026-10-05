@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from openai import APIError
 
-from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.history import record_history
 from app.services.agent.trace import AgentTraceStore
@@ -107,8 +107,8 @@ class FakeInstructorClient:
         response_format = {
             "type": "json_schema",
             "json_schema": {
-                "name": "AgentRouteEnvelope",
-                "schema": AgentRouteEnvelope.model_json_schema(),
+                "name": "SummaryFindingsResult",
+                "schema": SummaryFindingsResult.model_json_schema(),
             },
         }
         request_handler(
@@ -143,10 +143,7 @@ class FakeInstructorClient:
                 "choices": [
                     {
                         "delta": {
-                            "content": (
-                                '{"kind":"respond","note_ids":[],'
-                                '"reason":"Reply directly."}'
-                            ),
+                            "content": '{"findings":[]}',
                         },
                         "finish_reason": "stop",
                     }
@@ -178,11 +175,7 @@ class FakeInstructorClient:
         async for _chunk in stream:
             pass
         response_model = kwargs["response_model"]
-        yield response_model(
-            kind="respond",
-            note_ids=[],
-            reason="Reply directly.",
-        )
+        yield response_model(findings=[])
 
 
 def test_openai_structured_inference_uses_schema_and_disables_storage(
@@ -213,10 +206,10 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
             model="gpt-5.6-sol",
             thinking_level="medium",
             messages=[
-                {"role": "system", "content": "Choose one action."},
+                {"role": "system", "content": "Summarize the notes."},
                 {"role": "user", "content": "Are you there?"},
             ],
-            response_model=AgentRouteEnvelope,
+            response_model=SummaryFindingsResult,
             on_progress=progress_events.append,
         )
     )
@@ -227,15 +220,13 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
     assert openai_client.max_retries == 0
     assert factory_call["model"] == "gpt-5.6-sol"
     assert factory_call["mode"] is instructor.Mode.JSON_SCHEMA
-    assert fake_client.create_kwargs["response_model"] is AgentRouteEnvelope
+    assert fake_client.create_kwargs["response_model"] is SummaryFindingsResult
     assert fake_client.create_kwargs["max_completion_tokens"] == 8_192
     assert fake_client.create_kwargs["reasoning_effort"] == "medium"
     assert fake_client.create_kwargs["stream_options"] == {"include_usage": True}
     assert fake_client.create_kwargs["store"] is False
     assert fake_client.is_closed is True
-    assert response.content == (
-        '{"kind":"respond","note_ids":[],"reason":"Reply directly."}'
-    )
+    assert response.content == '{"findings":[]}'
     assert response.usage == {
         "prompt_tokens": 31,
         "completion_tokens": 8,

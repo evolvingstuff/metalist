@@ -64,7 +64,7 @@ const DEBUG_VIEW_URL = new URL(
     import.meta.url,
 );
 
-test('chat accepts tagging activities both live and in restored messages', () => {
+test('chat accepts agent activities both live and in restored messages', () => {
     const source = readFileSync(CONTROLLER_URL, 'utf8');
     const messageValidator = source.slice(source.indexOf('function validateMessage('),
         source.indexOf('export function captureActiveAgentScope('));
@@ -74,7 +74,7 @@ test('chat accepts tagging activities both live and in restored messages', () =>
         `${messageValidator}\n${activityValidator}\n({ validateActivity, validateMessage })`,
     );
     const activity = {
-        sequence: 1, action: 'tag_proposals', status: 'started', label: 'Suggesting tags',
+        sequence: 1, action: 'search_view_notes', status: 'started', label: 'Searching your view',
         approx_input_tokens: 100, output_tokens_received: 0, duration_ms: 0,
     };
     assert.equal(validateActivity(activity), activity);
@@ -97,14 +97,19 @@ test('chat accepts tagging activities both live and in restored messages', () =>
 });
 
 
-test('chat accepts every web activity emitted by the agent runtime', () => {
+test('chat accepts every activity the tool-using agent emits', () => {
     const source = readFileSync(CONTROLLER_URL, 'utf8');
     const activityValidator = source.slice(source.indexOf('const AI_ACTIVITY_ACTIONS'),
         source.indexOf('class AiChatPanelController'));
     const { validateActivity } = runInNewContext(
         `${activityValidator}\n({ validateActivity })`,
     );
-    for (const action of ['web_planning', 'open_web_pages']) {
+    for (const action of [
+        'provider_runtime', 'scope', 'model_context', 'agent_turn', 'lookup_metalist_help',
+        'view_overview', 'search_view_notes', 'read_view_notes', 'open_web_pages', 'open_menu',
+        'confirmation', 'tool_call_rejected', 'skill', 'model_request', 'validation', 'retry',
+        'evidence_root_prefix', 'investigation_evidence', 'investigation_sources', 'respond',
+    ]) {
         const activity = {
             sequence: 1,
             action,
@@ -115,6 +120,13 @@ test('chat accepts every web activity emitted by the agent runtime', () => {
             duration_ms: 0,
         };
         assert.equal(validateActivity(activity), activity);
+    }
+    // Names that only the removed up-front routing emitted are no longer accepted.
+    for (const action of ['planning', 'investigate_current_scope', 'metalist_help', 'web_planning']) {
+        assert.throws(() => validateActivity({
+            sequence: 1, action, status: 'started', label: action,
+            approx_input_tokens: 100, output_tokens_received: 0, duration_ms: 0,
+        }), /Unknown AI chat activity action/);
     }
 });
 
@@ -362,25 +374,9 @@ test('cloud AI privacy settings and hover visualization share a server boundary'
 });
 
 
-test('chat accepts scoped-investigation lifecycle activities', () => {
+test('chat activities show their step duration', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
-    for (const action of [
-        'scope',
-        'investigate_current_scope',
-        'evidence_selection',
-        'investigation_step',
-        'investigation_evidence',
-        'investigation_facets',
-        'investigation_refinement',
-        'investigation_sources',
-        'evidence_root_prefix',
-        'context_narrowing',
-        'context_narrowing_plan',
-        'context_narrowing_test',
-    ]) {
-        assert.match(controller, new RegExp(`'${action}'`));
-    }
     assert.match(controller, /activity\.duration_ms/);
     assert.match(controller, /Step duration/);
     assert.match(controller, /_formatActivityDuration/);
@@ -393,7 +389,6 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     const routes = readFileSync(new URL('../../app/api/routes/ai.py', import.meta.url), 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
 
-    assert.match(controller, /'summarize_current_scope'/);
     // Choice labels and answer values are covered behaviorally in bulk_scope_question.test.mjs.
     assert.match(bulkUi, /const question = describeScopeQuestion\(event\)/);
     assert.match(bulkUi, /scopeAnswerValue\(event, 'prefix', selectedFocus\(\)\)/);

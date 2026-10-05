@@ -179,6 +179,20 @@ to the notes and web pages the tools returned.
   `stream()`/`_run_steps` path and its global-index tools.
 - Fix behaviours the survey found that the new design supersedes: chat-triggered
   accept/remove without confirmation; tag intent read from the last message only.
+- Done: deleted `actions.py`, `tools.py`, `permissions.py`, `markdown_validation.py`,
+  the route/help/web/investigate runtime paths, dead context builders,
+  `MetaListHelpResponse`, `TagOperationIntent`/`TaggingRun.stream`, the tool-result
+  and help-response prompts and the scoped-investigation skill. `system.md` now
+  serves whole-view summaries only. The selected-note size check moved into the
+  agent loop. Summary tests now enter through `stream_agent`. Browser activity
+  names trimmed to what the server still sends. Evals: only the summary stages
+  remain; the 168 routing-era cases (including the reported release question) moved,
+  unrun, to `evals/legacy-cases/` for Phase 6 migration; `from-export` removed with
+  its route-only importer. Live check: "Summarize everything in this view" →
+  `summarize_view` → confirmation → cited summary (Luna and Terra, Low).
+- Left for Phase 7: design/UI/testing docs still describe the old routing
+  (`docs/design/agent-harness.md`, `docs/ui/ai-chat.md`, `docs/testing/harness.md`,
+  `docs/AI-SUMMARY.md`).
 
 ### Phase 6 — Live-LLM tests (evals)
 - New eval stage `agent`: runs the **real** loop and tools against fixture notes,

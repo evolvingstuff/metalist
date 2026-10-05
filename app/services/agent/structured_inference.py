@@ -16,12 +16,7 @@ from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.history import record_provider_event
 from app.services.agent.judging import OutputJudgment
-from app.services.agent.help_catalog import MetaListHelpResponse
-from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import ContextualWebActionEnvelope
-from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import SearchQueryEnvelope
-from app.services.agent.tagging import TagBatchResult, TagOperationIntent
+from app.services.agent.tagging import TagBatchResult
 from app.services.agent.staged_summary import SummaryBatchResult
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.inference import InferenceAttempt
@@ -33,27 +28,18 @@ from app.services.agent.token_estimation import estimate_text_tokens
 _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
 # OpenAI reasoning models count hidden thinking against max_completion_tokens,
-# so even a step whose answer is a few dozen tokens (routing) needs room to
-# think first: at 512 tokens, Medium or High thinking could use the whole
-# budget and leave a cut-off, rejected reply on every attempt.
+# so even a step whose answer is short needs room to think first: at 512 tokens,
+# Medium or High thinking could use the whole budget and leave a cut-off,
+# rejected reply on every attempt.
 _STRUCTURED_MIN_OUTPUT_TOKENS = 8_192
-_ROUTE_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
-_SEARCH_QUERY_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
-_WEB_ACTION_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
 
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
         OutputJudgment: _STRUCTURED_MIN_OUTPUT_TOKENS,
-        MetaListHelpResponse: 8_192,
         TagBatchResult: 8_192,
-        TagOperationIntent: _STRUCTURED_MIN_OUTPUT_TOKENS,
         SummaryBatchResult: 8_192,
         SummaryFindingsResult: _STRUCTURED_MIN_OUTPUT_TOKENS,
-        AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
-        ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
-        SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
-        ContextualWebActionEnvelope: _WEB_ACTION_MAX_OUTPUT_TOKENS,
     }
     if response_model not in limits:
         raise RuntimeError(

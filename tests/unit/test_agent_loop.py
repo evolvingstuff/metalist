@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -9,6 +10,7 @@ from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
+from app.services.agent.scope import SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.tool_calling import validate_tool_conversation
 from app.services.agent.web_actions import addresses_needing_confirmation
@@ -274,3 +276,24 @@ def test_a_model_that_stays_silent_after_the_reminder_is_reported() -> None:
     model = _ScriptedModel([_turn("", []), _turn("", [])])
     with pytest.raises(AgentExecutionError, match="without writing an answer"):
         _run_agent(model, web_mode="none", message="Hello", tagging=None, on_event=_ignore)
+
+
+def test_a_selected_note_tree_over_the_evidence_limit_is_never_sent() -> None:
+    model = _ScriptedModel([_turn("Hello", [])])
+    snapshot = replace(_snapshot(large_tail=False), selected_note=SelectedNoteContext(
+        "available", "child-a", (SelectedTreeNote("parent", "", "PARENT", ""),
+            SelectedTreeNote("child-a", "parent", "LARGE " * 1000, ""))))
+
+    async def collect() -> None:
+        async for _event in _runtime(model).stream_agent(
+            session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
+            thinking_level="low", canonical_messages=[{"role": "user", "content": "Explain"}],
+            prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
+            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=500),
+            web_settings=AgentWebSettings(mode="none"), frozen_scope=snapshot, tagging_run=None,
+        ):
+            pass
+
+    with pytest.raises(AgentExecutionError, match="larger than the evidence limit"):
+        asyncio.run(collect())
+    assert model.conversations == []

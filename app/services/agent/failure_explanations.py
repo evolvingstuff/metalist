@@ -1,6 +1,6 @@
 """Plain-language explanations of failed structured AI steps.
 
-When the model's reply to a structured step (routing, help, web planning…)
+When the model's reply to a structured step (summary batches, tag batches…)
 is rejected on every attempt, the chat shows this explanation instead of a
 bare "open Agent Debug": which step failed, what went wrong on each attempt,
 the setup, and what the user can try. It is stored with the turn, so it stays
@@ -17,15 +17,9 @@ from app.services.agent.inference import InferenceAttempt
 
 # What the AI was doing, by the response format it had to produce.
 _STEP_DESCRIPTIONS = {
-    "ScopedRouteEnvelope": "deciding how to handle your request",
-    "AgentRouteEnvelope": "deciding how to handle your request",
-    "MetaListHelpResponse": "answering from MetaList's built-in help",
-    "ContextualWebActionEnvelope": "choosing which web pages to open",
-    "SearchQueryEnvelope": "turning your request into a note search",
     "SummaryBatchResult": "summarizing a batch of your notes",
     "SummaryFindingsResult": "summarizing your notes",
     "TagBatchResult": "proposing tags",
-    "TagOperationIntent": "working out which tag operation you asked for",
     "OutputJudgment": "checking its own answer",
 }
 

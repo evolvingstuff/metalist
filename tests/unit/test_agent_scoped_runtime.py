@@ -15,7 +15,6 @@ from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.model_policy import SingleModelPolicy
-from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent import runtime as runtime_module
@@ -33,7 +32,6 @@ from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.trace import AgentTraceStore
 from app.services.bulk_operation import bulk_operation_guard
-
 
 def _descriptor() -> AgentScopeDescriptor:
     return AgentScopeDescriptor(
@@ -111,10 +109,11 @@ def _snapshot(*, large_tail: bool) -> ScopedSearchSnapshot:
 
 
 class _FakeInference:
+    """Plays an agent that asks to summarize the view, then the summary model calls."""
+
     provider_label = "OpenAI"
 
-    def __init__(self, *, route_kind: str) -> None:
-        self.route_kind = route_kind
+    def __init__(self) -> None:
         self.large_summary_results = False
         self.failed_summary_root_id = ""
         self.omit_summary_coverage = False
@@ -123,7 +122,7 @@ class _FakeInference:
         self.summary_citation_corrections = 0
         self.ignore_summary_citation_corrections = False
         self.final_messages: list[dict[str, str]] = []
-        self.route_messages: list[dict[str, str]] = []
+        self.agent_messages: list[dict[str, object]] = []
         self.summary_batch_calls: list[tuple[str, ...]] = []
         self.active_summary_calls = 0
         self.maximum_parallel_summary_calls = 0
@@ -239,50 +238,17 @@ class _FakeInference:
                     )
                 )
             return InferenceResponse(content=content, thinking="", usage={}, attempts=[])
-        self.route_messages = messages
-        payload = {
-            "kind": self.route_kind,
-            "help_topics": [],
-            "reason": "Saved-note evidence is required."
-            if self.route_kind in {"investigate_current_scope", "summarize_current_scope"}
-            else "No saved-note evidence is required.",
-        }
-        content = json.dumps(payload)
-        response_model.model_validate_json(content)
-        wire_request = {
-            "method": "POST",
-            "url": f"{base_url}/v1/chat/completions",
-            "body": {"model": model, "messages": messages},
-        }
-        for phase in ("attempt_started", "response_received", "attempt_succeeded"):
-            on_progress(
-                StructuredInferenceProgress(
-                    phase=phase,
-                    attempt=1,
-                    max_attempts=2,
-                    failure_kind="",
-                    error_type="",
-                    error_message="",
-                    duration_ms=1.0,
-                    wire_request=wire_request,
-                    output_tokens_received=10,
-                    partial_output={},
-                )
-            )
-        return InferenceResponse(
-            content=content,
-            thinking="",
-            usage={},
-            attempts=[
-                InferenceAttempt(
-                    request=wire_request,
-                    response={"content": content},
-                    error="",
-                    duration_ms=1.0,
-                    validation_errors=(),
-                )
-            ],
-        )
+        raise AssertionError(f"Unexpected structured request: {response_model.__name__}")
+
+    async def stream_tool_turn(self, *, base_url, model, thinking_level, messages, tools,
+                               max_output_tokens, on_request):
+        del base_url, model, thinking_level, max_output_tokens
+        assert self.agent_messages == [], "The summary operation ends the agent's turn"
+        assert "summarize_view" in {tool.name for tool in tools}
+        self.agent_messages = [dict(message) for message in messages]
+        on_request({"messages": len(messages)})
+        yield {"type": "tool_call", "id": "call-summary", "name": "summarize_view", "arguments": "{}"}
+        yield {"type": "done", "finish_reason": "tool_calls", "usage": {}}
 
     async def stream_text(self, **arguments):
         self.final_messages = arguments["messages"]
@@ -298,50 +264,14 @@ class _FakeInference:
         yield {"type": "done"}
 
 
-class _UnusedTools:
-    pass
-
-
 def _runtime(inference: _FakeInference) -> AgentRuntime:
     return AgentRuntime(
         context_builder=AgentContextBuilder(),
         inference=inference,
         model_policy=SingleModelPolicy(),
-        permission_policy=AgentPermissionPolicy(),
-        tool_registry=_UnusedTools(),
         trace_store=AgentTraceStore(),
         provider_label="OpenAI",
     )
-
-
-def _events(
-    *,
-    inference: _FakeInference,
-    snapshot: ScopedSearchSnapshot,
-    message: str,
-    token_limit: int,
-) -> list[dict[str, object]]:
-    async def collect() -> list[dict[str, object]]:
-        return [
-            event
-            async for event in _runtime(inference).stream_scoped(
-                tag_handler=None,
-                session_key="session-1",
-                base_url="https://api.openai.com/v1",
-                selected_model="gpt-5.6-sol",
-                thinking_level="off",
-                canonical_messages=[{"role": "user", "content": message}],
-                prompts=DEFAULT_AGENT_PROMPTS,
-                skills=DEFAULT_AGENT_SKILLS,
-                retrieval_settings=AgentRetrievalSettings(
-                    max_page_approximate_tokens=token_limit,
-                ),
-                web_settings=DEFAULT_AGENT_WEB_SETTINGS,
-                frozen_scope=snapshot,
-            )
-        ]
-
-    return asyncio.run(collect())
 
 
 def _first_evidence_note_id(tree: dict[str, object]) -> str:
@@ -387,8 +317,8 @@ def _collect_summary_events(
 
     async def collect() -> int:
         calls_at_question = -1
-        async for event in _runtime(inference).stream_scoped(
-            tag_handler=None,
+        async for event in _runtime(inference).stream_agent(
+            tagging_run=None,
             session_key="session-1",
             base_url="https://api.openai.com/v1",
             selected_model="gpt-5.6-sol",
@@ -459,50 +389,8 @@ def _multi_batch_summary_snapshot() -> ScopedSearchSnapshot:
     return _summary_snapshot(5)
 
 
-def test_scoped_request_sends_one_full_nested_evidence_payload_directly() -> None:
-    inference = _FakeInference(route_kind="investigate_current_scope")
-    events = _events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        message="please summarize my notes about testosterone",
-        token_limit=24_000,
-    )
-
-    final_requests = [
-        message
-        for message in inference.final_messages
-        if message["content"].startswith("FINAL_RESPONSE_REQUEST\n")
-    ]
-    assert len(final_requests) == 1
-    final_payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
-    assert len(final_payload["authoritative_result_trees"]) == 2
-    assert final_payload["authoritative_result_trees"][0]["content_text"] == "ROOT_ALPHA"
-    assert final_payload["authoritative_result_trees"][0]["children"][0][
-        "content_text"
-    ] == "CHILD_ALPHA"
-    assert all("working_summary" not in message["content"] for message in inference.final_messages)
-    assert any(event["type"] == "done" for event in events)
-
-
-def test_oversized_scope_omits_only_trailing_complete_roots() -> None:
-    inference = _FakeInference(route_kind="investigate_current_scope")
-    events = _events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=True),
-        message="please summarize my notes about testosterone",
-        token_limit=500,
-    )
-
-    final_payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
-    assert len(final_payload["authoritative_result_trees"]) == 1
-    assert final_payload["authoritative_result_trees"][0]["note_id"] == "root-a"
-    assert final_payload["evidence_coverage"]["omitted_result_tree_count"] == 1
-    labels = [event["label"] for event in events if "label" in event]
-    assert "Only using 1 of 2 root notes for answer" in labels
-
-
 def test_complete_scope_summary_asks_before_any_batch_and_then_runs_in_parallel() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     events, calls_at_question = _events_with_summary_answer(
         inference=inference,
@@ -542,7 +430,7 @@ def test_complete_scope_summary_asks_before_any_batch_and_then_runs_in_parallel(
 
 
 def test_staged_summary_previews_show_writing_before_each_completion() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     snapshot = _summary_snapshot(11)
 
     events, _calls_at_question = _events_with_summary_answer(
@@ -594,7 +482,7 @@ def test_staged_summary_streams_compact_previews_between_start_and_completion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(runtime_module, "_SUMMARY_STREAM_INTERVAL_SECONDS", 0.0)
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.large_summary_results = True
 
     events, _calls_at_question = _events_with_summary_answer(
@@ -627,7 +515,7 @@ def test_staged_summary_streams_compact_previews_between_start_and_completion(
 
 
 def test_staged_summary_stream_previews_are_throttled_per_batch() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     events, _calls_at_question = _events_with_summary_answer(
         inference=inference,
@@ -648,7 +536,7 @@ def test_staged_summary_stream_previews_are_throttled_per_batch() -> None:
 
 
 def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     snapshot = _multi_batch_summary_snapshot()
     inference.summary_delay_seconds_by_root_id = {
         "root-1": 0.08,
@@ -682,14 +570,14 @@ def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical(
 
 
 def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.summary_delay_seconds_by_root_id = {
         root_id: 5.0 for root_id in ("root-1", "root-2", "root-3", "root-4")
     }
 
     async def run() -> None:
-        stream = _runtime(inference).stream_scoped(
-            tag_handler=None,
+        stream = _runtime(inference).stream_agent(
+            tagging_run=None,
             session_key="session-1",
             base_url="https://api.openai.com/v1",
             selected_model="gpt-5.6-sol",
@@ -720,7 +608,7 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
 
 
 def test_staged_summary_shows_first_batch_writing_before_it_fails() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.failed_summary_root_id = "root-0"
     events: list[dict[str, object]] = []
 
@@ -743,7 +631,7 @@ def test_staged_summary_shows_first_batch_writing_before_it_fails() -> None:
 
 
 def test_complete_scope_summary_has_no_total_batch_cap_but_runs_only_four_at_once() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     snapshot = _summary_snapshot(11)
 
     events, _calls_at_question = _events_with_summary_answer(
@@ -769,7 +657,7 @@ def test_complete_scope_summary_has_no_total_batch_cap_but_runs_only_four_at_onc
 
 
 def test_summary_coverage_is_attached_by_application_instead_of_echoed_by_model() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.omit_summary_coverage = True
     snapshot = _multi_batch_summary_snapshot()
 
@@ -792,7 +680,7 @@ def test_summary_coverage_is_attached_by_application_instead_of_echoed_by_model(
 
 
 def test_complete_scope_summary_can_keep_the_single_payload_prefix() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     events, calls_at_question = _events_with_summary_answer(
         inference=inference,
@@ -815,7 +703,7 @@ def test_complete_scope_summary_can_keep_the_single_payload_prefix() -> None:
 
 
 def test_complete_scope_summary_cancel_starts_no_batch_calls() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     events, calls_at_question = _events_with_summary_answer(
         inference=inference,
@@ -834,7 +722,7 @@ def test_complete_scope_summary_cancel_starts_no_batch_calls() -> None:
 
 
 def test_single_payload_scope_summary_still_requires_permission() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     events, calls_at_question = _events_with_summary_answer(
         inference=inference,
@@ -857,7 +745,7 @@ def test_single_payload_scope_summary_still_requires_permission() -> None:
 
 
 def test_staged_summary_recursively_reduces_large_intermediate_findings() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.large_summary_results = True
 
     events, _calls_at_question = _events_with_summary_answer(
@@ -880,7 +768,7 @@ def test_staged_summary_recursively_reduces_large_intermediate_findings() -> Non
 
 
 def test_staged_summary_failure_cancels_remaining_work_and_never_synthesizes() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.failed_summary_root_id = "root-1"
 
     with pytest.raises(RuntimeError, match="Fixture summary failure for root-1"):
@@ -913,7 +801,7 @@ def _selected_note_outside_summary_scope() -> SelectedNoteContext:
 
 
 def test_staged_summary_batch_may_cite_permitted_selected_note_context() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.summary_batch_citation_note_id = "selected-child"
     snapshot = replace(
         _multi_batch_summary_snapshot(),
@@ -942,7 +830,7 @@ def test_staged_summary_batch_may_cite_permitted_selected_note_context() -> None
 
 
 def test_staged_summary_final_catalog_includes_permitted_selected_note_tree() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     snapshot = replace(
         _multi_batch_summary_snapshot(),
         selected_note=_selected_note_outside_summary_scope(),
@@ -999,7 +887,7 @@ def _structural_root_summary_snapshot(root_count: int) -> ScopedSearchSnapshot:
 
 
 def test_staged_summary_asks_once_to_correct_structural_placeholder_citations() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     snapshot = _structural_root_summary_snapshot(5)
 
     events, _calls_at_question = _events_with_summary_answer(
@@ -1023,7 +911,7 @@ def test_staged_summary_asks_once_to_correct_structural_placeholder_citations() 
 
 
 def test_staged_summary_reports_structural_citation_after_failed_correction() -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.ignore_summary_citation_corrections = True
 
     with pytest.raises(
@@ -1052,7 +940,7 @@ def test_staged_summary_reports_structural_citation_after_failed_correction() ->
 def test_staged_summary_rejects_citations_to_unavailable_selected_notes(
     unavailable_reason: str,
 ) -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
     inference.summary_batch_citation_note_id = "selected-child"
     snapshot = replace(
         _multi_batch_summary_snapshot(),
@@ -1076,7 +964,7 @@ def test_staged_summary_rejects_citations_to_unavailable_selected_notes(
             answer="summarize_all",
         )
 
-    assert "SELECTED_CHILD_CONTEXT" not in json.dumps(inference.route_messages)
+    assert "SELECTED_CHILD_CONTEXT" not in json.dumps(inference.agent_messages)
     assert inference.final_messages == []
 
 
@@ -1086,29 +974,6 @@ def _active_skill_ids(messages: list[dict[str, str]]) -> list[str]:
         for message in messages
         if message["role"] == "system" and message["content"].startswith("ACTIVE_SKILL ")
     ]
-
-
-def test_single_payload_investigation_sends_its_activated_skill() -> None:
-    inference = _FakeInference(route_kind="investigate_current_scope")
-
-    events = _events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        message="What do my notes say about testosterone?",
-        token_limit=24_000,
-    )
-
-    assert _active_skill_ids(inference.final_messages) == ["scoped_investigation_v7"]
-    skill_message = next(
-        message["content"] for message in inference.final_messages
-        if message["content"].startswith("ACTIVE_SKILL ")
-    )
-    assert DEFAULT_AGENT_SKILLS.for_action("investigate_current_scope").content in skill_message
-    assert inference.final_messages[1] == {"role": "system", "content": skill_message}
-    assert any(
-        event["label"] == "Activated skill · Investigate current scope"
-        for event in events if event["type"] == "action_status"
-    )
 
 
 @pytest.mark.parametrize(
@@ -1123,7 +988,7 @@ def test_single_payload_summaries_send_the_summary_skill(
     token_limit: int,
     answer: str,
 ) -> None:
-    inference = _FakeInference(route_kind="summarize_current_scope")
+    inference = _FakeInference()
 
     _events_with_summary_answer(
         inference=inference,
@@ -1136,312 +1001,3 @@ def test_single_payload_summaries_send_the_summary_skill(
     assert inference.summary_batch_calls == []
     assert _active_skill_ids(inference.final_messages) == ["staged_summary_v1"]
 
-
-def test_direct_response_does_not_send_note_content() -> None:
-    inference = _FakeInference(route_kind="respond")
-    _events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        message="please explain Bayes theorem",
-        token_limit=24_000,
-    )
-
-    serialized_messages = json.dumps(inference.final_messages)
-    assert "ROOT_ALPHA" not in serialized_messages
-    assert "CHILD_ALPHA" not in serialized_messages
-
-
-@pytest.mark.parametrize("route", ["respond", "investigate_current_scope"])
-def test_selected_note_reaches_routing_and_final_without_narrowing_scope(route) -> None:
-    inference = _FakeInference(route_kind=route)
-    snapshot = replace(_snapshot(large_tail=False), selected_note=SelectedNoteContext(
-        "available", "child-a", (SelectedTreeNote("parent", "", "PARENT_CONTEXT", "parent-tag"),
-            SelectedTreeNote("child-a", "parent", "CURRENT_SELECTED_CONTENT", "selected-tag"),
-            SelectedTreeNote("abstract", "child-a", "ABSTRACT_CONTENT", "abstract-tag"),
-            SelectedTreeNote("sibling", "parent", "SIBLING_CONTEXT", "sibling-tag"))))
-    _events(inference=inference, snapshot=snapshot,
-        message="Can you explain the relevant parts?", token_limit=24_000)
-    for messages in (inference.route_messages, inference.final_messages):
-        contexts = [json.loads(m["content"].split("\n", 1)[1]) for m in messages
-                    if m["content"].startswith("SELECTED_NOTE_CONTEXT\n")]
-        assert len(contexts) == 1
-        assert [n["note_id"] for n in contexts[0]["selected_note"]["tree_notes"] if n["is_selected"]] == ["child-a"]
-        assert all(text in json.dumps(contexts[0]) for text in ("PARENT_CONTEXT", "CURRENT_SELECTED_CONTENT", "ABSTRACT_CONTENT", "SIBLING_CONTEXT"))
-        assert contexts[0]["selected_note"]["note_id"] == "child-a"
-    if route == "respond":
-        assert "ROOT_ALPHA" not in json.dumps(inference.final_messages)
-    else:
-        assert "ROOT_ALPHA" in json.dumps(inference.final_messages)
-        assert "TAIL" in json.dumps(inference.final_messages)
-
-
-def test_selected_note_over_budget_is_not_sent_to_provider() -> None:
-    inference = _FakeInference(route_kind="respond")
-    snapshot = replace(_snapshot(large_tail=False), selected_note=SelectedNoteContext(
-        "available", "child-a", (SelectedTreeNote("parent", "", "PARENT", ""),
-            SelectedTreeNote("child-a", "parent", "https://example.test/paper", ""),
-            SelectedTreeNote("abstract", "child-a", "LARGE " * 1000, ""))))
-    with pytest.raises(Exception, match="selected note tree exceeds"):
-        _events(inference=inference, snapshot=snapshot, message="Explain", token_limit=500)
-    assert inference.route_messages == []
-    assert inference.final_messages == []
-
-
-def test_model_can_respond_to_request_prohibiting_note_inspection() -> None:
-    inference = _FakeInference(route_kind="respond")
-    _events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        message="Answer from our conversation; do not inspect current notes.",
-        token_limit=24_000,
-    )
-    assert inference.final_messages
-    assert "ROOT_ALPHA" not in json.dumps(inference.final_messages)
-
-
-class _WebInference(_FakeInference):
-    def __init__(
-        self,
-        *,
-        web_actions: list[dict[str, object]],
-        route_kind: str,
-    ) -> None:
-        super().__init__(route_kind=route_kind)
-        self.web_actions = list(web_actions)
-
-    async def infer_structured(self, **arguments) -> InferenceResponse:
-        response_model = arguments["response_model"]
-        if response_model.__name__ == "ScopedRouteEnvelope":
-            return await super().infer_structured(**arguments)
-        assert response_model.__name__ == "ContextualWebActionEnvelope"
-        assert self.web_actions, "Web planner requested more fixture actions"
-        content = json.dumps(self.web_actions.pop(0))
-        response_model.model_validate_json(content)
-        return InferenceResponse(
-            content=content,
-            thinking="",
-            usage={},
-            attempts=[InferenceAttempt(request={}, response={}, error="", duration_ms=1.0, validation_errors=())],
-        )
-
-    async def stream_text(self, **arguments):
-        self.final_messages = arguments["messages"]
-        final_payload = json.loads(
-            arguments["messages"][-1]["content"].split("\n", 1)[1]
-        )
-        web_catalog = final_payload["web_reference_catalog"]
-        citation = ""
-        if web_catalog:
-            citation = " " + web_catalog[0]["citation_token"]
-        yield {"type": "content_delta", "text": "Web answer" + citation}
-        yield {"type": "done"}
-
-
-def _web_events(*, inference, snapshot, mode):
-    async def collect():
-        return [
-            event
-            async for event in _runtime(inference).stream_scoped(
-                tag_handler=None,
-                session_key="session-1",
-                base_url="https://api.openai.com/v1",
-                selected_model="gpt-5.6-sol",
-                thinking_level="off",
-                canonical_messages=[{"role": "user", "content": "Read the linked page"}],
-                prompts=DEFAULT_AGENT_PROMPTS,
-                skills=DEFAULT_AGENT_SKILLS,
-                retrieval_settings=AgentRetrievalSettings(
-                    max_page_approximate_tokens=24_000,
-                ),
-                web_settings=AgentWebSettings(mode=mode),
-                frozen_scope=snapshot,
-            )
-        ]
-    return asyncio.run(collect())
-
-
-def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeypatch) -> None:
-    web_evidence_store.reset()
-    snapshot = replace(
-        _snapshot(large_tail=False),
-        selected_note=SelectedNoteContext(
-            "available",
-            "child-a",
-            (SelectedTreeNote(
-                "child-a", "", "See https://example.com/article", "source"
-            ),),
-        ),
-    )
-    inference = _WebInference(route_kind="respond", web_actions=[
-        {"kind": "open_web_pages", "urls": ["https://example.com/article"],
-         "reason": "Open disclosed source"},
-        {"kind": "respond", "urls": [], "reason": "Page is sufficient"},
-    ])
-    calls = []
-
-    async def fake_fetch(urls, *, allows_target):
-        calls.append(list(urls))
-        return (WebPageFetchResult(
-            requested_url="https://example.com/article",
-            final_url="https://example.com/article",
-            status="ok",
-            title="Article",
-            content_text="Verified page content",
-            outgoing_links=(("Linked report", "https://source.example/report"),),
-            fetched_at="2026-09-24T00:00:00+00:00",
-            truncated=False,
-            error_kind="",
-        ),)
-
-    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
-    events = _web_events(inference=inference, snapshot=snapshot, mode="contextual")
-
-    assert calls == [["https://example.com/article"]]
-    assert events[-1]["type"] == "done"
-    assert len(events[-1]["reference_web_ids"]) == 2
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
-    assert [item["source_kind"] for item in final_payload["web_reference_catalog"]] == [
-        "opened_page",
-        "page_link",
-    ]
-    assert final_payload["web_reference_catalog"][1]["url"] == (
-        "https://source.example/report"
-    )
-
-
-def test_contextual_web_loop_blocks_undisclosed_url_without_network(monkeypatch) -> None:
-    web_evidence_store.reset()
-    inference = _WebInference(route_kind="respond", web_actions=[
-        {"kind": "open_web_pages", "urls": ["https://private.example/hidden"],
-         "reason": "Try URL"},
-        {"kind": "respond", "urls": [], "reason": "Explain contextual limit"},
-    ])
-
-    async def forbidden_fetch(_urls, *, allows_target):
-        raise AssertionError("Undisclosed contextual URL reached the network")
-
-    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", forbidden_fetch)
-    events = _web_events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        mode="contextual",
-    )
-
-    assert events[-1]["reference_web_ids"] == []
-    tool_messages = [
-        message["content"] for message in inference.final_messages
-        if message["content"].startswith("TOOL_RESULT open_web_pages")
-    ]
-    assert len(tool_messages) == 1
-    assert "not_available_in_permitted_context" in tool_messages[0]
-
-
-def test_full_web_loop_opens_agent_proposed_url_outside_context(monkeypatch) -> None:
-    web_evidence_store.reset()
-    inference = _WebInference(route_kind="respond", web_actions=[
-        {"kind": "open_web_pages", "urls": ["https://example.com/quote"],
-         "reason": "Open a direct public source"},
-        {"kind": "respond", "urls": [], "reason": "Explain opened page"},
-    ])
-    calls = []
-
-    async def fake_fetch(urls, *, allows_target):
-        calls.append(list(urls))
-        return (WebPageFetchResult(
-            requested_url="https://example.com/quote",
-            final_url="https://example.com/quote",
-            status="ok",
-            title="Public quote",
-            content_text="Current value: 42",
-            outgoing_links=(),
-            fetched_at="2026-09-24T00:00:00+00:00",
-            truncated=False,
-            error_kind="",
-        ),)
-
-    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
-
-    events = _web_events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        mode="full",
-    )
-
-    assert calls == [["https://example.com/quote"]]
-    assert events[-1]["type"] == "done"
-    assert len(events[-1]["reference_web_ids"]) == 1
-
-
-def test_investigation_web_loop_preserves_full_note_evidence() -> None:
-    web_evidence_store.reset()
-    inference = _WebInference(
-        route_kind="investigate_current_scope",
-        web_actions=[
-            {
-                "kind": "respond",
-                "urls": [],
-                "reason": "The note evidence is sufficient",
-            },
-        ],
-    )
-
-    events = _web_events(
-        inference=inference,
-        snapshot=_snapshot(large_tail=False),
-        mode="contextual",
-    )
-
-    assert events[-1]["type"] == "done"
-    assert "INVESTIGATION_EVIDENCE_CONTEXT" in json.dumps(
-        inference.final_messages
-    )
-    assert "ROOT_ALPHA" in json.dumps(inference.final_messages)
-    assert "TAIL" in json.dumps(inference.final_messages)
-
-
-class _RouteCutOffInference(_FakeInference):
-    """The routing call runs out of output tokens while thinking, twice."""
-
-    async def infer_structured(self, **arguments) -> InferenceResponse:
-        assert arguments["response_model"].__name__ == "ScopedRouteEnvelope"
-        cut_off = InferenceAttempt(
-            request={"max_completion_tokens": 512, "reasoning_effort": arguments["thinking_level"]},
-            response={
-                "choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}],
-                "usage": {"completion_tokens": 512, "completion_tokens_details": {"reasoning_tokens": 512}},
-            },
-            error="IncompleteOutputException: The output is incomplete due to a max_tokens length limit.",
-            duration_ms=3_000.0,
-            validation_errors=(),
-        )
-        raise StructuredInferenceError(attempts=[cut_off, cut_off])
-
-
-def test_a_failed_routing_call_explains_itself_in_the_chat_message() -> None:
-    async def collect() -> list[dict[str, object]]:
-        return [
-            event
-            async for event in _runtime(_RouteCutOffInference(route_kind="respond")).stream_scoped(
-                tag_handler=None,
-                session_key="session-1",
-                base_url="https://api.openai.com/v1",
-                selected_model="gpt-5.6-terra",
-                thinking_level="medium",
-                canonical_messages=[{"role": "user", "content": "What are the new features of MetaList 0.11.0?"}],
-                prompts=DEFAULT_AGENT_PROMPTS,
-                skills=DEFAULT_AGENT_SKILLS,
-                retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=20_000),
-                web_settings=DEFAULT_AGENT_WEB_SETTINGS,
-                frozen_scope=_snapshot(large_tail=False),
-            )
-        ]
-
-    with pytest.raises(AgentExecutionError) as failure:
-        asyncio.run(collect())
-
-    message = str(failure.value)
-    assert "deciding how to handle your request" in message
-    assert "Attempt 2: the reply was cut off at the 512-token output limit; all 512 tokens went to thinking" in message
-    assert "Setup: gpt-5.6-terra, Medium thinking, web access off." in message

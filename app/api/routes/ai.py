@@ -33,7 +33,6 @@ from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import validate_openai_model
 from app.services.agent.openai_cost_tracking import OpenAICostSnapshot
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
-from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
@@ -45,7 +44,6 @@ from app.services.agent.scope import scoped_search_snapshot_factory
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.token_estimation import estimate_input_tokens
-from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
 from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.client_state_service import load_client_preferences
@@ -77,8 +75,6 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
         context_builder=agent_context_builder,
         inference=inference,
         model_policy=SingleModelPolicy(),
-        permission_policy=AgentPermissionPolicy(),
-        tool_registry=read_only_agent_tools,
         trace_store=agent_trace_store,
         provider_label=inference.provider_label,
     )

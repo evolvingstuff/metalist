@@ -9,7 +9,7 @@ import pytest
 
 from app.services.agent.tagging import (
     TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TagBatchResult,
-    TagOperationIntent, make_batch, partition_trees, shuffle_trees_for_batches,
+    make_batch, partition_trees, shuffle_trees_for_batches,
     validate_proposals,
 )
 import app.services.agent.tagging as tagging
@@ -280,8 +280,6 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
 
     async def infer(inference, run, messages, model, on_progress):
         assert not applied
-        if model is TagOperationIntent:
-            return SimpleNamespace(content='{"action":"generate","scope":"current","focus":"both","tag_filter":"","explanation":"requested"}')
         calls.append(messages)
         if len(calls) == 2 and outcome == "failure":
             raise InferenceProviderError("provider unavailable")
@@ -297,7 +295,7 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
     async def consume():
         operation = runs.TaggingRun(token="token", snapshot=snapshot,
             preferences={TAGGING_POLICY_KEY: "new"}, sync_uuid="sync", batch_tokens=run.retrieval_settings.max_page_approximate_tokens)
-        async for event in operation.stream(inference=SimpleNamespace(inspect_context_window=inspect_context_window), run=run):
+        async for event in operation.stream_generation(inference=SimpleNamespace(inspect_context_window=inspect_context_window), run=run):
             if event["type"] == "bulk_question":
                 assert not applied
                 # Focus and scope are one card, answered once.
@@ -625,31 +623,15 @@ def test_tagging_prompts_make_the_requested_topic_a_specific_binding_filter():
     assert "omit notes outside that topic" in DEFAULT_TAGGING_PROMPT
 
 
-@pytest.mark.parametrize(("user_request", "model_focus"), [
-    ("Add tags related to optimizers like AdamW, etc.", "new"),
-    ("Suggest existing tags related to optimizers", "existing"),
-    ("Suggest new tags related to optimizers", "new"),
-    ("Suggest both existing and new tags related to optimizers", "both"),
-])
-def test_every_generation_request_requires_focus_choice(monkeypatch, user_request, model_focus):
+def test_agent_generation_always_lets_the_user_choose_the_focus(monkeypatch):
+    # The agent never decides the focus from the request text; the scope card asks.
     selected_focuses = []
     monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
-
-    async def infer(inference, run, messages, model, on_progress):
-        assert model is TagOperationIntent
-        return SimpleNamespace(content=TagOperationIntent(
-            action="generate",
-            scope="current",
-            focus=model_focus,
-            tag_filter="",
-            explanation="Tag generation requested.",
-        ).model_dump_json())
 
     async def generate(self, *, inference, run, focus):
         selected_focuses.append(focus)
         yield {"type": "done"}
 
-    monkeypatch.setattr(runs, "infer_with_progress", infer)
     monkeypatch.setattr(runs.TaggingRun, "generate", generate)
     operation = runs.TaggingRun(
         token="token",
@@ -658,17 +640,9 @@ def test_every_generation_request_requires_focus_choice(monkeypatch, user_reques
         sync_uuid="sync",
         batch_tokens=1000,
     )
-    run = SimpleNamespace(
-        base_url="http://local", skills=DEFAULT_AGENT_SKILLS,
-        selected_model="test",
-        thinking_level="low",
-        run_id="run",
-        session_key="focus-regression",
-        current_user_request=user_request,
-    )
 
     async def consume():
-        return [event async for event in operation.stream(inference=None, run=run)]
+        return [event async for event in operation.stream_generation(inference=None, run=None)]
 
     assert asyncio.run(consume()) == [{"type": "done"}]
     assert selected_focuses == ["unspecified"]

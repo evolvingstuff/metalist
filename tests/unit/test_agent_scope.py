@@ -7,9 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.services import snapshot as view_snapshot
-from app.services.agent.actions import RespondAction
 from app.services.agent.context import AgentContextBuilder
-from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
+from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
+from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from app.services.agent.cloud_privacy import CloudPrivacyBoundary
 from app.services.agent.cloud_privacy import CloudPrivacyEvaluator
 from app.services.agent.cloud_privacy import CloudPrivacyPolicy
@@ -334,13 +334,9 @@ def test_selected_tree_never_discloses_redacted_children_even_when_selected(sele
     for withheld in ("gray", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
         assert withheld not in str(payload)
     builder = AgentContextBuilder()
-    route = builder.build_scoped_route_messages(canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
-        prompts=DEFAULT_AGENT_PROMPTS, snapshot=snapshot)
-    final = builder.append_final_request(messages=route, action=RespondAction(kind="respond", basis="supplied context"),
-        prompts=DEFAULT_AGENT_PROMPTS, current_user_request="Summarize the selected note.",
-        reference_note_ids=snapshot.selected_note.reference_note_ids,
-        reference_web_evidence=())
-    for messages in (route, final):
+    agent = builder.build_agent_messages(canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
+        skills=DEFAULT_AGENT_SKILLS, web_settings=DEFAULT_AGENT_WEB_SETTINGS, snapshot=snapshot, available_urls=())
+    for messages in (agent,):
         for withheld in ("gray-child", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
             assert withheld not in str(messages)
 
