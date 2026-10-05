@@ -9,6 +9,7 @@ from app.services.search_index import (
     _parse_search_query_for_suggestions,
     extract_tags_for_search,
 )
+from app.services.input_errors import InputRejected
 from app.services.search_query import parse_search_query
 from app.utils.text_utils import strip_html
 
@@ -55,6 +56,14 @@ def test_search_query_parser_builds_ordered_or_clauses() -> None:
 def test_search_query_parser_rejects_empty_or_clauses_and_prefixed_or() -> None:
     for query in ("OR A", "A OR", "A OR OR B", "+OR", "-OR"):
         with pytest.raises(ValueError):
+            parse_search_query(query)
+
+
+def test_search_query_parser_rejects_a_space_after_a_prefix_with_a_helpful_message() -> None:
+    # "- tag" is not accepted as "-tag" (so it does not become a habit); the
+    # message, shown to the user as a polite warning, says how to fix it.
+    for query in ("foo - bar", "+ baz", "foo -"):
+        with pytest.raises(InputRejected, match="directly followed by the tag or quoted text, with no space"):
             parse_search_query(query)
 
 

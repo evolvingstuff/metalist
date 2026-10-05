@@ -45,3 +45,29 @@ test('OR operator is not exposed as a tag suggestion target', () => {
         prefix: null,
     });
 });
+
+const SPACED_PREFIX_WARNING = 'In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)';
+
+test('a space after a prefix is explained as you type and never searched with the opposite meaning', () => {
+    for (const [query, sanitized] of [
+        ['foo - bar', 'foo'],
+        ['- tag', ''],
+        ['foo + bar baz', 'foo baz'],
+        ['foo - "bad phrase" baz', 'foo baz'],
+    ]) {
+        const analysis = analyzeSearchQueryInput(query);
+        assert.equal(analysis.isComplete, false, query);
+        assert.equal(analysis.warningMessage, SPACED_PREFIX_WARNING, query);
+        // The term after the stray prefix is left out, so "- tag" never runs as "tag".
+        assert.equal(analysis.sanitizedText, sanitized, query);
+        // The typed text is kept as typed.
+        assert.equal(analysis.normalizedText, query, query);
+    }
+});
+
+test('a lone prefix at the end is still being typed: no warning yet', () => {
+    const analysis = analyzeSearchQueryInput('foo -');
+    assert.equal(analysis.isComplete, false);
+    assert.equal(analysis.warningMessage, null);
+    assert.equal(analysis.sanitizedText, 'foo');
+});

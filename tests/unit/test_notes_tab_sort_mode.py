@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 import app.api.routes.notes as notes_route
+from app.services.input_errors import InputRejected
 
 
 @dataclass
@@ -57,12 +58,12 @@ def test_view_diff_returns_400_for_invalid_search_before_undo_reset(
         lambda client_id, undo_context: called.update(reset=True),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InputRejected) as exc_info:
         notes_route.view_diff(
             {
                 "clientId": "client-1",
                 "editingNoteId": None,
-                "search": "-",
+                "search": '"unclosed',
                 "tabId": "tab-1",
                 "undoContext": "tab:tab-1|search:|epoch:0",
                 "tabViewEmpty": True,
@@ -72,8 +73,7 @@ def test_view_diff_returns_400_for_invalid_search_before_undo_reset(
             }
         )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Dangling prefix in search query"
+    assert str(exc_info.value) == "Unclosed quote '\"' in search query"
     assert called == {}
 
 

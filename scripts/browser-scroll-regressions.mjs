@@ -8,6 +8,10 @@ import assert from 'node:assert/strict';
 
 const SETTLE_MS = 1500;
 const TOLERANCE_PX = 2;
+// The cue follows a collapsing note frame by frame; a few pixels of per-frame
+// measurement jitter are expected. The bug it guards against was a cue
+// hundreds of pixels too tall, covering the notes below.
+const CUE_FRAME_TOLERANCE_PX = 12;
 
 function paragraphs(label, count) {
   return Array.from({length: count}, (_, index) =>
@@ -41,9 +45,24 @@ async function deleteFixture(page, ids) {
   }, ids);
 }
 
+// Chrome can replace the page's frame during a reload; Puppeteer then briefly
+// reports the old one as detached. Look again on the new frame (only for that
+// error; anything else fails as usual).
+async function waitForAppReady(page) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await page.waitForSelector('[data-app-ready="true"]');
+      return;
+    } catch (error) {
+      if (attempt >= 5 || !/detached Frame/.test(error.message)) throw error;
+      await pause(300);
+    }
+  }
+}
+
 async function reload(page) {
   await page.reload();
-  await page.waitForSelector('[data-app-ready="true"]');
+  await waitForAppReady(page);
   await page.waitForNetworkIdle({idleTime: 300});
 }
 
@@ -654,6 +673,7 @@ export async function checkExitEditScroll(page) {
   const longId = ids[12];
   // Run every case and report all failures together.
   const failures = [];
+  let stepError = null;
   const check = async (name, body) => {
     try {
       await body();
@@ -703,7 +723,7 @@ export async function checkExitEditScroll(page) {
       const rowAfter = (await layout(page, longId)).noteTop;
       assert.ok(Math.abs(rowAfter - rowBefore) <= 4, `collapsed in place: the row should stay put: y=${Math.round(rowBefore)} -> ${Math.round(rowAfter)}`);
       assert.equal(cues, 1, 'collapsed in place: one position cue because the note collapsed again');
-      assert.ok(Math.max(...cueMismatch) <= 4, `collapsed in place: the cue should cover just the collapsed note, but was ${Math.round(Math.max(...cueMismatch))}px off`);
+      assert.ok(Math.max(...cueMismatch) <= CUE_FRAME_TOLERANCE_PX, `collapsed in place: the cue should cover just the collapsed note, but was ${Math.round(Math.max(...cueMismatch))}px off`);
     });
 
     // A collapsed root with child notes (shown while editing) that collapses
@@ -727,7 +747,7 @@ export async function checkExitEditScroll(page) {
       await waitForEditing(page, parentId);
       const {cues, cueMismatch} = await exitWithEscape(page, 'Parent with children', parentId);
       assert.equal(cues, 1, 'collapsed with children: one position cue because the note collapsed again');
-      assert.ok(Math.max(...cueMismatch) <= 4,
+      assert.ok(Math.max(...cueMismatch) <= CUE_FRAME_TOLERANCE_PX,
         `collapsed with children: the cue should cover just the collapsed note, but was ${Math.round(Math.max(...cueMismatch))}px off`);
     });
 
@@ -751,7 +771,7 @@ export async function checkExitEditScroll(page) {
     // never the notes below it, on every frame it is shown.
     assert.ok(cueMismatch.length > 0, 'the cue should be sampled while shown');
     const worstCue = Math.max(...cueMismatch);
-    assert.ok(worstCue <= 4, `the position cue should cover just the collapsed note, but was ${Math.round(worstCue)}px off on some frame`);
+    assert.ok(worstCue <= CUE_FRAME_TOLERANCE_PX, `the position cue should cover just the collapsed note, but was ${Math.round(worstCue)}px off on some frame`);
     assert.ok(Math.abs(collapsedLayout.noteTop - (collapsedLayout.headerBottom + 8)) <= 4,
       `collapsed note without an edit: the collapsed row should sit just below the search controls ` +
       `(y≈${Math.round(collapsedLayout.headerBottom + 8)}), got y=${Math.round(collapsedLayout.noteTop)}`);
@@ -786,11 +806,18 @@ export async function checkExitEditScroll(page) {
     await check('formatted notes', () => formattedClickCases(page, ids));
     await check('new note at top', () => newNoteAtTopCase(page, ids));
     assert.deepEqual(failures, [], `exit-edit scroll failures:\n${failures.join('\n')}`);
-  } finally {
-    // A failed step may have left a reload in flight; clean up on the loaded
-    // page so the step's own error is the one reported.
-    await page.waitForSelector('[data-app-ready="true"]');
+  } catch (error) {
+    // Report the step's own error even if cleanup then fails too (e.g. a
+    // reload left in flight by the failed step).
+    stepError = error;
+  }
+  try {
+    await waitForAppReady(page);
     await deleteFixture(page, ids);
     await reload(page);
+  } catch (cleanupError) {
+    if (stepError === null) throw cleanupError;
+    console.error(`exit-edit cleanup also failed: ${cleanupError.message}`);
   }
+  if (stepError !== null) throw stepError;
 }

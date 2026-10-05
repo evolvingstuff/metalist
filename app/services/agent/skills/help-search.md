@@ -83,7 +83,7 @@ Rules:
   - Example: `"unclosed` → warn `Close quote with "`
 - **Empty quoted strings**: incomplete and warned.
   - Examples: `""` and `''` → warn `Enter text inside quotes`
-- **Dangling prefixes**: `+` or `-` alone is incomplete, but does not immediately warn.
+- **Dangling prefixes**: `+` or `-` must be directly followed by its tag or quoted text; a space after it (`- tag`) is not accepted as `-tag`. A lone prefix at the end is still being typed: incomplete, not warned. Once a term follows a prefix and a space, the field shows "In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)", the query is incomplete (nothing new runs), and that term is left out of the sanitized text, so it is never searched with the opposite meaning (a restored `- tag` does not run as `tag`). If such a search is still sent (pressing Enter, or adding a note while it is the search), the server's rejection appears as a polite banner with the same explanation.
 - **Empty OR clauses**: leading, trailing, or consecutive `OR` is incomplete and
   warned.
 

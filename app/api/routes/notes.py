@@ -257,12 +257,9 @@ def view_diff(payload: ViewDiffRequest):
     if normalized_search is not None:
         if not isinstance(normalized_search, str):
             raise HTTPException(status_code=400, detail="search must be a string or null")
-        capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:view_diff:capture')
-        with capture:
-            parse_search_query(normalized_search)
-        if capture.captured_exception is not None:
-            exc = capture.captured_exception
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Validated before anything changes; a search that does not parse is
+        # answered as rejected input (main.py), shown as a polite warning.
+        parse_search_query(normalized_search)
 
     maybe_reset_on_context(client_id, undo_context)
 

@@ -303,3 +303,48 @@ def test_startup_sanity_rejects_defaultdict_under_any_import_spelling(tmp_path: 
 
     assert [violation.rule_id for violation in violations] == ["PY003"]
     assert "defaultdict(...) is forbidden" in violations[0].message
+
+
+def test_startup_sanity_allows_handling_rejected_user_input(tmp_path: Path) -> None:
+    # Rejected user input (InputRejected) is an expected failure: it may be
+    # caught and answered politely without re-raising.
+    _write_file(
+        tmp_path / "handles_input.py",
+        """
+from app.services.input_errors import InputRejected
+
+
+def describe_search(text):
+    try:
+        parse_search_query(text)
+    except InputRejected as error:
+        return {"warning": str(error)}
+    return {"warning": None}
+""".strip()
+        + "\n",
+    )
+
+    _paths, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert [violation for violation in violations if violation.rule_id == "PY001"] == []
+
+
+def test_startup_sanity_still_rejects_mixing_other_exceptions_with_rejected_input(tmp_path: Path) -> None:
+    _write_file(
+        tmp_path / "mixed.py",
+        """
+from app.services.input_errors import InputRejected
+
+
+def describe_search(text):
+    try:
+        parse_search_query(text)
+    except (InputRejected, KeyError):
+        return None
+""".strip()
+        + "\n",
+    )
+
+    _paths, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert any(violation.rule_id == "PY001" for violation in violations)

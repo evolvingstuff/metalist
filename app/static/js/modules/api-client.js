@@ -1,4 +1,4 @@
-import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, rethrowUnexpectedError } from './expected-errors.js';
+import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, ServerInputRejectedError, rethrowUnexpectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
@@ -187,6 +187,12 @@ export const NotesAPI = {
                 headers: headers
             });
 
+            if (response.status === 400 && response.headers.get('content-type')?.includes('application/json')) {
+                const rejection = await response.clone().json();
+                if (rejection.inputRejected === true && typeof rejection.detail === 'string') {
+                    throw new ServerInputRejectedError(rejection.detail);
+                }
+            }
             if (!response.ok) {
                 // Use centralized error handling
                 ErrorHandler.handleApiError(null, response);
