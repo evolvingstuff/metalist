@@ -298,7 +298,8 @@ class AgentLoopMixin:
             return
         parsed = parse_tool_call(name=call["name"], arguments=call["arguments"], tools=tools)
         if isinstance(parsed, ToolResult):
-            yield self._status_event(call["name"], "completed", f"Corrected a tool call · {call['name']}",
+            # The name may be one the model made up, so it is not used as the activity name.
+            yield self._status_event("tool_call_rejected", "completed", "Asked the AI to correct a tool call",
                                      approx_input_tokens=input_tokens)
             result_holder.append(parsed)
             return

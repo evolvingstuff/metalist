@@ -686,11 +686,11 @@ async def _stream_runtime_events(
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
     yield dict(type='action_status', action=action, status='completed', label=ready_label,
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
-    events = runtime.stream_scoped(session_key=session_key, base_url=base_url,
+    events = runtime.stream_agent(session_key=session_key, base_url=base_url,
             selected_model=payload.model, thinking_level=payload.thinking_level,
             canonical_messages=provider_messages, prompts=prompts, skills=skills,
             retrieval_settings=retrieval_settings, web_settings=web_settings,
-            frozen_scope=frozen_scope, tag_handler=tagging_run.stream)
+            frozen_scope=frozen_scope, tagging_run=tagging_run)
     try:
         async for event in events:
             yield event

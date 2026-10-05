@@ -163,67 +163,6 @@ export function selectPersistentNonDiagnosticActivities(activities) {
 }
 
 
-export function splitSearchActivityLabel(activity) {
-    if (!activity || typeof activity !== 'object' || Array.isArray(activity)) {
-        throw new Error('splitSearchActivityLabel requires activity object');
-    }
-    if (typeof activity.action !== 'string' || activity.action === '') {
-        throw new Error('Search activity display requires action');
-    }
-    if (typeof activity.label !== 'string' || activity.label === '') {
-        throw new Error('Search activity display requires label');
-    }
-    if (activity.action !== 'search_notes') {
-        return { statusLabel: activity.label, searchQuery: '' };
-    }
-
-    const startedPrefixMatch = /^Searching notes · page \d+ · /.exec(activity.label);
-    if (startedPrefixMatch) {
-        const searchQuery = activity.label.slice(startedPrefixMatch[0].length);
-        if (searchQuery === '') {
-            throw new Error('Search activity query must be non-empty');
-        }
-        const statusLabel = startedPrefixMatch[0].slice(0, -3);
-        return { statusLabel, searchQuery };
-    }
-
-    const completedPrefixMatch = (
-        /^Search complete · \d+ of \d+ result trees? · \d+ of \d+ matching notes? · page \d+ of \d+ · /
-    ).exec(activity.label);
-    if (completedPrefixMatch) {
-        const searchQuery = activity.label.slice(completedPrefixMatch[0].length);
-        if (searchQuery === '') {
-            throw new Error('Completed search activity query must be non-empty');
-        }
-        const statusLabel = completedPrefixMatch[0].slice(0, -3);
-        return { statusLabel, searchQuery };
-    }
-    const unavailablePrefixMatch = /^Search page unavailable · page \d+ of \d+ · /.exec(
-        activity.label,
-    );
-    if (unavailablePrefixMatch) {
-        const searchQuery = activity.label.slice(unavailablePrefixMatch[0].length);
-        if (searchQuery === '') {
-            throw new Error('Unavailable search page query must be non-empty');
-        }
-        const statusLabel = unavailablePrefixMatch[0].slice(0, -3);
-        return { statusLabel, searchQuery };
-    }
-    const duplicatePrefixMatch = /^Skipped duplicate search · page \d+ · /.exec(
-        activity.label,
-    );
-    if (duplicatePrefixMatch) {
-        const searchQuery = activity.label.slice(duplicatePrefixMatch[0].length);
-        if (searchQuery === '') {
-            throw new Error('Skipped duplicate search query must be non-empty');
-        }
-        const statusLabel = duplicatePrefixMatch[0].slice(0, -3);
-        return { statusLabel, searchQuery };
-    }
-    return { statusLabel: activity.label, searchQuery: '' };
-}
-
-
 function validateAiStreamEvent(event) {
     if (!event || typeof event !== 'object' || Array.isArray(event)) {
         throw new Error('AI stream event must be an object');

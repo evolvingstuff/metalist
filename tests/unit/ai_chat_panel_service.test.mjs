@@ -7,7 +7,6 @@ import {
     collapseCompletedActivityPairs,
     formatOpenAiCostUsd,
     selectPersistentNonDiagnosticActivities,
-    splitSearchActivityLabel,
     parseAiChatNdjsonBuffer,
     synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
@@ -288,45 +287,6 @@ test('response retry updates the existing lifecycle panel', () => {
     ];
 
     assert.deepEqual(collapseCompletedActivityPairs(activities), [activities[2]]);
-});
-
-
-test('search activity labels expose the query as a separate display part', () => {
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Searching notes · page 1 · foo -"lorem ipsum"',
-    }), {
-        statusLabel: 'Searching notes · page 1',
-        searchQuery: 'foo -"lorem ipsum"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3 · foo -"lorem ipsum"',
-    }), {
-        statusLabel: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3',
-        searchQuery: 'foo -"lorem ipsum"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Search page unavailable · page 7 of 6 · foo',
-    }), {
-        statusLabel: 'Search page unavailable · page 7 of 6',
-        searchQuery: 'foo',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Skipped duplicate search · page 1 · foo OR "foo"',
-    }), {
-        statusLabel: 'Skipped duplicate search · page 1',
-        searchQuery: 'foo OR "foo"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Selected action · Search notes · The answer depends on the notes.',
-    }), {
-        statusLabel: 'Selected action · Search notes · The answer depends on the notes.',
-        searchQuery: '',
-    });
 });
 
 

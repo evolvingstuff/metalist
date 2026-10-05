@@ -162,6 +162,17 @@ to the notes and web pages the tools returned.
 - Yes/No confirmation card; new activity labels; accept new event types in the
   server and client allow-lists together.
 - Remove client code serving the dead search path.
+- Done: the chat route runs `stream_agent` (with the tagging run); the old
+  routing code is unreachable from the route and is deleted in Phase 5. Yes/No
+  card (`confirmation-card.js`, pure `confirmation-question.js`) for
+  `change_confirmation` questions, hosted in the chat's operation panel, not
+  blocking the stream (Stop still ends the run); answers `yes`/`no` through
+  `/proposals/answer`. New activity names allowed in the browser (`agent_turn`,
+  tool names, `confirmation`, `tool_call_rejected`; a made-up tool name is never
+  used as an activity name). Removed the dead `search_notes` activity label
+  splitting and its styles. Help (`help-ai.md`) describes tools, the Yes/No
+  confirmations and release notes. Browser check: the card shows the exact change,
+  Yes posts the answer, the card closes and the turn completes.
 
 ### Phase 5 — Remove the old routing
 - Delete `ScopedRouteEnvelope`, route prompts, dispatch, the unused legacy

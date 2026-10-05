@@ -2,6 +2,8 @@ import { executeAgentMenuRequest } from './agent-menu-actions.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { isNetworkTransportError } from '../api-failure-classification-service.js';
+import { showConfirmationCard } from './confirmation-card.js';
+import { CONFIRMATION_QUESTION_KIND } from './confirmation-question.js';
 import {
     bulkProgressEndsAtCompletion,
     closeBulkProgress,
@@ -27,7 +29,6 @@ import {
     collapseCompletedActivityPairs,
     formatOpenAiCostUsd,
     selectPersistentNonDiagnosticActivities,
-    splitSearchActivityLabel,
     synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
 } from './ai-chat-panel-service.js';
@@ -147,8 +148,6 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'validation',
     'retry',
     'skill',
-    'search_notes',
-    'read_notes_by_id',
     'respond',
     'cancel',
     'provider_runtime',
@@ -170,6 +169,15 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'context_narrowing_test',
     'web_planning',
     'open_web_pages',
+    // Tool-using agent (agent_loop.py).
+    'agent_turn',
+    'lookup_metalist_help',
+    'view_overview',
+    'search_view_notes',
+    'read_view_notes',
+    'open_menu',
+    'confirmation',
+    'tool_call_rejected',
 ]);
 
 
@@ -1218,14 +1226,14 @@ class AiChatPanelController {
                             openMenu: this._openMenu, acknowledge: acknowledgeAgentMenu });
                         return;
                     }
-                    if (event.type.startsWith('bulk_')) {
+                    if (event.type === 'bulk_question' && event.kind === CONFIRMATION_QUESTION_KIND) {
+                        this._ensureOperationPanel(assistantMessage.id);
+                        // Not awaited: the server waits for the answer, and Stop must still end the stream.
+                        void showConfirmationCard({ event, host: this._bulkPanel, signal: abortController.signal })
+                            .then(() => this._removeOperationPanelIfEmpty());
+                    } else if (event.type.startsWith('bulk_')) {
                         const needsBulkPanel = ['bulk_question', 'bulk_progress'].includes(event.type);
-                        if (needsBulkPanel && this._bulkPanel === null) {
-                            this._bulkPanel = document.createElement('div');
-                            this._bulkPanel.className = 'ai-chat-message ai-chat-message-assistant ai-chat-operation-card';
-                            this._bulkPanelAnchorMessageId = assistantMessage.id;
-                            this._elements.messages.append(this._bulkPanel);
-                        }
+                        if (needsBulkPanel) this._ensureOperationPanel(assistantMessage.id);
                         handleBulkEvent(event, abortController, this._bulkPanel);
                         if (event.type === 'bulk_complete' && bulkProgressEndsAtCompletion()) {
                             await closeBulkProgress();
@@ -1443,6 +1451,26 @@ class AiChatPanelController {
             model: settings.model,
             activities: [],
         });
+        this._render({ shouldScrollToBottom: true });
+    }
+
+    _ensureOperationPanel(assistantMessageId) {
+        if (this._bulkPanel !== null) {
+            if (this._bulkPanelAnchorMessageId !== assistantMessageId) {
+                throw new Error('AI chat operation panel belongs to another message');
+            }
+            return;
+        }
+        this._bulkPanel = document.createElement('div');
+        this._bulkPanel.className = 'ai-chat-message ai-chat-message-assistant ai-chat-operation-card';
+        this._bulkPanelAnchorMessageId = assistantMessageId;
+        this._elements.messages.append(this._bulkPanel);
+    }
+
+    _removeOperationPanelIfEmpty() {
+        // The request may already have ended and removed the panel.
+        if (this._bulkPanel === null || this._bulkPanel.childElementCount > 0) return;
+        this._removeBulkPanel();
         this._render({ shouldScrollToBottom: true });
     }
 
@@ -1707,14 +1735,7 @@ class AiChatPanelController {
                 : (activity.status === 'completed' ? '✓' : '•');
             const label = document.createElement('span');
             label.className = 'ai-chat-activity-label';
-            const labelParts = splitSearchActivityLabel(activity);
-            label.textContent = labelParts.statusLabel;
-            if (labelParts.searchQuery !== '') {
-                const query = document.createElement('code');
-                query.className = 'ai-chat-activity-query';
-                query.textContent = labelParts.searchQuery;
-                label.append(document.createTextNode(' · '), query);
-            }
+            label.textContent = activity.label;
             panel.append(marker, label);
             if (!isPersistentNotice) {
                 const tokenCount = document.createElement('span');

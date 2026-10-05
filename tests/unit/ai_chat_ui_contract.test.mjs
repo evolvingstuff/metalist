@@ -278,15 +278,13 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(\)/);
     assert.match(controller, /label\.textContent = 'Working'/);
     assert.doesNotMatch(controller, /formatCompactWorkingActivityLabel/);
-    assert.match(controller, /splitSearchActivityLabel\(activity\)/);
-    assert.match(controller, /query\.className = 'ai-chat-activity-query'/);
+    assert.match(controller, /label\.textContent = activity\.label/);
     assert.match(controller, /tokenCount\.className = 'ai-chat-activity-token-count'/);
     assert.match(controller, /`≈ \$\{activity\.approx_input_tokens\.toLocaleString\(\)\} input tokens`/);
     assert.match(controller, /activity\.output_tokens_received\.toLocaleString\(\)/);
     assert.match(controller, /ai-chat-activity-output-token-count/);
     assert.match(css, /@keyframes ai-chat-output-token-pulse/);
     assert.match(css, /\.ai-chat-working-indicator/);
-    assert.match(css, /\.ai-chat-activity-query/);
     assert.match(css, /\.ai-chat-activity-token-count/);
     assert.match(css, /font-family:\s*ui-monospace/);
     assert.match(css, /\.ai-chat-note-mention/);
@@ -294,7 +292,7 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(css, /\.ai-chat-note-reference/);
     assert.match(css, /\.ai-chat-open-all-references/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="retry"\]/);
-    assert.match(css, /\.ai-chat-activity-panel\[data-action="search_notes"\]/);
+    assert.match(css, /\.ai-chat-activity-panel\[data-action="search_view_notes"\]/);
     assert.match(controller, /AgentDebugView\.refreshIfOpen\(\)/);
 });
 
@@ -412,7 +410,7 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     assert.match(css, /\.summary-batch-ticker \{[^}]*height: 2\.7em;[^}]*overflow: hidden;/);
     assert.match(css, /\.summary-batch-line \{[^}]*text-overflow: ellipsis;/);
     assert.match(controller, /placeChatMessageElements\(\{/);
-    assert.match(controller, /this\._bulkPanelAnchorMessageId = assistantMessage\.id/);
+    assert.match(controller, /this\._ensureOperationPanel\(assistantMessage\.id\)/);
     assert.match(controller, /bulk_complete' && bulkProgressEndsAtCompletion\(\)/);
     assert.doesNotMatch(controller, /insertBefore\(article, this\._bulkPanel\)/);
     assert.match(css, /\.ai-chat-summary-operation \.summary-cancel-btn/);

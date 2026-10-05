@@ -22,26 +22,35 @@ redacted, or omitted notes are not disclosed and cannot be opened. **Open any
 public web page** lets the agent propose direct public HTTP(S) page URLs even when
 they are absent from context. It can open a Google results URL and then open useful
 result pages; both use MetaList's page opener rather than an LLM-provider search
-service. MetaList has no separate search-engine action. Page text is untrusted
+service. MetaList has no separate search-engine action. Before opening an address
+that contains words the user never typed and that appeared in no address already
+seen (for example one a web page or note suggested), the chat shows the address in
+a Yes/No box; nothing opens without Yes. Page text is untrusted
 evidence, supports HTML, plain text, and PDF, and must be cited. Web
 evidence is retained only in the current chat session and Clear Chat removes it.
 Changing the Web access selection applies on the next message.
 
 Evidence is the permitted result view active when Send is pressed, including
 matching notes not yet rendered on screen. Privacy filtering happens before
-counts or note data reach the model. Whole result trees are packed in visible
-order into one token-limited payload. A tree is never divided: the first tree
-that does not fit and all following trees are omitted. If the first tree alone
-does not fit, the request fails visibly. Notes within retained trees are complete.
-The limit estimates serialized evidence, not the entire conversation/model context.
-Raising it can include more evidence and increase cost. A reference-source view
+counts or note data reach the model. The AI uses tools on that view: an overview,
+a word search (every word must appear in a note's text or tags), and reading whole
+result trees in visible order. Each read returns as many whole trees as fit the
+evidence limit; a tree is never divided, trees left unread can be read in a later
+step, and a tree too large for the limit on its own is reported instead of read.
+Notes within returned trees are complete. A whole-view summary packs trees in
+visible order and asks before using several batches. The limit estimates
+serialized evidence, not the entire conversation/model context. Raising it can
+include more evidence and increase cost. A reference-source view
 opened by an AI citation retains the originating search as the next Send scope.
 
-General conversation needs no note retrieval. Product questions load selected
-MetaList help skills on demand; skill text is transient and is not automatically
-added to future turns. Explicit requests to generate/accept/remove tag proposals
-use the separate proposal workflow. Asking about that workflow is not permission
-to run it. The help action can explain and open dialogs only; it cannot set a
+The chat AI decides which tools a request needs, in a default order (MetaList
+help, then notes in the view, then the web, then a change), and may use several
+for one request, up to 8 steps. General conversation needs no tools. Product
+questions look up selected MetaList help topics, including release notes (what
+changed in each version and the installed version); help text is transient and is
+not automatically added to future turns. Explicit requests to generate/accept/remove
+tag proposals or summarize the whole view hand over to those operations, which
+ask first. Asking about that workflow is not permission to run it. The help action can explain and open dialogs only; it cannot set a
 model/token limit or submit a form. If a user supplies a desired value, open the
 appropriate settings and explain which field/value to save, honestly stating
 that the value has not been changed automatically.
@@ -54,7 +63,9 @@ batches; tags proposed in earlier batches are optional reuse vocabulary but
 remain unaccepted. Existing pending proposals are not generated again. Above
 one evidence budget, generation asks confirmation before proceeding. Tagging
 batch size is independently configurable. Bulk accept/remove can target current
-context or the namespace, optionally an exact tag. Successful bulk changes clear
+context or the namespace, optionally an exact tag. Asked in chat, accept/remove
+first shows a Yes/No box with exactly what will change (how many proposals, of
+which tag, across how many notes, where) and changes nothing without Yes. Successful bulk changes clear
 undo/redo and create no bulk undo entry. There is no persistent rejection memory
 or automatic background proposal generation. Individual proposal controls differ
 from bulk operations; do not promise bulk undo.
