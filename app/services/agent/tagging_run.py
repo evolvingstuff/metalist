@@ -202,6 +202,44 @@ class TaggingRun:
                 async for event in self.apply(note_ids, intent.action, intent.tag_filter, {}, ""):
                     yield event
 
+    async def stream_generation(self, *, inference, run):
+        """Generate proposals for the view; the scope card asks for focus and confirmation."""
+        with bulk_operation_guard.acquire(self.snapshot.session_key):
+            self.validate_current()
+            async for event in self.generate(inference=inference, run=run, focus="unspecified"):
+                yield event
+
+    async def stream_review(self, *, action, scope, tag_filter):
+        """Accept or remove pending proposals after the user confirms the exact change."""
+        assert action in {"accept", "remove"} and scope in {"current_view", "namespace"}
+        assert isinstance(tag_filter, str)
+        with bulk_operation_guard.acquire(self.snapshot.session_key):
+            self.validate_current()
+            if scope == "namespace":
+                note_ids = tuple(store.list_note_ids())
+                scope_label = "the whole namespace"
+            else:
+                note_ids = proposal_scope_ids(self.snapshot.descriptor)
+                scope_label = "the current view"
+            changes, count, _affected = prepare_proposal_changes(note_ids, action, tag_filter, {})
+            matching = "pending tag proposals"
+            if tag_filter:
+                matching = f"pending proposals of the tag `{tag_filter}`"
+            if count == 0:
+                async for event in self.finish(f"There are no {matching} in {scope_label}. Nothing changed.", False, ()):
+                    yield event
+                return
+            verb = {"accept": "Accept", "remove": "Remove"}[action]
+            question_id, answer = bulk_operation_guard.question(("yes", "no"))
+            yield {"type": "bulk_question", "question_id": question_id, "kind": "change_confirmation",
+                   "label": f"{verb} {count} {matching} across {len(changes)} notes in {scope_label}?"}
+            if await answer == "no":
+                async for event in self.finish("Cancelled. No proposals changed.", False, ()):
+                    yield event
+                return
+            async for event in self.apply(note_ids, action, tag_filter, {}, ""):
+                yield event
+
     async def generate(self, *, inference, run, focus):
         canonical_trees = tagging_trees(self.snapshot)
         trees = shuffle_trees_for_batches(canonical_trees)

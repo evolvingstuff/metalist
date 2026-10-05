@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from urllib.parse import unquote_plus, urlsplit
+
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
 from app.services.agent.web_evidence import WebEvidenceCapacityError
 from app.services.agent.web_evidence import WebPageEvidence
@@ -11,6 +14,44 @@ from app.services.agent.web_fetch import fetch_web_pages
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.public_http import normalize_public_http_url
+
+
+_ADDRESS_WORD_RE = re.compile(r"[a-z0-9]+")
+# Words of the Google search address the agent constructs from the user's words.
+_SEARCH_ADDRESS_WORDS = frozenset({"http", "https", "www", "google", "com", "search", "q"})
+
+
+def _address_words(text: str) -> frozenset[str]:
+    return frozenset(_ADDRESS_WORD_RE.findall(unquote_plus(text).lower()))
+
+
+def addresses_needing_confirmation(
+    urls: list[str],
+    *,
+    typed_text: str,
+    known_urls: frozenset[str],
+) -> tuple[str, ...]:
+    """Full-mode addresses that carry text the user did not type (prompt-injection guard).
+
+    An address is fine when it appeared as is in the conversation, the notes or web
+    pages shown to the model, or when every word in it is a word the user typed (or
+    part of the Google search form). Anything else could carry note or page text to
+    another site, so the user confirms it first. Returns normalized addresses in order.
+    """
+    assert isinstance(typed_text, str) and isinstance(known_urls, frozenset)
+    allowed_words = _address_words(typed_text) | _SEARCH_ADDRESS_WORDS
+    for known_url in known_urls:
+        allowed_words |= _address_words(known_url)
+    needing: list[str] = []
+    for url in urls:
+        normalized = normalize_public_http_url(url)
+        if normalized is None or normalized in known_urls or normalized in needing:
+            continue
+        parts = urlsplit(normalized)
+        address_text = " ".join((parts.scheme, parts.netloc, parts.path, parts.query, parts.fragment))
+        if not _address_words(address_text) <= allowed_words:
+            needing.append(normalized)
+    return tuple(needing)
 
 
 async def open_web_pages(

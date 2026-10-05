@@ -61,6 +61,16 @@ class WebUrlCapabilitySet:
     def normalized_urls(self) -> tuple[str, ...]:
         return tuple(capability.normalized_url for capability in self._capabilities)
 
+    @property
+    def capabilities(self) -> tuple[WebUrlCapability, ...]:
+        return self._capabilities
+
+    def including(self, other: WebUrlCapabilitySet) -> WebUrlCapabilitySet:
+        """This set plus the addresses of another, keeping every provenance source."""
+        if not isinstance(other, WebUrlCapabilitySet):
+            raise TypeError("Can only include another WebUrlCapabilitySet")
+        return WebUrlCapabilitySet((*self._capabilities, *other.capabilities))
+
 
 def extract_normalized_web_urls(text: str) -> tuple[str, ...]:
     if not isinstance(text, str):
@@ -117,6 +127,17 @@ def build_web_url_capabilities(
             raise ValueError("Retained web evidence URL is invalid")
         capabilities.append(WebUrlCapability(normalized, ("retained_web_evidence",)))
     return WebUrlCapabilitySet(capabilities)
+
+
+def note_evidence_url_capabilities(evidence: InvestigationEvidencePayload) -> WebUrlCapabilitySet:
+    """Addresses written in notes a tool returned to the model."""
+    if not isinstance(evidence, InvestigationEvidencePayload):
+        raise TypeError("Note evidence must be InvestigationEvidencePayload")
+    return WebUrlCapabilitySet(
+        WebUrlCapability(url, (f"investigation_note:{note_id}",))
+        for note_id, disclosed_text in _iter_disclosed_investigation_note_text(evidence.result_trees)
+        for url in extract_normalized_web_urls(disclosed_text)
+    )
 
 
 def _iter_disclosed_investigation_note_text(

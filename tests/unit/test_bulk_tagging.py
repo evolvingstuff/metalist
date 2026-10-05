@@ -1045,3 +1045,51 @@ def test_a_failed_tagging_call_explains_itself_like_the_chat_steps() -> None:
     assert "it failed while proposing tags" in message
     assert "all 8192 tokens went to thinking" in message
     assert "Setup: gpt-5.6-sol, High thinking, web access off." in message
+
+
+@pytest.mark.parametrize("answer,applies", [("yes", True), ("no", False)])
+def test_agent_tag_review_shows_the_exact_change_and_applies_only_after_yes(monkeypatch, answer, applies):
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "proposal_scope_ids", lambda descriptor: ("a", "b"))
+    monkeypatch.setattr(
+        runs,
+        "prepare_proposal_changes",
+        lambda *args: ({"a": ("x", ""), "b": ("x", "")}, 3, {"a": ("x",), "b": ("x", "y")}),
+    )
+    applied = []
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: applied.append(kwargs))
+    operation = runs.TaggingRun(token="token", snapshot=SimpleNamespace(session_key="review-session", descriptor=None),
+                                preferences={}, sync_uuid="sync", batch_tokens=1000)
+
+    async def collect_events():
+        events = []
+        async for event in operation.stream_review(action="accept", scope="current_view", tag_filter="x"):
+            events.append(event)
+            if event["type"] == "bulk_question":
+                runs.bulk_operation_guard.answer("review-session", event["question_id"], answer)
+        return events
+
+    events = asyncio.run(collect_events())
+    question = events[0]
+    assert question["kind"] == "change_confirmation"
+    assert question["label"] == "Accept 3 pending proposals of the tag `x` across 2 notes in the current view?"
+    assert bool(applied) is applies
+    text = "".join(event["text"] for event in events if event["type"] == "content_delta")
+    if applies:
+        assert text == "Accepted 3 tag proposals across 2 notes."
+    else:
+        assert text == "Cancelled. No proposals changed."
+
+
+def test_agent_tag_review_with_nothing_to_change_asks_nothing(monkeypatch):
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
+    operation = runs.TaggingRun(token="token", snapshot=SimpleNamespace(session_key="review-empty", descriptor=None),
+                                preferences={}, sync_uuid="sync", batch_tokens=1000)
+
+    async def collect_events():
+        return [event async for event in operation.stream_review(action="remove", scope="namespace", tag_filter="")]
+
+    events = asyncio.run(collect_events())
+    assert [event["type"] for event in events] == ["bulk_complete", "content_delta", "done"]
+    assert events[1]["text"] == "There are no pending tag proposals in the whole namespace. Nothing changed."

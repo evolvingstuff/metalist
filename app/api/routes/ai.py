@@ -771,6 +771,8 @@ class BulkAnswerRequest(BaseModel):
         "prefix_focus_both",
         "summarize_all",
         "use_prefix",
+        "yes",
+        "no",
     ]
 
 

@@ -1,9 +1,10 @@
 """Read-only tools of the tool-using agent.
 
-Every tool reads through the run's frozen view snapshot (already filtered by
-the AI privacy boundary) or the packaged help, or opens web pages within the
-web-access mode. None of them changes notes. Tools that change notes or need
-the user's confirmation belong to the agent loop.
+Every read-only tool reads through the run's frozen view snapshot (already
+filtered by the AI privacy boundary) or the packaged help, or opens web pages
+within the web-access mode. None of them changes notes. The interactive tools
+(menus, whole-view summary, tag proposals) are defined here but run by the agent
+loop, because they talk to the browser and ask the user to confirm.
 
 Each tool returns JSON text for the model plus the note ids and web evidence it
 showed, so the final answer can cite exactly what the tools returned.
@@ -16,8 +17,10 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from app.services.agent.help_catalog import HELP_TOPICS, HelpTopic
-from app.services.agent.investigation import InvestigationState, RootTreeRead
+from typing import Literal
+
+from app.services.agent.help_catalog import HELP_TOPICS, MENU_ACTIONS, MENU_BY_ID, HelpTopic
+from app.services.agent.investigation import InvestigationEvidencePayload, InvestigationState, RootTreeRead
 from app.services.agent.skill_settings import AgentSkill, AgentSkillSet
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.token_estimation import estimate_input_tokens
@@ -93,6 +96,34 @@ class OpenWebPagesArguments(BaseModel):
     )
 
 
+class OpenMenuArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    menu_id: Literal[tuple(MENU_BY_ID)] = Field(..., description="The menu destination to open.")
+
+
+class SummarizeViewArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProposeTagGenerationArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProposeTagReviewArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["accept", "remove"] = Field(
+        ..., description="accept turns proposals into tags; remove discards proposals.",
+    )
+    scope: Literal["current_view", "namespace"] = Field(
+        ..., description="current_view unless the user explicitly asked for the whole namespace.",
+    )
+    tag_filter: str = Field(
+        ..., max_length=256, description="One exact proposed tag, or empty for all proposals.",
+    )
+
+
 LOOKUP_METALIST_HELP_TOOL = AgentTool(
     name="lookup_metalist_help",
     description=(
@@ -134,6 +165,44 @@ OPEN_WEB_PAGES_TOOL = AgentTool(
     arguments_model=OpenWebPagesArguments,
 )
 
+OPEN_MENU_TOOL = AgentTool(
+    name="open_menu",
+    description=(
+        "Open a MetaList dialog in the browser, or highlight a command palette entry without running "
+        "it. Opening changes nothing. Destinations: "
+        + "; ".join(f"{entry['id']}: {entry['label']}" for entry in MENU_ACTIONS)
+    ),
+    arguments_model=OpenMenuArguments,
+)
+SUMMARIZE_VIEW_TOOL = AgentTool(
+    name="summarize_view",
+    description=(
+        "Summarize every note in the current view, in batches when it is large. MetaList asks the user "
+        "to confirm large summaries, then writes the summary. Ends your turn."
+    ),
+    arguments_model=SummarizeViewArguments,
+)
+PROPOSE_TAG_GENERATION_TOOL = AgentTool(
+    name="propose_tag_generation",
+    description=(
+        "Generate new tag proposals for the notes in the current view. MetaList asks the user to "
+        "choose the tag focus and confirm, then adds proposals (never accepted tags). Ends your turn."
+    ),
+    arguments_model=ProposeTagGenerationArguments,
+)
+PROPOSE_TAG_REVIEW_TOOL = AgentTool(
+    name="propose_tag_review",
+    description=(
+        "Accept or remove pending tag proposals in the current view or the whole namespace. MetaList "
+        "shows the user exactly what will change and applies it only after Yes. Ends your turn."
+    ),
+    arguments_model=ProposeTagReviewArguments,
+)
+# Tools that end the agent's turn: the operation reports its own outcome.
+OPERATION_TOOL_NAMES = frozenset({
+    SUMMARIZE_VIEW_TOOL.name, PROPOSE_TAG_GENERATION_TOOL.name, PROPOSE_TAG_REVIEW_TOOL.name,
+})
+
 
 @dataclass(frozen=True, slots=True)
 class ToolContext:
@@ -162,13 +231,16 @@ class ToolResult:
     content: str
     is_error: bool
     note_ids: tuple[str, ...]
+    note_evidence: tuple[InvestigationEvidencePayload, ...]
     web_evidence: tuple[WebPageEvidence, ...]
     activated_skills: tuple[AgentSkill, ...]
 
     def __post_init__(self) -> None:
         assert isinstance(self.content, str) and self.content != ""
+        assert len(self.note_evidence) <= 1
         if self.is_error:
-            assert self.note_ids == () and self.web_evidence == () and self.activated_skills == ()
+            assert self.note_ids == () and self.note_evidence == ()
+            assert self.web_evidence == () and self.activated_skills == ()
 
 
 def available_agent_tools(*, web_settings: AgentWebSettings) -> tuple[AgentTool, ...]:
@@ -179,14 +251,27 @@ def available_agent_tools(*, web_settings: AgentWebSettings) -> tuple[AgentTool,
     return tuple(tools)
 
 
-async def run_agent_tool(*, name: str, arguments: str, context: ToolContext) -> ToolResult:
-    """Run one tool call. A call the tool cannot accept is explained back to the model."""
+def agent_loop_tools(*, web_settings: AgentWebSettings) -> tuple[AgentTool, ...]:
+    """Every tool the agent loop offers, in the default order."""
+    return (
+        *available_agent_tools(web_settings=web_settings),
+        OPEN_MENU_TOOL,
+        PROPOSE_TAG_GENERATION_TOOL,
+        PROPOSE_TAG_REVIEW_TOOL,
+        SUMMARIZE_VIEW_TOOL,
+    )
+
+
+def parse_tool_call(
+    *, name: str, arguments: str, tools: tuple[AgentTool, ...],
+) -> BaseModel | ToolResult:
+    """Parsed arguments, or an error result explaining the rejected call to the model."""
     assert isinstance(name, str) and isinstance(arguments, str)
-    tools_by_name = {tool.name: tool for tool in available_agent_tools(web_settings=context.web_settings)}
+    tools_by_name = {tool.name: tool for tool in tools}
     if name not in tools_by_name:
         return _error_result(f"There is no tool named {name!r}. Available tools: {', '.join(tools_by_name)}.")
     arguments_capture = CapturedExceptionContext(
-        ValidationError, boundary="app/services/agent/agent_tools.py:run_agent_tool:arguments_capture",
+        ValidationError, boundary="app/services/agent/agent_tools.py:parse_tool_call:arguments_capture",
     )
     parsed = None
     with arguments_capture:
@@ -198,6 +283,16 @@ async def run_agent_tool(*, name: str, arguments: str, context: ToolContext) -> 
         )
         return _error_result(f"The arguments for {name} were not accepted ({problems}). Fix them and call again.")
     assert parsed is not None
+    return parsed
+
+
+async def run_agent_tool(*, name: str, arguments: str, context: ToolContext) -> ToolResult:
+    """Run one read-only tool call. A call the tool cannot accept is explained back to the model."""
+    parsed = parse_tool_call(
+        name=name, arguments=arguments, tools=available_agent_tools(web_settings=context.web_settings),
+    )
+    if isinstance(parsed, ToolResult):
+        return parsed
     if isinstance(parsed, LookupMetaListHelpArguments):
         return _lookup_metalist_help(parsed, context)
     if isinstance(parsed, ViewOverviewArguments):
@@ -220,7 +315,8 @@ def _lookup_metalist_help(arguments: LookupMetaListHelpArguments, context: ToolC
             for topic, skill in zip(arguments.topics, skills, strict=True)
         ],
     }
-    return ToolResult(content=_json(payload), is_error=False, note_ids=(), web_evidence=(), activated_skills=skills)
+    return ToolResult(content=_json(payload), is_error=False, note_ids=(), note_evidence=(),
+                      web_evidence=(), activated_skills=skills)
 
 
 def _view_overview(context: ToolContext) -> ToolResult:
@@ -250,7 +346,8 @@ def _view_overview(context: ToolContext) -> ToolResult:
         "privacy": "Notes excluded by the AI privacy settings are not part of the view.",
     }
     return ToolResult(content=_json(payload), is_error=False,
-                      note_ids=snapshot.selected_note.reference_note_ids, web_evidence=(), activated_skills=())
+                      note_ids=snapshot.selected_note.reference_note_ids, note_evidence=(),
+                      web_evidence=(), activated_skills=())
 
 
 def _preview(snapshot, root_id: str) -> str:
@@ -282,7 +379,7 @@ def _search_view_notes(arguments: SearchViewNotesArguments, context: ToolContext
     }
     if not matching_note_ids:
         return ToolResult(content=_json({**search_payload, "trees": []}), is_error=False,
-                          note_ids=(), web_evidence=(), activated_skills=())
+                          note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
     tree_read = context.investigation.read_root_trees(requested_ids=matching_note_ids)
     assert tree_read.unknown_ids == ()
     return _tree_read_result(tree_read, search_payload)
@@ -306,7 +403,8 @@ def _tree_read_result(tree_read: RootTreeRead, extra_payload: dict[str, object])
         "unknown_ids": list(tree_read.unknown_ids),
     }
     return ToolResult(content=_json(payload), is_error=False,
-                      note_ids=tree_read.payload.evidence_note_ids, web_evidence=(), activated_skills=())
+                      note_ids=tree_read.payload.evidence_note_ids, note_evidence=(tree_read.payload,),
+                      web_evidence=(), activated_skills=())
 
 
 async def _open_web_pages(arguments: OpenWebPagesArguments, context: ToolContext) -> ToolResult:
@@ -317,7 +415,7 @@ async def _open_web_pages(arguments: OpenWebPagesArguments, context: ToolContext
         urls=arguments.urls,
     )
     return ToolResult(content=_json({"pages": pages}), is_error=False,
-                      note_ids=(), web_evidence=evidence, activated_skills=())
+                      note_ids=(), note_evidence=(), web_evidence=evidence, activated_skills=())
 
 
 def _error_location(location: tuple[object, ...]) -> str:
@@ -328,7 +426,17 @@ def _error_location(location: tuple[object, ...]) -> str:
 
 def _error_result(message: str) -> ToolResult:
     return ToolResult(content=_json({"error": message}), is_error=True,
-                      note_ids=(), web_evidence=(), activated_skills=())
+                      note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
+
+
+def tool_message_result(payload: dict[str, object]) -> ToolResult:
+    """A plain result the agent loop reports back to the model (menus, confirmations)."""
+    return ToolResult(content=_json(payload), is_error=False,
+                      note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
+
+
+def tool_error_result(message: str) -> ToolResult:
+    return _error_result(message)
 
 
 def _json(payload: dict[str, object]) -> str:

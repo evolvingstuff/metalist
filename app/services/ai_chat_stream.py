@@ -83,10 +83,13 @@ class ChatTurnStream:
     def content_delta(self, event: dict[str, object]) -> dict[str, object]:
         note_ids = event_reference_note_ids(event)
         web_ids = event_reference_web_ids(event)
+        # A tool-using answer may gain references as tools return more notes and
+        # pages, but never loses one: text already shown keeps its citations.
         if self.has_reference_scope and (
-            note_ids != self.reference_note_ids or web_ids != self.reference_web_ids
+            note_ids[:len(self.reference_note_ids)] != self.reference_note_ids
+            or web_ids[:len(self.reference_web_ids)] != self.reference_web_ids
         ):
-            raise RuntimeError('Agent reference scope changed during final response')
+            raise RuntimeError('Agent reference scope may only grow during a response')
         self.reference_note_ids = note_ids
         self.reference_web_ids = web_ids
         self.has_reference_scope = True

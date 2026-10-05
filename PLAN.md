@@ -132,6 +132,22 @@ to the notes and web pages the tools returned.
 - Status rows per tool call ("Looking up MetaList help · AI", "Reading 12 notes",
   "Opening 2 web pages", "Waiting for your confirmation").
 - Graceful fallback for persistent bad tool calls.
+- Done: `agent_loop.py` (`AgentRuntime.stream_agent`), instructions in
+  `prompts/agent.md`, interactive tools `open_menu`, `summarize_view`,
+  `propose_tag_generation` and `propose_tag_review` (the planned
+  `propose_tag_operation` is split in two, so no argument depends on another:
+  generation is always the current view). Operations must be called alone and end
+  the turn; their own confirmation runs (scope/focus card for generation and
+  summaries, a new Yes/No `change_confirmation` with exact counts for accept/remove,
+  which previously ran without asking). Full web mode asks Yes/No before opening an
+  address with words the user did not type and that appeared in no known address.
+  Limits: 8 model turns; two failed tool turns in a row, or the step limit, force a
+  final answer; a silent ending gets one reminder. References may grow during a
+  response but never shrink. Live check: 3 models at Low plus Luna at High,
+  five requests each (help, notes, menu, tag review, chat), with correct tools and
+  order (a silent Luna ending after a menu led to the reminder).
+- Not yet wired to the chat route: that switch happens in Phase 4 together with
+  the browser's Yes/No card.
 
 ### Phase 4 — Browser
 - Yes/No confirmation card; new activity labels; accept new event types in the

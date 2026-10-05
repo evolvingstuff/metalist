@@ -10,8 +10,10 @@ from app.services.agent.actions import RespondAction
 from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.prompt_settings import AgentPromptSet
+from app.services.agent.prompts import AGENT_LOOP_INSTRUCTIONS
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.skill_settings import AgentSkill
+from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.staged_summary import SummaryBatchResult
 from app.services.agent.staged_summary import summary_reference_note_ids
 from app.services.agent.tools import ToolExecutionResult
@@ -261,6 +263,51 @@ class AgentContextBuilder:
         }
         return [*messages, {"role": "user", "content": "SELECTED_NOTE_CONTEXT\n"
                            + json.dumps(payload, sort_keys=True, separators=(",", ":"))}]
+
+    def build_agent_messages(
+        self,
+        *,
+        canonical_messages: list[dict[str, str]],
+        skills: AgentSkillSet,
+        web_settings: AgentWebSettings,
+        snapshot: ScopedSearchSnapshot,
+        available_urls: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        """The tool-using agent's opening conversation.
+
+        Instructions (plus the web skill when web access is on) come first, then
+        the conversation, with the view and web-access context placed just before
+        the current request so the request stays the last message.
+        """
+        self._validate_canonical_messages(canonical_messages)
+        if not isinstance(snapshot, ScopedSearchSnapshot):
+            raise TypeError("snapshot must be ScopedSearchSnapshot")
+        system_messages: list[dict[str, object]] = [{"role": "system", "content": AGENT_LOOP_INSTRUCTIONS}]
+        if web_settings.can_open_pages:
+            system_messages.append({"role": "system", "content": format_active_skill(skills.for_action("web_browsing"))})
+        descriptor = snapshot.descriptor
+        view_context = {
+            "view_label": descriptor.label,
+            "view_kind": descriptor.scope_kind,
+            "search_query": descriptor.search_query,
+            "note_count": snapshot.note_count,
+            "tree_count": snapshot.result_tree_count,
+            "selected_note": snapshot.selected_note.as_payload(),
+            "instruction": (
+                "The view and the note being edited when the user sent this message. Tools read this "
+                "view only. selected_note is the conversational focus, not a limit on the request."
+            ),
+        }
+        context_messages = [
+            {"role": "user", "content": "SELECTED_NOTE_CONTEXT\n" + json.dumps(view_context, sort_keys=True, separators=(",", ":"))},
+            *self.append_web_access_context(messages=[], settings=web_settings, available_urls=available_urls),
+        ]
+        return [
+            *system_messages,
+            *[dict(message) for message in canonical_messages[:-1]],
+            *context_messages,
+            dict(canonical_messages[-1]),
+        ]
 
     def build_initial_messages(
         self,

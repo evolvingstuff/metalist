@@ -16,7 +16,7 @@ CAPTURE_BOUNDARIES = {
     'app/services/agent/web_fetch.py:handle_starttag:join_capture': ('ValueError',),
     'app/services/agent/web_actions.py:open_web_pages:evidence_capacity_capture': ('WebEvidenceCapacityError',),
     # A model's tool call is untrusted input; rejected arguments are explained back to the model.
-    'app/services/agent/agent_tools.py:run_agent_tool:arguments_capture': ('ValidationError',),
+    'app/services/agent/agent_tools.py:parse_tool_call:arguments_capture': ('ValidationError',),
     # In-app updates translate only external transport, installation eligibility and job lookup errors.
     'app/services/app_updates.py:check_for_update:eligibility': ('AppUpdateRejected',),
     'app/services/app_updates.py:job_path:validation': ('ValueError',),

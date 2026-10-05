@@ -38,6 +38,8 @@ from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.investigation import InvestigationEvidencePayload
+from app.services.agent.agent_loop import AgentLoopMixin
+from app.services.agent.execution_errors import AgentExecutionError
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import CompleteRootBatchPlan
 from app.services.agent.model_policy import InferencePurpose
@@ -130,10 +132,6 @@ _SummaryBatchTransition = (
 )
 
 
-class AgentExecutionError(Exception):
-    """Expected failure caused by provider/model output during an agent run."""
-
-
 def _final_response_max_output_tokens(*, provider_label: str) -> int:
     if provider_label not in _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER:
         raise ValueError(f"Unsupported inference provider: {provider_label}")
@@ -162,7 +160,7 @@ class _FinalStreamState:
     did_finish: bool
 
 
-class AgentRuntime:
+class AgentRuntime(AgentLoopMixin):
     def __init__(
         self,
         *,
@@ -242,6 +240,51 @@ class AgentRuntime:
                     run_id=run.run_id,
                     error=f"{type(exc).__name__}: {exc}",
                 )
+                raise
+
+    async def stream_agent(
+        self,
+        *,
+        session_key: str,
+        base_url: str,
+        selected_model: str,
+        thinking_level: str,
+        canonical_messages: list[dict[str, str]],
+        prompts: AgentPromptSet,
+        skills: AgentSkillSet,
+        retrieval_settings: AgentRetrievalSettings,
+        web_settings: AgentWebSettings,
+        frozen_scope: ScopedSearchSnapshot,
+        tagging_run,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Answer with the tool-using agent loop (see agent_loop.py)."""
+        run, _initial_messages = self._start_run(
+            session_key=session_key, base_url=base_url, selected_model=selected_model,
+            thinking_level=thinking_level, canonical_messages=canonical_messages, prompts=prompts,
+            skills=skills, retrieval_settings=retrieval_settings, web_settings=web_settings,
+        )
+        with record_history(self._trace_store, session_key=session_key, run_id=run.run_id):
+            # lint: allow-PY001 rationale="record every agent run failure before immediately re-raising"
+            try:
+                async with aclosing(self._run_agent_loop(
+                    run=run, canonical_messages=canonical_messages, frozen_scope=frozen_scope,
+                    tagging_run=tagging_run,
+                )) as steps:
+                    async for event in steps:
+                        self._trace_store.append_event(
+                            session_key=run.session_key, run_id=run.run_id,
+                            event_type="APPLICATION_EVENT", label="Application outcome",
+                            detail=event, duration_ms=0.0,
+                        )
+                        yield event
+            # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
+            except asyncio.CancelledError:
+                self._record_failure(session_key=session_key, run_id=run.run_id, error="Agent run interrupted")
+                raise
+            # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
+            except Exception as exc:
+                self._record_failure(session_key=session_key, run_id=run.run_id,
+                                     error=f"{type(exc).__name__}: {exc}")
                 raise
 
     async def _run_scoped_steps(
@@ -392,11 +435,32 @@ class AgentRuntime:
             self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
             return
 
-        assert route.kind in {
+        async with aclosing(self._stream_scope_evidence_answer(
+            run=run, canonical_messages=canonical_messages, snapshot=snapshot, state=state,
+            selected_note_tokens=selected_note_tokens, kind=route.kind, route_tokens=route_tokens,
+            allows_web=True,
+        )) as evidence_events:
+            async for event in evidence_events:
+                yield event
+
+    async def _stream_scope_evidence_answer(
+        self,
+        *,
+        run: _RunContext,
+        canonical_messages: list[dict[str, str]],
+        snapshot: ScopedSearchSnapshot,
+        state: InvestigationState,
+        selected_note_tokens: int,
+        kind: str,
+        route_tokens: int,
+        allows_web: bool,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Investigate or summarize the frozen view and stream the answer (route and agent)."""
+        assert kind in {
             "investigate_current_scope",
             "summarize_current_scope",
         }
-        skill = run.skills.for_action(route.kind)
+        skill = run.skills.for_action(kind)
         self._record_skill_activation(run=run, skill=skill)
         yield self._status_event(
             "skill",
@@ -404,7 +468,7 @@ class AgentRuntime:
             f"Activated skill · {skill.title}",
             approx_input_tokens=route_tokens,
         )
-        if route.kind == "summarize_current_scope":
+        if kind == "summarize_current_scope":
             # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
             try:
                 batch_plan = await asyncio.to_thread(
@@ -583,7 +647,7 @@ class AgentRuntime:
             ),
             approx_input_tokens=final_tokens,
         )
-        if run.web_settings.can_open_pages:
+        if allows_web and run.web_settings.can_open_pages:
             planning_messages = self._replace_final_request_with_evidence_context(
                 final_messages
             )
