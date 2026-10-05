@@ -285,14 +285,19 @@ def view_diff(payload: ViewDiffRequest):
     if tab_view_empty:
         warm_view = None
     client_known_note_ids: set[str] = set()
+    # The tab's previous root order: a sorted tab keeps the edited note's root there.
+    previous_root_ids: list[str] = []
     if warm_view is not None:
         client_known_note_ids = set(warm_view.hash_by_id)
+        if None in warm_view.children_by_parent:
+            previous_root_ids = warm_view.children_by_parent[None]
 
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         search=normalized_search,
         sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
+        previous_root_ids=previous_root_ids,
         visible_top_root_id=visible_top_root_id,
         visible_bottom_root_id=visible_bottom_root_id,
         is_untagged_view=is_untagged_view,

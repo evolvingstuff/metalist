@@ -17,6 +17,7 @@ from ..services.content_cache import (
 )
 from ..services.note_store import store as note_store
 from app.presentation.render.note_renderer import render_read_only_mode
+from app.services.markdown_rendering import strip_latex_source_attributes
 from app.db.notes_sql import (
     fetch_children_ordered,
     fetch_note,
@@ -652,7 +653,9 @@ def render_note_data_read_only(note_data: Dict[str, Any]) -> Dict[str, Any]:
             raise TypeError('note_data.children must be a list')
         child_payloads = [{} for _ in children]
         rendered.update(node)
-        rendered['content'] = render_read_only_mode(SimpleNamespace(content=content, tags=tags))
+        rendered['content'] = strip_latex_source_attributes(
+            render_read_only_mode(SimpleNamespace(content=content, tags=tags))
+        )
         rendered['children'] = child_payloads
         pending.extend(zip(children, child_payloads))
     return root

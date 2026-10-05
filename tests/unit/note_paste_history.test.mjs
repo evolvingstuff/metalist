@@ -10,7 +10,7 @@ const end = source.indexOf('export async function actionPasteNoteChild()', start
 assert.ok(start >= 0 && end > start);
 const actionSource = source.slice(start, end).replace('export ', '');
 
-function harness({ priorEdits, failPaste }) {
+function harness({ priorEdits, failPaste, targetText, blockRoot }) {
     const events = [];
     const ModeContext = {
         currentNoteId: 'blank-note', isEditing: true, isDirty: priorEdits,
@@ -37,6 +37,15 @@ function harness({ priorEdits, failPaste }) {
         scrollNoteIntoView() {},
         window: { requestAnimationFrame(callback) { callback(); } },
         ErrorHandler: { showErrorBanner() { throw new Error('Unexpected banner'); } },
+        DOMUtils: {
+            getNoteById() { return { querySelector() { return null; } }; },
+            getNoteContent() { return { textContent: targetText }; },
+        },
+        isRootNoteId() { return true; },
+        blockRootNoteCreation(placement) {
+            events.push(`block-check:${placement}`);
+            return blockRoot;
+        },
     };
     const run = new Function(...Object.keys(dependencies), `${actionSource}\nreturn actionPasteNoteSibling;`)(...Object.values(dependencies));
     return { run, ModeContext, events, preview };
@@ -44,7 +53,7 @@ function harness({ priorEdits, failPaste }) {
 
 for (const priorEdits of [false, true]) {
     test(`saved note paste routes the next undo to application history (prior edits: ${priorEdits})`, async () => {
-        const { run, ModeContext, events, preview } = harness({ priorEdits, failPaste: false });
+        const { run, ModeContext, events, preview } = harness({ priorEdits, failPaste: false, targetText: '', blockRoot: true });
         assert.equal(await run(), true);
         assert.equal(ModeContext.currentContent, preview);
         assert.equal(ModeContext.isDirty, false);
@@ -59,7 +68,7 @@ for (const priorEdits of [false, true]) {
 }
 
 test('a rejected paste preserves the existing local edit history', async () => {
-    const { run, ModeContext, events } = harness({ priorEdits: true, failPaste: true });
+    const { run, ModeContext, events } = harness({ priorEdits: true, failPaste: true, targetText: '', blockRoot: true });
     await assert.rejects(run, /paste rejected/);
     assert.equal(ModeContext.editSessionHasEdits, true);
     assert.deepEqual(events, ['save', 'paste']);
@@ -70,7 +79,7 @@ const referenceStart = keyboardSource.indexOf('function handleInsertEmbedReferen
 const referenceEnd = keyboardSource.indexOf('async function handleSplitNoteShortcut(event)', referenceStart);
 assert.ok(referenceStart >= 0 && referenceEnd > referenceStart);
 
-function referenceHarness({ isEditing, clipboardNoteId }) {
+function referenceHarness({ isEditing, clipboardNoteId, sortBlocksTopNote }) {
     const events = [];
     const pending = [];
     const ModeContext = {
@@ -86,6 +95,8 @@ function referenceHarness({ isEditing, clipboardNoteId }) {
         async createChildNote() { events.push('child'); },
         insertReferenceTokenIntoActiveEditor(token) { events.push(token); },
         async actionSaveNote(id) { events.push(`save:${id}`); },
+        blockRootNoteCreation(placement) { events.push(`block-check:${placement}`); return sortBlocksTopNote; },
+        requireCreatedNoteId(noteId) { return noteId; },
     };
     const run = new Function(...Object.keys(dependencies), `${keyboardSource.slice(referenceStart, referenceEnd)}\nreturn handleInsertEmbedReferenceShortcut;`)(...Object.values(dependencies));
     const event = { shiftKey: false, preventDefault() { events.push('prevent'); }, stopPropagation() {} };
@@ -93,23 +104,42 @@ function referenceHarness({ isEditing, clipboardNoteId }) {
 }
 
 test('reference paste with no selected note creates and saves a top note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: 'original-note' });
+    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: 'original-note', sortBlocksTopNote: false });
     run(event);
     await Promise.all(pending);
-    assert.deepEqual(events, ['prevent', 'top', '![[original-note]]', 'save:new-top', 'reset']);
+    assert.deepEqual(events, ['prevent', 'block-check:top', 'top', '![[original-note]]', 'save:new-top', 'reset']);
 });
 
 test('reference paste without a copied note does not create an empty note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: null });
+    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: null, sortBlocksTopNote: false });
     run(event);
     await Promise.all(pending);
     assert.deepEqual(events, ['prevent']);
 });
 
 test('shift-reference paste still creates a child of the selected note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: true, clipboardNoteId: 'original-note' });
+    const { run, event, events, pending } = referenceHarness({ isEditing: true, clipboardNoteId: 'original-note', sortBlocksTopNote: false });
     event.shiftKey = true;
     run(event);
     await Promise.all(pending);
     assert.deepEqual(events, ['prevent', 'child', '![[original-note]]']);
+});
+
+test('pasting below a non-empty root note in a sorted tab is blocked before any request', async () => {
+    const { run, events } = harness({ priorEdits: false, failPaste: false, targetText: 'Existing text', blockRoot: true });
+    assert.equal(await run(), false);
+    assert.deepEqual(events, ['block-check:below']);
+});
+
+test('pasting onto an empty note fills it, so the sort order never blocks it', async () => {
+    const { run, events } = harness({ priorEdits: false, failPaste: false, targetText: '', blockRoot: true });
+    assert.equal(await run(), true);
+    assert.ok(!events.includes('block-check:below'));
+});
+
+test('reference paste into a new top note stops when the sort order blocks new root notes', async () => {
+    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: 'original-note', sortBlocksTopNote: true });
+    run(event);
+    await Promise.all(pending);
+    assert.deepEqual(events, ['prevent', 'block-check:top']);
 });

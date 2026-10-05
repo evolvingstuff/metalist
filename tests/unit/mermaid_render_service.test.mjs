@@ -54,6 +54,11 @@ function createFakeElement(ownerDocument, tagName) {
         textContent: '',
         innerHTML: '',
         replacement: null,
+        // Not laid out: no size to measure, so nothing is cached.
+        clientWidth: 0,
+        getBoundingClientRect() {
+            return { top: 0, height: 0 };
+        },
         setAttribute(name, value) {
             attributes.set(name, value);
         },
@@ -116,9 +121,16 @@ test('buildMermaidConfig enforces strict local rendering', () => {
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'dark',
+        themeVariables: {
+            fontSize: '13px',
+        },
         flowchart: {
             htmlLabels: true,
             useMaxWidth: true,
+            nodeSpacing: 24,
+            rankSpacing: 28,
+            padding: 6,
+            diagramPadding: 4,
         },
     });
     assert.equal(buildMermaidConfig('light').theme, 'default');

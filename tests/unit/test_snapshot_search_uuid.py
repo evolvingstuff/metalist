@@ -81,7 +81,7 @@ def test_search_with_uuid_target_includes_direct_note_and_descendants(
         editing_note_id=None,
         search=f"[[{target_id}]]",
         sort_mode="normal",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,

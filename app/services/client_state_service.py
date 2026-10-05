@@ -45,6 +45,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.drag_ghost": {"true", "false"},
     "pref.drop_indicator": {"true", "false"},
     "pref.drag_direction_icon": {"true", "false"},
+    "pref.position_cue": {"true", "false"},
     "pref.update_notice_version": "release_version",
     "pref.reminder_surface_expanded": {"true", "false"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},

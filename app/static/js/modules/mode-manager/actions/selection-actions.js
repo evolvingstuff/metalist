@@ -8,6 +8,8 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
+import { captureNoteAnchor, captureSortedExitAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     recordNoteInteractionIfNew,
 } from '../services/search-interaction-service.js';
@@ -31,6 +33,20 @@ function applyInitialCaretVisibility(initialCaretVisibility) {
     if (ModeContext.isCaretHidden) {
         ModeContext.markCaretVisible();
     }
+}
+
+// A click that enters edit mode passes `clickAnchor` (captureClickAnchor, taken
+// before anything changes) so the clicked spot stays under the pointer and
+// the caret lands there; other ways of entering edit mode pass none.
+function clickAnchorOption(options, noteId) {
+    if (!Object.prototype.hasOwnProperty.call(options, 'clickAnchor')) {
+        return null;
+    }
+    const clickAnchor = options.clickAnchor;
+    if (clickAnchor === null || typeof clickAnchor !== 'object' || clickAnchor.noteId !== noteId) {
+        throw new Error('clickAnchor must be a click anchor for the note being entered');
+    }
+    return clickAnchor;
 }
 
 export async function actionSelectNote(noteId, options) {
@@ -67,6 +83,11 @@ export async function actionSelectNote(noteId, options) {
         await actionDeselectNote();
     }
 
+    const clickAnchor = clickAnchorOption(options, noteId);
+    if (clickAnchor !== null) {
+        holdViewportRoot(clickAnchor);
+    }
+
     ModeContext.setCurrentNoteId(noteId);
 
     ModeContext.setEditing(true);
@@ -77,7 +98,12 @@ export async function actionSelectNote(noteId, options) {
         await recordNoteInteractionIfNew(noteId, 'edit');
     }
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
+    const refreshOptions = {startedAt: startedAt};
+    if (clickAnchor !== null) {
+        refreshOptions.viewportHold = clickAnchor;
+        refreshOptions.clickAnchor = clickAnchor;
+    }
+    const newContent = await actionRefreshAndMaybeSelect(refreshOptions);
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -101,7 +127,19 @@ export async function actionDeselectNote() {
     }
 
     const noteElement = getNoteElementIfPresent(noteId);
+    let viewportHold = null;
     if (noteElement !== null) {
+        // Keep the user's place (the caret, or the line being read) through
+        // everything leaving edit mode changes: re-collapsing, the tag bar
+        // closing, and the note re-rendering for viewing.
+        // In a sorted tab the note may then move to its sorted place; the
+        // surrounding notes stay on screen instead (docs/ui/controls.md).
+        if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
+            viewportHold = captureSortedExitAnchor(noteElement);
+        } else {
+            viewportHold = captureNoteAnchor(noteElement);
+        }
+        holdViewportRoot(viewportHold);
         await actionSaveNote(noteId);
         restoreCollapsedStateLocallyIfNeeded(noteElement);
     } else {
@@ -113,7 +151,11 @@ export async function actionDeselectNote() {
 
     clearSelectionStateForDeselect(ModeContext);
 
-    await actionRefreshAndMaybeSelect({startedAt: startedAt, requireExecution: true});
+    const refreshOptions = {startedAt: startedAt, requireExecution: true};
+    if (viewportHold !== null) {
+        refreshOptions.viewportHold = viewportHold;
+    }
+    await actionRefreshAndMaybeSelect(refreshOptions);
 
     ModeContext.validate();
 }
@@ -212,6 +254,21 @@ export async function actionSwitchNotes(newNoteId, options) {
         return;
 	    }
 
+    // Keep the clicked note (and so the clicked text) under the pointer while
+    // the note being left saves, closes its tag bar, and re-renders above it.
+    const clickAnchor = clickAnchorOption(options, newNoteId);
+    const clickedNoteElement = getNoteElementIfPresent(newNoteId);
+    let viewportHold = null;
+    if (clickAnchor !== null) {
+        viewportHold = clickAnchor;
+        holdViewportRoot(viewportHold);
+    } else if (clickedNoteElement !== null) {
+        viewportHold = {
+            kind: 'top', noteId: newNoteId, top: clickedNoteElement.getBoundingClientRect().top, keepVisible: false,
+        };
+        holdViewportRoot(viewportHold);
+    }
+
         await actionSaveNote(currentNoteId);
         await recordNoteInteractionIfNew(newNoteId, 'edit');
 
@@ -234,7 +291,14 @@ export async function actionSwitchNotes(newNoteId, options) {
 
     applyInitialCaretVisibility(initialCaretVisibility);
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
+    const refreshOptions = {startedAt: startedAt};
+    if (viewportHold !== null) {
+        refreshOptions.viewportHold = viewportHold;
+    }
+    if (clickAnchor !== null) {
+        refreshOptions.clickAnchor = clickAnchor;
+    }
+    const newContent = await actionRefreshAndMaybeSelect(refreshOptions);
     
     ModeContext.setCurrentContent(newContent);
   

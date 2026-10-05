@@ -7,6 +7,7 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { actionDeselectNote } from '../mode-manager/actions/selection-actions.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { attachPickedFileToCurrentNote } from '../mode-manager/services/file-reference-service.js';
+import { blockRootNoteCreation } from '../mode-manager/services/root-note-creation-service.js';
 import { openExcalidrawEditor } from './excalidraw-editor-service.js';
 import { EXCALIDRAW_FILENAME, EXCALIDRAW_MIME_TYPE, buildEmptySceneJson } from './excalidraw-scene.js';
 
@@ -48,6 +49,10 @@ export async function openDiagramEditor(fileId, hostNoteId) {
 export async function addDiagramToNote(preferredNoteId) {
     if (preferredNoteId !== null && (typeof preferredNoteId !== 'string' || preferredNoteId.length === 0)) {
         throw new Error('addDiagramToNote requires a note id or null');
+    }
+    // Outside edit mode the diagram goes into a new top note, which the sort order may not allow.
+    if (preferredNoteId === null && !ModeContext.isEditing && blockRootNoteCreation('top', 'addDiagram')) {
+        return;
     }
     const file = new File([buildEmptySceneJson()], EXCALIDRAW_FILENAME, { type: EXCALIDRAW_MIME_TYPE });
     const settled = await settleResult(() => CommandGate.run('excalidraw.add_diagram', async () => {

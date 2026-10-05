@@ -20,6 +20,7 @@ import {
 } from '../actions/note-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
+import { blockRootNoteCreation, requireCreatedNoteId } from '../services/root-note-creation-service.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import {
     executeEditorRedo,
@@ -1385,8 +1386,11 @@ function handleInsertEmbedReferenceShortcut(event) {
         if (event.shiftKey) {
             return;
         }
+        if (blockRootNoteCreation('top', 'pasteReferenceNewTopNote')) {
+            return;
+        }
         void CommandGate.run('keyboard.paste_reference_new_top_note', async () => {
-            const newNoteId = await createNoteAtTop();
+            const newNoteId = requireCreatedNoteId(await createNoteAtTop(), 'pasteReferenceNewTopNote');
             insertReferenceTokenIntoActiveEditor(`![[${referenceNoteId}]]`);
             await actionSaveNote(newNoteId);
             ModeContext.resetEditSessionState({ startedCollapsed: false });
@@ -1975,6 +1979,10 @@ async function attachFilesAsReferenceTokens(files, options) {
     if (selectionRange !== null && !(selectionRange instanceof Range)) {
         throw new Error('attachFilesAsReferenceTokens selectionRange must be Range or null');
     }
+    // Before any upload: the new top note may not be allowed in this sort order.
+    if (createTopNote && blockRootNoteCreation('top', 'attachFilesNewTopNote')) {
+        return false;
+    }
 
     let currentTargetNoteId = createTopNote ? null : ModeContext.currentNoteId;
     let createdTopNote = false;
@@ -2254,6 +2262,13 @@ async function handleClipboardImageFiles(imageFiles, options) {
     if (createTopNote && selectionRange !== null) {
         throw new Error('handleClipboardImageFiles cannot use selectionRange when creating a top note');
     }
+    if (createTopNote && blockRootNoteCreation('top', 'pasteImagesNewTopNote')) {
+        return {
+            inserted: false,
+            imageHandlingMode: null,
+            wasBlocked: false,
+        };
+    }
     const imageHandlingMode = await resolveImageFileHandlingMode(imageFiles, 'paste', {
         forcePrompt: options.forcePrompt === true,
     });
@@ -2292,7 +2307,7 @@ async function handleClipboardImageFiles(imageFiles, options) {
 
     if (createTopNote) {
         const result = await CommandGate.run('keyboard.pasteImageFiles.embedNewTopNote', async () => {
-            const newNoteId = await createNoteAtTop();
+            const newNoteId = requireCreatedNoteId(await createNoteAtTop(), 'pasteImagesNewTopNote');
             focusCurrentEditableAtEnd();
             const inserted = await pasteClipboardImagesAsEmbeddedContent(imageFiles, null);
             if (inserted && !ModeContext.isDirty) {
@@ -2336,6 +2351,10 @@ async function processDroppedFiles(droppedFiles, options) {
     if (selectionRange !== null && !(selectionRange instanceof Range)) {
         throw new Error('processDroppedFiles selectionRange must be Range or null');
     }
+    // Before any upload: the new top note may not be allowed in this sort order.
+    if (createTopNote && blockRootNoteCreation('top', 'dropFilesNewTopNote')) {
+        return false;
+    }
     let currentTargetNoteId = createTopNote ? null : ModeContext.currentNoteId;
     let createdTopNote = false;
     let insertedAnything = false;
@@ -2366,7 +2385,7 @@ async function processDroppedFiles(droppedFiles, options) {
                 }
             } else {
                 if (createTopNote && !createdTopNote && currentTargetNoteId === null) {
-                    await createNoteAtTop();
+                    requireCreatedNoteId(await createNoteAtTop(), 'dropFilesNewTopNote');
                     focusCurrentEditableAtEnd();
                     currentTargetNoteId = ModeContext.currentNoteId;
                     createdTopNote = true;
@@ -2610,8 +2629,14 @@ async function pasteExternalContentIntoNewTopNote(pasteEventSnapshot, plainText)
         throw new Error('pasteExternalContentIntoNewTopNote requires plainText string');
     }
 
+    if (blockRootNoteCreation('top', 'pasteExternalNewTopNote')) {
+        return {
+            inserted: false,
+            autoTaggedPasswordPaste: false,
+        };
+    }
     return await CommandGate.run('paste_event.external_new_top_note', async () => {
-        const newNoteId = await createNoteAtTop();
+        const newNoteId = requireCreatedNoteId(await createNoteAtTop(), 'pasteExternalNewTopNote');
         focusCurrentEditableAtEnd();
         const autoTaggedPasswordPaste = maybeApplyPasswordTagForClipboardPaste(plainText);
         const inserted = await sanitizeAndInsertExternalPaste(pasteEventSnapshot, null);
@@ -2631,8 +2656,11 @@ async function pasteExternalContentIntoNewTopNote(pasteEventSnapshot, plainText)
 }
 
 async function pasteCopiedNoteIntoNewTopNote() {
+    if (blockRootNoteCreation('top', 'pasteNoteNewTopNote')) {
+        return false;
+    }
     return await CommandGate.run('paste_event.note_new_top_note', async () => {
-        await createNoteAtTop();
+        requireCreatedNoteId(await createNoteAtTop(), 'pasteNoteNewTopNote');
         await actionPasteNoteSibling();
         return true;
     }, {

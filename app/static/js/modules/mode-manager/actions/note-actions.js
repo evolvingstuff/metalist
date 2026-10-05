@@ -7,6 +7,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
+import { blockRootNoteCreation } from '../services/root-note-creation-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
 import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
@@ -140,6 +141,11 @@ function shouldBlockRootReorder(noteId, contextLabel) {
         5000,
     );
     return true;
+}
+
+function isRootNoteId(noteId) {
+    const noteElement = DOMUtils.getNoteById(noteId);
+    return !(typeof noteElement.dataset.parentId === 'string' && noteElement.dataset.parentId.length > 0);
 }
 
 function stripEdgeEmptyNodes(fragment) {
@@ -452,6 +458,15 @@ async function createNoteWithPlacement(placeAtTop) {
     });
 
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+
+    // A sibling of a child note is not a root note, so the sort does not limit it.
+    if (!placeAtTop && currentNoteId) {
+        if (isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'createNote')) {
+            return null;
+        }
+    } else if (blockRootNoteCreation('top', 'createNote')) {
+        return null;
+    }
 
     if (ModeContext.isEditing && ModeContext.editSessionHasEdits && currentNoteId) {
         await actionSaveNote(currentNoteId);
@@ -921,6 +936,9 @@ export async function splitCurrentNoteFromSelection() {
         });
         return false;
     }
+    if (isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'splitNote')) {
+        return false;
+    }
 
     if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
     const tags = getTagBarValue(noteElement);
@@ -1081,6 +1099,14 @@ export async function actionPasteNoteSibling() {
 
     if (!ModeContext.isEditing || !currentNoteId) {
         throw new Error('Cannot paste sibling: no note selected');
+    }
+    // Pasting onto an empty note without children fills it instead (the server
+    // rule), which adds no root note.
+    const targetElement = DOMUtils.getNoteById(currentNoteId);
+    const targetIsEmpty = DOMUtils.getNoteContent(targetElement).textContent.trim() === ''
+        && targetElement.querySelector('.note') === null;
+    if (!targetIsEmpty && isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'pasteNoteSibling')) {
+        return false;
     }
 
     if (ModeContext.editSessionHasEdits) {

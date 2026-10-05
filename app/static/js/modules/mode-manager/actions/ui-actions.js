@@ -14,7 +14,7 @@ import { rebuildRootDateSeparators } from '../services/root-date-separator-servi
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
-import { captureViewportRoot, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { captureViewportRoot, holdViewportRoot, placeCaretAtClickAnchor } from '../services/viewport-hold-service.js';
 
 const moduleState = ApplicationState.createFields('ui-actions', {
     viewRequestInFlight: false,
@@ -98,6 +98,26 @@ export async function actionRefreshAndMaybeSelect(options) {
     const requireExecution = options.requireExecution === true;
     const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
     const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
+    // A caller that knows which note the user is looking at (e.g. the note
+    // just left in edit mode) holds that note instead of the top visible root.
+    let viewportHold = null;
+    if (Object.prototype.hasOwnProperty.call(options, 'viewportHold')) {
+        viewportHold = options.viewportHold;
+        if (viewportHold === null || typeof viewportHold !== 'object') {
+            throw new Error('actionRefreshAndMaybeSelect viewportHold must be a viewport hold reference');
+        }
+        if (scrollToTopAfterRender) {
+            throw new Error('actionRefreshAndMaybeSelect cannot both hold a note and scroll to top');
+        }
+    }
+    // A click that entered edit mode: the caret goes where the user clicked.
+    let clickAnchor = null;
+    if (Object.prototype.hasOwnProperty.call(options, 'clickAnchor')) {
+        clickAnchor = options.clickAnchor;
+        if (clickAnchor === null || typeof clickAnchor !== 'object' || clickAnchor !== viewportHold) {
+            throw new Error('actionRefreshAndMaybeSelect clickAnchor must also be the viewportHold');
+        }
+    }
     const animateNoteChanges = options.animateNoteChanges !== false;
 
     if (moduleState.viewRequestInFlight) {
@@ -179,7 +199,12 @@ export async function actionRefreshAndMaybeSelect(options) {
         const renderStartedAt = performance.now();
         // Roots entering or leaving the band above the viewport must not move
         // what the user is reading. A render that ends at the top needs no hold.
-        const viewportRoot = scrollToTopAfterRender ? null : captureViewportRoot();
+        let viewportRoot = null;
+        if (viewportHold !== null) {
+            viewportRoot = viewportHold;
+        } else if (!scrollToTopAfterRender) {
+            viewportRoot = captureViewportRoot();
+        }
         const diffResult = applyDifferentialView(snapshot, { previousHashes, animateNoteChanges });
         const notesContainer = diffResult.notesContainer;
         if (!notesContainer) {
@@ -235,7 +260,9 @@ export async function actionRefreshAndMaybeSelect(options) {
                     DOMUtils.revealCaret(noteElement);
                 }
 
-                if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
+                if (clickAnchor !== null && clickAnchor.noteId === noteId) {
+                    placeCaretAtClickAnchor(noteElement, clickAnchor);
+                } else if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
                     DOMUtils.focusNoteEdge(noteElement, 'start');
                 } else {
                     DOMUtils.focusNoteEdge(noteElement, 'end');

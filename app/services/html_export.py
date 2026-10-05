@@ -10,6 +10,7 @@ from pathlib import Path
 from app.services.content_formatting import find_list_style
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import render_note_content_with_embeds
+from app.services.markdown_rendering import strip_latex_source_attributes
 from app.services.file_registry import file_registry
 from app.services.file_storage import download_file, find_file_preview
 from app.services.file_storage import get_file_reference_record
@@ -279,14 +280,14 @@ def _render_exported_note_node(
     if not isinstance(record_tags, str):
         raise TypeError("note tags must be a string")
 
-    rendered_content = render_note_content_with_embeds(
+    rendered_content = strip_latex_source_attributes(render_note_content_with_embeds(
         note_id=note_id,
         content_html=record_content,
         tags=record_tags,
         context=embed_render_context,
         static_export=True,
         redact_passwords=True,
-    )
+    ))
 
     classes = ["note"]
     list_style = find_list_style(record_tags)

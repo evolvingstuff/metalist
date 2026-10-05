@@ -2011,8 +2011,9 @@ def _render_latex_container(
 
     class_attr = " ".join(class_names)
     size_style_attr = _meta_size_style_attr(formatting_tags)
+    source_attr = f' data-latex-source="{html.escape(raw_text, quote=True)}"'
     return (
-        f'<{wrapper_tag} class="{class_attr}"{size_style_attr}{copy_attr}>'
+        f'<{wrapper_tag} class="{class_attr}"{size_style_attr}{copy_attr}{source_attr}>'
         f"{render_result.html}</{wrapper_tag}>"
     )
 

@@ -14,7 +14,22 @@ const previewState = ApplicationState.createFields('excalidraw-preview-service',
     previews: new Map(),
     // Object URLs of resolved previews, revoked when their revision is superseded.
     objectUrls: new Map(),
+    // Rendered frame height by file, revision and frame width, for this page
+    // session: a diagram rendered again holds that height while it loads.
+    frameHeights: new Map(),
 });
+
+function frameOf(target) {
+    const frame = target.querySelector('.note-file-excalidraw-frame');
+    if (!(frame instanceof HTMLElement)) {
+        throw new Error('Excalidraw embed is missing its frame');
+    }
+    return frame;
+}
+
+function frameHeightKey(target, fileId, revision) {
+    return `${fileId}:${revision}:${Math.round(frameOf(target).clientWidth / 10) * 10}`;
+}
 
 function previewKey(fileId, revision, variant) {
     return `${fileId}:${revision}:${variant}`;
@@ -102,6 +117,16 @@ async function showPreviews(target, results) {
     }
     placeholder.textContent = '';
     target.dataset.previewState = 'loaded';
+    const frame = frameOf(target);
+    if (frame.style.minHeight !== '') {
+        frame.style.minHeight = '';
+    }
+    const { fileId, revision } = readEmbed(target);
+    const key = frameHeightKey(target, fileId, revision);
+    const height = Math.round(frame.getBoundingClientRect().height);
+    if (height > 0 && previewState.frameHeights.get(key) !== height) {
+        previewState.frameHeights.set(key, height);
+    }
 }
 
 function showFailure(target) {
@@ -120,6 +145,10 @@ export function hydrateExcalidrawPreviews(rootNode) {
             continue;
         }
         target.dataset.previewState = 'loading';
+        const reservedKey = frameHeightKey(target, fileId, revision);
+        if (previewState.frameHeights.has(reservedKey)) {
+            frameOf(target).style.minHeight = `${previewState.frameHeights.get(reservedKey)}px`;
+        }
         const variants = EXCALIDRAW_PREVIEW_VARIANTS.map((variant) => fetchPreview(fileId, revision, variant));
         // A refresh to a newer revision may replace this request before it finishes.
         const isCurrent = () => target.dataset.fileRevision === String(revision) && target.dataset.previewState === 'loading';

@@ -73,7 +73,7 @@ def test_snapshot_reads_each_hierarchy_branch_once(monkeypatch):
         editing_note_id=None,
         search=None,
         sort_mode="normal",
-        client_known_note_ids=set(),
+        client_known_note_ids=set(), previous_root_ids=[],
         visible_top_root_id=None,
         visible_bottom_root_id=None,
         is_untagged_view=False,

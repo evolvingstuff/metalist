@@ -42,9 +42,9 @@
     "presentation": "dialog"
   },
   {
-    "id": "form.drag_drop_visuals",
-    "label": "Drag & Drop Visuals",
-    "selector": "#drag-drop-visuals-modal",
+    "id": "form.visual_cues",
+    "label": "Visual Cues",
+    "selector": "#visual-cues-modal",
     "presentation": "dialog"
   },
   {

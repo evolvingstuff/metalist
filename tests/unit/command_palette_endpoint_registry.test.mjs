@@ -22,7 +22,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openSoundManager: noop,
             openVersionInfo: noop,
             openNoteLayoutAppearance: noop,
-            openDragDropVisuals: noop,
+            openVisualCues: noop,
             openAiAgentSettings: noop,
             openCloudPrivacySettings: noop,
             openAgentPromptEditor: noop,

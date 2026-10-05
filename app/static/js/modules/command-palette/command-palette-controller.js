@@ -51,7 +51,7 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
-import { DragDropVisualsModal, DRAG_DROP_VISUAL_OPTIONS } from '../modals/drag-drop-visuals-modal.js';
+import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
@@ -91,6 +91,7 @@ import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache, syncBacklinksPanelPlacement } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
+import { blockRootNoteCreation } from '../mode-manager/services/root-note-creation-service.js';
 import { setTabSortModeOnServer } from '../mode-manager/services/tab-state-service.js';
 import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
@@ -350,7 +351,7 @@ class CommandPaletteController {
 
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
-        this._dragDropVisualsModal = null;
+        this._visualCuesModal = null;
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
         this._aiAgentSettingsModal = null;
@@ -425,7 +426,7 @@ class CommandPaletteController {
 
                 openVersionInfo: this.openVersionInfo.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
-                openDragDropVisuals: this.openDragDropVisuals.bind(this),
+                openVisualCues: this.openVisualCues.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
@@ -569,6 +570,9 @@ class CommandPaletteController {
 
         const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
+
+        const positionCue = this._getBoolean('pref.position_cue', true);
+        document.body.classList.toggle('pref-position-cue', positionCue);
 
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
@@ -1544,6 +1548,10 @@ class CommandPaletteController {
 
         const attachResult = await settleResult(async () => {
             const preferredNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+            // Outside edit mode the file goes into a new top note, which the sort order may not allow.
+            if (preferredNoteId === null && blockRootNoteCreation('top', 'attachFile')) {
+                return null;
+            }
             const file = await pickFileForAttachment();
             if (file === null) {
                 ErrorHandler.showInfoBanner('Attach file canceled or no file was selected.', 5000);
@@ -2458,18 +2466,18 @@ class CommandPaletteController {
         await this._noteLayoutAppearanceModal.open();
     }
 
-    async openDragDropVisuals() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openDragDropVisuals');
+    async openVisualCues() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openVisualCues');
         if (!isReady) {
             return;
         }
-        if (this._dragDropVisualsModal === null) {
-            this._dragDropVisualsModal = new DragDropVisualsModal(
-                () => Object.fromEntries(DRAG_DROP_VISUAL_OPTIONS.map((option) => [option.key, this._getBoolean(option.key, true)])),
+        if (this._visualCuesModal === null) {
+            this._visualCuesModal = new VisualCuesModal(
+                () => Object.fromEntries(VISUAL_CUE_OPTIONS.map((option) => [option.key, this._getBoolean(option.key, true)])),
                 (key, enabled) => this.applyPreference(key, enabled),
             );
         }
-        await this._dragDropVisualsModal.open();
+        await this._visualCuesModal.open();
     }
 
     async openAiAgentSettings(focusCloudPrivacy = false) {
