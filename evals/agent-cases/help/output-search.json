@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "id": "help-output-search",
+  "description": "Explain garden red OR \"spring plan\" -done. Also can I use @untagged or date:2026?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Explain garden red OR \"spring plan\" -done. Also can I use @untagged or date:2026?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+      }
+    ],
+    "reference_facts": "Explain adjacent terms AND, uppercase OR separates clauses; garden/red/done are tags, quoted spring plan is text. No @untagged search token or date constraint syntax; use Untagged notes view. Do not invent grouping syntax."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-search.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+        }
+      ],
+      "reference_facts": "Explain adjacent terms AND, uppercase OR separates clauses; garden/red/done are tags, quoted spring plan is text. No @untagged search token or date constraint syntax; use Untagged notes view. Do not invent grouping syntax."
+    },
+    "source": "synthetic-metalist-help-v1",
+    "personal_data": false
+  }
+}

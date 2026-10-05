@@ -1,0 +1,163 @@
+{
+  "schema_version": 3,
+  "id": "synthetic-help-then-explicit-action",
+  "description": "A new explicit operation supersedes the previous help question.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What happens when I accept tag proposals?"
+    },
+    {
+      "role": "assistant",
+      "content": "Accepted proposals become accepted tags."
+    },
+    {
+      "role": "user",
+      "content": "Please accept all pending tag proposals in this context now."
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-0",
+        "parent_id": "",
+        "content_text": "garden note 0",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "garden note 1",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "garden note 2",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-3",
+        "parent_id": "",
+        "content_text": "garden note 3",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-4",
+        "parent_id": "",
+        "content_text": "garden note 4",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-5",
+        "parent_id": "note-0",
+        "content_text": "garden note 5",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-6",
+        "parent_id": "note-1",
+        "content_text": "garden note 6",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-7",
+        "parent_id": "note-2",
+        "content_text": "garden note 7",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-8",
+        "parent_id": "note-3",
+        "content_text": "garden note 8",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-9",
+        "parent_id": "note-4",
+        "content_text": "garden note 9",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-10",
+        "parent_id": "note-0",
+        "content_text": "garden note 10",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-11",
+        "parent_id": "note-1",
+        "content_text": "garden note 11",
+        "tags": "garden",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "propose_tag_review"
+        ],
+        "arguments_any_of": [
+          {
+            "action": "accept",
+            "scope": "current_view",
+            "tag_filter": ""
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [],
+    "forbidden_calls": [],
+    "confirmation": "asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/actions/help-then-explicit-action.json",
+    "mapping": "The explicit tag request calls propose_tag_review; the user answers No, so nothing changes.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "tag_proposals"
+        }
+      ]
+    },
+    "source": "synthetic-action-suite-v1",
+    "note": "Invented requests, conversations, and view metadata. No personal notes or exports."
+  }
+}

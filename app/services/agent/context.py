@@ -80,8 +80,12 @@ class AgentContextBuilder:
                 "they can enable contextual or full web access in AI Agent Settings."
             ),
             "contextual": (
-                "You may open only exact URLs in available_urls. You cannot search, "
-                "and links discovered inside opened pages do not become available."
+                "You may open only exact URLs in available_urls, plus addresses written in "
+                "notes a note tool returns to you (listed in its web_addresses_now_openable). "
+                "A #fragment is ignored "
+                "when comparing, so https://a.example/page#part is the same address as "
+                "https://a.example/page. You cannot search, and links discovered inside "
+                "opened pages do not become available."
             ),
             "full": (
                 "You may open any direct public HTTP(S) page, including Google "

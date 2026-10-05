@@ -13,6 +13,8 @@ status helpers; it adds no state of its own.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import time
 from collections.abc import AsyncIterator
 from contextlib import aclosing
@@ -224,9 +226,18 @@ class AgentLoopMixin:
                 self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
                 yield state.done_event()
                 return
+            answered_without_operation = False
             for operation in self._lone_operation_calls(turn["calls"]):
                 parsed = parse_tool_call(name=operation["name"], arguments=operation["arguments"], tools=tools)
-                if not isinstance(parsed, ToolResult):
+                if isinstance(parsed, SummarizeViewArguments) and snapshot.note_count == 0:
+                    # Nothing to summarize: tell the model instead of asking the user to confirm.
+                    result = tool_message_result({"summary": "not started",
+                                                  "reason": "The current view has no notes to summarize."})
+                    self._record_tool_call(run=run, call=operation, result_text=result.content)
+                    messages.append({"role": "tool", "tool_call_id": operation["id"], "name": operation["name"],
+                                     "content": result.content})
+                    answered_without_operation = True
+                elif not isinstance(parsed, ToolResult):
                     self._record_tool_call(run=run, call=operation, result_text="(operation started)")
                     async with aclosing(self._stream_agent_operation(
                         run=run, canonical_messages=canonical_messages, snapshot=snapshot,
@@ -235,6 +246,8 @@ class AgentLoopMixin:
                         async for event in operation_events:
                             yield event
                     return
+            if answered_without_operation:
+                continue
             results: list[ToolResult] = []
             for call in turn["calls"]:
                 result_holder: list[ToolResult] = []
@@ -368,11 +381,28 @@ class AgentLoopMixin:
         yield self._status_event(call["name"], "started", self._tool_started_label(parsed),
                                  approx_input_tokens=input_tokens)
         result = await run_agent_tool(name=call["name"], arguments=call["arguments"], context=context)
+        if run.web_settings.mode == "contextual":
+            result = self._with_newly_openable_addresses(result=result, state=state)
         for skill in result.activated_skills:
             self._record_skill_activation(run=run, skill=skill)
         yield self._status_event(call["name"], "completed", self._tool_completed_label(parsed, result),
                                  approx_input_tokens=max(1, estimate_text_tokens(result.content)))
         result_holder.append(result)
+
+    @staticmethod
+    def _with_newly_openable_addresses(*, result: ToolResult, state: AgentLoopState) -> ToolResult:
+        """Contextual mode: tell the model which addresses in the notes it just read it may now open."""
+        known = set(state.capabilities.normalized_urls)
+        new_urls: list[str] = []
+        for payload in result.note_evidence:
+            for url in note_evidence_url_capabilities(payload).normalized_urls:
+                if url not in known and url not in new_urls:
+                    new_urls.append(url)
+        if not new_urls:
+            return result
+        content = json.loads(result.content)
+        content["web_addresses_now_openable"] = new_urls
+        return dataclasses.replace(result, content=json.dumps(content, ensure_ascii=False, separators=(",", ":")))
 
     def _note_text_guard(self, *, run, state: AgentLoopState, typed_text: str) -> NoteTextGuard:
         return NoteTextGuard.build(

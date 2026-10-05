@@ -1,0 +1,71 @@
+{
+  "schema_version": 3,
+  "id": "synthetic-empty-scope",
+  "description": "Empty results do not turn a saved-note task into a general-knowledge task.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Summarize my notes in this search."
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "invented-empty-topic",
+    "search_query": "invented-empty-topic",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "view_overview",
+          "search_view_notes",
+          "read_view_notes",
+          "summarize_view"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/actions/empty-scope.json",
+    "mapping": "Needs saved-note evidence: some note tool, no operation.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "investigate_current_scope"
+        }
+      ]
+    },
+    "source": "synthetic-action-suite-v1",
+    "note": "Invented requests, conversations, and view metadata. No personal notes or exports.",
+    "expectation_change": "An empty view: a note tool or summarize_view both lead to 'no notes'; no confirmation card either way."
+  }
+}

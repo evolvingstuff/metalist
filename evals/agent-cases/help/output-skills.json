@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "id": "help-output-skills",
+  "description": "Does using a help skill once add its whole text to every future message? How can I inspect what was sent?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Does using a help skill once add its whole text to every future message? How can I inspect what was sent?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+      }
+    ],
+    "reference_facts": "Skill instructions are loaded only for calls that need them, not durably appended to conversation. Export LLM history provides input/output pairs including activated skills; session history only."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-skills.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+        }
+      ],
+      "reference_facts": "Skill instructions are loaded only for calls that need them, not durably appended to conversation. Export LLM history provides input/output pairs including activated skills; session history only."
+    },
+    "source": "synthetic-metalist-help-v1",
+    "personal_data": false
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "schema_version": 3,
+  "id": "web-retained-page-followup",
+  "description": "A follow-up uses retained page evidence without opening it again.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Open https://example.com/report and summarize it."
+    },
+    {
+      "role": "assistant",
+      "content": "The report was opened and summarized."
+    },
+    {
+      "role": "user",
+      "content": "What measured value did that report give?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "contextual",
+    "pages": [
+      {
+        "evidence_id": "40000000-0000-4000-8000-000000000001",
+        "url": "https://example.com/report",
+        "title": "Example report",
+        "content_text": "The report gives a measured value of 42.",
+        "links": []
+      }
+    ],
+    "retained_urls": [
+      "https://example.com/report"
+    ]
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/web/retained-page-followup.json",
+    "mapping": "Follow-up about an earlier page: re-opened from cache.",
+    "legacy_stage": "web_action",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "respond"
+        }
+      ]
+    },
+    "source": "synthetic retained web evidence follow-up regression",
+    "expectation_change": "Was 'answer without opening'; the agent re-opens the earlier page from cache."
+  }
+}

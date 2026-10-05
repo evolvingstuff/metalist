@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "id": "help-output-web-access",
+  "description": "What web access do you have right now, and what can the other modes do?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What web access do you have right now, and what can the other modes do?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. Mention the AI Agent Settings control without claiming it was changed."
+      }
+    ],
+    "reference_facts": "WEB_ACCESS_CONTEXT mode is none. Contextual mode can open only URLs in permitted disclosed context and cannot follow page links. Full mode can open a Google results URL and useful result pages through MetaList's provider-independent page opener, with no separate search action. Privacy-withheld note URLs remain unavailable."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-web-access.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. Mention the AI Agent Settings control without claiming it was changed."
+        }
+      ],
+      "reference_facts": "WEB_ACCESS_CONTEXT mode is none. Contextual mode can open only URLs in permitted disclosed context and cannot follow page links. Full mode can open a Google results URL and useful result pages through MetaList's provider-independent page opener, with no separate search action. Privacy-withheld note URLs remain unavailable."
+    },
+    "source": "synthetic current-mode product-help regression",
+    "personal_data": false
+  }
+}

@@ -225,6 +225,21 @@ to the notes and web pages the tools returned.
   `evals compare`; provider errors fail and stay in the denominator.
 - Unit and browser tests updated alongside (runtime suite rewritten around the
   fake adapter).
+- Done: `python -m evals agent` (`evals/agent_models.py`, `evals/agent_runner.py`)
+  runs the real agent loop on fixture notes, a recorded-page fixture web, a recording
+  tag stand-in and auto-acknowledged menus; checks required/forbidden calls, the
+  default order, confirmations, and a judged answer. All 168 routing-era cases
+  migrated (15 expectation changes approved by you, recorded per case); the legacy
+  cases are removed. Three new cases cover help + web, notes + help, notes + web.
+- Your decision: live evals run on **Luna at Low only** (no model or thinking matrix).
+  Result: 832/840 correct, no errors (168 cases × 5); the combination and web cases
+  then 74/75. Fixes found by the runs: an explicitly named tag was dropped from
+  accept/remove (would have targeted every proposal); MetaList questions answered
+  without help; `#fragment` addresses refused in contextual mode; empty-view
+  summaries showing a card; menu requests for missing features opening the palette;
+  note addresses not offered as openable after reading notes in contextual mode.
+- Known misses: Luna sometimes miscopies long note ids in citations (short note
+  tokens, like the web ones, would fix it) and sometimes drops a required detail.
 
 ### Phase 7 — Docs and help
 - `docs/ui/ai-chat.md`, `docs/design/agent-harness.md`, `docs/AI-SUMMARY.md`,

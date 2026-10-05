@@ -1,0 +1,91 @@
+{
+  "schema_version": 3,
+  "id": "help-output-encryption-metadata",
+  "description": "With password protection enabled, can someone read my note hierarchy, timestamps, tags, or attachment filenames directly from the database?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "With password protection enabled, can someone read my note hierarchy, timestamps, tags, or attachment filenames directly from the database?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "classification",
+        "instruction": "Correctly distinguish readable hierarchy/IDs/timestamps from encrypted tags and attachment filenames/metadata. Do not confuse attachment metadata with plaintext structural metadata."
+      },
+      {
+        "id": "scope",
+        "instruction": "Explain field-level rather than full-database encryption without claiming every byte is protected or inspecting a personal database."
+      }
+    ],
+    "reference_facts": "MetaList uses field-level encryption, not whole-file SQLite encryption. Note IDs, parent/previous/next relationships, collapse flag, created/updated timestamps remain readable. Note bodies, accepted/proposed tags and attachment title/metadata/blob are ciphertext. Filenames and MIME type are inside encrypted attachment title/metadata, not readable as file payload metadata. Namespace/port and crypto metadata are readable. This does not hide file size or access patterns."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-encryption-metadata.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "classification",
+          "instruction": "Correctly distinguish readable hierarchy/IDs/timestamps from encrypted tags and attachment filenames/metadata. Do not confuse attachment metadata with plaintext structural metadata."
+        },
+        {
+          "id": "scope",
+          "instruction": "Explain field-level rather than full-database encryption without claiming every byte is protected or inspecting a personal database."
+        }
+      ],
+      "reference_facts": "MetaList uses field-level encryption, not whole-file SQLite encryption. Note IDs, parent/previous/next relationships, collapse flag, created/updated timestamps remain readable. Note bodies, accepted/proposed tags and attachment title/metadata/blob are ciphertext. Filenames and MIME type are inside encrypted attachment title/metadata, not readable as file payload metadata. Namespace/port and crypto metadata are readable. This does not hide file size or access patterns."
+    },
+    "source": "synthetic-encryption-knowledge-regression",
+    "personal_data": false,
+    "reference_sources": [
+      "app/encryption_audit.py",
+      "app/services/encryption.py",
+      "app/services/auth_service.py",
+      "app/services/backup_service.py",
+      "docs/security/README.md",
+      "docs/security/recovery.md"
+    ]
+  }
+}

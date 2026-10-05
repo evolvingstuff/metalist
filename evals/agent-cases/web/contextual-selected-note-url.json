@@ -1,0 +1,103 @@
+{
+  "schema_version": 3,
+  "id": "web-contextual-selected-note-url",
+  "description": "Contextual mode opens a URL disclosed by the selected note tree.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Open the report linked in the selected note and summarize it."
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-0",
+        "parent_id": "",
+        "content_text": "Note 0",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-1",
+        "parent_id": "note-0",
+        "content_text": "Note 1",
+        "tags": "",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "available",
+    "note_id": "20000000-0000-4000-8000-000000000002",
+    "tree_notes": [
+      {
+        "note_id": "20000000-0000-4000-8000-000000000001",
+        "parent_id": "",
+        "content_text": "Research sources",
+        "tags": "research"
+      },
+      {
+        "note_id": "20000000-0000-4000-8000-000000000002",
+        "parent_id": "20000000-0000-4000-8000-000000000001",
+        "content_text": "https://example.com/selected-report#results",
+        "tags": "report priority"
+      }
+    ]
+  },
+  "web": {
+    "mode": "contextual",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": [
+          {
+            "urls": [
+              "https://example.com/selected-report"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/web/contextual-selected-note-url.json",
+    "mapping": "Opens the expected address.",
+    "legacy_stage": "web_action",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "open_web_pages",
+          "urls": [
+            "https://example.com/selected-report"
+          ]
+        }
+      ]
+    },
+    "source": "synthetic permitted selected-note URL regression"
+  }
+}

@@ -12,15 +12,16 @@ automatically. Prompts and skills are not user-editable, so the packaged
 defaults the suite tests are what every user runs; it does not read credentials or
 a live note database.
 
-**Current state.** The tool-using agent replaced up-front routing, so the stages
-that tested routing, product help, web planning and direct replies were removed with
-that code. Their 168 cases are kept, unrun, in [`legacy-cases/`](legacy-cases/README.md)
-as fixed inputs and reviewed expectations to migrate into agent-stage cases (PLAN.md,
-Phase 6). The live suite is currently the staged-summary case, which tests the
-whole-view summary the agent hands over to.
+There are two kinds of cases:
+
+- **Agent cases** (`agent-cases/`, run with `python -m evals agent`): a whole run of
+  the production tool-using agent. See [Agent cases](#agent-cases).
+- **Summary-stage cases** (`cases/staged-summary/`, run with `python -m evals run`):
+  single structured or text requests of the whole-view summary the agent hands over
+  to. The rest of this README up to "Agent cases" describes this runner.
 
 Historical results: [September 19](RESULTS-2026-09-19.md), 757/760 correct on the
-routing design. They describe that design, not the current agent.
+earlier up-front routing design; they describe that design, not the current agent.
 
 ## Run current prompts and compare reports
 
@@ -175,3 +176,44 @@ checked with `BROWSER_TEST_SUITE=ai-history npm run test:browser`.
 
 The suite belongs in Git but is excluded from PyPI wheels/source distributions.
 The history recording/export feature remains part of the installed application.
+
+## Agent cases
+
+`python -m evals agent <cases…> --judge evals/judge.json [--live] [--repetitions N]
+[--concurrency N] --output DIR` runs each case through `AgentRuntime.stream_agent`
+with the real OpenAI adapter and the current production instructions, skills and tool
+schemas. Without `--live` it validates the cases and prints the run count. Live runs
+use **Luna at Low thinking only** (the case format allows nothing else): stronger
+models are not worth paying to find failures Luna doesn't have.
+
+A case (`schema_version: 3`, `evals/agent_models.py`) fixes:
+
+- the conversation, ending with the user's request;
+- the view: scope label, search and the notes (id, parent, text, tags, pending
+  proposals); the selected note uses the same fixtures as summary cases;
+- web access: the mode, the pages a fixture web serves (with fixed citation ids the
+  judge criteria refer to), and pages already opened earlier in the chat;
+- how the simulated user answers any Yes/No or scope question (`yes` or `no`);
+- the expectation: required calls (a tool, optionally with argument values; lists
+  match as subsets and addresses after normalization), forbidden tools, forbidden
+  specific calls, whether a confirmation must be asked, and judge criteria for the
+  final answer.
+
+Every run also checks the **default tool order** (help and menus, then notes, then
+the web, then changes); going back to an earlier group is a failure. The runner
+(`evals/agent_runner.py`) serves only recorded pages, records tag operations without
+writing anything, acknowledges menus as opened, gives each trial its own question
+guard so trials can run concurrently, and maps live web citation ids onto the
+fixture ids before judging. Reports use the same `case_id`, fingerprints, counts and
+`compare` as summary-stage reports; each trial is saved under `trials/`. Exit status
+is 0 when every run passed, 1 for a wrong behavior, 2 for a provider error.
+
+Three `combined/` cases cover requests the old routing could not handle (help + web,
+notes + help, notes + web). The 168 others were migrated from the routing-era suite. Each records its source, the
+mapping applied and the legacy expectation in `provenance`; 15 whose expected
+behavior the redesign changed carry an `expectation_change` reason (re-opening
+earlier web pages, opening menus directly, topical and empty-view summaries, a
+truthful "settings opened", and the new release-notes help topic).
+
+Latest run (2026-10-05, Luna Low, 5 runs per case): 832/840 correct, no errors,
+161/168 cases 5/5; the misses are answer wording and three miscopied note ids.

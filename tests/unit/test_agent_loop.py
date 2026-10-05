@@ -1,6 +1,7 @@
 import asyncio
 import json
 from dataclasses import replace
+from types import MappingProxyType
 
 import pytest
 
@@ -367,3 +368,42 @@ def test_the_model_cites_short_web_tokens_and_the_chat_gets_full_ones(monkeypatc
                  for reference in page.outgoing_references)
     assert text == f"1. **First story**[[web:{story.evidence_id}]] "
     assert story.evidence_id in events[-1]["reference_web_ids"]
+
+
+def test_summarizing_an_empty_view_asks_nothing_and_says_so(monkeypatch) -> None:
+    empty = replace(_snapshot(large_tail=False), ordered_root_ids=(), ordered_note_ids=(),
+                    notes_by_id=MappingProxyType({}), tree_nodes_by_id=MappingProxyType({}))
+    model = _ScriptedModel([_turn("", [("summarize_view", {})]), _turn("This view has no notes to summarize.", [])])
+
+    async def collect():
+        return [event async for event in _runtime(model).stream_agent(
+            session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
+            thinking_level="low", canonical_messages=[{"role": "user", "content": "Summarize my notes."}],
+            prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
+            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=50_000),
+            web_settings=AgentWebSettings(mode="none"), frozen_scope=empty, tagging_run=None,
+        )]
+
+    events = asyncio.run(collect())
+    assert [event for event in events if event["type"] == "bulk_question"] == []
+    assert _tool_results(model.conversations[1])[0]["reason"] == "The current view has no notes to summarize."
+    assert _answer(events) == "This view has no notes to summarize."
+
+
+def test_contextual_mode_tells_the_model_which_note_addresses_it_may_now_open(monkeypatch) -> None:
+    notes = dict(_snapshot(large_tail=False).notes_by_id)
+    notes["child-a"] = replace(notes["child-a"], content_text="Report at https://soil.example/report")
+    snapshot = replace(_snapshot(large_tail=False), notes_by_id=MappingProxyType(notes))
+    model = _ScriptedModel([_turn("", [("read_view_notes", {"note_ids": ["child-a"]})]), _turn("Done.", [])])
+
+    async def collect():
+        return [event async for event in _runtime(model).stream_agent(
+            session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-luna",
+            thinking_level="low", canonical_messages=[{"role": "user", "content": "Open my report link"}],
+            prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
+            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=50_000),
+            web_settings=AgentWebSettings(mode="contextual"), frozen_scope=snapshot, tagging_run=None,
+        )]
+
+    asyncio.run(collect())
+    assert _tool_results(model.conversations[1])[0]["web_addresses_now_openable"] == ["https://soil.example/report"]

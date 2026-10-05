@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "id": "help-output-ports",
+  "description": "Does saving new namespace ports immediately restart the server or switch my tab?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Does saving new namespace ports immediately restart the server or switch my tab?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+      }
+    ],
+    "reference_facts": "No; edits change saved launch profiles for a later launch and do not start/restart/switch namespaces. No operation should be claimed executed."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-ports.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+        }
+      ],
+      "reference_facts": "No; edits change saved launch profiles for a later launch and do not start/restart/switch namespaces. No operation should be claimed executed."
+    },
+    "source": "synthetic-metalist-help-v1",
+    "personal_data": false
+  }
+}

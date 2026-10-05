@@ -121,7 +121,9 @@ class ProposeTagReviewArguments(BaseModel):
         ..., description="current_view unless the user explicitly asked for the whole namespace.",
     )
     tag_filter: str = Field(
-        ..., max_length=256, description="One exact proposed tag, or empty for all proposals.",
+        ..., max_length=256,
+        description=("The tag the user named (e.g. 'seedling' for 'accept the seedling proposals'). "
+                     "Empty only when the user means every pending proposal, whatever its tag."),
     )
 
 
@@ -194,8 +196,9 @@ PROPOSE_TAG_GENERATION_TOOL = AgentTool(
 PROPOSE_TAG_REVIEW_TOOL = AgentTool(
     name="propose_tag_review",
     description=(
-        "Accept or remove pending tag proposals in the current view or the whole namespace. MetaList "
-        "shows the user exactly what will change and applies it only after Yes. Ends your turn."
+        "Accept or remove pending tag proposals in the current view or the whole namespace, all of them "
+        "or only those of one named tag. MetaList shows the user exactly what will change and applies it "
+        "only after Yes. Ends your turn."
     ),
     arguments_model=ProposeTagReviewArguments,
 )
