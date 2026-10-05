@@ -7,10 +7,14 @@ from types import SimpleNamespace
 import httpx
 import instructor
 import pytest
+from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from openai import APIError
 
 from app.services.agent.actions import AgentRouteEnvelope
+from app.services.agent.tool_calling import AgentTool
+from app.services.agent.history import record_history
+from app.services.agent.trace import AgentTraceStore
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
@@ -482,3 +486,184 @@ def test_structured_output_progress_carries_latest_partial_object() -> None:
         event for event in progress_events if event.phase == "attempt_started"
     )
     assert started.partial_output == {}
+
+
+# --- Tool turns (OpenAI Responses API) -------------------------------------
+# Chat Completions rejects function tools combined with reasoning effort, so
+# tool turns use the Responses API; its reasoning items are handed back to the
+# next turn as opaque provider_state.
+
+
+class _SearchArguments(BaseModel):
+    query: str = Field(..., description="Words to search for")
+
+
+_SEARCH_TOOL = AgentTool(name="search_view_notes", description="Search notes in the current view.", arguments_model=_SearchArguments)
+
+_RESPONSES_USAGE = {
+    "input_tokens": 100, "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 0},
+    "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 9}, "total_tokens": 120,
+}
+
+_REASONING_ITEM = {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "opaque-reasoning"}
+
+
+class _Event(SimpleNamespace):
+    """A Responses stream event; the history recorder stores events through model_dump."""
+
+    def model_dump(self, mode: str) -> dict[str, object]:
+        assert mode == "json"
+        return {"type": self.type}
+
+
+def _item_done(item):
+    return _Event(type="response.output_item.done", item=SimpleNamespace(model_dump=lambda mode: dict(item)))
+
+
+def _text_delta(text):
+    return _Event(type="response.output_text.delta", delta=text)
+
+
+def _completed():
+    return _Event(type="response.completed", response=SimpleNamespace(
+        status="completed", incomplete_details=None, usage=SimpleNamespace(model_dump=lambda mode: dict(_RESPONSES_USAGE)),
+    ))
+
+
+def _incomplete(reason):
+    return _Event(type="response.incomplete", response=SimpleNamespace(
+        status="incomplete", incomplete_details=SimpleNamespace(reason=reason),
+        usage=SimpleNamespace(model_dump=lambda mode: dict(_RESPONSES_USAGE)),
+    ))
+
+
+def _run_tool_turn(monkeypatch, events, messages):
+    created: dict[str, object] = {}
+
+    class FakeStream:
+        async def __aiter__(self):
+            for event in events:
+                yield event
+
+    class FakeResponses:
+        def __init__(self, http_client):
+            self._http_client = http_client
+
+        async def create(self, **kwargs):
+            created.update(kwargs)
+            request = httpx.Request("POST", "https://api.openai.com/v1/responses", json=kwargs)
+            for hook in self._http_client.event_hooks["request"]:
+                await hook(request)
+            return FakeStream()
+
+    class FakeOpenAIClient:
+        def __init__(self, *, api_key, base_url, http_client, max_retries) -> None:
+            assert max_retries == 0
+            self._http_client = http_client
+            self.responses = FakeResponses(http_client)
+
+        async def close(self) -> None:
+            await self._http_client.aclose()
+
+    monkeypatch.setattr(openai_inference_module, "AsyncOpenAI", FakeOpenAIClient)
+    adapter = OpenAIInferenceAdapter(api_key=_API_KEY, cost_tracker=OpenAICostTracker())
+
+    async def collect():
+        return [event async for event in adapter.stream_tool_turn(
+            base_url=OPENAI_API_BASE_URL, model="gpt-5.6-luna", thinking_level="low",
+            messages=messages, tools=(_SEARCH_TOOL,), max_output_tokens=8_192, on_request=lambda request: None,
+        )]
+
+    return asyncio.run(collect()), created
+
+
+_EXPECTED_USAGE = {
+    "prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+    "uncached_input_tokens": 60, "cached_input_tokens": 40, "cache_write_tokens": 0,
+}
+
+
+def test_a_tool_turn_sends_strict_tools_and_returns_tool_calls_with_reasoning_state(monkeypatch) -> None:
+    messages = [
+        {"role": "system", "content": "You are MetaList's assistant."},
+        {"role": "user", "content": "Find my garden notes"},
+        {"role": "assistant", "content": "", "provider_state": {"provider": "openai", "items": [_REASONING_ITEM]},
+         "tool_calls": [{"id": "call-0", "name": "search_view_notes", "arguments": '{"query":"roses"}'}]},
+        {"role": "tool", "tool_call_id": "call-0", "name": "search_view_notes", "content": "No matches."},
+    ]
+    events, created = _run_tool_turn(monkeypatch, [
+        # The API returns output-only fields (status, content) that it rejects
+        # as input; only the input fields are kept for the next turn.
+        _item_done({**_REASONING_ITEM, "status": None, "content": []}),
+        _item_done({"type": "function_call", "id": "fc_1", "call_id": "call-1", "name": "search_view_notes",
+                    "arguments": '{"query":"garden"}', "status": "completed"}),
+        _completed(),
+    ], messages)
+
+    assert events == [
+        {"type": "tool_call", "id": "call-1", "name": "search_view_notes", "arguments": '{"query":"garden"}'},
+        {"type": "done", "finish_reason": "tool_calls", "usage": _EXPECTED_USAGE,
+         "provider_state": {"provider": "openai", "items": [_REASONING_ITEM]}},
+    ]
+    assert created["tools"] == [{
+        "type": "function",
+        "name": "search_view_notes",
+        "description": "Search notes in the current view.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "Words to search for"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    }]
+    # The neutral conversation becomes Responses input items; the earlier
+    # turn's reasoning is handed back ahead of its tool call.
+    assert created["input"] == [
+        {"role": "system", "content": "You are MetaList's assistant."},
+        {"role": "user", "content": "Find my garden notes"},
+        _REASONING_ITEM,
+        {"type": "function_call", "call_id": "call-0", "name": "search_view_notes", "arguments": '{"query":"roses"}'},
+        {"type": "function_call_output", "call_id": "call-0", "output": "No matches."},
+    ]
+    assert created["reasoning"] == {"effort": "low"}
+    assert created["max_output_tokens"] == 8_192
+    assert created["store"] is False
+    assert created["stream"] is True
+    assert created["include"] == ["reasoning.encrypted_content"]
+
+
+def test_a_tool_turn_that_answers_streams_its_text(monkeypatch) -> None:
+    events, _created = _run_tool_turn(monkeypatch, [
+        _text_delta("Your garden "), _text_delta("notes mention roses."), _completed(),
+    ], [{"role": "user", "content": "Summarize"}])
+
+    assert [event["type"] for event in events] == ["content_delta", "content_delta", "done"]
+    assert "".join(event["text"] for event in events if event["type"] == "content_delta") == "Your garden notes mention roses."
+    assert events[-1]["finish_reason"] == "stop"
+
+
+def test_a_tool_turn_cut_off_at_the_output_limit_fails_loudly(monkeypatch) -> None:
+    with pytest.raises(openai_inference_module.OpenAIProviderError, match="output-token limit"):
+        _run_tool_turn(monkeypatch, [_text_delta("Partial"), _incomplete("max_output_tokens")],
+                       [{"role": "user", "content": "Summarize"}])
+
+
+def test_a_tool_turn_appears_in_the_llm_history_export(monkeypatch) -> None:
+    trace_store = AgentTraceStore()
+    run_id = trace_store.start_run(session_key="session-1", model="gpt-5.6-luna", user_message="Find my garden notes")
+    with record_history(trace_store, session_key="session-1", run_id=run_id):
+        _run_tool_turn(monkeypatch, [
+            _item_done({"type": "function_call", "id": "fc_1", "call_id": "call-1", "name": "search_view_notes",
+                        "arguments": '{"query":"garden"}', "status": "completed"}),
+            _completed(),
+        ], [{"role": "user", "content": "Find my garden notes"}])
+
+    pairs = trace_store.export_history(session_key="session-1")
+
+    assert len(pairs) == 1
+    request, output = pairs[0]
+    assert request["invocation"]["kind"] == "tool"
+    assert request["invocation"]["tools"][0]["name"] == "search_view_notes"
+    assert request["request"]["tools"][0]["strict"] is True
+    assert output["status"] == "complete"

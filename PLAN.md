@@ -86,6 +86,14 @@ to the notes and web pages the tools returned.
 - A scripted fake adapter for unit tests.
 - Instructor stays for the remaining single-answer steps (summary batches, tag
   batches).
+- Done: `tool_calling.py` (tools, conversation shapes, validation, estimates),
+  `InferenceAdapter.stream_tool_turn`, tool turns in history export. Live finding:
+  OpenAI's Chat Completions rejects function tools combined with reasoning
+  effort, so the OpenAI tool turn uses the **Responses API**; reasoning comes back
+  as encrypted items and is handed to the next turn through an opaque
+  `provider_state` on the assistant message (Claude's thinking blocks would use the
+  same field). Live check: all 3 models × Off/Low/Medium/High call the tool and
+  answer from its result.
 
 ### Phase 2 — Tools
 - Implement the tools above on the frozen snapshot and privacy boundary, each

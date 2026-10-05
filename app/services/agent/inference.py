@@ -9,6 +9,8 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from app.services.agent.tool_calling import AgentTool
+
 
 MINIMUM_AGENT_CONTEXT_TOKENS = 16_384
 TARGET_AGENT_CONTEXT_TOKENS = 32_768
@@ -135,4 +137,28 @@ class InferenceAdapter(Protocol):
         max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
+        ...
+
+    def stream_tool_turn(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        thinking_level: str,
+        messages: list[dict[str, object]],
+        tools: tuple[AgentTool, ...],
+        max_output_tokens: int,
+        on_request: Callable[[dict[str, object]], None],
+    ) -> AsyncIterator[dict[str, object]]:
+        """One model turn in a tool conversation (see tool_calling.py for shapes).
+
+        Yields ``{"type": "content_delta", "text"}`` as answer text arrives, then
+        one ``{"type": "tool_call", "id", "name", "arguments"}`` per requested
+        tool call (complete, after the model finished), then exactly one
+        ``{"type": "done", "finish_reason": "stop" | "tool_calls", "usage"}``,
+        which also carries ``"provider_state"`` when the provider returned state
+        to hand back on the next turn (put it on the assistant message).
+        A reply cut off by the output limit, or ended any other way, raises
+        ``InferenceProviderError``.
+        """
         ...

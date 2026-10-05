@@ -15,7 +15,8 @@ from pydantic import BaseModel
 
 from instructor.v2.core.client import AsyncInstructor
 
-from app.services.agent.history import record_provider_event, record_provider_chunk, record_structured_call, record_text_call
+from app.services.agent.history import record_provider_event, record_provider_chunk, record_structured_call, record_text_call, record_tool_turn
+from app.services.agent.tool_calling import AgentTool, validate_tool_conversation
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceProviderError
@@ -177,6 +178,76 @@ def _record_captured_openai_usage(
             model=model,
             usage=_extract_openai_token_usage(attempt.response),
         )
+
+
+def _strict_json_schema(schema: object) -> object:
+    """OpenAI strict mode: no titles, every object closed and fully required."""
+    if isinstance(schema, list):
+        return [_strict_json_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    strict = {key: _strict_json_schema(value) for key, value in schema.items() if key != "title"}
+    if "properties" in strict:
+        strict["additionalProperties"] = False
+        strict["required"] = list(strict["properties"])
+    return strict
+
+
+def _openai_tool(tool: AgentTool) -> dict[str, object]:
+    return {
+        "type": "function",
+        "name": tool.name,
+        "description": tool.description,
+        "strict": True,
+        "parameters": _strict_json_schema(tool.arguments_schema()),
+    }
+
+
+def _responses_input(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Translate the provider-neutral tool conversation to Responses API input items."""
+    validate_tool_conversation(messages)
+    items: list[dict[str, object]] = []
+    for message in messages:
+        role = message["role"]
+        if role == "tool":
+            items.append({"type": "function_call_output", "call_id": message["tool_call_id"], "output": message["content"]})
+            continue
+        if role != "assistant":
+            items.append({"role": role, "content": message["content"]})
+            continue
+        if "provider_state" in message:
+            state = message["provider_state"]
+            if state["provider"] != _OPENAI_PROVIDER_STATE:
+                raise ValueError(f"Cannot hand {state['provider']} state to OpenAI")
+            items.extend(dict(item) for item in state["items"])
+        if message["content"] != "":
+            items.append({"role": "assistant", "content": message["content"]})
+        if "tool_calls" in message:
+            for call in message["tool_calls"]:
+                items.append({"type": "function_call", "call_id": call["id"], "name": call["name"], "arguments": call["arguments"]})
+    return items
+
+
+def _responses_usage(raw_usage: dict[str, object]) -> OpenAITokenUsage:
+    """Responses API usage (input/output tokens) in the shared OpenAI usage shape."""
+    details: object = {}
+    if "input_tokens_details" in raw_usage and raw_usage["input_tokens_details"] is not None:
+        details = raw_usage["input_tokens_details"]
+    if not isinstance(details, dict):
+        raise TypeError("OpenAI input token details must be an object")
+    return OpenAITokenUsage(
+        prompt_tokens=_required_usage_integer(usage=raw_usage, field_name="input_tokens"),
+        cached_input_tokens=_detail_usage_integer(details=details, field_name="cached_tokens"),
+        cache_write_tokens=_detail_usage_integer(details=details, field_name="cache_write_tokens"),
+        output_tokens=_required_usage_integer(usage=raw_usage, field_name="output_tokens"),
+        total_tokens=_required_usage_integer(usage=raw_usage, field_name="total_tokens"),
+    )
+
+
+# provider_state written and read only by this adapter.
+_OPENAI_PROVIDER_STATE = "openai"
+# Fields of a returned reasoning item that the Responses API accepts back as input.
+_REASONING_INPUT_FIELDS = ("id", "type", "summary", "encrypted_content")
 
 
 class OpenAIInferenceAdapter:
@@ -365,6 +436,103 @@ class OpenAIInferenceAdapter:
                             "OpenAI returned conflicting stream finish reasons"
                         )
                     finish_reason = choice_finish_reason
+        # lint: allow-PY001 rationale="translate external OpenAI stream failures into the provider-neutral contract"
+        except APIError as exc:
+            raise OpenAIProviderError(_provider_error_message(exc)) from exc
+        finally:
+            await client.close()
+        if not did_finish:
+            raise OpenAIProviderError("OpenAI response stream ended before completion")
+
+    @record_tool_turn
+    async def stream_tool_turn(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        thinking_level: str,
+        messages: list[dict[str, object]],
+        tools: tuple[AgentTool, ...],
+        max_output_tokens: int,
+        on_request: Callable[[dict[str, object]], None],
+    ) -> AsyncIterator[dict[str, object]]:
+        # Tool turns use the Responses API: Chat Completions rejects function
+        # tools combined with reasoning effort. Reasoning items come back
+        # encrypted (store=False) and are handed to the next turn as
+        # provider_state, so a thinking model keeps its train of thought.
+        _validate_base_url(base_url)
+        normalized_model = validate_openai_model(model)
+        reasoning_effort = resolve_openai_reasoning_effort(thinking_level)
+        if not isinstance(tools, tuple) or not tools or not all(isinstance(tool, AgentTool) for tool in tools):
+            raise TypeError("A tool turn needs a non-empty tuple of AgentTool")
+        if len({tool.name for tool in tools}) != len(tools):
+            raise ValueError("Tool names must be unique")
+        if not isinstance(max_output_tokens, int) or isinstance(max_output_tokens, bool) or max_output_tokens < 1:
+            raise ValueError("OpenAI maximum output tokens must be positive")
+        provider_input = _responses_input(messages)
+
+        async def capture_wire_request(request: httpx.Request) -> None:
+            body = json.loads(await request.aread())
+            if not isinstance(body, dict):
+                raise TypeError("OpenAI wire request body must be an object")
+            record_provider_event("LLM_WIRE_REQUEST", {"method": request.method, "url": str(request.url), "body": body})
+            on_request({"method": request.method, "url": str(request.url), "body": body})
+
+        http_client = httpx.AsyncClient(
+            event_hooks={"request": [capture_wire_request]},
+            follow_redirects=False,
+            trust_env=False,
+        )
+        client = AsyncOpenAI(api_key=self._api_key, base_url=OPENAI_API_BASE_URL, http_client=http_client, max_retries=0)
+        tool_calls: list[dict[str, str]] = []
+        reasoning_items: list[dict[str, object]] = []
+        did_finish = False
+        # lint: allow-PY001 rationale="OpenAI streaming and transport failures are external provider failures"
+        try:
+            stream = await client.responses.create(
+                model=normalized_model,
+                input=cast(object, provider_input),
+                tools=cast(object, [_openai_tool(tool) for tool in tools]),
+                reasoning=cast(object, {"effort": reasoning_effort}),
+                max_output_tokens=max_output_tokens,
+                stream=True,
+                store=False,
+                include=cast(object, ["reasoning.encrypted_content"]),
+            )
+            async for event in stream:
+                record_provider_chunk(event)
+                if event.type == "response.output_text.delta":
+                    if event.delta != "":
+                        yield {"type": "content_delta", "text": event.delta}
+                elif event.type == "response.output_item.done":
+                    item = event.item.model_dump(mode="json")
+                    if item["type"] == "function_call":
+                        tool_calls.append({"id": item["call_id"], "name": item["name"], "arguments": item["arguments"]})
+                    elif item["type"] == "reasoning":
+                        # Output-only fields (status, content) are rejected as input.
+                        reasoning_items.append({key: item[key] for key in _REASONING_INPUT_FIELDS if key in item})
+                elif event.type in {"response.completed", "response.incomplete"}:
+                    usage = _responses_usage(event.response.usage.model_dump(mode="json"))
+                    self._cost_tracker.record(model=normalized_model, usage=usage)
+                    if event.type == "response.incomplete":
+                        reason = event.response.incomplete_details.reason
+                        if reason == "max_output_tokens":
+                            raise OpenAIProviderError(
+                                "OpenAI reached the maximum output-token limit before finishing the response"
+                            )
+                        raise OpenAIProviderError(f"OpenAI left the response incomplete: {reason}")
+                    finish_reason = "stop"
+                    if tool_calls:
+                        finish_reason = "tool_calls"
+                    for call in tool_calls:
+                        yield {"type": "tool_call", **call}
+                    done: dict[str, object] = {"type": "done", "finish_reason": finish_reason, "usage": usage.as_inference_usage()}
+                    if reasoning_items:
+                        done["provider_state"] = {"provider": _OPENAI_PROVIDER_STATE, "items": reasoning_items}
+                    yield done
+                    did_finish = True
+                elif event.type in {"response.failed", "error"}:
+                    raise OpenAIProviderError(f"OpenAI reported a failed response ({event.type})")
         # lint: allow-PY001 rationale="translate external OpenAI stream failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
