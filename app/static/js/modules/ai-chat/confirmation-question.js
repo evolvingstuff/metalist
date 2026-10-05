@@ -19,5 +19,10 @@ export function describeConfirmationQuestion(event) {
     if (typeof event.label !== 'string' || event.label.trim() === '') {
         throw new Error('Confirmation question requires a label');
     }
-    return { questionId: event.question_id, label: event.label };
+    // Items are what the change applies to, such as web addresses; often none.
+    if (!Array.isArray(event.items)
+        || event.items.some((item) => typeof item !== 'string' || item === '')) {
+        throw new Error('Confirmation question requires a list of non-empty items');
+    }
+    return { questionId: event.question_id, label: event.label, items: [...event.items] };
 }

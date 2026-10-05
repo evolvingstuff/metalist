@@ -24,6 +24,7 @@ from app.services.agent.investigation import InvestigationEvidencePayload, Inves
 from app.services.agent.skill_settings import AgentSkill, AgentSkillSet
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.token_estimation import estimate_input_tokens
+from app.services.agent.web_actions import NoteTextGuard
 from app.services.agent.web_actions import open_web_pages
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
 from app.services.agent.web_evidence import WebPageEvidence
@@ -213,6 +214,7 @@ class ToolContext:
     skills: AgentSkillSet
     web_settings: AgentWebSettings
     web_capabilities: WebUrlCapabilitySet
+    note_text_guard: NoteTextGuard
 
     def __post_init__(self) -> None:
         assert isinstance(self.session_key, str) and self.session_key != ""
@@ -220,16 +222,22 @@ class ToolContext:
         assert isinstance(self.skills, AgentSkillSet)
         assert isinstance(self.web_settings, AgentWebSettings)
         assert isinstance(self.web_capabilities, WebUrlCapabilitySet)
+        assert isinstance(self.note_text_guard, NoteTextGuard)
         if self.investigation.snapshot.session_key != self.session_key:
             raise RuntimeError("The frozen view belongs to another session")
 
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
-    """One tool call's answer to the model, plus what it showed for citations."""
+    """One tool call's answer to the model, plus what it showed for citations.
+
+    disclosed_note_text is the note text the result showed the model, which full
+    web mode keeps out of web addresses unless the user confirms.
+    """
 
     content: str
     is_error: bool
+    disclosed_note_text: str
     note_ids: tuple[str, ...]
     note_evidence: tuple[InvestigationEvidencePayload, ...]
     web_evidence: tuple[WebPageEvidence, ...]
@@ -237,9 +245,10 @@ class ToolResult:
 
     def __post_init__(self) -> None:
         assert isinstance(self.content, str) and self.content != ""
+        assert isinstance(self.disclosed_note_text, str)
         assert len(self.note_evidence) <= 1
         if self.is_error:
-            assert self.note_ids == () and self.note_evidence == ()
+            assert self.disclosed_note_text == "" and self.note_ids == () and self.note_evidence == ()
             assert self.web_evidence == () and self.activated_skills == ()
 
 
@@ -315,8 +324,8 @@ def _lookup_metalist_help(arguments: LookupMetaListHelpArguments, context: ToolC
             for topic, skill in zip(arguments.topics, skills, strict=True)
         ],
     }
-    return ToolResult(content=_json(payload), is_error=False, note_ids=(), note_evidence=(),
-                      web_evidence=(), activated_skills=skills)
+    return ToolResult(content=_json(payload), is_error=False, disclosed_note_text="", note_ids=(),
+                      note_evidence=(), web_evidence=(), activated_skills=skills)
 
 
 def _view_overview(context: ToolContext) -> ToolResult:
@@ -346,6 +355,7 @@ def _view_overview(context: ToolContext) -> ToolResult:
         "privacy": "Notes excluded by the AI privacy settings are not part of the view.",
     }
     return ToolResult(content=_json(payload), is_error=False,
+                      disclosed_note_text="\n".join(str(entry["preview"]) for entry in listed),
                       note_ids=snapshot.selected_note.reference_note_ids, note_evidence=(),
                       web_evidence=(), activated_skills=())
 
@@ -361,7 +371,7 @@ def _preview(snapshot, root_id: str) -> str:
 
 def _read_view_notes(arguments: ReadViewNotesArguments, context: ToolContext) -> ToolResult:
     tree_read = context.investigation.read_root_trees(requested_ids=tuple(arguments.note_ids))
-    return _tree_read_result(tree_read, {})
+    return _tree_read_result(context.investigation.snapshot, tree_read, {})
 
 
 def _search_view_notes(arguments: SearchViewNotesArguments, context: ToolContext) -> ToolResult:
@@ -378,11 +388,11 @@ def _search_view_notes(arguments: SearchViewNotesArguments, context: ToolContext
         "matching_note_ids": list(matching_note_ids[:MAX_SEARCH_MATCH_IDS]),
     }
     if not matching_note_ids:
-        return ToolResult(content=_json({**search_payload, "trees": []}), is_error=False,
+        return ToolResult(content=_json({**search_payload, "trees": []}), is_error=False, disclosed_note_text="",
                           note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
     tree_read = context.investigation.read_root_trees(requested_ids=matching_note_ids)
     assert tree_read.unknown_ids == ()
-    return _tree_read_result(tree_read, search_payload)
+    return _tree_read_result(snapshot, tree_read, search_payload)
 
 
 def _note_matches(note, words: tuple[str, ...]) -> bool:
@@ -394,7 +404,7 @@ def _note_matches(note, words: tuple[str, ...]) -> bool:
     )
 
 
-def _tree_read_result(tree_read: RootTreeRead, extra_payload: dict[str, object]) -> ToolResult:
+def _tree_read_result(snapshot, tree_read: RootTreeRead, extra_payload: dict[str, object]) -> ToolResult:
     payload = {
         **extra_payload,
         "trees": list(tree_read.payload.result_trees),
@@ -402,7 +412,12 @@ def _tree_read_result(tree_read: RootTreeRead, extra_payload: dict[str, object])
         "too_large_root_ids": list(tree_read.too_large_root_ids),
         "unknown_ids": list(tree_read.unknown_ids),
     }
-    return ToolResult(content=_json(payload), is_error=False,
+    disclosed = "\n".join(
+        " ".join((note.content_text, *note.explicit_tag_terms, *note.proposed_tag_terms))
+        for note_id in tree_read.payload.evidence_note_ids
+        for note in (snapshot.notes_by_id[note_id],)
+    )
+    return ToolResult(content=_json(payload), is_error=False, disclosed_note_text=disclosed,
                       note_ids=tree_read.payload.evidence_note_ids, note_evidence=(tree_read.payload,),
                       web_evidence=(), activated_skills=())
 
@@ -412,9 +427,10 @@ async def _open_web_pages(arguments: OpenWebPagesArguments, context: ToolContext
         session_key=context.session_key,
         web_settings=context.web_settings,
         capabilities=context.web_capabilities,
+        note_text_guard=context.note_text_guard,
         urls=arguments.urls,
     )
-    return ToolResult(content=_json({"pages": pages}), is_error=False,
+    return ToolResult(content=_json({"pages": pages}), is_error=False, disclosed_note_text="",
                       note_ids=(), note_evidence=(), web_evidence=evidence, activated_skills=())
 
 
@@ -425,13 +441,13 @@ def _error_location(location: tuple[object, ...]) -> str:
 
 
 def _error_result(message: str) -> ToolResult:
-    return ToolResult(content=_json({"error": message}), is_error=True,
+    return ToolResult(content=_json({"error": message}), is_error=True, disclosed_note_text="",
                       note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
 
 
 def tool_message_result(payload: dict[str, object]) -> ToolResult:
     """A plain result the agent loop reports back to the model (menus, confirmations)."""
-    return ToolResult(content=_json(payload), is_error=False,
+    return ToolResult(content=_json(payload), is_error=False, disclosed_note_text="",
                       note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
 
 

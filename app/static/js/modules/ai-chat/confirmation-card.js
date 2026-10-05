@@ -28,6 +28,15 @@ export function showConfirmationCard({ event, host, signal }) {
     const label = document.createElement('p');
     label.className = 'ai-chat-confirmation-label';
     label.textContent = question.label;
+    const items = document.createElement('ul');
+    items.className = 'ai-chat-confirmation-items';
+    for (const text of question.items) {
+        const item = document.createElement('li');
+        const code = document.createElement('code');
+        code.textContent = text;
+        item.append(code);
+        items.append(item);
+    }
     const error = document.createElement('p');
     error.setAttribute('role', 'alert');
     const yes = document.createElement('button');
@@ -42,7 +51,9 @@ export function showConfirmationCard({ event, host, signal }) {
     const actions = document.createElement('div');
     actions.className = 'form-actions';
     actions.append(yes, no);
-    card.append(heading, label, actions, error);
+    card.append(heading, label);
+    if (question.items.length > 0) card.append(items);
+    card.append(actions, error);
     host.append(card);
     yes.focus();
     return new Promise((resolve) => {

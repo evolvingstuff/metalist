@@ -193,7 +193,8 @@ class TaggingRun:
             verb = {"accept": "Accept", "remove": "Remove"}[action]
             question_id, answer = bulk_operation_guard.question(("yes", "no"))
             yield {"type": "bulk_question", "question_id": question_id, "kind": "change_confirmation",
-                   "label": f"{verb} {count} {matching} across {len(changes)} notes in {scope_label}?"}
+                   "label": f"{verb} {count} {matching} across {len(changes)} notes in {scope_label}?",
+                   "items": []}
             if await answer == "no":
                 async for event in self.finish("Cancelled. No proposals changed.", False, ()):
                     yield event

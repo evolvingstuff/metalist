@@ -40,7 +40,7 @@ from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.tool_calling import estimate_tool_conversation_tokens
-from app.services.agent.web_actions import addresses_needing_confirmation
+from app.services.agent.web_actions import NoteTextGuard
 from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_capabilities import note_evidence_url_capabilities
 from app.services.agent.web_evidence import WebPageEvidence
@@ -69,11 +69,14 @@ _ANSWER_REQUIRED = (
 class AgentLoopState:
     """What one run has shown the user and the model so far."""
 
-    def __init__(self, *, capabilities) -> None:
+    def __init__(self, *, capabilities, selected_note_text: str) -> None:
         self.reference_note_ids: list[str] = []
         self.web_evidence: list[WebPageEvidence] = []
         self.capabilities = capabilities
         self.content = ""
+        # Note text shown to the model, and full-mode addresses the user approved.
+        self.note_text_parts: list[str] = [selected_note_text]
+        self.approved_urls: set[str] = set()
 
     def add_tool_result(self, result: ToolResult) -> None:
         for note_id in result.note_ids:
@@ -86,6 +89,8 @@ class AgentLoopState:
                 known_ids.add(evidence.evidence_id)
         for payload in result.note_evidence:
             self.capabilities = self.capabilities.including(note_evidence_url_capabilities(payload))
+        if result.disclosed_note_text:
+            self.note_text_parts.append(result.disclosed_note_text)
 
     def add_operation_references(self, *, note_ids: list[str], web_ids: list[str]) -> None:
         for note_id in note_ids:
@@ -130,7 +135,10 @@ class AgentLoopMixin:
             investigation_evidence=None,
             retained_web_urls=web_evidence_store.retained_urls(session_key=run.session_key),
         )
-        state = AgentLoopState(capabilities=capabilities)
+        selected_note_text = "\n".join(
+            f"{note.content_text} {note.tags}" for note in snapshot.selected_note.tree_notes
+        )
+        state = AgentLoopState(capabilities=capabilities, selected_note_text=selected_note_text)
         for note_id in snapshot.selected_note.reference_note_ids:
             state.reference_note_ids.append(note_id)
         messages = self._context_builder.build_agent_messages(
@@ -317,8 +325,8 @@ class AgentLoopMixin:
             return
         urls_to_confirm: tuple[str, ...] = ()
         if isinstance(parsed, OpenWebPagesArguments) and run.web_settings.mode == "full":
-            urls_to_confirm = addresses_needing_confirmation(
-                parsed.urls, typed_text=typed_text, known_urls=self._known_web_urls(run=run, state=state))
+            urls_to_confirm = self._note_text_guard(run=run, state=state, typed_text=typed_text
+                                                    ).addresses_needing_confirmation(parsed.urls)
         if urls_to_confirm:
             approved: list[bool] = []
             async for event in self._confirm_web_addresses(session_key=run.session_key, urls=urls_to_confirm,
@@ -330,10 +338,12 @@ class AgentLoopMixin:
                     "note": "The user declined opening these addresses. Do not retry them.",
                 }))
                 return
+            state.approved_urls.update(urls_to_confirm)
         context = ToolContext(
             session_key=run.session_key,
             investigation=InvestigationState.start(snapshot=snapshot, settings=run.retrieval_settings),
             skills=run.skills, web_settings=run.web_settings, web_capabilities=state.capabilities,
+            note_text_guard=self._note_text_guard(run=run, state=state, typed_text=typed_text),
         )
         yield self._status_event(call["name"], "started", self._tool_started_label(parsed),
                                  approx_input_tokens=input_tokens)
@@ -343,6 +353,12 @@ class AgentLoopMixin:
         yield self._status_event(call["name"], "completed", self._tool_completed_label(parsed, result),
                                  approx_input_tokens=max(1, estimate_text_tokens(result.content)))
         result_holder.append(result)
+
+    def _note_text_guard(self, *, run, state: AgentLoopState, typed_text: str) -> NoteTextGuard:
+        return NoteTextGuard.build(
+            note_text="\n".join(state.note_text_parts), typed_text=typed_text,
+            known_urls=self._known_web_urls(run=run, state=state), approved_urls=frozenset(state.approved_urls),
+        )
 
     def _known_web_urls(self, *, run, state: AgentLoopState) -> frozenset[str]:
         known = set(state.capabilities.normalized_urls)
@@ -361,10 +377,10 @@ class AgentLoopMixin:
             question_id, answer = bulk_operation_guard.question(("yes", "no"))
             yield self._status_event("confirmation", "started", "Waiting for your confirmation",
                                      approx_input_tokens=input_tokens)
-            listed = "\n".join(f"- {url}" for url in urls)
             yield {"type": "bulk_question", "question_id": question_id, "kind": "change_confirmation",
-                   "label": ("Open these web addresses? They contain text you did not type, "
-                             f"which a web page or note may have suggested:\n{listed}")}
+                   "label": ("Open these web addresses? They include words from your notes that you "
+                             "did not type, so a web page may be trying to send your notes elsewhere."),
+                   "items": list(urls)}
             choice = await answer
         approved.append(choice == "yes")
         yield self._status_event("confirmation", "completed",

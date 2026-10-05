@@ -23,9 +23,11 @@ public web page** lets the agent propose direct public HTTP(S) page URLs even wh
 they are absent from context. It can open a Google results URL and then open useful
 result pages; both use MetaList's page opener rather than an LLM-provider search
 service. MetaList has no separate search-engine action. Before opening an address
-that contains words the user never typed and that appeared in no address already
-seen (for example one a web page or note suggested), the chat shows the address in
-a Yes/No box; nothing opens without Yes. Page text is untrusted
+that contains words from the user's notes that the user did not type (for example
+one a web page tricked the AI into building to send note text elsewhere), the chat
+shows the address in a Yes/No box; nothing opens without Yes. Google Search and
+Google Finance addresses never ask, since they only reach Google; redirects get
+the same check. Page text is untrusted
 evidence, supports HTML, plain text, and PDF, and must be cited. Web
 evidence is retained only in the current chat session and Clear Chat removes it.
 Changing the Web access selection applies on the next message.

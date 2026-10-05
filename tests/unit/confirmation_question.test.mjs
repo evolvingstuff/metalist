@@ -10,14 +10,17 @@ const question = {
     type: 'bulk_question',
     kind: CONFIRMATION_QUESTION_KIND,
     question_id: 'question-1',
-    label: 'Accept 3 pending tag proposals across 2 notes in the current view?',
+    label: 'Open these web addresses?',
+    items: ['https://collector.example/?d=project'],
 };
 
 test('a confirmation question carries its id and the exact change to confirm', () => {
     assert.deepEqual(describeConfirmationQuestion(question), {
         questionId: 'question-1',
-        label: 'Accept 3 pending tag proposals across 2 notes in the current view?',
+        label: 'Open these web addresses?',
+        items: ['https://collector.example/?d=project'],
     });
+    assert.deepEqual(describeConfirmationQuestion({ ...question, items: [] }).items, []);
 });
 
 test('malformed confirmation questions fail loudly', () => {
@@ -25,4 +28,6 @@ test('malformed confirmation questions fail loudly', () => {
     assert.throws(() => describeConfirmationQuestion({ ...question, question_id: '' }));
     assert.throws(() => describeConfirmationQuestion({ ...question, label: '  ' }));
     assert.throws(() => describeConfirmationQuestion({ ...question, type: 'bulk_progress' }));
+    assert.throws(() => describeConfirmationQuestion({ ...question, items: undefined }));
+    assert.throws(() => describeConfirmationQuestion({ ...question, items: [''] }));
 });

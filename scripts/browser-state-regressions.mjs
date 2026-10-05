@@ -160,7 +160,8 @@ export async function checkAdditionalStateTransitions(page) {
       if (url === CONFIG.API.AI.CHAT) {
         const body = new ReadableStream({
           async start(controller) {
-            controller.enqueue(line({type:'bulk_question', question_id:'question-1', kind:'change_confirmation', label}));
+            controller.enqueue(line({type:'bulk_question', question_id:'question-1', kind:'change_confirmation', label,
+              items:['https://collector.example/?d=project']}));
             await answered;
             const text = 'Accepted 3 tag proposals across 2 notes.';
             controller.enqueue(line({type:'content_delta', text, rendered_text:`<p>${text}</p>`, reference_note_ids:[], reference_web_ids:[]}));
@@ -193,10 +194,16 @@ export async function checkAdditionalStateTransitions(page) {
       }
       if (card === null) throw new Error('The confirmation card did not appear');
       const shownLabel = card.querySelector('.ai-chat-confirmation-label').textContent;
+      const shownItems = [...card.querySelectorAll('.ai-chat-confirmation-items code')].map((code) => code.textContent);
+      const itemFont = getComputedStyle(card.querySelector('.ai-chat-confirmation-items code')).fontFamily;
+      // The chat panel may be hidden in this run, so check the computed rules, not the layout.
+      const yesStyle = getComputedStyle(card.querySelector('button[data-answer="yes"]'));
+      const buttonSizing = {flexGrow: yesStyle.flexGrow, width: yesStyle.width, fontSize: yesStyle.fontSize,
+        justify: getComputedStyle(card.querySelector('.form-actions')).justifyContent};
       const buttons = [...card.querySelectorAll('button')].map((button) => button.textContent);
       card.querySelector('button[data-answer="yes"]').click();
       await submitted;
-      const result = {shownLabel, buttons, answers,
+      const result = {shownLabel, shownItems, itemFont, buttonSizing, buttons, answers,
         cardRemains: document.querySelector('#ai-chat-panel .ai-chat-confirmation') !== null,
         status: panel._messages.at(-1).status, content: panel._messages.at(-1).content};
       await panel._clearSession();
@@ -208,6 +215,12 @@ export async function checkAdditionalStateTransitions(page) {
     }
   });
   assert.equal(confirmation.shownLabel, 'Accept 3 pending tag proposals across 2 notes in the current view?');
+  assert.deepEqual(confirmation.shownItems, ['https://collector.example/?d=project']);
+  assert.match(confirmation.itemFont, /monospace|Menlo|Monaco|SFMono/);
+  // Compact buttons: sized by their label, not stretched across the card.
+  assert.equal(confirmation.buttonSizing.flexGrow, '0', JSON.stringify(confirmation.buttonSizing));
+  assert.equal(confirmation.buttonSizing.justify, 'flex-end');
+  assert.equal(confirmation.buttonSizing.fontSize, '13px');
   assert.deepEqual(confirmation.buttons, ['Yes', 'No']);
   assert.deepEqual(confirmation.answers, [{question_id:'question-1', value:'yes'}]);
   assert.equal(confirmation.cardRemains, false, 'the card closes after the answer');

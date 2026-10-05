@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from urllib.parse import unquote_plus, urlsplit
 
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
@@ -17,41 +18,71 @@ from app.services.public_http import normalize_public_http_url
 
 
 _ADDRESS_WORD_RE = re.compile(r"[a-z0-9]+")
-# Words of the Google search address the agent constructs from the user's words.
-_SEARCH_ADDRESS_WORDS = frozenset({"http", "https", "www", "google", "com", "search", "q"})
+# Pieces of address syntax that say nothing about the user's notes.
+_ADDRESS_SYNTAX_WORDS = frozenset({"http", "https", "www", "com", "org", "net", "html", "htm", "php"})
+# Google Search and Google Finance only send the words to Google itself, never to
+# a site that could collect them, so they never need the user's confirmation.
+_GOOGLE_HOSTS = frozenset({"google.com", "www.google.com"})
 
 
 def _address_words(text: str) -> frozenset[str]:
     return frozenset(_ADDRESS_WORD_RE.findall(unquote_plus(text).lower()))
 
 
-def addresses_needing_confirmation(
-    urls: list[str],
-    *,
-    typed_text: str,
-    known_urls: frozenset[str],
-) -> tuple[str, ...]:
-    """Full-mode addresses that carry text the user did not type (prompt-injection guard).
+def _is_google_search_or_quote(normalized_url: str) -> bool:
+    parts = urlsplit(normalized_url)
+    if parts.hostname not in _GOOGLE_HOSTS:
+        return False
+    if parts.path == "/search":
+        return True
+    return parts.path.startswith("/finance/")
 
-    An address is fine when it appeared as is in the conversation, the notes or web
-    pages shown to the model, or when every word in it is a word the user typed (or
-    part of the Google search form). Anything else could carry note or page text to
-    another site, so the user confirms it first. Returns normalized addresses in order.
+
+@dataclass(frozen=True, slots=True)
+class NoteTextGuard:
+    """Full web mode: keeps text from the user's notes from leaving in a web address.
+
+    A prompt-injected page could ask the model to open an address that carries note
+    text to another site. An address needs the user's Yes when it contains a word from
+    the notes shown to the model that the user did not type and that was not already
+    part of an address the model saw. Google Search and Google Finance are exempt.
+    The same check applies to every redirect hop.
     """
-    assert isinstance(typed_text, str) and isinstance(known_urls, frozenset)
-    allowed_words = _address_words(typed_text) | _SEARCH_ADDRESS_WORDS
-    for known_url in known_urls:
-        allowed_words |= _address_words(known_url)
-    needing: list[str] = []
-    for url in urls:
+
+    private_words: frozenset[str]
+    approved_urls: frozenset[str]
+
+    @classmethod
+    def build(
+        cls, *, note_text: str, typed_text: str, known_urls: frozenset[str], approved_urls: frozenset[str],
+    ) -> NoteTextGuard:
+        assert isinstance(note_text, str) and isinstance(typed_text, str)
+        assert isinstance(known_urls, frozenset) and isinstance(approved_urls, frozenset)
+        shared_words = _address_words(typed_text) | _ADDRESS_SYNTAX_WORDS
+        for known_url in known_urls:
+            shared_words |= _address_words(known_url)
+        return cls(private_words=_address_words(note_text) - shared_words, approved_urls=approved_urls)
+
+    def needs_confirmation(self, normalized_url: str) -> bool:
+        assert normalize_public_http_url(normalized_url) == normalized_url
+        if normalized_url in self.approved_urls or _is_google_search_or_quote(normalized_url):
+            return False
+        parts = urlsplit(normalized_url)
+        address_text = " ".join((parts.netloc, parts.path, parts.query, parts.fragment))
+        return bool(_address_words(address_text) & self.private_words)
+
+    def allows(self, url: str) -> bool:
         normalized = normalize_public_http_url(url)
-        if normalized is None or normalized in known_urls or normalized in needing:
-            continue
-        parts = urlsplit(normalized)
-        address_text = " ".join((parts.scheme, parts.netloc, parts.path, parts.query, parts.fragment))
-        if not _address_words(address_text) <= allowed_words:
-            needing.append(normalized)
-    return tuple(needing)
+        return normalized is not None and not self.needs_confirmation(normalized)
+
+    def addresses_needing_confirmation(self, urls: list[str]) -> tuple[str, ...]:
+        """Normalized addresses in order, each once; invalid ones are left to the opener."""
+        needing: list[str] = []
+        for url in urls:
+            normalized = normalize_public_http_url(url)
+            if normalized is not None and normalized not in needing and self.needs_confirmation(normalized):
+                needing.append(normalized)
+        return tuple(needing)
 
 
 async def open_web_pages(
@@ -59,12 +90,14 @@ async def open_web_pages(
     session_key: str,
     web_settings: AgentWebSettings,
     capabilities: WebUrlCapabilitySet,
+    note_text_guard: NoteTextGuard,
     urls: list[str],
 ) -> tuple[list[dict[str, object]], tuple[WebPageEvidence, ...]]:
     """Open pages the settings allow; one result per requested URL, in order.
 
-    Contextual mode allows only addresses already in context, for the requested
-    URL and every redirect hop; full mode allows any public page.
+    Contextual mode allows only addresses already in context; full mode allows any
+    public page whose address carries no unconfirmed note text. Both checks apply
+    to the requested URL and every redirect hop.
     """
     if not web_settings.can_open_pages:
         raise RuntimeError("Web pages may be opened only in contextual or full web mode")
@@ -72,7 +105,7 @@ async def open_web_pages(
     def allows_target(url: str) -> bool:
         if web_settings.mode == "contextual":
             return capabilities.allows(url)
-        return True
+        return note_text_guard.allows(url)
 
     pending_urls: list[str] = []
     pending_indexes: list[int] = []

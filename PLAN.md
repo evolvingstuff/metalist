@@ -190,6 +190,12 @@ to the notes and web pages the tools returned.
   unrun, to `evals/legacy-cases/` for Phase 6 migration; `from-export` removed with
   its route-only importer. Live check: "Summarize everything in this view" →
   `summarize_view` → confirmation → cited summary (Luna and Terra, Low).
+- Your feedback: the full-mode Yes/No asked for ordinary Google searches and quotes.
+  The rule now targets the actual risk, note text leaving in an address: ask only
+  when an address contains words from notes shown to the AI that you did not type
+  and that were not part of an address already seen (`NoteTextGuard`). Google Search
+  and Google Finance are exempt; every redirect hop gets the same check. The box
+  lists addresses separately (monospace, one per line) with compact buttons.
 - Left for Phase 7: design/UI/testing docs still describe the old routing
   (`docs/design/agent-harness.md`, `docs/ui/ai-chat.md`, `docs/testing/harness.md`,
   `docs/AI-SUMMARY.md`).

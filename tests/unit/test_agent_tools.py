@@ -16,6 +16,7 @@ from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skills import load_skill
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
+from app.services.agent.web_actions import NoteTextGuard
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.web_settings import AgentWebSettings
 from app.version import __version__
@@ -35,6 +36,8 @@ def _context(*, snapshot, max_tokens: int, web_mode: str, skills) -> ToolContext
         skills=skills,
         web_settings=AgentWebSettings(mode=web_mode),
         web_capabilities=_NO_URLS,
+        note_text_guard=NoteTextGuard.build(note_text="", typed_text="", known_urls=frozenset(),
+                                            approved_urls=frozenset()),
     )
 
 
@@ -243,3 +246,14 @@ def test_contextual_web_mode_blocks_addresses_not_in_context(monkeypatch) -> Non
     result = _run(context, "open_web_pages", {"urls": ["https://not-in-context.example/"]})
     assert json.loads(result.content)["pages"][0]["status"] == "blocked"
     assert result.web_evidence == ()
+
+
+def test_note_tools_report_the_note_text_they_showed_for_the_web_guard() -> None:
+    context = _small_view()
+    read = _run(context, "read_view_notes", {"note_ids": ["child-a"]})
+    assert "ROOT_ALPHA" in read.disclosed_note_text and "CHILD_ALPHA" in read.disclosed_note_text
+    assert "testosterone" in read.disclosed_note_text
+    assert "TAIL" not in read.disclosed_note_text
+    overview = _run(context, "view_overview", {})
+    assert overview.disclosed_note_text == "ROOT_ALPHA\nTAIL"
+    assert _run(context, "lookup_metalist_help", {"topics": ["ai"]}).disclosed_note_text == ""
