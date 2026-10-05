@@ -233,6 +233,9 @@ class AiChatPanelController {
         this._savePanelWidth = null;
         this._getDiagnosticsVisible = null;
         this._saveDiagnosticsVisible = null;
+        this._getSpendVisible = null;
+        this._saveSpendVisible = null;
+        this._showSpend = false;
         this._getComposerHeight = null;
         this._saveComposerHeight = null;
         this._composerHeightBeforePointerInteraction = 0;
@@ -264,6 +267,8 @@ class AiChatPanelController {
         savePanelWidth,
         getDiagnosticsVisible,
         saveDiagnosticsVisible,
+        getSpendVisible,
+        saveSpendVisible,
         getComposerHeight,
         saveComposerHeight,
         setVisible,
@@ -291,6 +296,12 @@ class AiChatPanelController {
         if (typeof saveDiagnosticsVisible !== 'function') {
             throw new Error('AiChatPanel.init requires saveDiagnosticsVisible');
         }
+        if (typeof getSpendVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires getSpendVisible');
+        }
+        if (typeof saveSpendVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires saveSpendVisible');
+        }
         if (typeof getComposerHeight !== 'function') {
             throw new Error('AiChatPanel.init requires getComposerHeight');
         }
@@ -309,6 +320,8 @@ class AiChatPanelController {
         this._savePanelWidth = savePanelWidth;
         this._getDiagnosticsVisible = getDiagnosticsVisible;
         this._saveDiagnosticsVisible = saveDiagnosticsVisible;
+        this._getSpendVisible = getSpendVisible;
+        this._saveSpendVisible = saveSpendVisible;
         this._getComposerHeight = getComposerHeight;
         this._saveComposerHeight = saveComposerHeight;
         this._setVisible = setVisible;
@@ -353,6 +366,7 @@ class AiChatPanelController {
                 'ai-chat-diagnostics-toggle',
                 HTMLButtonElement,
             ),
+            spendToggle: requireElement('ai-chat-spend-toggle', HTMLButtonElement),
             clear: requireElement('ai-chat-clear', HTMLButtonElement),
             settings: requireElement('ai-chat-settings', HTMLButtonElement),
             close: requireElement('ai-chat-close', HTMLButtonElement),
@@ -366,6 +380,11 @@ class AiChatPanelController {
         if (this._showDiagnosticActivities !== diagnosticVisibility) this._showDiagnosticActivities = diagnosticVisibility;
         if (typeof this._showDiagnosticActivities !== 'boolean') {
             throw new Error('Stored AI chat diagnostic visibility must be boolean');
+        }
+        const spendVisibility = this._getSpendVisible();
+        if (this._showSpend !== spendVisibility) this._showSpend = spendVisibility;
+        if (typeof this._showSpend !== 'boolean') {
+            throw new Error('Stored AI chat spend visibility must be boolean');
         }
         this._bindEvents();
         const notesContainer = requireElement('notes-container', HTMLElement);
@@ -382,6 +401,7 @@ class AiChatPanelController {
         await AgentDebugView.init();
         this._initialized = true;
         this._syncDiagnosticActivityToggle();
+        this._syncSpendToggle();
         this._syncSettingsControls();
         const savedWidth = this._getPanelWidth();
         if (savedWidth !== null) {
@@ -435,6 +455,7 @@ class AiChatPanelController {
             'click',
             () => void this._toggleDiagnosticActivities(),
         );
+        elements.spendToggle.addEventListener('click', () => void this._toggleSpend());
         elements.clear.addEventListener('click', () => void this._clearSession());
         elements.openAiCostReset.addEventListener(
             'click',
@@ -598,6 +619,21 @@ class AiChatPanelController {
         );
         this._elements.diagnosticsToggle.setAttribute('aria-label', actionLabel);
         this._elements.diagnosticsToggle.title = actionLabel;
+    }
+
+    _syncSpendToggle() {
+        const actionLabel = this._showSpend ? 'Hide estimated spend' : 'Show estimated spend';
+        this._elements.spendToggle.setAttribute('aria-pressed', String(this._showSpend));
+        this._elements.spendToggle.setAttribute('aria-label', actionLabel);
+        this._elements.spendToggle.title = actionLabel;
+    }
+
+    async _toggleSpend() {
+        const nextVisibility = !this._showSpend;
+        await this._saveSpendVisible(nextVisibility);
+        this._showSpend = nextVisibility;
+        this._syncSpendToggle();
+        this._syncOpenAiCostVisibility();
     }
 
     async _toggleDiagnosticActivities() {
@@ -860,7 +896,11 @@ class AiChatPanelController {
     _syncOpenAiCostVisibility() {
         const settings = this._getSettings();
         const isOpenAi = settings.provider === 'openai';
-        this._elements.openAiCost.hidden = !isOpenAi;
+        // Spend keeps updating while hidden; the $ button only shows or hides it.
+        let isSpendShown = false;
+        if (isOpenAi) isSpendShown = this._showSpend;
+        this._elements.openAiCost.hidden = !isSpendShown;
+        this._elements.spendToggle.hidden = !isOpenAi;
         return isOpenAi;
     }
 

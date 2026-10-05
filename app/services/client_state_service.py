@@ -54,6 +54,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.openai_model": "openai_model",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
+    "pref.ai.show_spend": {"true", "false"},
     WEB_ACCESS_MODE_PREFERENCE_KEY: WEB_ACCESS_MODES,
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (

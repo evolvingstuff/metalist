@@ -247,7 +247,8 @@ approximate evidence-token count.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
   Selection persists immediately.
 - A compact estimated-spend tracker appears directly below the
-  chat header. Its four token totals are New input, Cached input, Cache writes, and
+  chat header when the header's **$** button is on (off by default, remembered per
+  namespace as `pref.ai.show_spend`; it keeps counting while hidden). Its four token totals are New input, Cached input, Cache writes, and
   Output. Values come from OpenAI's response usage rather than MetaList's prompt
   estimator and update after each completed intermediate or final request. Reset
   returns the process-local aggregate to `$0.00`; clearing chat does not. Nothing

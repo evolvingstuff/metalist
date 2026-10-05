@@ -100,8 +100,10 @@ the source repo, excluded from PyPI; cases default to five trials with up to fou
 concurrent requests and report percentages and cached-token usage.
 Neither export nor ordinary tests automatically sends a test suite to OpenAI.
 
-The estimated spend display uses provider usage, tracks new/cached input, cache
-writes and output, and is process-local. Resetting it does not affect billing.
+The estimated spend display is hidden by default; the $ button in the chat
+header shows or hides it (remembered per namespace) and it keeps counting while
+hidden. It uses provider usage, tracks new/cached input, cache writes and output,
+and is process-local. Resetting it does not affect billing.
 Clear Chat does not reset costs. Interrupted calls with no final usage may be
 absent. Stop cancels active work; Clear cancels and awaits it before clearing.
 The developer eye reveals diagnostic activities. Model prose is not proof that

@@ -908,3 +908,19 @@ test('AI settings expose only OpenAI and no local model downloads', () => {
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);
     assert.match(controller, /option\.textContent = 'Select model'/);
 });
+
+
+test('a $ header button shows and hides the spend panel and remembers the choice', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(template, /id="ai-chat-spend-toggle"[^>]*aria-controls="ai-chat-openai-cost"[^>]*>\$<\/button>/);
+    // Hidden by default; the spend keeps updating while hidden.
+    assert.match(commandController, /_getBoolean\('pref\.ai\.show_spend', false\)/);
+    assert.match(controller, /if \(isOpenAi\) isSpendShown = this\._showSpend;\s*this\._elements\.openAiCost\.hidden = !isSpendShown/);
+    assert.match(controller, /await this\._saveSpendVisible\(nextVisibility\)/);
+    assert.match(css, /\.ai-chat-header-actions button\[hidden\]\s*\{\s*display: none;/);
+    assert.match(css, /#ai-chat-spend-toggle\[aria-pressed="true"\]/);
+});

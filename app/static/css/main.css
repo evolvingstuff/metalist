@@ -2397,6 +2397,7 @@ body.ai-chat-resizing * {
 }
 
 .ai-chat-header h2 {
+    flex: 0 0 auto;
     margin: 0;
     font-size: 16px;
     line-height: 1.25;
@@ -2404,6 +2405,11 @@ body.ai-chat-resizing * {
 
 .ai-chat-header-actions {
     display: flex;
+    /* In a narrow panel the buttons wrap onto right-aligned rows instead of
+       spilling past the panel edge, where clicks would land on the notes. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
     gap: 4px;
 }
 
@@ -2421,6 +2427,11 @@ body.ai-chat-resizing * {
     color: #475569;
     cursor: pointer;
     font-size: 16px;
+}
+
+/* inline-flex would otherwise override the hidden attribute. */
+.ai-chat-header-actions button[hidden] {
+    display: none;
 }
 
 .ai-chat-header-actions button:hover:not(:disabled) {
@@ -2443,7 +2454,8 @@ body.ai-chat-resizing * {
     stroke-width: 1.8;
 }
 
-.ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"] {
+.ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"],
+.ai-chat-header-actions #ai-chat-spend-toggle[aria-pressed="true"] {
     border-color: #93c5fd;
     background: #eff6ff;
     color: #0369a1;
@@ -3557,7 +3569,8 @@ html[data-theme="dark"] .ai-chat-header-actions button {
     color: #d4d4d4;
 }
 
-html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"] {
+html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"],
+html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-pressed="true"] {
     border-color: #075985;
     background: #082f49;
     color: #bae6fd;

@@ -149,6 +149,7 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.openai_model": "gpt-5.6-sol",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
+        "pref.ai.show_spend": "true",
         "pref.ai.web_access_mode": "contextual",
         "pref.ai.tagging.vocabulary": "new",
         "pref.ai.tagging.focus": "both",

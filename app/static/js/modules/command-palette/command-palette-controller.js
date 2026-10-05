@@ -751,6 +751,17 @@ class CommandPaletteController {
         );
     }
 
+    getAiChatSpendVisible() {
+        return this._getBoolean('pref.ai.show_spend', false);
+    }
+
+    async saveAiChatSpendVisible(isVisible) {
+        if (typeof isVisible !== 'boolean') {
+            throw new Error('AI chat spend visibility must be boolean');
+        }
+        await this._preferences.setRaw('pref.ai.show_spend', isVisible ? 'true' : 'false');
+    }
+
     getAiChatComposerHeight() {
         const rawHeight = this._preferences.getRaw('pref.ai.composer_height');
         if (rawHeight === null) {
