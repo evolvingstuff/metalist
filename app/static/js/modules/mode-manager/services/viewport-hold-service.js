@@ -13,6 +13,7 @@
 
 import { ApplicationState } from '../../application-state.js';
 import { getViewportTopInset } from './scroll-restoration-service.js';
+import { DELIBERATE_SCROLL_EVENT } from './animated-scroll-service.js';
 
 // How much of a kept-visible note must remain below the search controls.
 const MIN_VISIBLE_PX = 24;
@@ -27,6 +28,8 @@ const CUE_MIN_MOVE_PX = 40;
 const CUE_DURATION_MS = 600;
 // Shorter text fragments match too easily to count as the same place.
 const MIN_MATCH_CHARS = 8;
+// The longest LaTeX delimiter ($$, \\[, \\( and their closers).
+const FORMULA_DELIMITER_CHARS = 2;
 
 const moduleState = ApplicationState.createFields('viewport-hold-service', {
     session: null,
@@ -246,7 +249,7 @@ export function captureNoteAnchor(noteElement) {
             kind: 'text', noteId, screenY, textOffset, textLength: text.length,
             before: text.slice(Math.max(0, textOffset - CONTEXT_CHARS), textOffset),
             after: text.slice(textOffset, textOffset + CONTEXT_CHARS),
-            noteTop, contentTop, keepVisible: true, affinity,
+            noteTop, contentTop, keepVisible: true, affinity, editText: text,
         };
     };
 
@@ -286,6 +289,10 @@ export function captureClickAnchor(noteElement, x, y) {
     }
     const noteTop = noteElement.getBoundingClientRect().top;
     const content = noteContent(noteElement);
+    const formulaAnchor = captureFormulaClickAnchor({ content, noteId, noteTop, x, y });
+    if (formulaAnchor !== null) {
+        return formulaAnchor;
+    }
     const diagramAnchor = captureDiagramClickAnchor({ content, noteId, noteTop, x, y });
     if (diagramAnchor !== null) {
         return diagramAnchor;
@@ -309,6 +316,63 @@ export function captureClickAnchor(noteElement, x, y) {
 }
 
 const MERMAID_BLOCK_SELECTOR = '.meta-mermaid-diagram, pre.meta-mermaid-source';
+const FORMULA_SELECTOR = '.meta-latex[data-latex-source]';
+
+// Rendered formulas in `content`, each with its TeX source and which repeat of
+// that same source it is (the server renders them in source order).
+function formulasIn(content) {
+    const seen = new Map();
+    return [...content.querySelectorAll(FORMULA_SELECTOR)].map((element) => {
+        const source = element.dataset.latexSource;
+        let occurrence = 0;
+        if (seen.has(source)) {
+            occurrence = seen.get(source) + 1;
+        }
+        seen.set(source, occurrence);
+        return { element, source, occurrence };
+    });
+}
+
+// A click on a rendered formula: its math has no text in common with its TeX
+// source, so the formula's own source (carried by the server) says where to
+// go: that source goes under the pointer, with the caret at its start.
+function captureFormulaClickAnchor({ content, noteId, noteTop, x, y }) {
+    const hit = document.elementFromPoint(x, y);
+    if (hit === null) {
+        return null;
+    }
+    const element = hit.closest(FORMULA_SELECTOR);
+    if (element === null || !content.contains(element) || element.dataset.latexSource.length === 0) {
+        return null;
+    }
+    const formula = formulasIn(content).find((candidate) => candidate.element === element);
+    return {
+        kind: 'source', noteId, noteTop, keepVisible: false, clickX: x, clickY: y,
+        needles: [{ text: formula.source, shift: 0 }], occurrence: formula.occurrence,
+        screenY: element.getBoundingClientRect().top,
+    };
+}
+
+// Leaving edit mode with the caret inside a formula's TeX source: the rendered
+// formula whose source contains the caret (found in the text as it was being
+// edited), or null.
+function formulaAtEditedOffset(content, editText, textOffset) {
+    for (const formula of formulasIn(content)) {
+        let index = -1;
+        for (let repeat = 0; repeat <= formula.occurrence; repeat += 1) {
+            index = editText.indexOf(formula.source, index + 1);
+            if (index === -1) {
+                break;
+            }
+        }
+        // The delimiters around the source ($$, \( …) count as the formula too.
+        if (index !== -1 && textOffset >= index - FORMULA_DELIMITER_CHARS
+            && textOffset <= index + formula.source.length + FORMULA_DELIMITER_CHARS) {
+            return formula.element;
+        }
+    }
+    return null;
+}
 
 // How a Mermaid node's label can appear in its source: A[label], C{label},
 // D(label), quoted labels, and the other bracket shapes.
@@ -550,6 +614,9 @@ function validateReference(reference) {
         if (reference.affinity !== 'forward' && reference.affinity !== 'backward') {
             throw new Error('A text hold needs its affinity');
         }
+        if (Object.prototype.hasOwnProperty.call(reference, 'editText') && typeof reference.editText !== 'string') {
+            throw new Error('A text hold editText must be a string');
+        }
         return;
     }
     throw new Error(`Unknown viewport hold kind: ${reference.kind}`);
@@ -583,6 +650,17 @@ function locateReference(reference) {
     // Only a real text match places the view: a proportional guess (the text
     // did not survive rendering, e.g. Mermaid source or Markdown syntax) can
     // land anywhere in a formatted note, so the note's top is held instead.
+    if (reference.kind === 'text' && Object.prototype.hasOwnProperty.call(reference, 'editText')
+        && !isShownCollapsed(element)) {
+        const content = noteContent(element);
+        const formula = formulaAtEditedOffset(content, reference.editText, reference.textOffset);
+        if (formula !== null) {
+            return {
+                delta: formula.getBoundingClientRect().top - reference.screenY, displacedPx: 0, approximate: false,
+                eligible: isEditExitAnchor(reference), cueElement: formula,
+            };
+        }
+    }
     if (reference.kind === 'text') {
         const content = noteContent(element);
         const found = findTextPosition(content.textContent, reference);
@@ -787,6 +865,7 @@ export function holdViewportRoot(reference) {
     for (const type of USER_INPUT_EVENTS) {
         window.addEventListener(type, onUserInput, { capture: true, passive: true });
     }
+    window.addEventListener(DELIBERATE_SCROLL_EVENT, onUserInput);
     window.addEventListener('scroll', onScroll, { passive: true });
     observer.observe(notesContainer());
 
@@ -796,6 +875,7 @@ export function holdViewportRoot(reference) {
             for (const type of USER_INPUT_EVENTS) {
                 window.removeEventListener(type, onUserInput, { capture: true });
             }
+            window.removeEventListener(DELIBERATE_SCROLL_EVENT, onUserInput);
             window.removeEventListener('scroll', onScroll);
             window.clearTimeout(quietTimer);
             window.clearTimeout(maxTimer);

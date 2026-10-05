@@ -42,6 +42,19 @@ _LATEX_DELIMITERS = (
 )
 
 
+_LATEX_SOURCE_ATTRIBUTE_RE = re.compile(r' data-latex-source="[^"]*"')
+
+
+def strip_latex_source_attributes(html_text: str) -> str:
+    """Remove the TeX source that rendered formulas carry for the live view.
+
+    Copied and exported HTML show only the rendered math.
+    """
+    if not isinstance(html_text, str):
+        raise TypeError(f"html_text must be a string, got {type(html_text)}")
+    return _LATEX_SOURCE_ATTRIBUTE_RE.sub("", html_text)
+
+
 def render_markdown_to_html(markdown_text: str) -> str:
     if not isinstance(markdown_text, str):
         raise TypeError(f"markdown_text must be a string, got {type(markdown_text)}")
@@ -520,7 +533,9 @@ def _extract_latex_math(text: str, placeholders: List[_InlinePlaceholder]) -> st
         placeholder = _make_placeholder(
             placeholders=placeholders,
             html_value=(
-                f'<span class="{" ".join(class_names)}">'
+                # The TeX source lets the browser map a clicked formula back
+                # to its source when entering edit mode (and back on leaving).
+                f'<span class="{" ".join(class_names)}" data-latex-source="{html.escape(latex_source, quote=True)}">'
                 f"{rendered_math.html}"
                 "</span>"
             ),

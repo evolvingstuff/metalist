@@ -537,6 +537,118 @@ async function enterEditCases(page, ids, longId) {
   await pause(SETTLE_MS);
 }
 
+// --- Formatted notes: click a rendered spot, then leave again ---------------
+
+const FORMATTED_CASES = [
+  {
+    label: 'CSV row',
+    tags: '@csv',
+    lines: ['name,score,notes', ...Array.from({length: 30}, (_, index) => `Row ${index + 1} name,${index * 3},Some note text ${index + 1}`)],
+    target: '.meta-csv td', targetText: 'Row 15 name', source: 'Row 15 name',
+  },
+  {
+    label: 'JSON key',
+    tags: '@json',
+    lines: ['{', ...Array.from({length: 30}, (_, index) => `"key${index + 1}": "value number ${index + 1}"${index < 29 ? ',' : ''}`), '}'],
+    target: '.json-key', targetText: '"key15"', source: '"key15"',
+  },
+  {
+    label: 'Markdown table row',
+    tags: '@markdown',
+    lines: ['Intro paragraph above the table.', '', '| Name | Score |', '|---|---|', ...Array.from({length: 30}, (_, index) => `| Table row ${index + 1} | ${index} |`)],
+    target: '.meta-markdown td', targetText: 'Table row 15', source: 'Table row 15',
+  },
+  {
+    label: 'LaTeX formula',
+    tags: '@markdown',
+    lines: Array.from({length: 20}, (_, index) => [`Paragraph ${index + 1} before formula ${index + 1}.`, `$$\\frac{a_{${index + 1}}}{b}$$`, '']).flat(),
+    target: '.meta-latex', targetIndex: 9, source: 'a_{10}',
+  },
+];
+
+async function formattedClickCase(page, ids, spec) {
+  const noteId = await page.evaluate(async ({lines, tags}) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const note = await NotesAPI.createNote(null, '');
+    await NotesAPI.saveNote(note.id, lines.map(line => `<div>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`).join(''), tags);
+    const fillers = [];
+    for (let index = 0; index < 4; index += 1) {
+      const filler = await NotesAPI.createNote(null, '');
+      await NotesAPI.saveNote(filler.id, `<p>Filler note ${index} above the formatted note.</p>`.repeat(3), '');
+      fillers.push(filler.id);
+    }
+    return [note.id, ...fillers];
+  }, {lines: spec.lines, tags: spec.tags}).then(created => {
+    ids.push(...created);
+    return created[0];
+  });
+  await reload(page);
+  const targetBox = () => page.evaluate(({noteId, spec}) => {
+    const candidates = [...document.querySelectorAll(`[data-note-id="${noteId}"] ${spec.target}`)];
+    const element = typeof spec.targetText === 'string'
+      ? candidates.find(candidate => candidate.textContent.trim() === spec.targetText)
+      : candidates[spec.targetIndex];
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return {left: rect.left, top: rect.top, width: rect.width, height: rect.height};
+  }, {noteId, spec});
+  await page.waitForFunction(async ({noteId, spec}) => document.querySelectorAll(`[data-note-id="${noteId}"] ${spec.target}`).length > 0, {}, {noteId, spec});
+  let box = await targetBox();
+  await page.evaluate(delta => window.scrollBy(0, delta), box.top - 350);
+  await pause(300);
+  box = await targetBox();
+  const point = {x: box.left + Math.min(12, box.width / 2), y: box.top + box.height / 2};
+  await page.mouse.click(point.x, point.y);
+  await waitForEditing(page, noteId);
+  await pause(SETTLE_MS);
+  const caret = await page.evaluate(() => {
+    const selection = window.getSelection();
+    let node = selection.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const line = node.closest('div, p');
+    const rect = line.getBoundingClientRect();
+    return {text: line.textContent, top: rect.top, bottom: rect.bottom};
+  });
+  const problems = [];
+  if (!caret.text.includes(spec.source)) problems.push(`caret on "${caret.text.trim().slice(0, 40)}" instead of the "${spec.source}" source line`);
+  if (point.y < caret.top - 4 || point.y > caret.bottom + 4) problems.push(`caret line at y=${Math.round(caret.top)}-${Math.round(caret.bottom)}, click at y=${Math.round(point.y)}`);
+  const {cues} = await exitWithEscape(page, '__none__', null);
+  if (cues !== 0) problems.push(`${cues} position cue(s) after Escape`);
+  const back = await targetBox();
+  if (back === null) problems.push('target missing after Escape');
+  else if (Math.abs(back.top - box.top) > TOLERANCE_PX) problems.push(`after Escape the spot moved: y=${Math.round(box.top)} -> ${Math.round(back.top)}`);
+  return problems.map(problem => `${spec.label}: ${problem}`);
+}
+
+async function formattedClickCases(page, ids) {
+  const problems = [];
+  for (const spec of FORMATTED_CASES) problems.push(...await formattedClickCase(page, ids, spec));
+  assert.deepEqual(problems, [], `formatted notes should keep the clicked spot in place both ways:\n${problems.join('\n')}`);
+}
+
+// Enter outside edit mode adds an empty note at the top and scrolls up to it,
+// so it is visible below the search controls.
+async function newNoteAtTopCase(page, ids) {
+  await reload(page);
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await pause(400);
+  await page.mouse.move(400, 400);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return mode.isEditing && !mode.isLoading;
+  });
+  const newId = await page.evaluate(async () => (await import('/static/js/modules/mode-manager/mode-context.js')).ModeContextInstance.currentNoteId);
+  ids.push(newId);
+  await pause(SETTLE_MS);
+  const {noteTop, headerBottom} = await layout(page, newId);
+  const scrollY = await page.evaluate(() => window.scrollY);
+  assert.ok(noteTop >= headerBottom - 1,
+    `the new note should be visible below the search controls (y=${Math.round(headerBottom)}), got y=${Math.round(noteTop)} at scrollY=${Math.round(scrollY)}`);
+  await page.keyboard.press('Escape');
+  await pause(SETTLE_MS);
+}
+
 export async function checkExitEditScroll(page) {
   const ids = await createFixture(page);
   const longId = ids[12];
@@ -671,8 +783,13 @@ export async function checkExitEditScroll(page) {
     await check('compact mermaid', () => compactMermaidCase(page, ids));
     await check('unmatched formatted text', () => unmatchedFormatCase(page, ids));
     await check('entering edit mode', () => enterEditCases(page, ids, longId));
+    await check('formatted notes', () => formattedClickCases(page, ids));
+    await check('new note at top', () => newNoteAtTopCase(page, ids));
     assert.deepEqual(failures, [], `exit-edit scroll failures:\n${failures.join('\n')}`);
   } finally {
+    // A failed step may have left a reload in flight; clean up on the loaded
+    // page so the step's own error is the one reported.
+    await page.waitForSelector('[data-app-ready="true"]');
     await deleteFixture(page, ids);
     await reload(page);
   }

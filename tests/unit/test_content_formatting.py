@@ -9,6 +9,7 @@ from app.db.link_titles_sql import insert_link_title_row
 from app.db.schema import initialize_schema
 from app.services import content_formatting as content_formatting_module
 from app.services.link_titles import link_title_store
+from app.services.markdown_rendering import strip_latex_source_attributes
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.content_formatting import extract_note_text_for_agent
@@ -828,7 +829,8 @@ def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_
         tags="@markdown {{@LaTeX}}",
     )
     assert "<h1>Math Test</h1>" in rendered
-    assert 'Inline math inside markdown: <span class="meta-latex meta-latex-inline">' in rendered
+    # Formulas carry their TeX source (as written) for mapping clicks to the source.
+    assert 'Inline math inside markdown: <span class="meta-latex meta-latex-inline" data-latex-source="$E = mc^2$">' in rendered
     assert "Display math inside markdown:<br>" in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
@@ -848,7 +850,7 @@ def test_format_note_content_for_view_markdown_list_scoped_latex_stays_inline() 
         tags="@markdown [[@LaTeX]]",
     )
     assert "<ul>" in rendered
-    assert '<span class="meta-latex meta-latex-inline">' in rendered
+    assert '<span class="meta-latex meta-latex-inline" data-latex-source="$r$">' in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">' in rendered
     assert "[[$r$]]" not in rendered
     assert "[[$\\delta$]]" not in rendered
@@ -860,7 +862,10 @@ def test_format_note_content_for_view_scoped_latex_renders_server_side_without_m
         content_html=html,
         tags="{{@LaTeX}}",
     )
-    assert 'Standalone expression: <span class="meta-latex meta-latex-display">' in rendered
+    assert (
+        'Standalone expression: <span class="meta-latex meta-latex-display" '
+        'data-latex-source="\\frac{\\text{done}}{\\text{total}}">'
+    ) in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
     assert "{{\\frac{\\text{done}}{\\text{total}}}}" not in rendered
@@ -994,3 +999,16 @@ def test_find_list_style_prefers_last_tag() -> None:
 def test_find_list_style_ignores_wrapped_tags() -> None:
     assert find_list_style("((@list-bulleted))") is None
     assert find_list_style("[[@list-numbered]]") is None
+
+
+def test_markdown_display_math_carries_its_tex_source() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>Before.</div><div>$$\\frac{a_{15}}{b}$$</div>",
+        tags="@markdown",
+    )
+    assert '<span class="meta-latex meta-latex-display" data-latex-source="\\frac{a_{15}}{b}">' in rendered
+
+
+def test_strip_latex_source_attributes_keeps_only_rendered_math() -> None:
+    html_text = '<p><span class="meta-latex meta-latex-inline" data-latex-source="a &lt; b"><math></math></span></p>'
+    assert strip_latex_source_attributes(html_text) == '<p><span class="meta-latex meta-latex-inline"><math></math></span></p>'
