@@ -28,6 +28,11 @@ PUBLIC_TARGET = ResolvedPublicHttpTarget(
 )
 
 
+# Contextual web mode passes a real check; these tests allow every address.
+def _ANY_TARGET(url: str) -> bool:
+    return True
+
+
 def test_html_parser_excludes_page_chrome_and_scripts() -> None:
     parser = _ReadableHtmlParser(base_url="https://example.com/page")
     parser.feed(
@@ -191,7 +196,7 @@ def test_fetch_web_page_resolves_every_redirect(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(web_fetch, "resolve_public_http_target", resolve)
     monkeypatch.setattr(web_fetch, "_download_one_url", download)
 
-    result = fetch_web_page("https://example.com/start")
+    result = fetch_web_page("https://example.com/start", allows_target=_ANY_TARGET)
 
     assert resolved == ["https://example.com/start", "https://example.com/final"]
     assert downloaded == resolved
@@ -214,7 +219,7 @@ def test_fetch_web_page_blocks_private_resolution_before_download(
         lambda _url, _target: pytest.fail("blocked target reached downloader"),
     )
 
-    result = fetch_web_page("https://private.example/")
+    result = fetch_web_page("https://private.example/", allows_target=_ANY_TARGET)
 
     assert result.status == "blocked"
     assert result.error_kind == "blocked_private_address"
@@ -225,7 +230,7 @@ def test_batch_deduplicates_fetch_and_preserves_submitted_order(
 ) -> None:
     calls: list[str] = []
 
-    def fake_fetch(url: str) -> WebPageFetchResult:
+    def fake_fetch(url: str, *, allows_target) -> WebPageFetchResult:
         calls.append(url)
         return WebPageFetchResult(
             requested_url=url,
@@ -246,7 +251,8 @@ def test_batch_deduplicates_fetch_and_preserves_submitted_order(
                 "https://example.com/a#one",
                 "https://example.com/b",
                 "https://EXAMPLE.com/a#two",
-            ]
+            ],
+            allows_target=_ANY_TARGET,
         )
     )
 
@@ -265,7 +271,7 @@ def test_batch_reports_invalid_url_without_losing_success(
     monkeypatch.setattr(
         web_fetch,
         "fetch_web_page",
-        lambda url: WebPageFetchResult(
+        lambda url, allows_target: WebPageFetchResult(
             requested_url=url,
             final_url=url,
             status="ok",
@@ -277,7 +283,7 @@ def test_batch_reports_invalid_url_without_losing_success(
             error_kind="",
         ),
     )
-    results = asyncio.run(fetch_web_pages(["file:///secret", "https://example.com/"]))
+    results = asyncio.run(fetch_web_pages(["file:///secret", "https://example.com/"], allows_target=_ANY_TARGET))
     assert results[0].status == "blocked"
     assert results[0].error_kind == "unsupported_scheme_or_url"
     assert results[1].status == "ok"
@@ -291,7 +297,7 @@ def test_batch_fetches_concurrently_with_a_four_request_ceiling(
     lock = Lock()
     four_workers_started = Barrier(web_fetch.MAX_WEB_FETCH_CONCURRENCY)
 
-    def fake_fetch(url: str) -> WebPageFetchResult:
+    def fake_fetch(url: str, *, allows_target) -> WebPageFetchResult:
         nonlocal active, maximum_active
         with lock:
             active += 1
@@ -316,7 +322,7 @@ def test_batch_fetches_concurrently_with_a_four_request_ceiling(
     monkeypatch.setattr(web_fetch, "fetch_web_page", fake_fetch)
     urls = [f"https://example.com/{index}" for index in range(8)]
 
-    results = asyncio.run(fetch_web_pages(urls))
+    results = asyncio.run(fetch_web_pages(urls, allows_target=_ANY_TARGET))
 
     assert len(results) == 8
     assert maximum_active == web_fetch.MAX_WEB_FETCH_CONCURRENCY == 4
@@ -324,4 +330,35 @@ def test_batch_fetches_concurrently_with_a_four_request_ceiling(
 
 def test_batch_rejects_more_than_eight_urls() -> None:
     with pytest.raises(ValueError, match="1–8 URLs"):
-        asyncio.run(fetch_web_pages(["https://example.com"] * 9))
+        asyncio.run(fetch_web_pages(["https://example.com"] * 9, allows_target=_ANY_TARGET))
+
+
+def test_a_redirect_to_an_address_that_is_not_allowed_is_blocked_before_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Contextual web mode: only addresses already in the conversation or notes may
+    # be opened, and that must hold for every redirect hop, not just the first URL.
+    resolved: list[str] = []
+
+    def resolve(url: str) -> ResolvedPublicHttpTarget:
+        resolved.append(url)
+        return PUBLIC_TARGET
+
+    def download(url: str, target: ResolvedPublicHttpTarget) -> _DownloadedWebResponse:
+        return _DownloadedWebResponse(
+            kind="redirect", final_url="https://elsewhere.example/landing", content=b"",
+            content_type="", encoding="", truncated=False, error_kind="",
+        )
+
+    monkeypatch.setattr(web_fetch, "resolve_public_http_target", resolve)
+    monkeypatch.setattr(web_fetch, "_download_one_url", download)
+
+    result = fetch_web_page(
+        "https://example.com/start",
+        allows_target=lambda url: url == "https://example.com/start",
+    )
+
+    assert resolved == ["https://example.com/start"]
+    assert result.status == "blocked"
+    assert result.error_kind == "redirect_not_available_in_permitted_context"
+    assert result.final_url == "https://elsewhere.example/landing"

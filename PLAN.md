@@ -103,6 +103,21 @@ to the notes and web pages the tools returned.
 - Close web gaps found in the survey: re-check contextual-mode capability after
   redirects; in full mode, detect addresses containing text not typed by the user
   and require confirmation (prompt-injection guard).
+- Done (read-only tools): `agent_tools.py` with `lookup_metalist_help`,
+  `view_overview`, `search_view_notes`, `read_view_notes` and `open_web_pages`
+  (offered only when web access is on), in the default order; bad arguments and
+  unknown tools are explained back to the model instead of failing the run.
+  `read_view_notes` takes note ids (any note selects its whole tree), reads in view
+  order within the evidence budget and reports unread, too-large and unknown trees.
+  Search matches every query word in text or tags, inside the frozen view only.
+  New help topic `releases`, generated from the README by
+  `scripts/sync_release_notes_help.py` and checked by a sync test; the help lookup
+  also returns the installed version. Contextual web mode now checks every
+  redirect hop. Live check: all 3 models accept every tool schema and, asked about
+  0.11.0 and a note, call help then search, in the default order.
+- Moved to Phase 3 (they need the loop's confirmation step): `open_menu`,
+  `summarize_view`, `propose_tag_operation`, and the full-mode Yes/No for
+  addresses containing text you did not type.
 
 ### Phase 3 — Agent loop
 - New runtime loop: tool definitions + default order + dependency rules in the

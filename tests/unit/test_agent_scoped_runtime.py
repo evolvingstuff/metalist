@@ -1279,7 +1279,7 @@ def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeyp
     ])
     calls = []
 
-    async def fake_fetch(urls):
+    async def fake_fetch(urls, *, allows_target):
         calls.append(list(urls))
         return (WebPageFetchResult(
             requested_url="https://example.com/article",
@@ -1293,7 +1293,7 @@ def test_contextual_web_loop_opens_disclosed_url_and_cites_retained_page(monkeyp
             error_kind="",
         ),)
 
-    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", fake_fetch)
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
     events = _web_events(inference=inference, snapshot=snapshot, mode="contextual")
 
     assert calls == [["https://example.com/article"]]
@@ -1319,10 +1319,10 @@ def test_contextual_web_loop_blocks_undisclosed_url_without_network(monkeypatch)
         {"kind": "respond", "urls": [], "reason": "Explain contextual limit"},
     ])
 
-    async def forbidden_fetch(_urls):
+    async def forbidden_fetch(_urls, *, allows_target):
         raise AssertionError("Undisclosed contextual URL reached the network")
 
-    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", forbidden_fetch)
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", forbidden_fetch)
     events = _web_events(
         inference=inference,
         snapshot=_snapshot(large_tail=False),
@@ -1347,7 +1347,7 @@ def test_full_web_loop_opens_agent_proposed_url_outside_context(monkeypatch) -> 
     ])
     calls = []
 
-    async def fake_fetch(urls):
+    async def fake_fetch(urls, *, allows_target):
         calls.append(list(urls))
         return (WebPageFetchResult(
             requested_url="https://example.com/quote",
@@ -1361,7 +1361,7 @@ def test_full_web_loop_opens_agent_proposed_url_outside_context(monkeypatch) -> 
             error_kind="",
         ),)
 
-    monkeypatch.setattr("app.services.agent.runtime.fetch_web_pages", fake_fetch)
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
 
     events = _web_events(
         inference=inference,

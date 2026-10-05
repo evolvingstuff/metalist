@@ -20,6 +20,7 @@ HELP_TOPICS = {
     'ai': ('AI and tag proposals', 'OpenAI settings, context limits, prompts/skills, history export, and AI tag proposals: generation, acceptance, rejection/removal and bulk undo limits. This topic alone covers proposal workflow explanations.'),
     'privacy': ('Privacy and security', 'Cloud disclosure, gray notes when hovering chat, password exclusion, encryption and credentials.'),
     'data': ('Namespaces and backups', 'Namespaces, backup/restore, HTML export, ports and updates.'),
+    'releases': ('Release notes', 'What changed in each MetaList version (what is new, when a feature or fix arrived).'),
 }
 HelpTopic = Literal[tuple(HELP_TOPICS)]
 MENU_ACTIONS = json.loads(files('app').joinpath('static/config/agent-menu-actions.json').read_text(encoding='utf-8'))
