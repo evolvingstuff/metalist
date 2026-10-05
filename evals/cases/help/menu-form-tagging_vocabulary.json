@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "id": "help-menu-form-agent_prompts",
-  "description": "Open the Agent prompts menu item. Do not apply, submit, or run its operation.",
+  "id": "help-menu-form-tagging_vocabulary",
+  "description": "Open the Tagging vocabulary menu item. Do not apply, submit, or run its operation.",
   "reviewed": true,
   "model": "gpt-5.6-luna",
   "thinking_level": "off",
@@ -10,7 +10,7 @@
       "conversation": [
         {
           "role": "user",
-          "content": "Open the Agent prompts menu item. Do not apply, submit, or run its operation."
+          "content": "Open the Tagging vocabulary menu item. Do not apply, submit, or run its operation."
         }
       ],
       "context": {
@@ -24,7 +24,7 @@
         "kind": "action",
         "alternatives": [
           {
-            "menu_id": "form.agent_prompts"
+            "menu_id": "form.tagging_vocabulary"
           }
         ]
       }

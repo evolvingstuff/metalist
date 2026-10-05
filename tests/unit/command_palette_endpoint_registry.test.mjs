@@ -25,10 +25,9 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openVisualCues: noop,
             openAiAgentSettings: noop,
             openCloudPrivacySettings: noop,
-            openAgentPromptEditor: noop,
             openProposalManager: noop,
             removeAllTagSuggestionsFromCurrentContext: () => { removeAllTagSuggestionsCalls += 1; },
-            openTaggingPrompt: noop,
+            openTaggingVocabulary: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -105,7 +104,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
     assert.equal(endpointIds.has('form.note_layout_appearance'), true);
-    assert.equal(endpointIds.has('form.agent_prompts'), true);
+    assert.equal(endpointIds.has('form.agent_prompts'), false);
+    assert.equal(endpointIds.has('form.tagging_vocabulary'), true);
     const removeAllTagSuggestionsEndpoint = endpoints.find(
         (endpoint) => endpoint.id === 'action.remove_all_tag_suggestions_current_context',
     );
@@ -117,10 +117,6 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.cloud_ai_privacy').label,
         'Cloud AI privacy',
-    );
-    assert.equal(
-        endpoints.find((endpoint) => endpoint.id === 'form.agent_prompts').label,
-        'Agent prompts',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.note_layout_appearance').label,

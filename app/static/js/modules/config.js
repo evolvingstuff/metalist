@@ -147,7 +147,6 @@ export const CONFIG = {
             OPENAI_CREDENTIAL: `${API_AI_BASE}/openai/credential`,
             OPENAI_COST: `${API_AI_BASE}/openai/cost`,
             OPENAI_COST_RESET: `${API_AI_BASE}/openai/cost/reset`,
-            PROMPT_DEFAULTS: `${API_AI_BASE}/prompts/defaults`,
             SESSION: `${API_AI_BASE}/session`,
             DEBUG: `${API_AI_BASE}/debug`,
             HISTORY: `${API_AI_BASE}/history`,

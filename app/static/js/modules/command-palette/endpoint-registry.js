@@ -91,13 +91,12 @@ export function buildCommandPaletteEndpoints(deps) {
     const setIsUntaggedView = requireAction(actions, 'setIsUntaggedView');
     const openAiAgentSettings = requireAction(actions, 'openAiAgentSettings');
     const openCloudPrivacySettings = requireAction(actions, 'openCloudPrivacySettings');
-    const openAgentPromptEditor = requireAction(actions, 'openAgentPromptEditor');
     const openProposalManager = requireAction(actions, 'openProposalManager');
     const removeAllTagSuggestionsFromCurrentContext = requireAction(
         actions,
         'removeAllTagSuggestionsFromCurrentContext',
     );
-    const openTaggingPrompt = requireAction(actions, 'openTaggingPrompt');
+    const openTaggingVocabulary = requireAction(actions, 'openTaggingVocabulary');
 
     const defaults = {
         showBacklinks: true,
@@ -280,14 +279,8 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => removeAllTagSuggestionsFromCurrentContext(),
         },
         {
-            id: 'form.tagging_prompt', kind: 'form', label: 'Tagging prompt and vocabulary',
-            execute: async () => openTaggingPrompt(),
-        },
-        {
-            id: 'form.agent_prompts',
-            kind: 'form',
-            label: 'Agent prompts',
-            execute: async () => openAgentPromptEditor(),
+            id: 'form.tagging_vocabulary', kind: 'form', label: 'Tagging vocabulary',
+            execute: async () => openTaggingVocabulary(),
         },
         {
             id: 'action.fully_expand_all',

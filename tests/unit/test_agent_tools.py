@@ -14,7 +14,6 @@ from app.services.agent.investigation import InvestigationState
 from app.services.agent.release_notes import release_notes_skill_from_readme
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
-from app.services.agent.skill_settings import resolve_agent_skill_set
 from app.services.agent.skills import load_skill
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
 from app.services.agent.web_fetch import WebPageFetchResult
@@ -70,15 +69,14 @@ def test_release_notes_keep_every_readme_release_newest_first_without_links() ->
 
 
 def test_help_lookup_returns_the_topics_skills_and_installed_version() -> None:
-    skills = resolve_agent_skill_set(preferences={"pref.ai.skill.help_ai_v1": "CUSTOM AI HELP"})
-    context = _context(snapshot=_snapshot(large_tail=False), max_tokens=50_000, web_mode="none", skills=skills)
+    context = _small_view()
     result = _run(context, "lookup_metalist_help", {"topics": ["releases", "ai"]})
     payload = json.loads(result.content)
     assert not result.is_error
     assert payload["installed_version"] == __version__
     assert [topic["topic"] for topic in payload["topics"]] == ["releases", "ai"]
     assert "## 0.11.0" in payload["topics"][0]["help"]
-    assert payload["topics"][1]["help"] == "CUSTOM AI HELP"
+    assert payload["topics"][1]["help"] == DEFAULT_AGENT_SKILLS.for_action("help_ai").content
     assert [skill.skill_id for skill in result.activated_skills] == ["help_releases_v1", "help_ai_v1"]
     assert "ROOT_ALPHA" not in result.content
 

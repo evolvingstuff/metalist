@@ -1,4 +1,4 @@
-"""Validate packaged agent prompts and namespace-scoped prompt overrides."""
+"""Packaged agent prompts. Prompts are not user-editable."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from app.services.agent.prompts import FINAL_RESPONSE_REQUEST_PROMPT
 from app.services.agent.prompts import TOOL_RESULT_PROMPT
 
 
-SYSTEM_PROMPT_PREFERENCE_KEY = "pref.ai.prompt.system"
-FINAL_RESPONSE_PROMPT_PREFERENCE_KEY = "pref.ai.prompt.final_response"
-TOOL_RESULT_PROMPT_PREFERENCE_KEY = "pref.ai.prompt.tool_result"
-AGENT_PROMPT_PREFERENCE_KEYS = (
-    SYSTEM_PROMPT_PREFERENCE_KEY,
-    FINAL_RESPONSE_PROMPT_PREFERENCE_KEY,
-    TOOL_RESULT_PROMPT_PREFERENCE_KEY,
+# Prompts used to be editable per namespace. They no longer are, so every user
+# gets the behavior the evals measure; saved overrides under these keys are
+# ignored and dropped (see client_state_service).
+RETIRED_PROMPT_PREFERENCE_KEYS = (
+    "pref.ai.prompt.system",
+    "pref.ai.prompt.final_response",
+    "pref.ai.prompt.tool_result",
 )
 MAX_AGENT_PROMPT_CHARACTERS = 32_000
 
@@ -108,22 +108,3 @@ DEFAULT_AGENT_PROMPTS = AgentPromptSet(
     final_response_prompt=FINAL_RESPONSE_REQUEST_PROMPT,
     tool_result_prompt=TOOL_RESULT_PROMPT,
 )
-
-
-def resolve_agent_prompt_set(*, preferences: dict[str, str]) -> AgentPromptSet:
-    if not isinstance(preferences, dict):
-        raise TypeError("Agent prompt preferences must be a dictionary")
-    return AgentPromptSet(
-        system_prompt=preferences.get(
-            SYSTEM_PROMPT_PREFERENCE_KEY,
-            DEFAULT_AGENT_PROMPTS.system_prompt,
-        ),
-        final_response_prompt=preferences.get(
-            FINAL_RESPONSE_PROMPT_PREFERENCE_KEY,
-            DEFAULT_AGENT_PROMPTS.final_response_prompt,
-        ),
-        tool_result_prompt=preferences.get(
-            TOOL_RESULT_PROMPT_PREFERENCE_KEY,
-            DEFAULT_AGENT_PROMPTS.tool_result_prompt,
-        ),
-    )

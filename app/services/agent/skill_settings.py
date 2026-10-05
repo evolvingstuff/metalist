@@ -1,4 +1,4 @@
-"""Packaged agent skill registry and namespace-scoped skill overrides."""
+"""Packaged agent skill registry. Skills are not user-editable."""
 
 from __future__ import annotations
 
@@ -7,57 +7,29 @@ from dataclasses import dataclass
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
 from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL, load_skill
 from app.services.agent.help_catalog import HELP_TOPICS
-from app.services.agent.tagging import TAGGING_PROMPT_KEY
 
 
 SCOPED_INVESTIGATION_SKILL_ID = "scoped_investigation_v7"
-SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v7"
-)
-LEGACY_NARROW_CONTEXT_SKILL_PREFERENCE_KEY = "pref.ai.skill.narrow_context_v1"
-LEGACY_SCOPED_INVESTIGATION_V6_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v6"
-)
-LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY = (
-    "pref.ai.skill.select_relevant_evidence_v1"
-)
-LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v5"
-)
-LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v4"
-)
-LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v3"
-)
-LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY = (
-    "pref.ai.skill.scoped_investigation_v2"
-)
-LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY = "pref.ai.skill.search_notes"
 WEB_BROWSING_SKILL_ID = "web_browsing_v1"
-WEB_BROWSING_SKILL_PREFERENCE_KEY = "pref.ai.skill.web_browsing_v1"
 STAGED_SUMMARY_SKILL_ID = "staged_summary_v1"
-STAGED_SUMMARY_SKILL_PREFERENCE_KEY = "pref.ai.skill.staged_summary_v1"
 TAG_PROPOSALS_SKILL_ID = "tag_proposals_v1"
-# Tag suggestions keep their original preference key so prompts customized in
-# "Tagging prompt and vocabulary…" become this skill's override unchanged.
-TAG_PROPOSALS_SKILL_PREFERENCE_KEY = TAGGING_PROMPT_KEY
-AGENT_SKILL_PREFERENCE_KEYS = (
-    SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
-    STAGED_SUMMARY_SKILL_PREFERENCE_KEY,
-    TAG_PROPOSALS_SKILL_PREFERENCE_KEY,
-    WEB_BROWSING_SKILL_PREFERENCE_KEY,
+# Skills used to be editable per namespace. They no longer are, so every user
+# gets the behavior the evals measure; saved overrides under these keys are
+# ignored and dropped (see client_state_service).
+RETIRED_SKILL_PREFERENCE_KEYS = (
+    "pref.ai.skill.scoped_investigation_v7",
+    "pref.ai.skill.staged_summary_v1",
+    "pref.ai.prompt.tagging",
+    "pref.ai.skill.web_browsing_v1",
     *(f"pref.ai.skill.help_{topic}_v1" for topic in HELP_TOPICS),
-)
-SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS = (
-    LEGACY_NARROW_CONTEXT_SKILL_PREFERENCE_KEY,
-    LEGACY_SCOPED_INVESTIGATION_V6_PREFERENCE_KEY,
-    LEGACY_SELECT_RELEVANT_EVIDENCE_SKILL_PREFERENCE_KEY,
-    LEGACY_SCOPED_INVESTIGATION_V5_PREFERENCE_KEY,
-    LEGACY_SCOPED_INVESTIGATION_V4_PREFERENCE_KEY,
-    LEGACY_SCOPED_INVESTIGATION_V3_PREFERENCE_KEY,
-    LEGACY_SCOPED_INVESTIGATION_V2_PREFERENCE_KEY,
-    LEGACY_SEARCH_NOTES_SKILL_PREFERENCE_KEY,
+    "pref.ai.skill.narrow_context_v1",
+    "pref.ai.skill.scoped_investigation_v6",
+    "pref.ai.skill.select_relevant_evidence_v1",
+    "pref.ai.skill.scoped_investigation_v5",
+    "pref.ai.skill.scoped_investigation_v4",
+    "pref.ai.skill.scoped_investigation_v3",
+    "pref.ai.skill.scoped_investigation_v2",
+    "pref.ai.skill.search_notes",
 )
 
 
@@ -67,9 +39,7 @@ class AgentSkill:
     title: str
     description: str
     trigger_action: str
-    preference_key: str
     content: str
-    superseded_preference_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.skill_id, str) or self.skill_id == "":
@@ -80,18 +50,7 @@ class AgentSkill:
             raise ValueError("Agent skill description must be non-empty")
         if not isinstance(self.trigger_action, str) or self.trigger_action == "":
             raise ValueError("Agent skill trigger action must be non-empty")
-        if not isinstance(self.preference_key, str) or self.preference_key == "":
-            raise ValueError("Agent skill preference key must be non-empty")
         validate_agent_skill_content(self.content)
-        if any(
-            not isinstance(key, str) or key == ""
-            for key in self.superseded_preference_keys
-        ):
-            raise ValueError("Superseded skill preference keys must be non-empty")
-        if len(set(self.superseded_preference_keys)) != len(
-            self.superseded_preference_keys
-        ):
-            raise ValueError("Superseded skill preference keys must be unique")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +100,6 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
                 "batches and a citation-preserving synthesis."
             ),
             trigger_action="summarize_current_scope",
-            preference_key=STAGED_SUMMARY_SKILL_PREFERENCE_KEY,
             content=load_skill("staged-summary.md"),
         ),
         AgentSkill(
@@ -152,11 +110,7 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
                 "inside the frozen active MetaList result scope."
             ),
             trigger_action="investigate_current_scope",
-            preference_key=SCOPED_INVESTIGATION_SKILL_PREFERENCE_KEY,
             content=SCOPED_INVESTIGATION_SKILL,
-            superseded_preference_keys=(
-                *SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS,
-            ),
         ),
         AgentSkill(
             skill_id=TAG_PROPOSALS_SKILL_ID,
@@ -166,7 +120,6 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
                 "validated, evidence-bounded batches."
             ),
             trigger_action="tag_proposals",
-            preference_key=TAG_PROPOSALS_SKILL_PREFERENCE_KEY,
             content=load_skill("tag-proposals.md"),
         ),
         AgentSkill(
@@ -177,43 +130,12 @@ DEFAULT_AGENT_SKILLS = AgentSkillSet(
                 "web-access mode."
             ),
             trigger_action="web_browsing",
-            preference_key=WEB_BROWSING_SKILL_PREFERENCE_KEY,
             content=load_skill("web-browsing.md"),
         ),
         *(AgentSkill(
             skill_id=f"help_{topic}_v1", title=title, description=description,
-            trigger_action=f"help_{topic}", preference_key=f"pref.ai.skill.help_{topic}_v1",
+            trigger_action=f"help_{topic}",
             content=load_skill(f"help-{topic}.md"),
         ) for topic, (title, description) in HELP_TOPICS.items()),
     )
 )
-
-
-def resolve_agent_skill_set(*, preferences: dict[str, str]) -> AgentSkillSet:
-    if not isinstance(preferences, dict):
-        raise TypeError("Agent skill preferences must be a dictionary")
-    if any(
-        key in preferences for key in SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
-    ):
-        raise ValueError(
-            "Saved skill override is incompatible with the direct scoped "
-            "investigation v7 evidence contract. Open AI Agent Settings to review "
-            "and restore the new default."
-        )
-    resolved_skills: list[AgentSkill] = []
-    for default_skill in DEFAULT_AGENT_SKILLS.skills:
-        content = default_skill.content
-        if default_skill.preference_key in preferences:
-            content = preferences[default_skill.preference_key]
-        resolved_skills.append(
-            AgentSkill(
-                skill_id=default_skill.skill_id,
-                title=default_skill.title,
-                description=default_skill.description,
-                trigger_action=default_skill.trigger_action,
-                preference_key=default_skill.preference_key,
-                content=content,
-                superseded_preference_keys=default_skill.superseded_preference_keys,
-            )
-        )
-    return AgentSkillSet(skills=tuple(resolved_skills))

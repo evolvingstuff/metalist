@@ -19,10 +19,6 @@ const SETTINGS_MODAL_URL = new URL(
     '../../app/static/js/modules/modals/ai-agent-settings-modal.js',
     import.meta.url,
 );
-const PROMPT_MODAL_URL = new URL(
-    '../../app/static/js/modules/modals/agent-prompt-editor-modal.js',
-    import.meta.url,
-);
 const COMMAND_CONTROLLER_URL = new URL(
     '../../app/static/js/modules/command-palette/command-palette-controller.js',
     import.meta.url,
@@ -476,20 +472,6 @@ test('chat freezes the active scope only when submitting a turn', () => {
 });
 
 
-test('skill prompt headers expose an explicit expand collapse chevron', () => {
-    const promptModal = readFileSync(PROMPT_MODAL_URL, 'utf8');
-    const css = readFileSync(CSS_URL, 'utf8');
-
-    assert.match(promptModal, /class="agent-skill-editor-chevron"/);
-    assert.match(promptModal, /aria-hidden="true">▶<\/span>/);
-    assert.match(css, /\.agent-skill-editor-chevron/);
-    assert.match(
-        css,
-        /\.agent-skill-editor-field\[open\][\s\S]*?\.agent-skill-editor-chevron[\s\S]*?rotate\(90deg\)/,
-    );
-});
-
-
 test('failed assistant responses render a compact tinted error panel', () => {
     const css = readFileSync(CSS_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
@@ -828,7 +810,7 @@ test('tag proposal results replace the reference disclosure with one open-all li
 });
 
 
-test('command menu contains chat, AI configuration, prompt, and proposal actions', () => {
+test('command menu contains chat, AI configuration, and proposal actions, but no instruction editing', () => {
     const endpointSource = readFileSync(ENDPOINTS_URL, 'utf8');
     const proposalMenuSource = readFileSync(PROPOSAL_MENU_URL, 'utf8');
     const tagConfig = JSON.parse(readFileSync(TAGS_URL, 'utf8'));
@@ -836,7 +818,10 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
     assert.match(endpointSource, /id:\s*'pref\.show_ai_chat'/);
     assert.match(endpointSource, /id:\s*'form\.ai_agent_settings'/);
     assert.match(endpointSource, /id:\s*'form\.cloud_ai_privacy'/);
-    assert.match(endpointSource, /id:\s*'form\.agent_prompts'/);
+    // AI instructions are packaged so every user gets the behavior the evals measure.
+    assert.doesNotMatch(endpointSource, /form\.agent_prompts/);
+    assert.match(endpointSource, /id:\s*'form\.tagging_vocabulary'/);
+    assert.doesNotMatch(proposalMenuSource, /pref\.ai\.prompt|textarea/);
     assert.match(endpointSource, /id:\s*'action\.remove_all_tag_suggestions_current_context'/);
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'pref.show_ai_chat'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.ai_agent_settings'));
@@ -847,7 +832,7 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
     assert.ok(cloudPrivacyEndpoint.tags.includes('privacy'));
     assert.ok(cloudPrivacyEndpoint.tags.includes('whitelist'));
     assert.ok(cloudPrivacyEndpoint.tags.includes('blacklist'));
-    assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
+    assert.ok(!tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
     assert.ok(tagConfig.endpoints.some(
         (endpoint) => endpoint.id === 'action.remove_all_tag_suggestions_current_context',
     ));
@@ -860,30 +845,6 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
         commandController,
         /removeAllTagSuggestionsFromCurrentContext:\s*async[\s\S]*?_confirmAction\([\s\S]*?title:\s*'Remove all suggestions\?'[\s\S]*?confirmLabel:\s*'Remove all'[\s\S]*?isDangerous:\s*true[\s\S]*?if \(confirmed\)[\s\S]*?await removeAllTagSuggestionsFromCurrentContext\(\)/,
     );
-});
-
-
-test('agent prompt editor inspects, overrides, and resets prompts and skills', () => {
-    const css = readFileSync(CSS_URL, 'utf8');
-    const modal = readFileSync(PROMPT_MODAL_URL, 'utf8');
-    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
-    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
-
-    assert.match(modal, /<h2>Agent Prompts &amp; Skills<\/h2>/);
-    assert.match(modal, /id="agent-prompt-system"/);
-    assert.match(modal, /id="agent-prompt-final-response"/);
-    assert.match(modal, /id="agent-prompt-tool-result"/);
-    assert.match(modal, /data-agent-skill-index/);
-    assert.match(modal, /Each skill is injected only after its trigger action/);
-    assert.match(modal, /Restore packaged defaults/);
-    assert.match(modal, /Save overrides/);
-    assert.match(modal, /apply to the next run/);
-    assert.match(modal, /not\s+conversation history/);
-    assert.match(commandController, /AGENT_PROMPT_PREFERENCE_KEYS/);
-    assert.match(commandController, /skill\.preferenceKey/);
-    assert.match(commandController, /_preferences\.removeMany/);
-    assert.match(chatApi, /export async function loadAgentPromptDefaults/);
-    assert.match(css, /\.agent-prompt-editor-modal-content[\s\S]*?width:\s*min\(1100px, 96vw\)/);
 });
 
 

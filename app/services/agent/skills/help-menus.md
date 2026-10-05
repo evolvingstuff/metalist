@@ -21,7 +21,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 - **Manage tag proposals** selects acceptance/removal, current context/entire namespace, and an exact case-insensitive tag filter (blank means all proposals). Apply executes directly without another confirmation, model call, or progress/cancellation modal; the normal busy spinner remains visible until completion.
 - **Remove all tag suggestions (current context)** asks for confirmation, then removes every pending proposal in the active search context. It uses the same atomic bulk path and requires no configuration form or model call. After confirmation, the normal busy spinner replaces the confirmation without opening a second modal.
-- **Tagging prompt and vocabulary** edits the tagging instructions and one categorical preference: existing tags only or allow new tags. Reset prompt restores packaged instructions.
+- **Tagging vocabulary** sets one categorical preference: existing tags only or allow new tags. The tagging instructions themselves are built in and cannot be edited.
 - Generate proposals by explicitly requesting them in AI chat. Generation is not a menu action.
 
 ## Semantics
@@ -67,10 +67,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - `Search suggestion stats & settings` is the single suggestion-personalization control surface. Its ordered 1–365 day slots and default-on time-window-label and one-credit-per-note-per-search-context toggles save immediately when changed. The modal also displays retained daily tag-credit statistics and provides the confirmed activity reset. An empty slot list disables personalization; the default slots are 1, 7, and 30 days.
 - `Show/Hide AI Chat` controls the resizable right-side chat panel.
 - `AI Agent Settings`: configures the OpenAI API key, model, cloud privacy policy, evidence-token limit, and tagging batch size. Model and thinking level are also selected beside chat Send. See `docs/ui/ai-chat.md`.
-- `Agent prompts` inspects all three packaged runtime prompts plus collapsible
-  registered skills and saves validated namespace-specific overrides. Reset removes
-  every prompt/skill override and resumes using packaged defaults; changes apply to
-  the next agent run and never enter conversation history.
+- AI prompts and skills are built in and cannot be edited, so the AI behaves the same for every user; there is no prompt editor.
 - Session idle timeout is disabled by default. It is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`. Expiry requires browser reauthentication but preserves the hydrated server cache for a fast login; explicit logout still purges decrypted runtime state.
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
@@ -91,9 +88,6 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - `Note Layout & Appearance`: previews and saves the note hierarchy presets. Search terms include `layout`, `appearance`, `font`, `size`, `spacing`, `indentation`, and `hierarchy`.
 - `Search suggestion stats & settings`: combines ordered personalized-window editing, promoted-suggestion label visibility, default-on per-context note-credit suppression, retained daily tag-credit statistics, and confirmed activity reset. It does not collect search text or note content.
 - `AI Agent Settings`: configures the OpenAI API key, model, cloud privacy policy, evidence-token limit, and tagging batch size. Model and thinking level are also selected beside chat Send. See `docs/ui/ai-chat.md`.
-- `Agent prompts`: opens the prompt-and-skill editor. Template placeholders and
-  skill text are validated before saving, and protected namespaces encrypt these
-  overrides through the existing client-state path.
 - `Switch namespace`: opens a simple namespace picker, leaves the current namespace tab open, and opens the selected non-current namespace in a new browser tab. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target. Each namespace still permits only one active browser tab/session.
 - `Create namespace`: opens a namespace creation modal with defaulted HTTP / HTTPS ports that skip both saved MetaList reservations and ports with active OS listeners, saves the profile, launches the namespace, and opens it. Launch-time port races fail without terminating the process that owns the port. Running namespace servers revalidate their on-disk namespace identity every five seconds and terminate themselves if their database or launch profile disappears.
 - `Manage namespace ports`: opens a table of saved launch profiles from each namespace's main DB; saving this table only updates future launch profiles and does not switch tabs, launch namespaces, or restart the current process. Current-namespace port edits apply on the next MetaList launch.

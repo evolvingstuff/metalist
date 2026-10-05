@@ -149,6 +149,15 @@ to the notes and web pages the tools returned.
 - Not yet wired to the chat route: that switch happens in Phase 4 together with
   the browser's Yes/No card.
 
+### Phase 3b — AI instructions are no longer editable (your decision)
+- Custom prompts would make it impossible to judge behavior against the evals, so
+  prompts and skills (including the tagging instructions and help texts) are
+  packaged only. Removed: the Agent prompts editor, `/api2/ai/prompts/defaults`,
+  prompt/skill override resolution, and the instructions box in the tagging dialog,
+  now "Tagging vocabulary" (`form.tagging_vocabulary`, vocabulary choice only).
+- Saved overrides are retired preference keys: ignored on load and dropped on the
+  next preference save. Help, docs and eval cases updated.
+
 ### Phase 4 — Browser
 - Yes/No confirmation card; new activity labels; accept new event types in the
   server and client allow-lists together.

@@ -15,21 +15,14 @@ from app.models.database import SafeSession
 from app.security.encryption import get_encryption_service
 from app.security.encryption import get_encryption_service_with_token
 from app.security.encryption import is_encryption_required
-from app.services.agent.prompt_settings import FINAL_RESPONSE_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import TOOL_RESULT_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import validate_final_response_prompt
-from app.services.agent.prompt_settings import validate_system_prompt
-from app.services.agent.prompt_settings import validate_tool_result_prompt
+from app.services.agent.prompt_settings import RETIRED_PROMPT_PREFERENCE_KEYS
+from app.services.agent.skill_settings import RETIRED_SKILL_PREFERENCE_KEYS
 from app.services.agent.cloud_privacy import CLOUD_PRIVACY_POLICY_PREFERENCE_KEY
 from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_preference
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
-from app.services.agent.skill_settings import AGENT_SKILL_PREFERENCE_KEYS
-from app.services.agent.skill_settings import SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
-from app.services.agent.skill_settings import validate_agent_skill_content
 from app.services.agent.openai_inference import validate_openai_model
 
 
@@ -67,13 +60,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
         "openai_agent_max_page_approximate_tokens"
     ),
     "pref.ai.openai.tagging.batch_tokens": "openai_agent_max_page_approximate_tokens",
-    SYSTEM_PROMPT_PREFERENCE_KEY: "agent_system_prompt",
-    FINAL_RESPONSE_PROMPT_PREFERENCE_KEY: "agent_final_response_prompt",
-    TOOL_RESULT_PROMPT_PREFERENCE_KEY: "agent_tool_result_prompt",
     "pref.ai.chat_width": "ai_chat_width",
     "pref.ai.composer_height": "ai_chat_composer_height",
-    **{key: "agent_skill" for key in AGENT_SKILL_PREFERENCE_KEYS},
-    **{key: "agent_skill" for key in SUPERSEDED_AGENT_SKILL_PREFERENCE_KEYS},
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
@@ -106,6 +94,8 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.ai.openai.retrieval.max_ranked_tags_per_page",
         "pref.ai.openai.retrieval.max_working_summary_characters",
         "pref.ai.openai.retrieval.ideal_narrowed_scope_approximate_tokens",
+        *RETIRED_PROMPT_PREFERENCE_KEYS,
+        *RETIRED_SKILL_PREFERENCE_KEYS,
     }
 )
 
@@ -225,14 +215,6 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_ai_chat_composer_height_preference(key=key, value=value)
         elif allowed_values == "openai_agent_max_page_approximate_tokens":
             value = validate_openai_max_page_approximate_tokens_preference(value)
-        elif allowed_values == "agent_system_prompt":
-            value = validate_system_prompt(value)
-        elif allowed_values == "agent_final_response_prompt":
-            value = validate_final_response_prompt(value)
-        elif allowed_values == "agent_tool_result_prompt":
-            value = validate_tool_result_prompt(value)
-        elif allowed_values == "agent_skill":
-            value = validate_agent_skill_content(value)
         elif allowed_values == "cloud_privacy_policy":
             value = validate_cloud_privacy_policy_preference(value)
         elif value not in allowed_values:

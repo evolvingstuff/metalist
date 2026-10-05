@@ -8,16 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.services.agent.skills import load_skill
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.tag_ontology import is_valid_tag_token
 
 
 TAGGING_POLICY_KEY = "pref.ai.tagging.vocabulary"
 TAGGING_FOCUS_KEY = "pref.ai.tagging.focus"
-TAGGING_PROMPT_KEY = "pref.ai.prompt.tagging"
-# Editable tag-suggestion guidance is the packaged "Suggest tags" skill.
-DEFAULT_TAGGING_PROMPT = load_skill("tag-proposals.md")
 
 
 class TagOperationIntent(BaseModel):

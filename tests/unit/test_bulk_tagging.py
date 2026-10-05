@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent.tagging import (
-    DEFAULT_TAGGING_PROMPT, TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TAGGING_PROMPT_KEY, TagBatchResult,
+    TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TagBatchResult,
     TagOperationIntent, make_batch, partition_trees, shuffle_trees_for_batches,
     validate_proposals,
 )
@@ -21,7 +21,6 @@ from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
-from app.services.agent.skill_settings import resolve_agent_skill_set
 
 
 @pytest.fixture(autouse=True)
@@ -619,6 +618,7 @@ def test_new_only_rejects_existing_vocabulary_case_insensitively():
 
 
 def test_tagging_prompts_make_the_requested_topic_a_specific_binding_filter():
+    DEFAULT_TAGGING_PROMPT = DEFAULT_AGENT_SKILLS.for_action("tag_proposals").content
     assert "binding topical constraint" in DEFAULT_TAGGING_PROMPT
     assert "specific concepts, methods, or named entities" in DEFAULT_TAGGING_PROMPT
     assert "examples to disambiguate the intended semantic scope" in DEFAULT_TAGGING_PROMPT
@@ -904,17 +904,13 @@ def test_leading_tree_prefix_is_the_longest_canonical_prefix_within_budget():
     assert tagging.leading_tree_count_within_budget(roots, make_batch(roots[:1]).tokens - 1) == 0
 
 
-def test_tag_suggestions_are_a_packaged_skill_that_keeps_existing_customizations():
+def test_tag_suggestions_are_a_packaged_skill():
     skill = DEFAULT_AGENT_SKILLS.for_action("tag_proposals")
     assert skill.skill_id == "tag_proposals_v1"
-    # Reusing the original key keeps prompts customized before tagging became a skill.
-    assert skill.preference_key == TAGGING_PROMPT_KEY == "pref.ai.prompt.tagging"
-    assert skill.content == DEFAULT_TAGGING_PROMPT
-    customized = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
-    assert customized.for_action("tag_proposals").content == "Only tag birds."
+    assert "binding topical constraint" in skill.content
 
 
-def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
+def test_tag_batches_send_the_packaged_tag_skill(monkeypatch):
     roots = (tree("a", "accepted", ()),)
     snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
     monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
@@ -934,15 +930,14 @@ def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
     async def inspect(**kwargs):
         return SimpleNamespace(loaded_tokens=1_000_000)
 
-    skills = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
     run = SimpleNamespace(base_url="http://local", selected_model="test",
-        current_user_request="Suggest tags", skills=skills,
+        current_user_request="Suggest tags", skills=DEFAULT_AGENT_SKILLS,
         retrieval_settings=SimpleNamespace(max_page_approximate_tokens=1_000_000))
 
     async def consume():
-        # Stale in-memory preferences must not override the run's resolved skill.
+        # A tagging prompt saved when prompts were editable must never reach the model.
         operation = runs.TaggingRun(token="token", snapshot=snapshot,
-            preferences={TAGGING_POLICY_KEY: "new", TAGGING_PROMPT_KEY: "Stale prompt"},
+            preferences={TAGGING_POLICY_KEY: "new", "pref.ai.prompt.tagging": "Stale prompt"},
             sync_uuid="sync", batch_tokens=1_000_000)
         with runs.bulk_operation_guard.acquire("session"):
             async for _event in operation.generate(
@@ -954,7 +949,8 @@ def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
 
     assert sent[0][0] == {
         "role": "system",
-        "content": "ACTIVE_SKILL tag_proposals_v1\nTrigger action: tag_proposals\n\nOnly tag birds.",
+        "content": "ACTIVE_SKILL tag_proposals_v1\nTrigger action: tag_proposals\n\n"
+        + DEFAULT_AGENT_SKILLS.for_action("tag_proposals").content,
     }
 
 

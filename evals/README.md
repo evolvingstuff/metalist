@@ -8,8 +8,9 @@ captured system prompts, catalogs, response schemas, or prompt bindings.
 `evals/production.py` calls the application's `AgentContextBuilder` with current
 packaged prompts and skills. Routing instructions, help/menu catalogs, selected-note
 context, final-response formatting, and response schemas therefore track production
-changes automatically. The suite tests packaged defaults; it does not read a user's
-namespace prompt overrides, credentials, or live note database.
+changes automatically. Prompts and skills are not user-editable, so the packaged
+defaults the suite tests are what every user runs; it does not read credentials or
+a live note database.
 
 Latest measured run: [September 19 results](RESULTS-2026-09-19.md): 757/760 correct;
 three existing cases scored 4/5, with no provider errors. All 95 selected-note

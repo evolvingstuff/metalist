@@ -14,7 +14,7 @@ from app.services.agent.help_catalog import HELP_TOPICS, MENU_ACTIONS, MetaListH
 from app.services.agent.menu_actions import MenuActionStore, MenuResult, menu_action_store
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
-from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS, resolve_agent_skill_set
+from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from test_agent_history import install_transport, chunk, response, USAGE
 from test_agent_scoped_runtime import _FakeInference, _runtime, _snapshot
@@ -36,13 +36,12 @@ def test_each_help_skill_loads_only_for_its_selected_call(topic):
     assert canonical == [{'role': 'user', 'content': 'Explain this feature.'}]
 
 
-def test_selected_help_overrides_are_used_and_other_skills_are_not_loaded():
-    skills = resolve_agent_skill_set(preferences={'pref.ai.skill.help_ai_v1': 'CUSTOM AI INSTRUCTIONS'})
+def test_selected_help_skills_are_loaded_and_other_skills_are_not():
     messages = AgentContextBuilder().build_help_messages(
         canonical_messages=[{'role': 'user', 'content': 'AI privacy'}], prompts=DEFAULT_AGENT_PROMPTS,
-        skills=skills, topics=['ai', 'privacy'])
+        skills=DEFAULT_AGENT_SKILLS, topics=['ai', 'privacy'])
     text = json.dumps(messages)
-    assert 'CUSTOM AI INSTRUCTIONS' in text
+    assert 'ACTIVE_SKILL help_ai_v1' in text
     assert 'ACTIVE_SKILL help_privacy_v1' in text
     assert 'ACTIVE_SKILL help_notes_v1' not in text
 

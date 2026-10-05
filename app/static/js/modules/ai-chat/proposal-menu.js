@@ -19,10 +19,10 @@ export async function openProposalMenu(preferences, settingsOnly) {
     const dialog = document.createElement('dialog');
     dialog.className = 'bulk-proposal-dialog';
     dialog.innerHTML = settingsOnly
-        ? '<h2>Tagging prompt and vocabulary</h2><form><label>Vocabulary <select name="policy"><option value="">Not chosen yet</option><option value="existing">Existing tags only</option><option value="new">Existing and new tags</option></select></label><label>Tagging instructions<textarea name="prompt" maxlength="32000" required></textarea></label><button type="button" data-reset>Reset prompt</button><button type="submit">Save</button><button type="button" data-close>Cancel</button><p role="alert"></p></form>'
+        ? '<h2>Tagging vocabulary</h2><form><label>Vocabulary <select name="policy"><option value="">Not chosen yet</option><option value="existing">Existing tags only</option><option value="new">Existing and new tags</option></select></label><button type="submit">Save</button><button type="button" data-close>Cancel</button><p role="alert"></p></form>'
         : '<h2>Manage tag proposals</h2><form><label>Action <select name="action"><option value="accept">Accept proposals</option><option value="remove">Remove proposals</option></select></label><label>Scope <select name="target"><option value="current">Current context</option><option value="namespace">Entire namespace</option></select></label><label>Tag filter (leave blank for all proposals)<input name="tag" maxlength="256"></label><p>This bulk operation clears undo/redo after successful changes.</p><button type="submit">Apply</button><button type="button" data-close>Close</button><p role="alert"></p></form>';
     dialog.innerHTML = `<div class="modal-content">${dialog.innerHTML}</div>`;
-    dialog.setAttribute('aria-label', settingsOnly ? 'Tagging prompt and vocabulary' : 'Manage tag proposals');
+    dialog.setAttribute('aria-label', settingsOnly ? 'Tagging vocabulary' : 'Manage tag proposals');
     const form = dialog.querySelector('form');
     const actions = document.createElement('div');
     actions.className = 'form-actions';
@@ -35,8 +35,6 @@ export async function openProposalMenu(preferences, settingsOnly) {
         const settings = await response.json();
         form.elements.policy.options[0].disabled = true;
         form.elements.policy.value = settings.policy;
-        form.elements.prompt.value = settings.prompt;
-        dialog.querySelector('[data-reset]').addEventListener('click', () => { form.elements.prompt.value = settings.default_prompt; });
     }
     const close = () => {
         dialog.close();
@@ -57,9 +55,10 @@ export async function openProposalMenu(preferences, settingsOnly) {
         // lint: allow-JS001 rationale="report external settings or proposal request failures; rethrow internal errors"
         try {
             if (settingsOnly) {
-                const values = { 'pref.ai.prompt.tagging': form.elements.prompt.value };
-                if (form.elements.policy.value !== '') values['pref.ai.tagging.vocabulary'] = form.elements.policy.value;
-                await preferences.setMany(values);
+                // Nothing to save until a vocabulary is chosen.
+                if (form.elements.policy.value !== '') {
+                    await preferences.setMany({ 'pref.ai.tagging.vocabulary': form.elements.policy.value });
+                }
                 close();
             } else {
                 const payload = { action: form.elements.action.value, target: form.elements.target.value,

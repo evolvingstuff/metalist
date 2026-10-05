@@ -2,10 +2,6 @@ import pytest
 
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
-from app.services.agent.prompt_settings import FINAL_RESPONSE_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import TOOL_RESULT_PROMPT_PREFERENCE_KEY
-from app.services.agent.prompt_settings import resolve_agent_prompt_set
 
 
 def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
@@ -61,23 +57,6 @@ def test_packaged_agent_prompts_are_valid_and_renderable() -> None:
         action_name="search_notes",
         payload_json='{"notes":[]}',
     ) == 'TOOL_RESULT search_notes\n{"notes":[]}'
-
-
-def test_resolve_agent_prompt_set_uses_namespace_overrides() -> None:
-    prompts = resolve_agent_prompt_set(
-        preferences={
-            SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt",
-            FINAL_RESPONSE_PROMPT_PREFERENCE_KEY: "FINAL {basis}",
-            TOOL_RESULT_PROMPT_PREFERENCE_KEY: "TOOL {action_name}\n{payload_json}",
-        }
-    )
-
-    assert prompts.system_prompt == "Custom system prompt"
-    assert prompts.render_final_response_request(basis="basis") == "FINAL basis"
-    assert prompts.render_tool_result(
-        action_name="read_notes_by_id",
-        payload_json='{"notes":[]}',
-    ) == 'TOOL read_notes_by_id\n{"notes":[]}'
 
 
 @pytest.mark.parametrize(

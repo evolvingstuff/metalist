@@ -74,8 +74,7 @@ The first model call selects relevant topics from a compact catalog: notes,
 search, tags, formatting, references, menus, reminders, AI, privacy, or data.
 Only selected skill text is loaded into the second call. There is no additional
 model lookup call. Those instructions are not retained in later conversation
-turns; the export records exactly what the model saw. Agent prompts exposes the
-skills for namespace-specific overrides.
+turns; the export records exactly what the model saw.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
@@ -262,12 +261,11 @@ approximate evidence-token count.
   MetaList no longer launches local model servers or downloads models. Existing
   external installations, downloaded models, runtime files, and backups are untouched.
 
-Open `Agent prompts…` to inspect/override packaged prompt Markdown and registered
-skills. Skills are collapsed with a disclosure arrow and trigger label. Overrides
-are encrypted namespace preferences where applicable and affect the next run.
-`Restore packaged defaults` removes all overrides. If an older scoped-skill or
-Search-skill override exists, the editor shows an explicit incompatible-contract
-notice; it is preserved but never applied until Save or Restore removes it.
+Prompts and skills are packaged and not editable, so every user gets the behavior
+the evals measure. Overrides saved by older versions (`pref.ai.prompt.*`,
+`pref.ai.skill.*`) are ignored when preferences load and dropped the next time
+preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
+`RETIRED_SKILL_PREFERENCE_KEYS`).
 
 ## Panel and Cancellation
 

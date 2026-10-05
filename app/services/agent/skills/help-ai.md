@@ -66,12 +66,12 @@ for missing bulk undo. Removing an accepted tag requires editing that note's tag
 which this chat workflow cannot do. An explanation of these limits does not itself
 request opening the proposal-management dialog.
 
-Manage tag proposals opens the bulk acceptance/removal form. Tagging prompt and
-vocabulary opens instruction/vocabulary settings. Agent prompts shows packaged
-system/final/tool prompts and registered skills, supports namespace overrides,
-and Restore packaged defaults removes overrides. Help skills are editable there.
-Overrides affect subsequent calls. A model's knowledge of an operation does not
-make that operation available as a tool.
+Manage tag proposals opens the bulk acceptance/removal form. Tagging vocabulary
+chooses existing tags only, or existing and new tags. The AI's prompts and skills
+(including the tagging instructions and these help texts) are built into MetaList
+and cannot be edited, so the AI behaves the same for everyone; instructions saved
+by older versions are ignored. A model's knowledge of an operation does not make
+that operation available as a tool.
 
 Chat history and its debug traces are session-only. Clear Chat/logout removes
 them; a server restart removes them. A page reload in the same authenticated

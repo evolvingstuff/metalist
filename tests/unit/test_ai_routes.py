@@ -11,7 +11,6 @@ import app.api.routes.ai as ai_routes
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
-from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
@@ -143,34 +142,6 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
                     "output_tokens_received": 0,
                     "duration_ms": 12.5,
             }
-    ]
-    assert http_response.headers["Cache-Control"] == "no-store"
-
-
-def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
-    http_response = Response()
-
-    response = ai_routes.get_ai_prompt_defaults(
-        response=http_response,
-        token="auth-token",
-    )
-
-    assert response.system_prompt == DEFAULT_AGENT_PROMPTS.system_prompt
-    assert response.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
-    assert response.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
-    assert [skill.model_dump() for skill in response.skills] == [
-        {
-            "skill_id": skill.skill_id,
-            "title": skill.title,
-            "description": skill.description,
-            "trigger_action": skill.trigger_action,
-                "preference_key": skill.preference_key,
-                "content": skill.content,
-                "superseded_preference_keys": list(
-                    skill.superseded_preference_keys
-                ),
-        }
-        for skill in DEFAULT_AGENT_SKILLS.skills
     ]
     assert http_response.headers["Cache-Control"] == "no-store"
 
@@ -749,9 +720,8 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert selected_model == "gpt-5.6-sol"
             assert thinking_level == "low"
             assert canonical_messages == [{"role": "user", "content": "Hello"}]
-            assert prompts.system_prompt == "Custom system prompt"
-            assert prompts.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
-            assert prompts.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
+            # Instructions are packaged; a stale saved override is never used.
+            assert prompts == DEFAULT_AGENT_PROMPTS
             assert skills == DEFAULT_AGENT_SKILLS
             assert retrieval_settings.max_page_approximate_tokens == 7_000
             assert web_settings.mode == "none"
@@ -782,7 +752,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         ai_routes,
         "load_client_preferences",
         lambda *, token: {
-            SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt",
+            "pref.ai.prompt.system": "Custom system prompt",
             "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
         },
     )
