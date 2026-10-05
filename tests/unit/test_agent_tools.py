@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
@@ -17,6 +18,7 @@ from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skills import load_skill
 from app.services.agent.web_capabilities import WebUrlCapabilitySet
 from app.services.agent.web_actions import NoteTextGuard
+from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.web_settings import AgentWebSettings
 from app.version import __version__
@@ -232,8 +234,11 @@ def test_web_pages_open_through_the_web_fetcher_with_citation_tokens(monkeypatch
     result = _run(context, "open_web_pages", {"urls": ["https://agent-tools.example/page"]})
     page = json.loads(result.content)["pages"][0]
     assert calls == [["https://agent-tools.example/page"]]
-    assert page["status"] == "ok" and page["citation_token"].startswith("[[web:")
-    assert [evidence.citation_token for evidence in result.web_evidence] == [page["citation_token"]]
+    # The model sees a short per-session token and no long evidence id to copy.
+    assert page["status"] == "ok" and re.fullmatch(r"\[\[web:\d+\]\]", page["citation_token"])
+    assert "evidence_id" not in page
+    assert [web_evidence_store.short_citation_token(session_key="session-1", evidence_id=evidence.evidence_id)
+            for evidence in result.web_evidence] == [page["citation_token"]]
 
 
 def test_contextual_web_mode_blocks_addresses_not_in_context(monkeypatch) -> None:

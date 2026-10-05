@@ -196,6 +196,16 @@ to the notes and web pages the tools returned.
   and that were not part of an address already seen (`NoteTextGuard`). Google Search
   and Google Finance are exempt; every redirect hop gets the same check. The box
   lists addresses separately (monospace, one per line) with compact buttons.
+- Your feedback: a front-page story list had no links. The page result already
+  carried a link token per story; Luna (Low) used them in only 2 of 6 runs. The
+  agent instructions now carry the list-page rule the old final-response prompt had
+  (each listed item cites its own link token; the page token only for the page as a
+  whole). Live: 6 of 6 fully linked, links open the right stories. Luna also
+  miscopied about 1 long id in 30, losing that link; fixed by giving the model short
+  per-session tokens (`[[web:12]]`, numbered by the web evidence store) and
+  translating them back to full evidence tokens as the answer streams
+  (`web_citation_tokens.py`), so storage and rendering are unchanged. Live: 8 of 8
+  runs (Luna ×6, Terra, Sol) linked all 30 stories correctly, none dropped.
 - Left for Phase 7: design/UI/testing docs still describe the old routing
   (`docs/design/agent-harness.md`, `docs/ui/ai-chat.md`, `docs/testing/harness.md`,
   `docs/AI-SUMMARY.md`).

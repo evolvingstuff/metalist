@@ -14,6 +14,7 @@ from app.services.agent.scope import SelectedNoteContext, SelectedTreeNote
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.tool_calling import validate_tool_conversation
 from app.services.agent.web_actions import NoteTextGuard
+from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.bulk_operation import bulk_operation_guard
@@ -335,3 +336,34 @@ def test_a_selected_note_tree_over_the_evidence_limit_is_never_sent() -> None:
     with pytest.raises(AgentExecutionError, match="larger than the evidence limit"):
         asyncio.run(collect())
     assert model.conversations == []
+
+
+def test_the_model_cites_short_web_tokens_and_the_chat_gets_full_ones(monkeypatch) -> None:
+    async def fake_fetch(urls, *, allows_target):
+        return tuple(WebPageFetchResult(
+            requested_url=url, final_url=url, status="ok", title="Front page", content_text="Stories",
+            outgoing_links=(("First story", "https://stories.example/first"),),
+            fetched_at="2026-10-05T00:00:00+00:00", truncated=False, error_kind="",
+        ) for url in urls)
+
+    monkeypatch.setattr("app.services.agent.web_actions.fetch_web_pages", fake_fetch)
+    web_evidence_store.clear_session(session_key="session-1")
+    model = _ScriptedModel([_turn("", [("open_web_pages", {"urls": ["https://front.example/"]})])])
+    # The model reads the short tokens from the page result, then cites them split across chunks.
+    original = model.stream_tool_turn
+
+    async def citing_turn(**kwargs):
+        if len(model.conversations) == 1:
+            page = _tool_results(kwargs["messages"])[0]["pages"][0]
+            story_token = page["outgoing_link_references"][0]["citation_token"]
+            model.turns.append(_turn(f"1. **First story**{story_token[:4]}|{story_token[4:]} [[web:999]]", []))
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(model, "stream_tool_turn", citing_turn)
+    events = _run_agent(model, web_mode="full", message="Show the stories", tagging=None, on_event=_ignore)
+    text = _answer(events)
+    story = next(reference for page in web_evidence_store.evidence(session_key="session-1")
+                 for reference in page.outgoing_references)
+    assert text == f"1. **First story**[[web:{story.evidence_id}]] "
+    assert story.evidence_id in events[-1]["reference_web_ids"]

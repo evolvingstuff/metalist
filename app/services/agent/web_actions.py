@@ -188,9 +188,27 @@ async def open_web_pages(
                 raise RuntimeError("Web evidence retention returned no result")
         evidence_items.append(evidence)
         payload.append({
-            **evidence.as_model_payload(),
+            **_model_page_payload(session_key=session_key, evidence=evidence),
             "status": status,
             "error_kind": error_kind,
             "cached": was_cached,
         })
     return payload, tuple(evidence_items)
+
+
+def _model_page_payload(*, session_key: str, evidence: WebPageEvidence) -> dict[str, object]:
+    """The page as the model sees it: short [[web:N]] citation tokens, no long ids to copy."""
+    page = evidence.as_model_payload()
+    page["citation_token"] = web_evidence_store.short_citation_token(
+        session_key=session_key, evidence_id=evidence.evidence_id)
+    del page["evidence_id"]
+    page["outgoing_link_references"] = [
+        {
+            "title": reference.title,
+            "url": reference.final_url,
+            "citation_token": web_evidence_store.short_citation_token(
+                session_key=session_key, evidence_id=reference.evidence_id),
+        }
+        for reference in evidence.outgoing_references
+    ]
+    return page

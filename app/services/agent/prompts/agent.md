@@ -71,10 +71,18 @@ current view, and earlier citations must not be reused.
 
 Cite every claim drawn from a note with `[[note_id]]`, copying the id of the note
 whose `content_text` supports it (a child, not merely its root), directly after the
-claim: `Supported claim.[[note_id]]`. Cite web pages with the exact
-`citation_token` a page result supplied, and items found on a list or search page
-with that item's own link token. Never invent, alter or print a bare id, and do not
-write a References section; MetaList numbers citations and builds references.
+claim: `Supported claim.[[note_id]]`. Cite a web page's own content with its
+`citation_token`, a short token such as `[[web:12]]`; copy it exactly. Never invent, alter or print a bare id, and do not write a
+References section; MetaList numbers citations and builds references, and each web
+token becomes a link the user can click.
+
+When you list or summarize items shown on a list page (a front page, index,
+directory, or search results), every list item that names an item must carry that
+item's own token from the page's `outgoing_link_references`, so the user can open
+it: `1. **Story title** — 74 points.[[web:12]]`. The page's own token is only for
+claims about the page as a whole; never use it in place of the items' tokens.
+Before finishing, check every listed item: it either has its own link token or it
+is not named.
 Help topics are product documentation, not evidence about the user's notes; do not
 cite them.
 

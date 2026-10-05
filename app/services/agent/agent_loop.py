@@ -47,6 +47,7 @@ from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.bulk_operation import bulk_operation_guard
+from app.services.agent.web_citation_tokens import ShortWebTokenTranslator
 from app.services.agent.execution_errors import AgentExecutionError
 
 
@@ -69,8 +70,10 @@ _ANSWER_REQUIRED = (
 class AgentLoopState:
     """What one run has shown the user and the model so far."""
 
-    def __init__(self, *, capabilities, selected_note_text: str) -> None:
+    def __init__(self, *, capabilities, selected_note_text: str, session_key: str) -> None:
         self.reference_note_ids: list[str] = []
+        self.web_tokens = ShortWebTokenTranslator(
+            evidence_ids_by_number=lambda: web_evidence_store.evidence_ids_by_short_number(session_key=session_key))
         self.web_evidence: list[WebPageEvidence] = []
         self.capabilities = capabilities
         self.content = ""
@@ -100,6 +103,19 @@ class AgentLoopState:
 
     def reference_web_ids(self) -> list[str]:
         return [reference.evidence_id for reference in citation_references_for_pages(tuple(self.web_evidence))]
+
+    def model_text_events(self, text: str) -> list[dict[str, object]]:
+        """The model's streamed text with its short web tokens translated (held back while partial)."""
+        translated = self.web_tokens.feed(text)
+        if translated == "":
+            return []
+        return [self.content_event(translated)]
+
+    def model_turn_end_events(self) -> list[dict[str, object]]:
+        remaining = self.web_tokens.flush()
+        if remaining == "":
+            return []
+        return [self.content_event(remaining)]
 
     def content_event(self, text: str) -> dict[str, object]:
         assert text != ""
@@ -138,7 +154,8 @@ class AgentLoopMixin:
         selected_note_text = "\n".join(
             f"{note.content_text} {note.tags}" for note in snapshot.selected_note.tree_notes
         )
-        state = AgentLoopState(capabilities=capabilities, selected_note_text=selected_note_text)
+        state = AgentLoopState(capabilities=capabilities, selected_note_text=selected_note_text,
+                               session_key=run.session_key)
         for note_id in snapshot.selected_note.reference_note_ids:
             state.reference_note_ids.append(note_id)
         messages = self._context_builder.build_agent_messages(
@@ -272,7 +289,8 @@ class AgentLoopMixin:
                     text = self._separator(state) + text
                     is_first_delta = False
                 turn["content"] += event["text"]
-                yield state.content_event(text)
+                for content_event in state.model_text_events(text):
+                    yield content_event
             elif event["type"] == "tool_call":
                 turn["calls"].append({"id": event["id"], "name": event["name"], "arguments": event["arguments"]})
             elif event["type"] == "done":
@@ -281,6 +299,8 @@ class AgentLoopMixin:
                 raise RuntimeError(f"Unknown tool turn event: {event['type']}")
         if turn["done"] == {}:
             raise RuntimeError("Tool turn ended without a done event")
+        for content_event in state.model_turn_end_events():
+            yield content_event
         self._trace_store.append_event(
             session_key=run.session_key, run_id=run.run_id, event_type="MODEL_RESPONSE",
             label="Model response: agent-turn",
