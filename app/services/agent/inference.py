@@ -20,6 +20,9 @@ class InferenceAttempt:
     response: dict[str, object]
     error: str
     duration_ms: float
+    # Rules the model's reply broke, when it was rejected: each a dict with
+    # field, kind, problem and value (for explaining the failure in the chat).
+    validation_errors: tuple[dict[str, str], ...]
 
 
 @dataclass(frozen=True, slots=True)

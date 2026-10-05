@@ -32,19 +32,24 @@ from app.services.agent.token_estimation import estimate_text_tokens
 
 _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
-_ROUTE_MAX_OUTPUT_TOKENS = 512
-_SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
-_WEB_ACTION_MAX_OUTPUT_TOKENS = 4_096
+# OpenAI reasoning models count hidden thinking against max_completion_tokens,
+# so even a step whose answer is a few dozen tokens (routing) needs room to
+# think first: at 512 tokens, Medium or High thinking could use the whole
+# budget and leave a cut-off, rejected reply on every attempt.
+_STRUCTURED_MIN_OUTPUT_TOKENS = 8_192
+_ROUTE_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
+_SEARCH_QUERY_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
+_WEB_ACTION_MAX_OUTPUT_TOKENS = _STRUCTURED_MIN_OUTPUT_TOKENS
 
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
-        OutputJudgment: 4_096,
+        OutputJudgment: _STRUCTURED_MIN_OUTPUT_TOKENS,
         MetaListHelpResponse: 8_192,
         TagBatchResult: 8_192,
-        TagOperationIntent: 1_024,
+        TagOperationIntent: _STRUCTURED_MIN_OUTPUT_TOKENS,
         SummaryBatchResult: 8_192,
-        SummaryFindingsResult: 4_096,
+        SummaryFindingsResult: _STRUCTURED_MIN_OUTPUT_TOKENS,
         AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
         SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
@@ -55,6 +60,27 @@ def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
             f"Structured output limit missing for {response_model.__name__}"
         )
     return limits[response_model]
+
+
+# Longest offending value kept for the error message.
+_BROKEN_RULE_VALUE_CHARS = 80
+
+
+def _broken_rules(error: ValidationError) -> tuple[dict[str, str], ...]:
+    """The rules a rejected reply broke, in a plain form the chat can show."""
+    rules = []
+    for detail in error.errors(include_url=False):
+        value = detail["input"]
+        shown_value = ""
+        if isinstance(value, (str, int, float, bool)):
+            shown_value = str(value)[:_BROKEN_RULE_VALUE_CHARS]
+        rules.append({
+            "field": ".".join(str(part) for part in detail["loc"]),
+            "kind": detail["type"],
+            "problem": detail["msg"],
+            "value": shown_value,
+        })
+    return tuple(rules)
 
 
 @dataclass(slots=True)
@@ -71,6 +97,7 @@ class _PendingAttempt:
     response_metadata: dict[str, object]
     last_reported_output_tokens: int
     partial_output: dict[str, object]
+    validation_errors: tuple[dict[str, str], ...]
 
 
 class _InstructorTraceCapture:
@@ -97,6 +124,7 @@ class _InstructorTraceCapture:
                 response_metadata={},
                 last_reported_output_tokens=0,
                 partial_output={},
+                validation_errors=(),
             )
         )
 
@@ -307,6 +335,8 @@ class _InstructorTraceCapture:
         if attempt.error == formatted_error:
             return
         attempt.error = formatted_error
+        if isinstance(error, ValidationError):
+            attempt.validation_errors = _broken_rules(error)
         attempt.duration_ms = (time.perf_counter() - attempt.started_at) * 1_000
         attempt_number = len(self._attempts)
         phase = "retrying"
@@ -331,6 +361,7 @@ class _InstructorTraceCapture:
             attempts.append(InferenceAttempt(
                 request=attempt.request, response=response,
                 error=error, duration_ms=attempt.duration_ms,
+                validation_errors=attempt.validation_errors,
             ))
         return attempts
 

@@ -78,7 +78,11 @@ them; a server restart removes them. A page reload in the same authenticated
 session retains them. Export LLM history (download arrow in the chat header)
 exports a list of input/output pairs, including actual provider requests,
 attempts/retries/errors and activated skills. It makes no additional model call.
-Agent Debug shows the latest run. The separate opt-in regression suite lives in
+Agent Debug shows the latest run. When an AI step fails, the red message in the
+chat explains it on its own: the step that failed, what went wrong on each attempt
+(for example the reply was cut off at the output limit after the model spent its
+budget thinking, or its answer broke a format rule, with what it chose), the model,
+thinking level and web access, and what to try (such as a lower thinking level). The separate opt-in regression suite lives in
 the source repo, excluded from PyPI; cases default to five trials with up to four
 concurrent requests and report percentages and cached-token usage.
 Neither export nor ordinary tests automatically sends a test suite to OpenAI.

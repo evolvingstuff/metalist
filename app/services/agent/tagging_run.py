@@ -12,6 +12,8 @@ from app.services.agent.tagging import (
     shuffle_trees_for_batches, validate_proposals, tree_notes,
 )
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import StructuredInferenceError
+from app.services.agent.failure_explanations import FailureSetup, explain_structured_failure
 from app.services.agent.context import format_active_skill
 from app.services.agent.token_estimation import estimate_message_tokens, estimate_input_tokens
 from app.services.agent.trace import agent_trace_store
@@ -61,9 +63,19 @@ def proposal_scope_ids(descriptor):
 
 
 async def infer_with_progress(inference, run, messages, response_model, on_progress):
-    response = await inference.infer_structured(
-        base_url=run.base_url, model=run.selected_model, thinking_level=run.thinking_level,
-        messages=messages, response_model=response_model, on_progress=on_progress)
+    # lint: allow-PY001 rationale="explain an external model's rejected structured replies in the chat, then fail"
+    try:
+        response = await inference.infer_structured(
+            base_url=run.base_url, model=run.selected_model, thinking_level=run.thinking_level,
+            messages=messages, response_model=response_model, on_progress=on_progress)
+    # lint: allow-PY001 rationale="the model's replies were rejected on every attempt: say why, in plain words"
+    except StructuredInferenceError as exc:
+        raise InferenceProviderError(explain_structured_failure(
+            response_model=response_model,
+            attempts=exc.attempts,
+            setup=FailureSetup(model=run.selected_model, thinking_level=run.thinking_level,
+                               web_mode=run.web_settings.mode),
+        )) from exc
     for attempt in response.attempts:
         agent_trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
             event_type="TAGGING_INFERENCE", label=f"Tagging · {response_model.__name__}",

@@ -3048,6 +3048,8 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     margin-top: 8px;
     padding: 8px 10px;
     overflow-wrap: anywhere;
+    /* Failure explanations are several lines (step, attempts, setup, advice). */
+    white-space: pre-line;
     background: #fef2f2;
     border: 1px solid #fecaca;
     border-left: 4px solid #ef4444;

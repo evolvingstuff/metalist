@@ -12,6 +12,7 @@ from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceResponse
+from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.permissions import AgentPermissionPolicy
@@ -278,6 +279,7 @@ class _FakeInference:
                     response={"content": content},
                     error="",
                     duration_ms=1.0,
+                    validation_errors=(),
                 )
             ],
         )
@@ -1219,7 +1221,7 @@ class _WebInference(_FakeInference):
             content=content,
             thinking="",
             usage={},
-            attempts=[InferenceAttempt(request={}, response={}, error="", duration_ms=1.0)],
+            attempts=[InferenceAttempt(request={}, response={}, error="", duration_ms=1.0, validation_errors=())],
         )
 
     async def stream_text(self, **arguments):
@@ -1397,3 +1399,49 @@ def test_investigation_web_loop_preserves_full_note_evidence() -> None:
     )
     assert "ROOT_ALPHA" in json.dumps(inference.final_messages)
     assert "TAIL" in json.dumps(inference.final_messages)
+
+
+class _RouteCutOffInference(_FakeInference):
+    """The routing call runs out of output tokens while thinking, twice."""
+
+    async def infer_structured(self, **arguments) -> InferenceResponse:
+        assert arguments["response_model"].__name__ == "ScopedRouteEnvelope"
+        cut_off = InferenceAttempt(
+            request={"max_completion_tokens": 512, "reasoning_effort": arguments["thinking_level"]},
+            response={
+                "choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}],
+                "usage": {"completion_tokens": 512, "completion_tokens_details": {"reasoning_tokens": 512}},
+            },
+            error="IncompleteOutputException: The output is incomplete due to a max_tokens length limit.",
+            duration_ms=3_000.0,
+            validation_errors=(),
+        )
+        raise StructuredInferenceError(attempts=[cut_off, cut_off])
+
+
+def test_a_failed_routing_call_explains_itself_in_the_chat_message() -> None:
+    async def collect() -> list[dict[str, object]]:
+        return [
+            event
+            async for event in _runtime(_RouteCutOffInference(route_kind="respond")).stream_scoped(
+                tag_handler=None,
+                session_key="session-1",
+                base_url="https://api.openai.com/v1",
+                selected_model="gpt-5.6-terra",
+                thinking_level="medium",
+                canonical_messages=[{"role": "user", "content": "What are the new features of MetaList 0.11.0?"}],
+                prompts=DEFAULT_AGENT_PROMPTS,
+                skills=DEFAULT_AGENT_SKILLS,
+                retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=20_000),
+                web_settings=DEFAULT_AGENT_WEB_SETTINGS,
+                frozen_scope=_snapshot(large_tail=False),
+            )
+        ]
+
+    with pytest.raises(AgentExecutionError) as failure:
+        asyncio.run(collect())
+
+    message = str(failure.value)
+    assert "deciding how to handle your request" in message
+    assert "Attempt 2: the reply was cut off at the 512-token output limit; all 512 tokens went to thinking" in message
+    assert "Setup: gpt-5.6-terra, Medium thinking, web access off." in message

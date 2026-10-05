@@ -45,6 +45,7 @@ def test_openai_structured_cost_records_every_completed_retry_attempt() -> None:
             },
             error="ValidationError: invalid action",
             duration_ms=1.0,
+            validation_errors=(),
         ),
         InferenceAttempt(
             request={},
@@ -61,6 +62,7 @@ def test_openai_structured_cost_records_every_completed_retry_attempt() -> None:
             },
             error="",
             duration_ms=1.0,
+            validation_errors=(),
         ),
     ]
 
@@ -222,7 +224,7 @@ def test_openai_structured_inference_uses_schema_and_disables_storage(
     assert factory_call["model"] == "gpt-5.6-sol"
     assert factory_call["mode"] is instructor.Mode.JSON_SCHEMA
     assert fake_client.create_kwargs["response_model"] is AgentRouteEnvelope
-    assert fake_client.create_kwargs["max_completion_tokens"] == 512
+    assert fake_client.create_kwargs["max_completion_tokens"] == 8_192
     assert fake_client.create_kwargs["reasoning_effort"] == "medium"
     assert fake_client.create_kwargs["stream_options"] == {"include_usage": True}
     assert fake_client.create_kwargs["store"] is False

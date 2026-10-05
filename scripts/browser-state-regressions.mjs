@@ -99,6 +99,49 @@ export async function checkAdditionalStateTransitions(page) {
   });
   assert.deepEqual(completed, Array.from({length:3}, () => ({status:'complete', content:'Local simulated answer ', busy:false})));
   console.log('PASS simulated streamed chat, unchanged bulk completion, and repeated chat clearing without an AI provider');
+
+  // A failed AI step explains itself in several lines; the chat keeps the lines.
+  const failure = await page.evaluate(async () => {
+    const {AiChatPanel: panel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
+    const {CONFIG} = await import('/static/js/modules/config.js');
+    const originalFetch = window.fetch;
+    const originalSettings = panel._getSettings;
+    const originalModels = panel._models;
+    const explanation = [
+      "MetaList's AI could not finish this request: it failed while deciding how to handle your request.",
+      'Attempt 1: the reply was cut off at the 512-token output limit; all 512 tokens went to thinking, so no answer was written.',
+      'Setup: state-smoke-model, Low thinking, web access off.',
+    ].join('\n');
+    window.fetch = async (url, options = {}) => {
+      if (url === CONFIG.API.AI.CHAT) {
+        return new Response(JSON.stringify({type:'error', message:explanation})+'\n', {headers:{'Content-Type':'application/x-ndjson'}});
+      }
+      if (url === CONFIG.API.AI.SESSION) {
+        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages});
+      }
+      return originalFetch(url, options);
+    };
+    panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
+    panel._models = ['state-smoke-model'];
+    try {
+      panel._elements.input.value = 'Local simulated failing request';
+      await panel._submitMessage();
+      const shown = [...document.querySelectorAll('.ai-chat-message-error')].at(-1);
+      const result = {status: panel._messages.at(-1).status, saved: panel._messages.at(-1).error,
+        shown: shown ? shown.textContent : '', whiteSpace: shown ? getComputedStyle(shown).whiteSpace : ''};
+      await panel._clearSession();
+      return {...result, explanation};
+    } finally {
+      window.fetch = originalFetch;
+      panel._getSettings = originalSettings;
+      panel._models = originalModels;
+    }
+  });
+  assert.equal(failure.status, 'error');
+  assert.equal(failure.saved, failure.explanation, 'the explanation is saved with the turn');
+  assert.equal(failure.shown, failure.explanation, 'the explanation is shown in full');
+  assert.equal(failure.whiteSpace, 'pre-line', 'the explanation keeps its line breaks');
+  console.log('PASS a failed AI step shows its multi-line explanation in the chat');
 }
 
 export async function checkEditingShortcutSequences(page) {

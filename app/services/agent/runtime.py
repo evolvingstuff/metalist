@@ -25,6 +25,7 @@ from app.services.agent.actions import SearchNotesIntent
 from app.services.agent.actions import SearchNotesAction
 from app.services.agent.actions import SearchQueryEnvelope
 from app.services.agent.actions import ScopedRouteEnvelope
+from app.services.agent.failure_explanations import FailureSetup, explain_structured_failure
 from app.services.agent.actions import parse_agent_route_json
 from app.services.agent.actions import parse_search_query_json
 from app.services.agent.context import AgentContextBuilder
@@ -1930,18 +1931,13 @@ class AgentRuntime:
                 parsed={},
                 purpose=purpose,
             )
-            response_label = "agent route"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                response_label = "search query"
-            attempt_count = len(exc.attempts)
-            attempt_label = "attempt"
-            if attempt_count != 1:
-                attempt_label = "attempts"
-            raise AgentExecutionError(
-                f"The model could not produce a valid {response_label} after "
-                f"{attempt_count} {attempt_label}. Open Agent Debug for exact request "
-                "and response details."
-            ) from exc
+            # Explain the failure in the chat itself (and the saved turn), so
+            # it can be understood later without the Agent Debug trace.
+            raise AgentExecutionError(explain_structured_failure(
+                response_model=response_model,
+                attempts=exc.attempts,
+                setup=FailureSetup(model=model, thinking_level=run.thinking_level, web_mode=run.web_settings.mode),
+            )) from exc
 
     @staticmethod
     async def _stream_progress_until_complete(

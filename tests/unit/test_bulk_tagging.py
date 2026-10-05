@@ -18,6 +18,8 @@ import app.usecases.bulk_tag_proposals as mutations
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.bulk_operation import BulkOperationGuard, BulkOperationBusy
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import InferenceAttempt
+from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skill_settings import resolve_agent_skill_set
 
@@ -1013,3 +1015,33 @@ def test_combined_tag_card_can_choose_focus_and_the_leading_prefix(monkeypatch):
     assert questions[0]["prefix_root_count"] == 1
     assert reviewed == ["root-0"]
     assert saved == [{TAGGING_POLICY_KEY: "new", TAGGING_FOCUS_KEY: "new"}]
+
+
+def test_a_failed_tagging_call_explains_itself_like_the_chat_steps() -> None:
+    cut_off = InferenceAttempt(
+        request={"max_completion_tokens": 8_192},
+        response={
+            "choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}],
+            "usage": {"completion_tokens": 8_192, "completion_tokens_details": {"reasoning_tokens": 8_192}},
+        },
+        error="IncompleteOutputException: The output is incomplete due to a max_tokens length limit.",
+        duration_ms=10_000.0,
+        validation_errors=(),
+    )
+
+    async def infer_structured(**arguments):
+        raise StructuredInferenceError(attempts=[cut_off, cut_off])
+
+    run = SimpleNamespace(
+        base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol", thinking_level="high",
+        web_settings=SimpleNamespace(mode="none"), session_key="session", run_id="run",
+    )
+    with pytest.raises(InferenceProviderError) as failure:
+        asyncio.run(runs.infer_with_progress(
+            SimpleNamespace(infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
+        ))
+
+    message = str(failure.value)
+    assert "it failed while proposing tags" in message
+    assert "all 8192 tokens went to thinking" in message
+    assert "Setup: gpt-5.6-sol, High thinking, web access off." in message

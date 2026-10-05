@@ -20,10 +20,22 @@
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
-- Every generation is bounded over the wire: route selection uses 512 output tokens,
-  query requests use 1,024, and final prose uses 8,192 with OpenAI. If OpenAI reports that this limit
-  truncated its output, the run fails visibly instead of presenting partial prose
+- Every generation is bounded over the wire. Each structured step (route selection,
+  search queries, web planning, help answers, summaries, tag work, answer checks)
+  allows at least 8,192 output tokens, and final prose 8,192, with OpenAI: its
+  reasoning models count hidden thinking against that limit, so a step whose answer is
+  only a few dozen tokens still needs room to think first (a 512-token routing limit
+  could be used up entirely by Medium or High thinking). If OpenAI reports that the
+  limit truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
+- When a structured step's reply is rejected on every attempt (cut off at the output
+  limit, not matching the required format, empty, or refused), the chat explains the
+  failure in the error itself: which step failed (for example "deciding how to handle
+  your request"), what went wrong on each attempt in plain words (including the
+  rule broken and what the model chose), the setup (model, thinking level, web
+  access), and what to try. The explanation is saved with the turn, so a screenshot is
+  enough to diagnose it; Agent Debug remains for the raw requests and responses
+  (`app/services/agent/failure_explanations.py`).
 
 ## Web access
 
