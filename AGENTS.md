@@ -460,6 +460,8 @@ except FileNotFoundError:
     raise ConfigError(f"Config file {config_file} not found")
 ```
 
+**MetaList: rejected user input.** Input that fails validation (e.g. a search that does not parse) raises `InputRejected` (`app/services/input_errors.py`). It is an expected failure, not a defect: the server answers it as a polite `400` (`{"detail", "inputRejected": true}`, `app/main.py`), the browser shows it as a calm banner (`ServerInputRejectedError`, `error-overlay.js`) instead of the fatal red overlay, and the startup sanity checker allows a `try` whose handlers catch only `InputRejected` to handle it without re-raising. Write the message for the user and say how to fix the input. Every other exception still fails fast and loud.
+
 #### WHEN TRY/EXCEPT IS BAD:
 **Internal logic errors** (these ARE bugs that should crash immediately):
 ```python

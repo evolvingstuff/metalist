@@ -76,7 +76,11 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             prefix = text[index]
             index += 1
             if index >= len(text) or text[index].isspace():
-                raise InputRejected("Dangling prefix in search query")
+                # Shown to the user: say how to fix it. ("- tag" stays invalid.)
+                raise InputRejected(
+                    "In a search, + or - must be directly followed by the tag or quoted text, "
+                    "with no space (for example -tag)"
+                )
 
         if text[index] in ('"', "'"):
             quote_char = text[index]

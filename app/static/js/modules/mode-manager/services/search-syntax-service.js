@@ -19,6 +19,8 @@ const TAG_CONTAINS_DISALLOWED = new Set([
 ]);
 
 const TOKEN_START_DISALLOWED = new Set(['-', '+', '/']);
+// Same wording as the server's rejection (app/services/search_query.py).
+const SPACED_PREFIX_WARNING = 'In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)';
 
 const QUOTE_CHARS = new Set(['"', "'" ]);
 const OR_OPERATOR = 'OR';
@@ -123,6 +125,10 @@ export function analyzeSearchQueryInput(rawInput) {
     let warningMessage = null;
     let currentClauseTermCount = 0;
     let endsWithOrOperator = false;
+    // A prefix followed by a space ("- tag"): invalid. The term after it is
+    // explained and left out of the searched text, so it never runs with the
+    // opposite meaning ("tag"). A lone prefix at the end is still being typed.
+    let spacedPrefixPending = false;
 
     let index = 0;
     while (index < rawInput.length) {
@@ -141,8 +147,30 @@ export function analyzeSearchQueryInput(rawInput) {
             if (index >= rawInput.length || isWhitespace(rawInput[index])) {
                 normalizedTerms.push(prefix);
                 isComplete = false;
+                spacedPrefixPending = true;
                 continue;
             }
+        }
+        // This term follows a prefix and a space: keep it as typed, explain,
+        // and do not search for it.
+        if (spacedPrefixPending) {
+            spacedPrefixPending = false;
+            if (!warningMessage) {
+                warningMessage = SPACED_PREFIX_WARNING;
+            }
+            const termStart = index;
+            const isQuoted = QUOTE_CHARS.has(rawInput[index]);
+            if (isQuoted) {
+                const quoteChar = rawInput[index];
+                const { nextIndex } = readQuotedInner(rawInput, index + 1, quoteChar);
+                index = nextIndex;
+            } else {
+                while (index < rawInput.length && !isWhitespace(rawInput[index])) {
+                    index += 1;
+                }
+            }
+            normalizedTerms.push(rawInput.slice(termStart, index));
+            continue;
         }
 
         const nextChar = rawInput[index];

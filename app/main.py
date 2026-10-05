@@ -86,7 +86,7 @@ from urllib.parse import parse_qsl
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
-from app.services.input_errors import NamespaceInputRejected
+from app.services.input_errors import InputRejected, NamespaceInputRejected
 
 logger.remove()
 logger.add(
@@ -156,6 +156,13 @@ async def start_diagnostics_watchdogs():
 async def request_validation_error(request: Request, exc: RequestValidationError):
     # External input errors are not internal programming failures.
     return JSONResponse(status_code=422, content={"detail": summarize_validation_errors(exc.errors())})
+
+
+@app.exception_handler(InputRejected)
+async def handle_input_rejected(request: Request, exc: InputRejected):
+    # Expected, validated user-input failures (e.g. a search that does not
+    # parse): a polite 400 the browser shows as a warning, never a 500.
+    return JSONResponse(status_code=400, content={"detail": str(exc), "inputRejected": True})
 
 
 @app.exception_handler(OntologyParseError)

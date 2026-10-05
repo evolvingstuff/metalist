@@ -1,11 +1,22 @@
 import { ApplicationState } from './application-state.js';
 import { isNetworkTransportError } from './api-failure-classification-service.js';
+import { ServerInputRejectedError } from './expected-errors.js';
 
 
 const moduleState = ApplicationState.createFields('error-overlay', {
     installed: false,
 });
 
+
+// Input the server rejected (e.g. a search that does not parse) is an expected
+// failure: a polite warning, not the fatal overlay. Null for anything else,
+// which still fails fast and loud.
+export function rejectedInputWarning(reason) {
+  if (reason instanceof ServerInputRejectedError) {
+    return `That could not be used: ${reason.message}.`;
+  }
+  return null;
+}
 
 export function shouldSuppressFatalOverlay(reason) {
   return isNetworkTransportError(reason);
@@ -47,7 +58,11 @@ export function showFatalError(message, details) {
   overlay.textContent = lines.join('\n');
 }
 
-export function installGlobalErrorOverlay() {
+// `showWarning(message)` shows a polite, non-fatal banner (ErrorHandler.showInfoBanner).
+export function installGlobalErrorOverlay(showWarning) {
+  if (typeof showWarning !== 'function') {
+    throw new Error('installGlobalErrorOverlay requires a showWarning function');
+  }
   if (moduleState.installed) return;
   moduleState.installed = true;
 
@@ -70,6 +85,12 @@ export function installGlobalErrorOverlay() {
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event?.reason;
+    const warning = rejectedInputWarning(reason);
+    if (warning !== null) {
+      event.preventDefault();
+      showWarning(warning);
+      return;
+    }
     if (shouldSuppressFatalOverlay(reason)) {
       event.preventDefault();
       console.info('[ErrorOverlay] Connection failure is already shown in the status banner');

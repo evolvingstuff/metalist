@@ -9,6 +9,15 @@ export class HttpRequestError extends Error {
     }
 }
 
+// The server rejected what the user entered (e.g. a search that does not
+// parse). Shown as a polite warning, never as a fatal error.
+export class ServerInputRejectedError extends HttpRequestError {
+    constructor(message) {
+        super(message);
+        this.name = 'ServerInputRejectedError';
+    }
+}
+
 // A file edited in MetaList (an Excalidraw diagram) was saved elsewhere since this window loaded it.
 export class FileRevisionConflictError extends HttpRequestError {
     constructor(message, currentRevision) {

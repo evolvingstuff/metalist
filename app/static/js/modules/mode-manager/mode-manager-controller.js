@@ -16,6 +16,7 @@ import { startInfiniteScrollMonitor, resetInfiniteScrollState } from './services
 import { initializeScrollToTopButton } from './services/scroll-to-top-service.js';
 import { initEditorToolbar, setToolbarVisible } from '../editor-toolbar.js';
 import { installGlobalErrorOverlay } from '../error-overlay.js';
+import { ErrorHandler } from '../error-handler.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -29,7 +30,7 @@ const ModeManager = {
 	        console.log('+++ ModeManager: init() called');
                 
         // Global error overlay
-        installGlobalErrorOverlay();
+        installGlobalErrorOverlay((message) => ErrorHandler.showInfoBanner(message, 8000));
 
         Logger.logInit('Controller');
 

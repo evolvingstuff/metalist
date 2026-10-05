@@ -14,6 +14,9 @@ from app.startup_sanity_config import PY_ALLOWED_TRY_CALLEE_PREFIXES
 from app.startup_sanity_config import SANITY_PRUNE_NAMES
 from app.startup_sanity_config import is_installed_distribution_root
 
+# Validated user-input failures (app/services/input_errors.py) that may be handled.
+EXPECTED_INPUT_EXCEPTION = "InputRejected"
+
 
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _ROUTE_DECORATOR_METHODS = frozenset({"post", "put", "patch", "delete"})
@@ -419,6 +422,17 @@ class _StartupSanityChecker(ast.NodeVisitor):
                 return
 
             self._add(node=node, rule_id="PY001", message="try without except/finally is forbidden")
+            self.generic_visit(node)
+            return
+
+        # Rejected user input is an expected failure, never an internal defect:
+        # a try whose handlers catch only InputRejected may answer it (a polite
+        # warning or error response) without an external call or re-raise.
+        # Every other exception still fails fast.
+        if all(
+            handler.type is not None and _iter_exception_names(handler.type) == [EXPECTED_INPUT_EXCEPTION]
+            for handler in node.handlers
+        ):
             self.generic_visit(node)
             return
 
