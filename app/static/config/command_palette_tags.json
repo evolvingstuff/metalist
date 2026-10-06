@@ -125,6 +125,10 @@
       "tags": ["visual", "cues", "cue", "drag", "drop", "dragging", "ghost", "indicator", "landing", "line", "cursor", "icon", "direction", "position", "highlight", "editing", "escape", "move", "reorder", "indent", "outdent", "visuals", "settings", "show", "hide", "toggle", "enable", "disable"]
     },
     {
+      "id": "form.dictation_settings",
+      "tags": ["dictation", "dictate", "speech", "voice", "superwhisper", "transcription", "paste", "keyword", "tag", "tags", "settings"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

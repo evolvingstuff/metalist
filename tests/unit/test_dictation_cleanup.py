@@ -6,10 +6,13 @@ speech-to-text tool such as Superwhisper becomes the user's existing tags.
 
 from __future__ import annotations
 
+from pathlib import Path
+import re
+
 import pytest
 
 import app.api.routes.notes as notes_route
-from app.services.dictation_cleanup import clean_dictated_paste
+from app.services.dictation_cleanup import KNOWN_META_TAGS, clean_dictated_paste
 
 
 TAGS = {
@@ -140,3 +143,54 @@ def test_the_endpoint_cleans_against_the_namespace_tags(monkeypatch: pytest.Monk
     monkeypatch.setattr(notes_route, "search_index", _FakeSearchIndex())
     payload = {"text": "Neural network, neural network. Neural-Dash Network.", "target": "search", "current_value": ""}
     assert notes_route.dictation_paste(payload) == {"text": "neural-network"}
+
+
+# Words run together: a phrase also matches a tag written as one word.
+@pytest.mark.parametrize("pasted,tags,expected", [
+    ("To do.", {"todo": 1}, "todo"),
+    ("super whisper", {"superwhisper": 2}, "superwhisper"),
+    ("Note book, python", {"notebook": 1, "python": 1}, "notebook python"),
+    # Keeping the joiner wins over running the words together.
+    ("to do", {"to-do": 1, "todo": 5}, "to-do"),
+])
+def test_spoken_words_match_a_one_word_tag(pasted: str, tags: dict[str, int], expected: str) -> None:
+    assert _clean(pasted, target="search", current="", tags=tags) == expected
+    assert _clean(pasted, target="tags", current="", tags=tags) == expected
+
+
+# "at" (or a typed @) before a built-in meta tag is that meta tag.
+@pytest.mark.parametrize("pasted,expected", [
+    ("at to do", "@todo"),
+    ("At todo.", "@todo"),
+    ("@ to do", "@todo"),
+    ("@todo", "@todo"),
+    ("at done", "@done"),
+    ("at list bulleted", "@list-bulleted"),
+    ("At list-bulleted", "@list-bulleted"),
+    ("At heading, at red.", "@heading @red"),
+    ("neural network at to do", "neural-network @todo"),
+])
+def test_at_before_a_meta_tag_is_that_meta_tag(pasted: str, expected: str) -> None:
+    assert _search(pasted) == expected
+    assert _tags(pasted) == expected
+
+
+def test_at_is_filler_unless_it_starts_a_meta_tag_or_is_a_tag() -> None:
+    assert _tags("meeting at noon") == "meeting noon"
+    assert _search("python at noon") == "python"
+    assert _clean("meeting at noon", target="tags", current="", tags={"at": 1}) == "meeting at noon"
+    # Not a meta tag: "at" is dropped and the words stay words.
+    assert _tags("at foo") == "foo"
+
+
+def test_the_meta_tag_list_matches_the_browser() -> None:
+    source = (Path(__file__).resolve().parents[2]
+              / "app/static/js/modules/mode-manager/services/tag-syntax-service.js").read_text(encoding="utf-8")
+    block = re.search(r"const KNOWN_META_TAGS = new Set\(\[(.*?)\]\);", source, re.DOTALL)
+    assert block is not None
+    assert set(re.findall(r"'(@[^']+)'", block.group(1))) == set(KNOWN_META_TAGS)
+
+
+def test_tags_dictated_alone_into_a_note_match_a_one_word_tag() -> None:
+    # "Start tags, scratch pad." pasted into a note: the words after the phrase.
+    assert _clean("scratch pad.", target="tags", current="python", tags={"scratchpad": 4}) == "scratchpad"

@@ -1,0 +1,69 @@
+{
+  "schema_version": 3,
+  "id": "help-output-dictation-meta-tag",
+  "description": "Explaining what \"at to do\" does when dictating uses the dictation help.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What happens if I say 'at to do' when dictating tags?"
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": [
+          {
+            "topics": [
+              "dictation"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "view_overview",
+      "search_view_notes",
+      "read_view_notes",
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Explain that \"at\" before the name of a built-in meta tag becomes that meta tag, so \"at to do\" gives @todo. Mentioning that \"at\" is otherwise ignored is optional. Do not invent meta tags beyond MetaList's built-in ones or claim \"at\" turns any word into a meta tag."
+      }
+    ],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "source": "synthetic, 2026-10-06: dictation help topic (help-dictation.md)"
+  }
+}

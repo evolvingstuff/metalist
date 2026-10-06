@@ -6,7 +6,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
-import { handleDictationPasteEvent, isDictationRawInsertInProgress } from '../services/dictation-paste-service.js';
+import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 const moduleState = ApplicationState.createFields('input-events', {
     lastKeyPressed: null,
@@ -133,6 +133,7 @@ function handleInput(event) {
             throw new Error(`Tag bar input fired while not editing note ${noteId}`);
         }
 
+        noteDictationEditSeen();
         if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
         enforceTagBarInputElement(tagBarInput);
         ensureEditingCaretVisible(tagBarInput);
@@ -159,6 +160,7 @@ function handleInput(event) {
 			return; 
 		}
 
+        noteDictationEditSeen();
         if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
 
         ensureEditingCaretVisible(noteContent);

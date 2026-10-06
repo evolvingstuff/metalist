@@ -52,6 +52,9 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal.js';
+import { DictationSettingsModal } from '../modals/dictation-settings-modal.js';
+import { DEFAULT_DICTATION_TAG_PHRASE, DICTATION_TAG_PHRASE_PREFERENCE } from '../mode-manager/services/dictation-note-paste.js';
+import { receiveDictationTagPhrase } from '../mode-manager/services/dictation-paste-service.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
@@ -347,6 +350,7 @@ class CommandPaletteController {
         this._versionInfoModal = null;
         this._noteLayoutAppearanceModal = null;
         this._visualCuesModal = null;
+        this._dictationSettingsModal = null;
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
         this._aiAgentSettingsModal = null;
@@ -421,6 +425,7 @@ class CommandPaletteController {
                 openVersionInfo: this.openVersionInfo.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
                 openVisualCues: this.openVisualCues.bind(this),
+                openDictationSettings: this.openDictationSettings.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
                 getIsUntaggedView: this.getIsUntaggedView.bind(this),
@@ -563,6 +568,8 @@ class CommandPaletteController {
 
         const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
+
+        receiveDictationTagPhrase(this._dictationTagPhrase());
 
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
@@ -2190,7 +2197,9 @@ class CommandPaletteController {
         if (!this._isOpen || id === 'command_palette') return;
         const index = this._getVisibleMatches().findIndex((entry) => entry.id === id);
         if (index < 0) throw new Error(`Missing palette destination: ${id}`);
-        this._previousSelection = { query: '', selectedIndex: index };
+        // Highlighting the same row as last time is not a state change.
+        const selection = { query: '', selectedIndex: index };
+        if (!stateValuesEqual(this._previousSelection, selection)) this._previousSelection = selection;
         this._render();
         const row = this._elements.results.querySelector('.selected');
         if (row) row.scrollIntoView({ block: 'nearest' });
@@ -2426,6 +2435,28 @@ class CommandPaletteController {
             );
         }
         await this._visualCuesModal.open();
+    }
+
+    _dictationTagPhrase() {
+        const stored = this._preferences.getRaw(DICTATION_TAG_PHRASE_PREFERENCE);
+        if (stored === null) {
+            return DEFAULT_DICTATION_TAG_PHRASE;
+        }
+        return stored;
+    }
+
+    async openDictationSettings() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openDictationSettings');
+        if (!isReady) {
+            return;
+        }
+        if (this._dictationSettingsModal === null) {
+            this._dictationSettingsModal = new DictationSettingsModal(
+                () => this._dictationTagPhrase(),
+                (phrase) => this.applyPreference(DICTATION_TAG_PHRASE_PREFERENCE, phrase),
+            );
+        }
+        await this._dictationSettingsModal.open();
     }
 
     async openAiAgentSettings(focusCloudPrivacy = false) {

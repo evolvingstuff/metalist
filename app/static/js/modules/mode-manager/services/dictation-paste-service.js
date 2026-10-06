@@ -1,6 +1,9 @@
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { padForInsertion } from './dictation-paste-padding.js';
+import { DEFAULT_DICTATION_TAG_PHRASE, isValidDictationTagPhrase, splitDictatedNotePaste } from './dictation-note-paste.js';
+import { validateAndRenderTagBar } from './tag-bar-service.js';
+import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
 // Pasting into the search bar or the tag bar turns dictated text (for example
 // from Superwhisper: "Neural network, neural network. Neural-Dash Network.")
@@ -12,7 +15,21 @@ import { padForInsertion } from './dictation-paste-padding.js';
 // as two native edits: one Cmd+Z brings back exactly what was pasted.
 const moduleState = ApplicationState.createFields('dictation-paste-service', {
     rawInsertInProgress: false,
+    // In a paste into a note, this phrase starts the tags (Dictation settings).
+    tagPhrase: DEFAULT_DICTATION_TAG_PHRASE,
+    // The last paste into a note that added tags, so one undo also removes them:
+    // { noteId, tagBarBefore, tagBarAfter, contentInserted }. Any later edit ends it.
+    notePasteUndo: null,
+    // An edit happened after a note paste started (its tags arrive later).
+    editedSinceNotePaste: false,
 });
+
+export function receiveDictationTagPhrase(phrase) {
+    if (!isValidDictationTagPhrase(phrase)) {
+        throw new Error(`Invalid dictation tag phrase: ${phrase}`);
+    }
+    if (moduleState.tagPhrase !== phrase) moduleState.tagPhrase = phrase;
+}
 
 // True while the pasted text is being inserted as is: input handlers leave it
 // alone (no enforcement rewrite, which would break native undo, and no search).
@@ -26,7 +43,7 @@ function requireTarget(target) {
     }
 }
 
-function insertAsNativeEdit(input, text) {
+function insertAsNativeEdit(text) {
     let inserted;
     if (text === '') {
         inserted = document.execCommand('delete', false);
@@ -66,10 +83,10 @@ export async function pasteDictatedText(input, target, pastedText) {
     const rawPadded = padForInsertion(raw, textBefore, textAfter);
     // A failed insert throws (fatal), so the flag needs no other reset.
     moduleState.rawInsertInProgress = true;
-    insertAsNativeEdit(input, rawPadded);
+    insertAsNativeEdit(rawPadded);
     moduleState.rawInsertInProgress = false;
     input.setSelectionRange(insertStart, insertStart + rawPadded.length);
-    insertAsNativeEdit(input, padForInsertion(response.text, textBefore, textAfter));
+    insertAsNativeEdit(padForInsertion(response.text, textBefore, textAfter));
 }
 
 // Paste listener for the search input and the tag bar input.
@@ -84,4 +101,82 @@ export function handleDictationPasteEvent(event, target) {
     }
     event.preventDefault();
     void pasteDictatedText(event.target, target, pastedText);
+}
+
+// Any edit in a note or its tag bar: an undo is no longer about the last paste.
+export function noteDictationEditSeen() {
+    if (!moduleState.editedSinceNotePaste) moduleState.editedSinceNotePaste = true;
+    if (moduleState.notePasteUndo !== null) moduleState.notePasteUndo = null;
+}
+
+// A paste into the note being edited whose text holds the tag phrase ("start
+// tags"): the text before it is inserted as one native edit, the text after it becomes
+// tags added to the tag bar. Returns false (leaving the paste alone) otherwise.
+export function handleDictatedNotePaste(event, noteElement, plainText) {
+    if (!(noteElement instanceof HTMLElement) || typeof plainText !== 'string') {
+        throw new TypeError('handleDictatedNotePaste requires the note element and pasted text');
+    }
+    const split = splitDictatedNotePaste(plainText, moduleState.tagPhrase);
+    if (split === null) {
+        return false;
+    }
+    event.preventDefault();
+    const contentInserted = split.content !== '';
+    if (contentInserted) {
+        insertAsNativeEdit(split.content);
+    }
+    if (moduleState.editedSinceNotePaste) moduleState.editedSinceNotePaste = false;
+    if (moduleState.notePasteUndo !== null) moduleState.notePasteUndo = null;
+    if (split.tagText !== '') {
+        void addDictatedTags(noteElement, split.tagText, contentInserted);
+    }
+    return true;
+}
+
+async function addDictatedTags(noteElement, tagText, contentInserted) {
+    const tagBar = noteElement.querySelector('.note-tag-bar-input');
+    if (!(tagBar instanceof HTMLInputElement)) {
+        throw new Error('The note being edited has no tag bar');
+    }
+    const response = await NotesAPI.cleanDictationPaste(tagText, 'tags', tagBar.value);
+    if (!response || typeof response.text !== 'string') {
+        throw new Error('Dictation paste cleanup returned no text');
+    }
+    if (response.text === '') {
+        return;
+    }
+    const tagBarBefore = tagBar.value;
+    tagBar.value = tagBarBefore + padForInsertion(response.text, tagBarBefore, '');
+    validateAndRenderTagBar(noteElement);
+    if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
+    if (!ModeContext.isDirty) ModeContext.setDirty(true);
+    // Paired with the pasted text for undo only if nothing was edited meanwhile.
+    if (!moduleState.editedSinceNotePaste) {
+        moduleState.notePasteUndo = {
+            noteId: noteElement.dataset.noteId, tagBarBefore, tagBarAfter: tagBar.value, contentInserted,
+        };
+    }
+}
+
+// Cmd/Ctrl+Z right after such a paste: put the tag bar back as it was. Returns
+// true when the undo is complete (the paste inserted no text); otherwise the
+// note's own undo then removes the pasted text.
+export function undoDictatedNotePasteTags(event) {
+    const link = moduleState.notePasteUndo;
+    if (link === null || !ModeContext.isEditing || ModeContext.currentNoteId !== link.noteId) {
+        return false;
+    }
+    moduleState.notePasteUndo = null;
+    const noteElement = document.querySelector(`[data-note-id="${link.noteId}"]`);
+    const tagBar = noteElement.querySelector('.note-tag-bar-input');
+    if (tagBar.value !== link.tagBarAfter) {
+        return false;
+    }
+    tagBar.value = link.tagBarBefore;
+    validateAndRenderTagBar(noteElement);
+    if (link.contentInserted) {
+        return false;
+    }
+    event.preventDefault();
+    return true;
 }

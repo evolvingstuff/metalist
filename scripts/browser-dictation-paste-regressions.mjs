@@ -48,6 +48,41 @@ function undo(page) {
   });
 }
 
+// The real Cmd/Ctrl+Z shortcut: MetaList's own handler sees it and the browser
+// runs its native undo (on macOS synthetic keys need the editing command).
+async function undoShortcut(page) {
+  if (process.platform === 'darwin') {
+    await page.keyboard.down('Meta');
+    await page.keyboard.down('z', {commands: ['undo']});
+    await page.keyboard.up('z');
+    await page.keyboard.up('Meta');
+    return;
+  }
+  await page.keyboard.down('Control');
+  await page.keyboard.press('z');
+  await page.keyboard.up('Control');
+}
+
+function noteText(page, noteId) {
+  return page.evaluate(noteId => document.querySelector(`[data-note-id="${noteId}"] .note-content`).textContent, noteId);
+}
+
+// Synthetic paste into the note's content at the end of its text.
+function pasteIntoNote(page, noteId, text) {
+  return page.evaluate(({noteId, text}) => {
+    const content = document.querySelector(`[data-note-id="${noteId}"] .note-content`);
+    content.focus();
+    const range = document.createRange();
+    range.selectNodeContents(content.lastElementChild);
+    range.collapse(false);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    content.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+  }, {noteId, text});
+}
+
 function fatalText(page) {
   return page.evaluate(() => {
     const overlay = document.getElementById('fatal-error-overlay');
@@ -101,6 +136,30 @@ export async function checkDictationPaste(page) {
     await undo(page);
     // The tag bar's live clean-up drops the comma, as it does when typing one.
     await waitForValue(page, tagBar, 'neural-network python Neural network transformers.', 'tag bar paste: one undo restores the pasted text');
+    // Back to the original tags for the next part (as if typed).
+    await page.evaluate(selector => {
+      const input = document.querySelector(selector);
+      input.value = 'neural-network python';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+    }, tagBar);
+
+    // Note content: the text before "start tags" goes into the note, the words
+    // after it into the tag bar; one undo removes both.
+    const textBefore = await noteText(page, noteId);
+    await pasteIntoNote(page, noteId, ' More text. Start tags. GPT, transformer.');
+    await waitForValue(page, tagBar, 'neural-network python GPT transformer', 'note paste: the words after the tag phrase become tags');
+    assert.equal(await noteText(page, noteId), `${textBefore} More text.`, 'note paste: the text before the tag phrase goes into the note');
+    await page.focus(`[data-note-id="${noteId}"] .note-content`);
+    await undoShortcut(page);
+    await waitForValue(page, tagBar, 'neural-network python', 'note paste: one undo removes the added tags');
+    assert.equal(await noteText(page, noteId), textBefore, 'note paste: the same undo removes the pasted text');
+    // Only tags: the note's text is untouched and one undo removes the tags.
+    await pasteIntoNote(page, noteId, 'Start tags LLM');
+    await waitForValue(page, tagBar, 'neural-network python LLM', 'note paste: only tags');
+    assert.equal(await noteText(page, noteId), textBefore, 'note paste: no text added when only tags were dictated');
+    await undoShortcut(page);
+    await waitForValue(page, tagBar, 'neural-network python', 'note paste: undo removes tags pasted alone');
+    assert.equal(await noteText(page, noteId), textBefore, 'note paste: undoing tags pasted alone leaves the text');
     await page.keyboard.press('Escape');
     await idle(page);
     assert.equal(await fatalText(page), '', 'dictation paste: no fatal error');

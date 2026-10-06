@@ -72,7 +72,7 @@ Searching for quote characters without escaping:
 - The verifier actively rewrites the input while typing (cursor/selection is preserved).
 
 ## Pasting Dictated Text
-- Pasting (never typing) cleans up dictated text, for example from Superwhisper: `Neural network, neural network. Neural-Dash Network.` becomes the existing tag `neural-network`. Punctuation and filler words are dropped, spoken "dash"/"hyphen"/"underscore"/"slash" join words, the longest run of words matching an existing tag becomes that tag (spelled as used most often), "or" becomes `OR`, "not" and "minus" exclude the next tag, and "quote … end quote" becomes a text search. Words matching no tag are dropped. A spoken word that is a tag stays that tag. One undo restores the pasted text. Full rules: `docs/ui/dictation-paste.md`.
+- Pasting (never typing) dictated text, for example from Superwhisper, turns it into tags: "neural network not python" becomes `neural-network -python`. The full rules are in the dictation help topic.
 
 ## Completeness + Warnings
 The verifier produces:

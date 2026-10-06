@@ -10,6 +10,9 @@ described case by case in docs/ui/dictation-paste.md:
 - "quote … end quote" (or quote marks) marks a phrase;
 - the longest run of words matching an existing tag becomes that tag, matched
   ignoring case and treating space - _ . / alike, spelled as used most often;
+  words also match a tag written as one word ("to do" -> `todo`), joiners first;
+- "at" (or a typed @) before words naming a built-in meta tag is that meta tag
+  ("at to do" -> `@todo`); otherwise "at" is filler;
 - filler words are dropped unless they are tags; repeats and tags already in
   the field are not added again;
 - search: unknown words are dropped, "or" becomes OR and "not"/"minus" exclude
@@ -25,7 +28,18 @@ import re
 from app.config import TAG_SUGGESTION_CONNECTORS
 
 
-FILLER_WORDS = frozenset({"a", "an", "and", "the", "tag", "tags", "comma", "period", "um", "uh"})
+FILLER_WORDS = frozenset({"a", "an", "and", "at", "the", "tag", "tags", "comma", "period", "um", "uh"})
+# The built-in meta tags (KNOWN_META_TAGS in tag-syntax-service.js; a unit test
+# keeps the two lists equal).
+KNOWN_META_TAGS = (
+    "@footnote", "@monospace", "@heading", "@red", "@green", "@blue", "@grey",
+    "@highlighter", "@bold", "@italic", "@strikethrough", "@serif", "@copyable",
+    "@list-bulleted", "@list-numbered", "@username", "@password", "@email",
+    "@todo", "@done", "@markdown", "@llm", "@latex", "@shell", "@json", "@csv",
+)
+_META_AT_WORDS = frozenset({"at", "@"})
+# Meta tag names are at most this many words when spoken ("list bulleted").
+_MAX_META_WORDS = 3
 _SEARCH_OR_WORDS = frozenset({"or"})
 _SEARCH_NOT_WORDS = frozenset({"not", "minus"})
 _SPOKEN_JOINERS = {"dash": "-", "hyphen": "-", "underscore": "_", "slash": "/"}
@@ -47,6 +61,14 @@ _QUOTED_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _EQUIVALENCE_SEPARATOR_RE = re.compile(f"[{re.escape(TAG_SUGGESTION_CONNECTORS)}\\s]+")
+_NOT_LETTER_OR_DIGIT_RE = re.compile(r"[^0-9a-z]+")
+
+
+@dataclass(frozen=True)
+class _TagIndex:
+    """Existing tags by equivalence key, and by their letters and digits only."""
+    by_key: dict[str, str]
+    by_compact_key: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -77,7 +99,10 @@ def clean_dictated_paste(
         raise ValueError(f"Unknown dictation paste target: {target!r}")
     if not isinstance(text, str) or not isinstance(current_value, str):
         raise TypeError("text and current_value must be strings")
-    tag_index = _tag_index(existing_tag_frequencies)
+    tag_index = _TagIndex(
+        by_key=_most_used_spelling(existing_tag_frequencies, _equivalence_key),
+        by_compact_key=_most_used_spelling(existing_tag_frequencies, _compact_key),
+    )
     items = _items(text, target=target)
     if target == "search":
         return _search_text(items, tag_index=tag_index, current_value=current_value)
@@ -88,15 +113,24 @@ def _equivalence_key(text: str) -> str:
     return _EQUIVALENCE_SEPARATOR_RE.sub(" ", text.casefold()).strip()
 
 
-def _tag_index(existing_tag_frequencies: Mapping[str, int]) -> dict[str, str]:
-    """Equivalence key -> the existing spelling used most often."""
+def _compact_key(text: str) -> str:
+    """Letters and digits only: "to do", "to-do" and "todo" are all "todo"."""
+    return _NOT_LETTER_OR_DIGIT_RE.sub("", text.casefold())
+
+
+_META_TAGS_BY_COMPACT_KEY = {_compact_key(tag): tag for tag in KNOWN_META_TAGS}
+assert len(_META_TAGS_BY_COMPACT_KEY) == len(KNOWN_META_TAGS)
+
+
+def _most_used_spelling(existing_tag_frequencies: Mapping[str, int], key_of) -> dict[str, str]:
+    """Key -> the existing spelling used most often."""
     best: dict[str, tuple[str, int]] = {}
     for tag, frequency in existing_tag_frequencies.items():
         if not isinstance(tag, str) or tag == "":
             raise TypeError("existing tag names must be non-empty strings")
         if not isinstance(frequency, int) or frequency < 0:
             raise TypeError("existing tag frequencies must be non-negative integers")
-        key = _equivalence_key(tag)
+        key = key_of(tag)
         if key == "":
             continue
         if key not in best:
@@ -142,15 +176,41 @@ def _words(chunk: str, *, target: str) -> list[_Word | _Syntax]:
     return words
 
 
-def _match_at(items: list, start: int, tag_index: dict[str, str]) -> tuple[str, int] | None:
-    """The existing tag spelled by the longest run of words from `start`, and its length."""
-    run_end = start
-    while run_end < len(items) and isinstance(items[run_end], _Word):
-        run_end += 1
-    for end in range(run_end, start, -1):
-        key = _equivalence_key(" ".join(item.text for item in items[start:end]))
-        if key in tag_index:
-            return tag_index[key], end - start
+def _word_run_end(items: list, start: int) -> int:
+    end = start
+    while end < len(items) and isinstance(items[end], _Word):
+        end += 1
+    return end
+
+
+def _match_at(items: list, start: int, tag_index: _TagIndex) -> tuple[str, int] | None:
+    """The existing tag spelled by the longest run of words from `start`, and its
+    length; at each length, a match keeping the joiners wins over one without."""
+    for end in range(_word_run_end(items, start), start, -1):
+        spoken = " ".join(item.text for item in items[start:end])
+        key = _equivalence_key(spoken)
+        if key in tag_index.by_key:
+            return tag_index.by_key[key], end - start
+        compact = _compact_key(spoken)
+        if compact in tag_index.by_compact_key:
+            return tag_index.by_compact_key[compact], end - start
+    return None
+
+
+def _meta_tag_at(items: list, start: int) -> tuple[str, int] | None:
+    """"at to do" / "@ to do" / "@todo" -> ("@todo", words used); None otherwise."""
+    word = items[start].text
+    if word.casefold() in _META_AT_WORDS:
+        first, named_from = [], start + 1
+    elif word.startswith("@") and len(word) > 1:
+        first, named_from = [word[1:]], start + 1
+    else:
+        return None
+    run_end = min(_word_run_end(items, named_from), named_from + _MAX_META_WORDS)
+    for end in range(run_end, named_from - 1, -1):
+        compact = _compact_key("".join(first + [item.text for item in items[named_from:end]]))
+        if compact in _META_TAGS_BY_COMPACT_KEY:
+            return _META_TAGS_BY_COMPACT_KEY[compact], end - start
     return None
 
 
@@ -176,7 +236,7 @@ def _quoted_search_text(phrase: str) -> str:
     return '"' + phrase.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _search_text(items: list, *, tag_index: dict[str, str], current_value: str) -> str:
+def _search_text(items: list, *, tag_index: _TagIndex, current_value: str) -> str:
     # Elements: a term, "OR", "NOT" (exclude the next term) or "DROP" (an
     # unknown word, which also cancels a pending NOT).
     elements: list[str] = []
@@ -191,7 +251,9 @@ def _search_text(items: list, *, tag_index: dict[str, str], current_value: str) 
             elements.append(_quoted_search_text(item.text))
             index += 1
             continue
-        match = _match_at(items, index, tag_index)
+        match = _meta_tag_at(items, index)
+        if match is None:
+            match = _match_at(items, index, tag_index)
         if match is not None:
             elements.append(match[0])
             index += match[1]
@@ -229,20 +291,23 @@ def _search_text(items: list, *, tag_index: dict[str, str], current_value: str) 
     return " OR ".join(" ".join(clause) for clause in clauses if clause)
 
 
-def _tag_bar_text(items: list, *, tag_index: dict[str, str], current_value: str) -> str:
+def _tag_bar_text(items: list, *, tag_index: _TagIndex, current_value: str) -> str:
     tags: list[str] = []
     present = {_equivalence_key(tag) for tag in current_value.split()}
     index = 0
     while index < len(items):
         item = items[index]
         if isinstance(item, _Phrase):
-            key = _equivalence_key(item.text)
             tag = _new_tag(item.text)
-            if key in tag_index:
-                tag = tag_index[key]
+            if _equivalence_key(item.text) in tag_index.by_key:
+                tag = tag_index.by_key[_equivalence_key(item.text)]
+            elif _compact_key(item.text) in tag_index.by_compact_key:
+                tag = tag_index.by_compact_key[_compact_key(item.text)]
             index += 1
         else:
-            match = _match_at(items, index, tag_index)
+            match = _meta_tag_at(items, index)
+            if match is None:
+                match = _match_at(items, index, tag_index)
             if match is not None:
                 tag = match[0]
                 index += match[1]
