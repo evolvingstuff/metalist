@@ -440,8 +440,8 @@ class AgentLoopMixin:
         self, *, session_key: str, urls: tuple[str, ...], approved: list[bool], input_tokens: int,
     ):
         assert urls
-        with bulk_operation_guard.acquire(session_key):
-            question_id, answer = bulk_operation_guard.question(("yes", "no"))
+        # Opening web pages changes no notes: the question blocks nothing else.
+        with bulk_operation_guard.ask(session_key, ("yes", "no")) as (question_id, answer):
             yield self._status_event("confirmation", "started", "Waiting for your confirmation",
                                      approx_input_tokens=input_tokens)
             yield {"type": "bulk_question", "question_id": question_id, "kind": "change_confirmation",

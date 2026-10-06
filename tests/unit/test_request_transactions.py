@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
 from app.api.deps import get_db
+from app.api.transactions import _check_bulk_guard
+from app.services.bulk_operation import bulk_operation_guard
 from app.db.notes_sql import fetch_note, insert_note
 from app.db.session import begin_request_transaction, begin_writer, get_request_session
 from app.models.database import SafeSession
@@ -93,3 +96,14 @@ def test_get_db_and_begin_writer_share_request_transaction_session(
             session.close()
     finally:
         SafeSession.use_file_db()
+
+
+def test_preferences_can_be_saved_while_a_bulk_operation_runs() -> None:
+    # Saving preferences (e.g. the chat panel width while dragging its divider)
+    # never touches notes, and every operation reads preferences once when it
+    # starts; changing notes is still refused until the operation ends.
+    with bulk_operation_guard.acquire("session-1"):
+        _check_bulk_guard("put_client_preferences")
+        with pytest.raises(HTTPException) as refused:
+            _check_bulk_guard("save_note")
+    assert refused.value.status_code == 409

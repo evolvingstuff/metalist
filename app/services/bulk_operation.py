@@ -20,7 +20,9 @@ class BulkOperationGuard:
         self.session_key = ""
         self.active_mutations = 0
         self._mutation_lock = Lock()
-        self.questions: dict[str, tuple[asyncio.Future, frozenset[str]]] = {}
+        # question id -> (answer, choices, asking session, owning operation id;
+        # "" for a question that blocks nothing, see ask()).
+        self.questions: dict[str, tuple[asyncio.Future, frozenset[str], str, str]] = {}
 
     @contextmanager
     def acquire(self, session_key: str):
@@ -33,9 +35,11 @@ class BulkOperationGuard:
             yield self.operation_id
         finally:
             with self.lock, self._mutation_lock:
-                for future, _ in self.questions.values():
-                    future.get_loop().call_soon_threadsafe(future.cancel)
-                self.questions.clear()
+                operation_id = self.operation_id
+                for question_id, (future, _, _, owner) in list(self.questions.items()):
+                    if owner == operation_id:
+                        future.get_loop().call_soon_threadsafe(future.cancel)
+                        del self.questions[question_id]
                 self.operation_id = ""
                 self.session_key = ""
 
@@ -53,18 +57,38 @@ class BulkOperationGuard:
                 assert self.active_mutations >= 0
 
     def question(self, choices: tuple[str, ...]) -> tuple[str, asyncio.Future]:
+        """A question inside the running operation, which blocks other changes."""
         with self._mutation_lock:
             assert self.operation_id
             question_id = str(uuid4())
             future = asyncio.get_running_loop().create_future()
-            self.questions[question_id] = (future, frozenset(choices))
+            self.questions[question_id] = (future, frozenset(choices), self.session_key, self.operation_id)
             return question_id, future
+
+    @contextmanager
+    def ask(self, session_key: str, choices: tuple[str, ...]):
+        """A question for a step that only reads (a summary, opening web pages): it
+        blocks no other change while it waits. Yields (question id, answer)."""
+        assert session_key and choices
+        with self._mutation_lock:
+            question_id = str(uuid4())
+            future = asyncio.get_running_loop().create_future()
+            self.questions[question_id] = (future, frozenset(choices), session_key, "")
+        try:
+            yield question_id, future
+        finally:
+            with self._mutation_lock:
+                # Already gone when it was answered.
+                if question_id in self.questions:
+                    del self.questions[question_id]
+            if not future.done():
+                future.cancel()
 
     def answer(self, session_key: str, question_id: str, value: str):
         with self._mutation_lock:
-            if session_key != self.session_key or question_id not in self.questions:
+            if question_id not in self.questions or self.questions[question_id][2] != session_key:
                 raise ValueError("This question is no longer pending")
-            future, choices = self.questions[question_id]
+            future, choices, _, _ = self.questions[question_id]
             if value not in choices or future.done():
                 raise ValueError("Invalid or already submitted answer")
             del self.questions[question_id]

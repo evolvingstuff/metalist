@@ -125,6 +125,8 @@ def assert_mutation_routes_wrapped(app: FastAPI) -> None:
 def _check_bulk_guard(endpoint_name: str) -> None:
     if endpoint_name in _STORAGE_TRANSITIONS and bulk_operation_guard.active_mutations > 1:
         raise HTTPException(status_code=409, detail="Wait for the current request to finish before changing namespace storage.")
-    permitted = {"answer_bulk_question", "preview_cloud_privacy", "put_ai_debug_details"}
+    # Preferences never touch notes, and every operation reads them once when it
+    # starts, so saving them (e.g. the chat panel width) cannot disturb it.
+    permitted = {"answer_bulk_question", "preview_cloud_privacy", "put_ai_debug_details", "put_client_preferences"}
     if bulk_operation_guard.operation_id and endpoint_name not in permitted:
         raise HTTPException(status_code=409, detail="A bulk operation is running. Wait or cancel it before changing the app.")

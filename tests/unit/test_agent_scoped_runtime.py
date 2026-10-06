@@ -997,3 +997,33 @@ def test_single_payload_summaries_send_the_summary_skill(
     assert inference.summary_batch_calls == []
     assert _active_skill_ids(inference.final_messages) == ["staged_summary_v1"]
 
+
+
+def test_a_summary_never_blocks_other_changes() -> None:
+    # A summary only reads notes: while its question waits and while its
+    # batches run, editing notes (or anything else) stays allowed.
+    inference = _FakeInference()
+    blocked_while_running: list[str] = []
+
+    async def collect() -> None:
+        async for event in _runtime(inference).stream_agent(
+            tagging_run=None,
+            session_key="session-1",
+            base_url="https://api.openai.com/v1",
+            selected_model="gpt-5.6-sol",
+            thinking_level="off",
+            canonical_messages=[{"role": "user", "content": "Summarize all of these notes."}],
+            prompts=DEFAULT_AGENT_PROMPTS,
+            skills=DEFAULT_AGENT_SKILLS,
+            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=900),
+            web_settings=DEFAULT_AGENT_WEB_SETTINGS,
+            frozen_scope=_multi_batch_summary_snapshot(),
+        ):
+            if bulk_operation_guard.operation_id:
+                blocked_while_running.append(str(event["type"]))
+            if event["type"] == "bulk_question":
+                bulk_operation_guard.answer("session-1", event["question_id"], "summarize_all")
+
+    asyncio.run(collect())
+    assert blocked_while_running == []
+    assert inference.summary_batch_calls

@@ -228,10 +228,10 @@ class AgentRuntime(AgentLoopMixin):
             ).retain_root_prefix_within_token_budget(
                 reserved_approximate_tokens=selected_note_tokens,
             ).retained_result_tree_count
-            with bulk_operation_guard.acquire(run.session_key):
-                question_id, answer = bulk_operation_guard.question(
-                    ("summarize_all", "use_prefix", "cancel")
-                )
+            # A summary only reads notes: its question blocks no other change.
+            with bulk_operation_guard.ask(
+                run.session_key, ("summarize_all", "use_prefix", "cancel"),
+            ) as (question_id, answer):
                 # Report scope size against the evidence budget, as tag proposals do.
                 budget_ratio = (
                     (batch_plan.approximate_token_count + selected_note_tokens)
