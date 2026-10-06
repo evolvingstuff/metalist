@@ -7,7 +7,6 @@ import {
     collapseCompletedActivityPairs,
     formatOpenAiCostUsd,
     selectPersistentNonDiagnosticActivities,
-    splitSearchActivityLabel,
     parseAiChatNdjsonBuffer,
     synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
@@ -138,13 +137,13 @@ test('completed search replaces its live row with the result count and exact que
     const activities = [
         {
             sequence: 1,
-            action: 'search_notes',
+            action: 'search_view_notes',
             status: 'started',
             label: 'Searching notes · page 1 · "Pydantic AI"',
         },
         {
             sequence: 2,
-            action: 'search_notes',
+            action: 'search_view_notes',
             status: 'completed',
             label: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3 · "Pydantic AI"',
         },
@@ -156,13 +155,6 @@ test('completed search replaces its live row with the result count and exact que
 
 test('model wait response and validation phases update one attempt panel', () => {
     const activities = [
-        {
-            sequence: 0,
-            action: 'planning',
-            status: 'started',
-            label: 'Preparing action selection',
-            approx_input_tokens: 1200,
-        },
         {
             sequence: 1,
             action: 'model_request',
@@ -181,21 +173,21 @@ test('model wait response and validation phases update one attempt panel', () =>
             sequence: 3,
             action: 'validation',
             status: 'completed',
-            label: 'Structured search query validated',
+            label: 'Structured reply validated',
             approx_input_tokens: 1300,
         },
         {
             sequence: 4,
-            action: 'search_notes',
+            action: 'search_view_notes',
             status: 'started',
-            label: 'Searching notes · page 1 · foo',
+            label: 'Searching your view',
             approx_input_tokens: 1300,
         },
     ];
 
     assert.deepEqual(collapseCompletedActivityPairs(activities), [
+        activities[2],
         activities[3],
-        activities[4],
     ]);
 });
 
@@ -291,48 +283,9 @@ test('response retry updates the existing lifecycle panel', () => {
 });
 
 
-test('search activity labels expose the query as a separate display part', () => {
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Searching notes · page 1 · foo -"lorem ipsum"',
-    }), {
-        statusLabel: 'Searching notes · page 1',
-        searchQuery: 'foo -"lorem ipsum"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3 · foo -"lorem ipsum"',
-    }), {
-        statusLabel: 'Search complete · 2 of 8 result trees · 5 of 20 matching notes · page 1 of 3',
-        searchQuery: 'foo -"lorem ipsum"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Search page unavailable · page 7 of 6 · foo',
-    }), {
-        statusLabel: 'Search page unavailable · page 7 of 6',
-        searchQuery: 'foo',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Skipped duplicate search · page 1 · foo OR "foo"',
-    }), {
-        statusLabel: 'Skipped duplicate search · page 1',
-        searchQuery: 'foo OR "foo"',
-    });
-    assert.deepEqual(splitSearchActivityLabel({
-        action: 'search_notes',
-        label: 'Selected action · Search notes · The answer depends on the notes.',
-    }), {
-        statusLabel: 'Selected action · Search notes · The answer depends on the notes.',
-        searchQuery: '',
-    });
-});
-
-
 test('NDJSON parser retains incomplete tail while returning complete stream events', () => {
     const parsed = parseAiChatNdjsonBuffer(
-        '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0,"duration_ms":1250.5}\n'
+        '{"type":"action_status","action":"search_view_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0,"duration_ms":1250.5}\n'
         + '{"type":"thinking_delta","text":"hmm","rendered_text":"<p>hmm</p>"}\n'
         + '{"type":"content_delta","text":"Hi","rendered_text":"<p>Hi',
     );
@@ -340,7 +293,7 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
     assert.deepEqual(parsed.events, [
         {
             type: 'action_status',
-            action: 'search_notes',
+            action: 'search_view_notes',
             status: 'started',
             label: 'Searching notes',
             approx_input_tokens: 1234,
@@ -385,19 +338,19 @@ test('NDJSON parser retains incomplete tail while returning complete stream even
 test('NDJSON parser rejects malformed action status events', () => {
     assert.throws(
         () => parseAiChatNdjsonBuffer(
-            '{"type":"action_status","action":"search_notes","status":"started"}\n',
+            '{"type":"action_status","action":"search_view_notes","status":"started"}\n',
         ),
         /action_status requires label/,
     );
     assert.throws(
         () => parseAiChatNdjsonBuffer(
-            '{"type":"action_status","action":"search_notes","status":"waiting","label":"Searching notes"}\n',
+            '{"type":"action_status","action":"search_view_notes","status":"waiting","label":"Searching notes"}\n',
         ),
         /action_status status is invalid/,
     );
     assert.throws(
         () => parseAiChatNdjsonBuffer(
-            '{"type":"action_status","action":"search_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0}\n',
+            '{"type":"action_status","action":"search_view_notes","status":"started","label":"Searching notes","approx_input_tokens":1234,"output_tokens_received":0}\n',
         ),
         /action_status requires non-negative finite duration_ms/,
     );

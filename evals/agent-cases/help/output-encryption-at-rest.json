@@ -1,0 +1,91 @@
+{
+  "schema_version": 3,
+  "id": "help-output-encryption-at-rest",
+  "description": "is everything encrypted at rest?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "is everything encrypted at rest?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "coverage",
+        "instruction": "Give a direct conditional answer. Explain protected sensitive content including notes/tags AND attachments AND how backup protection follows the snapshot state, rather than saying these facts are undocumented."
+      },
+      {
+        "id": "boundaries",
+        "instruction": "Distinguish sensitive-payload encryption from every byte/metadata being encrypted, give concrete readable metadata examples, and explicitly explain passwordless plaintext storage. Do not claim to inspect the user's actual settings or imply all backups are encrypted."
+      }
+    ],
+    "reference_facts": "With namespace password protection, persisted sensitive payloads use AES-256-GCM: note bodies, accepted/proposed tags, ontology rules, attachments including titles/metadata/bytes, saved tab/search state, tag activity, reminders, cached link URLs/titles, preferences and credentials. This is field-level encryption, not every SQLite byte: identifiers, hierarchy/order, timestamps, namespace/ports, crypto metadata remain readable. Without namespace password protection, ordinary payloads are stored plaintext by MetaList. Backups preserve the encryption state at creation; protected payloads remain ciphertext, but the archive container/manifest and structural metadata are not wholly encrypted. Old plaintext backups remain plaintext. No evidence of this user's current password state is supplied."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-encryption-at-rest.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "coverage",
+          "instruction": "Give a direct conditional answer. Explain protected sensitive content including notes/tags AND attachments AND how backup protection follows the snapshot state, rather than saying these facts are undocumented."
+        },
+        {
+          "id": "boundaries",
+          "instruction": "Distinguish sensitive-payload encryption from every byte/metadata being encrypted, give concrete readable metadata examples, and explicitly explain passwordless plaintext storage. Do not claim to inspect the user's actual settings or imply all backups are encrypted."
+        }
+      ],
+      "reference_facts": "With namespace password protection, persisted sensitive payloads use AES-256-GCM: note bodies, accepted/proposed tags, ontology rules, attachments including titles/metadata/bytes, saved tab/search state, tag activity, reminders, cached link URLs/titles, preferences and credentials. This is field-level encryption, not every SQLite byte: identifiers, hierarchy/order, timestamps, namespace/ports, crypto metadata remain readable. Without namespace password protection, ordinary payloads are stored plaintext by MetaList. Backups preserve the encryption state at creation; protected payloads remain ciphertext, but the archive container/manifest and structural metadata are not wholly encrypted. Old plaintext backups remain plaintext. No evidence of this user's current password state is supplied."
+    },
+    "source": "synthetic-encryption-knowledge-regression",
+    "personal_data": false,
+    "reference_sources": [
+      "app/encryption_audit.py",
+      "app/services/encryption.py",
+      "app/services/auth_service.py",
+      "app/services/backup_service.py",
+      "docs/security/README.md",
+      "docs/security/recovery.md"
+    ]
+  }
+}

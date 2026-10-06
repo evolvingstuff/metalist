@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "id": "help-output-tagging",
+  "description": "Can I undo bulk acceptance of AI proposals? Are proposals already accepted tags?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Can I undo bulk acceptance of AI proposals? Are proposals already accepted tags?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+      }
+    ],
+    "reference_facts": "Proposals are separate from accepted tags. Successful bulk accept/remove clears undo/redo and creates no bulk undo entry. Do not promise bulk undo or execute acceptance."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-tagging.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
+        }
+      ],
+      "reference_facts": "Proposals are separate from accepted tags. Successful bulk accept/remove clears undo/redo and creates no bulk undo entry. Do not promise bulk undo or execute acceptance."
+    },
+    "source": "synthetic-metalist-help-v1",
+    "personal_data": false
+  }
+}

@@ -53,19 +53,6 @@ test('an empty note maps to its start without looping', () => {
     assert.deepEqual(match('', anchorAt('', 0)), { position: 0, exact: false });
 });
 
-test('the position cue follows only significant readjustments of edit-exit holds', async () => {
-    const { shouldShowPositionCue } = await import('../../app/static/js/modules/mode-manager/services/viewport-hold-service.js');
-    // Scrolling that keeps the place still is not displacement: no cue.
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 0 }), false);
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 40 }), false);
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: false, displacedPx: 41 }), true);
-    // A note that collapsed again is always cued.
-    assert.equal(shouldShowPositionCue({ eligible: true, approximate: true, displacedPx: 0 }), true);
-    // Entering edit mode, switching notes and band shifts are never cued.
-    assert.equal(shouldShowPositionCue({ eligible: false, approximate: true, displacedPx: 500 }), false);
-    assert.throws(() => shouldShowPositionCue({ eligible: true, approximate: false }));
-});
-
 test('findTextPosition matches a clicked list item although the source adds list markers on both sides', () => {
     // Rendered Markdown runs list items together; the source keeps "- " markers.
     const viewText = 'there is text below your caret as well as above it.A short list itemAnother list itemA final list itemThe last paragraph ends the note.';

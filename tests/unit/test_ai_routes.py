@@ -11,7 +11,6 @@ import app.api.routes.ai as ai_routes
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
-from app.services.agent.prompt_settings import SYSTEM_PROMPT_PREFERENCE_KEY
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
@@ -143,34 +142,6 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
                     "output_tokens_received": 0,
                     "duration_ms": 12.5,
             }
-    ]
-    assert http_response.headers["Cache-Control"] == "no-store"
-
-
-def test_ai_prompt_defaults_returns_packaged_prompts() -> None:
-    http_response = Response()
-
-    response = ai_routes.get_ai_prompt_defaults(
-        response=http_response,
-        token="auth-token",
-    )
-
-    assert response.system_prompt == DEFAULT_AGENT_PROMPTS.system_prompt
-    assert response.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
-    assert response.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
-    assert [skill.model_dump() for skill in response.skills] == [
-        {
-            "skill_id": skill.skill_id,
-            "title": skill.title,
-            "description": skill.description,
-            "trigger_action": skill.trigger_action,
-                "preference_key": skill.preference_key,
-                "content": skill.content,
-                "superseded_preference_keys": list(
-                    skill.superseded_preference_keys
-                ),
-        }
-        for skill in DEFAULT_AGENT_SKILLS.skills
     ]
     assert http_response.headers["Cache-Control"] == "no-store"
 
@@ -729,7 +700,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     store = AiChatSessionStore()
 
     class FakeRuntime:
-        async def stream_scoped(
+        async def stream_agent(
             self,
             *,
             session_key,
@@ -742,16 +713,15 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             retrieval_settings,
             web_settings,
             frozen_scope,
-            tag_handler,
+            tagging_run,
         ):
             assert session_key == "session-key"
             assert base_url == "https://api.openai.com/v1"
             assert selected_model == "gpt-5.6-sol"
             assert thinking_level == "low"
             assert canonical_messages == [{"role": "user", "content": "Hello"}]
-            assert prompts.system_prompt == "Custom system prompt"
-            assert prompts.final_response_prompt == DEFAULT_AGENT_PROMPTS.final_response_prompt
-            assert prompts.tool_result_prompt == DEFAULT_AGENT_PROMPTS.tool_result_prompt
+            # Instructions are packaged; a stale saved override is never used.
+            assert prompts == DEFAULT_AGENT_PROMPTS
             assert skills == DEFAULT_AGENT_SKILLS
             assert retrieval_settings.max_page_approximate_tokens == 7_000
             assert web_settings.mode == "none"
@@ -782,7 +752,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         ai_routes,
         "load_client_preferences",
         lambda *, token: {
-            SYSTEM_PROMPT_PREFERENCE_KEY: "Custom system prompt",
+            "pref.ai.prompt.system": "Custom system prompt",
             "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
         },
     )
@@ -896,7 +866,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
             return api_key
 
     class FakeRuntime:
-        async def stream_scoped(self, **arguments):
+        async def stream_agent(self, **arguments):
             assert arguments["base_url"] == "https://api.openai.com/v1"
             assert arguments["selected_model"] == "gpt-5.6-sol"
             assert arguments["thinking_level"] == "medium"
@@ -1165,7 +1135,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
     runtime_waiting = asyncio.Event()
 
     class FakeRuntime:
-        async def stream_scoped(self, **kwargs):
+        async def stream_agent(self, **kwargs):
             del kwargs
             yield {
                 "type": "action_status",
@@ -1245,7 +1215,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             )
 
     class FakeRuntime:
-        async def stream_scoped(
+        async def stream_agent(
             self,
             *,
             session_key,
@@ -1258,7 +1228,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             retrieval_settings,
             web_settings,
             frozen_scope,
-            tag_handler,
+            tagging_run,
         ):
             del session_key, base_url, selected_model, thinking_level
             del prompts, skills, retrieval_settings, web_settings, frozen_scope
@@ -1343,7 +1313,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
     store = AiChatSessionStore()
 
     class FailingRuntime:
-        async def stream_scoped(
+        async def stream_agent(
             self,
             *,
             session_key,
@@ -1356,7 +1326,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
             retrieval_settings,
             web_settings,
             frozen_scope,
-            tag_handler,
+            tagging_run,
         ):
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings, web_settings
@@ -1424,7 +1394,7 @@ def test_stream_chat_persists_data_free_diagnostic_for_internal_failure(
     fail = namespace["fail"]
 
     class FailingRuntime:
-        async def stream_scoped(self, **arguments):
+        async def stream_agent(self, **arguments):
             del arguments
             fail()
             yield

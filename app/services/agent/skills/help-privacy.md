@@ -38,7 +38,7 @@ whole-file SQLite encryption or OS full-disk encryption. Coverage includes:
 - Saved tab state (including saved search state), aggregate tag-activity payloads,
   reminders, and cached link URLs/titles.
 - UI/client preferences, command-palette usage/query tokens, backup settings,
-  prompt/skill overrides and cloud privacy settings stored in client preferences.
+  and cloud privacy settings stored in client preferences.
 - Persisted OpenAI credentials, when present in a protected namespace.
 
 Readable structural/operational metadata remains: note IDs, parent/previous/next

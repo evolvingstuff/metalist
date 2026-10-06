@@ -7,7 +7,7 @@ from fastapi import Response
 
 import app.api.routes.ai as ai_routes
 import app.services.agent.openai_inference as provider
-from app.services.agent.actions import ScopedRouteEnvelope
+from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.history import record_history
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.trace import AgentTraceStore
@@ -44,9 +44,9 @@ def test_real_instructor_records_retry_pairs_and_preserves_all_turns(monkeypatch
     def handle(request):
         body = json.loads(request.content)
         requests.append(body)
-        answer = {"kind": "respond", "reason": "Hello", "help_topics": []}
+        answer = {"findings": [{"text": "Hello", "supporting_note_ids": ["note-1"]}]}
         if len(requests) == 1:
-            answer = {"kind": "not-an-action", "reason": "invalid"}
+            answer = {"findings": [{"text": "", "supporting_note_ids": []}]}
         return response([chunk(json.dumps(answer), None, None), chunk(None, "stop", USAGE)])
 
     adapter = install_transport(monkeypatch, handle)
@@ -59,9 +59,9 @@ def test_real_instructor_records_retry_pairs_and_preserves_all_turns(monkeypatch
                 result = await adapter.infer_structured(
                     base_url=provider.OPENAI_API_BASE_URL, model="gpt-5.6-luna",
                     thinking_level="off", messages=[{"role": "user", "content": f"Hello {turn}"}],
-                    response_model=ScopedRouteEnvelope, on_progress=lambda progress: None,
+                    response_model=SummaryFindingsResult, on_progress=lambda progress: None,
                 )
-                assert json.loads(result.content)["kind"] == "respond"
+                assert json.loads(result.content)["findings"][0]["text"] == "Hello"
             traces.complete_run(session_key="a", run_id=run_id)
 
     asyncio.run(run())
@@ -107,7 +107,7 @@ def test_text_partial_failure_and_running_export_are_preserved(monkeypatch):
 def test_cancelled_structured_stream_keeps_partial_response(monkeypatch):
     class InterruptedStream(httpx.AsyncByteStream):
         async def __aiter__(self):
-            partial_chunk = chunk('{"kind":"res', None, None)
+            partial_chunk = chunk('{"find', None, None)
             yield f'data: {json.dumps(partial_chunk)}\n\n'.encode()
             raise asyncio.CancelledError()
 
@@ -123,13 +123,13 @@ def test_cancelled_structured_stream_keeps_partial_response(monkeypatch):
                 await adapter.infer_structured(
                     base_url=provider.OPENAI_API_BASE_URL, model="gpt-5.6-luna",
                     thinking_level="off", messages=[{"role": "user", "content": "Hi"}],
-                    response_model=ScopedRouteEnvelope, on_progress=lambda progress: None,
+                    response_model=SummaryFindingsResult, on_progress=lambda progress: None,
                 )
 
     asyncio.run(run())
     output = traces.export_history(session_key="a")[0][1]
     assert output["status"] == "cancelled"
-    assert output["response"]["choices"][0]["message"]["content"] == '{"kind":"res'
+    assert output["response"]["choices"][0]["message"]["content"] == '{"find'
 
 
 def test_history_endpoint_uses_authenticated_session_and_no_cache(monkeypatch):

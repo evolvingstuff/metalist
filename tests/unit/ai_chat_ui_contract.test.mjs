@@ -19,10 +19,6 @@ const SETTINGS_MODAL_URL = new URL(
     '../../app/static/js/modules/modals/ai-agent-settings-modal.js',
     import.meta.url,
 );
-const PROMPT_MODAL_URL = new URL(
-    '../../app/static/js/modules/modals/agent-prompt-editor-modal.js',
-    import.meta.url,
-);
 const COMMAND_CONTROLLER_URL = new URL(
     '../../app/static/js/modules/command-palette/command-palette-controller.js',
     import.meta.url,
@@ -68,7 +64,7 @@ const DEBUG_VIEW_URL = new URL(
     import.meta.url,
 );
 
-test('chat accepts tagging activities both live and in restored messages', () => {
+test('chat accepts agent activities both live and in restored messages', () => {
     const source = readFileSync(CONTROLLER_URL, 'utf8');
     const messageValidator = source.slice(source.indexOf('function validateMessage('),
         source.indexOf('export function captureActiveAgentScope('));
@@ -78,7 +74,7 @@ test('chat accepts tagging activities both live and in restored messages', () =>
         `${messageValidator}\n${activityValidator}\n({ validateActivity, validateMessage })`,
     );
     const activity = {
-        sequence: 1, action: 'tag_proposals', status: 'started', label: 'Suggesting tags',
+        sequence: 1, action: 'search_view_notes', status: 'started', label: 'Searching your view',
         approx_input_tokens: 100, output_tokens_received: 0, duration_ms: 0,
     };
     assert.equal(validateActivity(activity), activity);
@@ -101,14 +97,19 @@ test('chat accepts tagging activities both live and in restored messages', () =>
 });
 
 
-test('chat accepts every web activity emitted by the agent runtime', () => {
+test('chat accepts every activity the tool-using agent emits', () => {
     const source = readFileSync(CONTROLLER_URL, 'utf8');
     const activityValidator = source.slice(source.indexOf('const AI_ACTIVITY_ACTIONS'),
         source.indexOf('class AiChatPanelController'));
     const { validateActivity } = runInNewContext(
         `${activityValidator}\n({ validateActivity })`,
     );
-    for (const action of ['web_planning', 'open_web_pages']) {
+    for (const action of [
+        'provider_runtime', 'scope', 'model_context', 'agent_turn', 'lookup_metalist_help',
+        'view_overview', 'search_view_notes', 'read_view_notes', 'open_web_pages', 'open_menu',
+        'confirmation', 'tool_call_rejected', 'skill', 'model_request', 'validation', 'retry',
+        'evidence_root_prefix', 'investigation_evidence', 'investigation_sources', 'respond',
+    ]) {
         const activity = {
             sequence: 1,
             action,
@@ -119,6 +120,13 @@ test('chat accepts every web activity emitted by the agent runtime', () => {
             duration_ms: 0,
         };
         assert.equal(validateActivity(activity), activity);
+    }
+    // Names that only the removed up-front routing emitted are no longer accepted.
+    for (const action of ['planning', 'investigate_current_scope', 'metalist_help', 'web_planning']) {
+        assert.throws(() => validateActivity({
+            sequence: 1, action, status: 'started', label: action,
+            approx_input_tokens: 100, output_tokens_received: 0, duration_ms: 0,
+        }), /Unknown AI chat activity action/);
     }
 });
 
@@ -282,15 +290,13 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(\)/);
     assert.match(controller, /label\.textContent = 'Working'/);
     assert.doesNotMatch(controller, /formatCompactWorkingActivityLabel/);
-    assert.match(controller, /splitSearchActivityLabel\(activity\)/);
-    assert.match(controller, /query\.className = 'ai-chat-activity-query'/);
+    assert.match(controller, /label\.textContent = activity\.label/);
     assert.match(controller, /tokenCount\.className = 'ai-chat-activity-token-count'/);
     assert.match(controller, /`≈ \$\{activity\.approx_input_tokens\.toLocaleString\(\)\} input tokens`/);
     assert.match(controller, /activity\.output_tokens_received\.toLocaleString\(\)/);
     assert.match(controller, /ai-chat-activity-output-token-count/);
     assert.match(css, /@keyframes ai-chat-output-token-pulse/);
     assert.match(css, /\.ai-chat-working-indicator/);
-    assert.match(css, /\.ai-chat-activity-query/);
     assert.match(css, /\.ai-chat-activity-token-count/);
     assert.match(css, /font-family:\s*ui-monospace/);
     assert.match(css, /\.ai-chat-note-mention/);
@@ -298,7 +304,7 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(css, /\.ai-chat-note-reference/);
     assert.match(css, /\.ai-chat-open-all-references/);
     assert.match(css, /\.ai-chat-activity-panel\[data-action="retry"\]/);
-    assert.match(css, /\.ai-chat-activity-panel\[data-action="search_notes"\]/);
+    assert.match(css, /\.ai-chat-activity-panel\[data-action="search_view_notes"\]/);
     assert.match(controller, /AgentDebugView\.refreshIfOpen\(\)/);
 });
 
@@ -368,25 +374,9 @@ test('cloud AI privacy settings and hover visualization share a server boundary'
 });
 
 
-test('chat accepts scoped-investigation lifecycle activities', () => {
+test('chat activities show their step duration', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
-    for (const action of [
-        'scope',
-        'investigate_current_scope',
-        'evidence_selection',
-        'investigation_step',
-        'investigation_evidence',
-        'investigation_facets',
-        'investigation_refinement',
-        'investigation_sources',
-        'evidence_root_prefix',
-        'context_narrowing',
-        'context_narrowing_plan',
-        'context_narrowing_test',
-    ]) {
-        assert.match(controller, new RegExp(`'${action}'`));
-    }
     assert.match(controller, /activity\.duration_ms/);
     assert.match(controller, /Step duration/);
     assert.match(controller, /_formatActivityDuration/);
@@ -399,7 +389,6 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     const routes = readFileSync(new URL('../../app/api/routes/ai.py', import.meta.url), 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
 
-    assert.match(controller, /'summarize_current_scope'/);
     // Choice labels and answer values are covered behaviorally in bulk_scope_question.test.mjs.
     assert.match(bulkUi, /const question = describeScopeQuestion\(event\)/);
     assert.match(bulkUi, /scopeAnswerValue\(event, 'prefix', selectedFocus\(\)\)/);
@@ -416,7 +405,7 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     assert.match(css, /\.summary-batch-ticker \{[^}]*height: 2\.7em;[^}]*overflow: hidden;/);
     assert.match(css, /\.summary-batch-line \{[^}]*text-overflow: ellipsis;/);
     assert.match(controller, /placeChatMessageElements\(\{/);
-    assert.match(controller, /this\._bulkPanelAnchorMessageId = assistantMessage\.id/);
+    assert.match(controller, /this\._ensureOperationPanel\(assistantMessage\.id\)/);
     assert.match(controller, /bulk_complete' && bulkProgressEndsAtCompletion\(\)/);
     assert.doesNotMatch(controller, /insertBefore\(article, this\._bulkPanel\)/);
     assert.match(css, /\.ai-chat-summary-operation \.summary-cancel-btn/);
@@ -473,20 +462,6 @@ test('chat freezes the active scope only when submitting a turn', () => {
     );
     assert.match(chatApi, /show_diagnostics: showDiagnostics/);
     assert.doesNotMatch(settingsMethod, /captureActiveAgentScope/);
-});
-
-
-test('skill prompt headers expose an explicit expand collapse chevron', () => {
-    const promptModal = readFileSync(PROMPT_MODAL_URL, 'utf8');
-    const css = readFileSync(CSS_URL, 'utf8');
-
-    assert.match(promptModal, /class="agent-skill-editor-chevron"/);
-    assert.match(promptModal, /aria-hidden="true">▶<\/span>/);
-    assert.match(css, /\.agent-skill-editor-chevron/);
-    assert.match(
-        css,
-        /\.agent-skill-editor-field\[open\][\s\S]*?\.agent-skill-editor-chevron[\s\S]*?rotate\(90deg\)/,
-    );
 });
 
 
@@ -828,7 +803,7 @@ test('tag proposal results replace the reference disclosure with one open-all li
 });
 
 
-test('command menu contains chat, AI configuration, prompt, and proposal actions', () => {
+test('command menu contains chat, AI configuration, and proposal actions, but no instruction editing', () => {
     const endpointSource = readFileSync(ENDPOINTS_URL, 'utf8');
     const proposalMenuSource = readFileSync(PROPOSAL_MENU_URL, 'utf8');
     const tagConfig = JSON.parse(readFileSync(TAGS_URL, 'utf8'));
@@ -836,7 +811,10 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
     assert.match(endpointSource, /id:\s*'pref\.show_ai_chat'/);
     assert.match(endpointSource, /id:\s*'form\.ai_agent_settings'/);
     assert.match(endpointSource, /id:\s*'form\.cloud_ai_privacy'/);
-    assert.match(endpointSource, /id:\s*'form\.agent_prompts'/);
+    // AI instructions are packaged so every user gets the behavior the evals measure.
+    assert.doesNotMatch(endpointSource, /form\.agent_prompts/);
+    assert.match(endpointSource, /id:\s*'form\.tagging_vocabulary'/);
+    assert.doesNotMatch(proposalMenuSource, /pref\.ai\.prompt|textarea/);
     assert.match(endpointSource, /id:\s*'action\.remove_all_tag_suggestions_current_context'/);
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'pref.show_ai_chat'));
     assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.ai_agent_settings'));
@@ -847,7 +825,7 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
     assert.ok(cloudPrivacyEndpoint.tags.includes('privacy'));
     assert.ok(cloudPrivacyEndpoint.tags.includes('whitelist'));
     assert.ok(cloudPrivacyEndpoint.tags.includes('blacklist'));
-    assert.ok(tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
+    assert.ok(!tagConfig.endpoints.some((endpoint) => endpoint.id === 'form.agent_prompts'));
     assert.ok(tagConfig.endpoints.some(
         (endpoint) => endpoint.id === 'action.remove_all_tag_suggestions_current_context',
     ));
@@ -860,30 +838,6 @@ test('command menu contains chat, AI configuration, prompt, and proposal actions
         commandController,
         /removeAllTagSuggestionsFromCurrentContext:\s*async[\s\S]*?_confirmAction\([\s\S]*?title:\s*'Remove all suggestions\?'[\s\S]*?confirmLabel:\s*'Remove all'[\s\S]*?isDangerous:\s*true[\s\S]*?if \(confirmed\)[\s\S]*?await removeAllTagSuggestionsFromCurrentContext\(\)/,
     );
-});
-
-
-test('agent prompt editor inspects, overrides, and resets prompts and skills', () => {
-    const css = readFileSync(CSS_URL, 'utf8');
-    const modal = readFileSync(PROMPT_MODAL_URL, 'utf8');
-    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
-    const chatApi = readFileSync(CHAT_API_URL, 'utf8');
-
-    assert.match(modal, /<h2>Agent Prompts &amp; Skills<\/h2>/);
-    assert.match(modal, /id="agent-prompt-system"/);
-    assert.match(modal, /id="agent-prompt-final-response"/);
-    assert.match(modal, /id="agent-prompt-tool-result"/);
-    assert.match(modal, /data-agent-skill-index/);
-    assert.match(modal, /Each skill is injected only after its trigger action/);
-    assert.match(modal, /Restore packaged defaults/);
-    assert.match(modal, /Save overrides/);
-    assert.match(modal, /apply to the next run/);
-    assert.match(modal, /not\s+conversation history/);
-    assert.match(commandController, /AGENT_PROMPT_PREFERENCE_KEYS/);
-    assert.match(commandController, /skill\.preferenceKey/);
-    assert.match(commandController, /_preferences\.removeMany/);
-    assert.match(chatApi, /export async function loadAgentPromptDefaults/);
-    assert.match(css, /\.agent-prompt-editor-modal-content[\s\S]*?width:\s*min\(1100px, 96vw\)/);
 });
 
 
@@ -953,4 +907,20 @@ test('AI settings expose only OpenAI and no local model downloads', () => {
     assert.doesNotMatch(chatApi, /PULL_MODEL|pullOllamaModel/);
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);
     assert.match(controller, /option\.textContent = 'Select model'/);
+});
+
+
+test('a $ header button shows and hides the spend panel and remembers the choice', () => {
+    const template = readFileSync(TEMPLATE_URL, 'utf8');
+    const controller = readFileSync(CONTROLLER_URL, 'utf8');
+    const css = readFileSync(CSS_URL, 'utf8');
+    const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
+
+    assert.match(template, /id="ai-chat-spend-toggle"[^>]*aria-controls="ai-chat-openai-cost"[^>]*>\$<\/button>/);
+    // Hidden by default; the spend keeps updating while hidden.
+    assert.match(commandController, /_getBoolean\('pref\.ai\.show_spend', false\)/);
+    assert.match(controller, /if \(isOpenAi\) isSpendShown = this\._showSpend;\s*this\._elements\.openAiCost\.hidden = !isSpendShown/);
+    assert.match(controller, /await this\._saveSpendVisible\(nextVisibility\)/);
+    assert.match(css, /\.ai-chat-header-actions button\[hidden\]\s*\{\s*display: none;/);
+    assert.match(css, /#ai-chat-spend-toggle\[aria-pressed="true"\]/);
 });

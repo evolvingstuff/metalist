@@ -1,0 +1,81 @@
+{
+  "schema_version": 3,
+  "id": "web-full-unrestricted-open",
+  "description": "Full mode opens a Google results page for a current public fact without provider-hosted search.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "what is the price of QQQ?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "full",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": [
+          {
+            "urls": [
+              "https://www.google.com/search?q=QQQ+price"
+            ]
+          },
+          {
+            "urls": [
+              "https://www.google.com/finance/quote/QQQ:NASDAQ?hl=en"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/web/full-unrestricted-open.json",
+    "mapping": "Two legacy steps become one run: either the search or the quote page may come first.",
+    "legacy_stage": "web_action",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "open_web_pages",
+          "urls": [
+            "https://www.google.com/search?q=QQQ+price"
+          ]
+        }
+      ]
+    },
+    "source": "manual failure observed in AI Chat on 2026-09-24"
+  }
+}

@@ -28,6 +28,9 @@ function getViewportReferenceY(anchorBias) {
 }
 
 // Top of the usable viewport: just below the sticky search controls.
+// Space kept between the sticky search controls and the first visible note.
+const VIEWPORT_TOP_BUFFER_PX = 8;
+
 export function getViewportTopInset() {
     const controls = document.querySelector('.controls');
     if (!controls) {
@@ -40,8 +43,7 @@ export function getViewportTopInset() {
     if (rect.bottom <= 0) {
         return 0;
     }
-    const bufferPx = 8;
-    return Math.max(0, Math.round(rect.bottom + bufferPx));
+    return Math.max(0, Math.round(rect.bottom + VIEWPORT_TOP_BUFFER_PX));
 }
 
 function getScrollMaxY() {
@@ -259,6 +261,28 @@ export function scrollNoteIntoView(noteId, options) {
     const rect = noteElement.getBoundingClientRect();
     const visibleTop = topInset + padding;
     const visibleBottom = window.innerHeight - padding;
+    // `dropEdge` (after a drag): the note's edge at the drop line, its top when
+    // moved up and its bottom when moved down, stays where the user dropped it,
+    // so nothing scrolls (docs/ui/interaction-principles.md, principles 1 and 2).
+    // Only when that edge would sit behind the sticky search controls does the
+    // page move, just enough to put the note right below them with its usual
+    // gap (principle 3).
+    if (Object.prototype.hasOwnProperty.call(options, 'dropEdge')) {
+        if (options.dropEdge !== 'top' && options.dropEdge !== 'bottom') {
+            throw new Error('scrollNoteIntoView dropEdge must be top or bottom');
+        }
+        const controlsBottom = topInset - VIEWPORT_TOP_BUFFER_PX;
+        const edge = options.dropEdge === 'top' ? rect.top : rect.bottom;
+        if (edge >= controlsBottom) {
+            return { scrolled: false, reason: 'drop_edge_visible' };
+        }
+        const gap = parseFloat(getComputedStyle(noteElement).marginTop);
+        if (Number.isNaN(gap)) {
+            throw new Error('scrollNoteIntoView: note margin-top is not a number');
+        }
+        scrollWindowToYFastAnimated(Math.round(clampNumber(window.scrollY + rect.top - controlsBottom - gap, 0, getScrollMaxY())));
+        return { scrolled: true, reason: 'scroll' };
+    }
     const targetScrollY = computeScrollYToRevealRect({
         rectTop: rect.top,
         rectBottom: rect.bottom,

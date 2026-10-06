@@ -11,5 +11,3 @@ def load_skill(name: str) -> str:
     assert skill.strip() != "", f"Agent skill resource is empty: {name}"
     return skill.rstrip("\n")
 
-
-SCOPED_INVESTIGATION_SKILL = load_skill("scoped-investigation.md")

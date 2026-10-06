@@ -16,12 +16,7 @@ from instructor.v2.core.errors import InstructorRetryException
 
 from app.services.agent.history import record_provider_event
 from app.services.agent.judging import OutputJudgment
-from app.services.agent.help_catalog import MetaListHelpResponse
-from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import ContextualWebActionEnvelope
-from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import SearchQueryEnvelope
-from app.services.agent.tagging import TagBatchResult, TagOperationIntent
+from app.services.agent.tagging import TagBatchResult
 from app.services.agent.staged_summary import SummaryBatchResult
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.inference import InferenceAttempt
@@ -32,29 +27,46 @@ from app.services.agent.token_estimation import estimate_text_tokens
 
 _STRUCTURED_MAX_RETRIES = 1
 _STRUCTURED_TIMEOUT_SECONDS = 300.0
-_ROUTE_MAX_OUTPUT_TOKENS = 512
-_SEARCH_QUERY_MAX_OUTPUT_TOKENS = 1_024
-_WEB_ACTION_MAX_OUTPUT_TOKENS = 4_096
+# OpenAI reasoning models count hidden thinking against max_completion_tokens,
+# so even a step whose answer is short needs room to think first: at 512 tokens,
+# Medium or High thinking could use the whole budget and leave a cut-off,
+# rejected reply on every attempt.
+_STRUCTURED_MIN_OUTPUT_TOKENS = 8_192
 
 
 def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
-        OutputJudgment: 4_096,
-        MetaListHelpResponse: 8_192,
+        OutputJudgment: _STRUCTURED_MIN_OUTPUT_TOKENS,
         TagBatchResult: 8_192,
-        TagOperationIntent: 1_024,
         SummaryBatchResult: 8_192,
-        SummaryFindingsResult: 4_096,
-        AgentRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
-        ScopedRouteEnvelope: _ROUTE_MAX_OUTPUT_TOKENS,
-        SearchQueryEnvelope: _SEARCH_QUERY_MAX_OUTPUT_TOKENS,
-        ContextualWebActionEnvelope: _WEB_ACTION_MAX_OUTPUT_TOKENS,
+        SummaryFindingsResult: _STRUCTURED_MIN_OUTPUT_TOKENS,
     }
     if response_model not in limits:
         raise RuntimeError(
             f"Structured output limit missing for {response_model.__name__}"
         )
     return limits[response_model]
+
+
+# Longest offending value kept for the error message.
+_BROKEN_RULE_VALUE_CHARS = 80
+
+
+def _broken_rules(error: ValidationError) -> tuple[dict[str, str], ...]:
+    """The rules a rejected reply broke, in a plain form the chat can show."""
+    rules = []
+    for detail in error.errors(include_url=False):
+        value = detail["input"]
+        shown_value = ""
+        if isinstance(value, (str, int, float, bool)):
+            shown_value = str(value)[:_BROKEN_RULE_VALUE_CHARS]
+        rules.append({
+            "field": ".".join(str(part) for part in detail["loc"]),
+            "kind": detail["type"],
+            "problem": detail["msg"],
+            "value": shown_value,
+        })
+    return tuple(rules)
 
 
 @dataclass(slots=True)
@@ -71,6 +83,7 @@ class _PendingAttempt:
     response_metadata: dict[str, object]
     last_reported_output_tokens: int
     partial_output: dict[str, object]
+    validation_errors: tuple[dict[str, str], ...]
 
 
 class _InstructorTraceCapture:
@@ -97,6 +110,7 @@ class _InstructorTraceCapture:
                 response_metadata={},
                 last_reported_output_tokens=0,
                 partial_output={},
+                validation_errors=(),
             )
         )
 
@@ -307,6 +321,8 @@ class _InstructorTraceCapture:
         if attempt.error == formatted_error:
             return
         attempt.error = formatted_error
+        if isinstance(error, ValidationError):
+            attempt.validation_errors = _broken_rules(error)
         attempt.duration_ms = (time.perf_counter() - attempt.started_at) * 1_000
         attempt_number = len(self._attempts)
         phase = "retrying"
@@ -331,6 +347,7 @@ class _InstructorTraceCapture:
             attempts.append(InferenceAttempt(
                 request=attempt.request, response=response,
                 error=error, duration_ms=attempt.duration_ms,
+                validation_errors=attempt.validation_errors,
             ))
         return attempts
 

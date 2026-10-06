@@ -1,0 +1,95 @@
+{
+  "schema_version": 3,
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "answer_questions": "no",
+  "provenance": {
+    "source": "synthetic-agent-combinations-v1",
+    "personal_data": false
+  },
+  "id": "combined-notes-and-help",
+  "description": "Finding the notes and explaining how to act on them needs both notes and help.",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Which of my notes mention compost, and how would I exclude compost notes from a search?"
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "Compost bin rotation schedule",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "Tomato seedlings by the fence",
+        "tags": "garden",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": [
+          {
+            "topics": [
+              "search"
+            ]
+          }
+        ]
+      },
+      {
+        "tools": [
+          "search_view_notes",
+          "read_view_notes",
+          "view_overview"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view",
+      "open_web_pages"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "notes",
+        "instruction": "Name the compost bin rotation note as the one mentioning compost, citing it, and do not claim the tomato note mentions compost."
+      },
+      {
+        "id": "exclude",
+        "instruction": "Explain excluding with a minus prefix directly attached to the term, such as -compost."
+      }
+    ],
+    "reference_facts": "Only note-1 (Compost bin rotation schedule) mentions compost. MetaList search excludes a term with a minus sign attached to it, for example -compost; a space after the minus is not allowed."
+  }
+}

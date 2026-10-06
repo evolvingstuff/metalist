@@ -1,10 +1,9 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 
-// One window for MetaList's visual cues: drag-and-drop feedback and the
-// position cue after editing. Each checkbox saves and applies as soon as it
+// One window for MetaList's visual cues: drag-and-drop feedback. Each checkbox saves and applies as soon as it
 // changes (the window closes like the others, with Escape or an outside click).
-// They only change what is shown; dragging and editing work the same either way.
+// They only change what is shown; dragging works the same either way.
 export const VISUAL_CUE_SECTIONS = [
     {
         title: 'Drag and drop',
@@ -23,16 +22,6 @@ export const VISUAL_CUE_SECTIONS = [
                 key: 'pref.drag_direction_icon',
                 label: 'Direction cursor',
                 description: 'The cursor becomes an up, down, indent or outdent icon for the move a release would make.',
-            },
-        ],
-    },
-    {
-        title: 'Editing',
-        options: [
-            {
-                key: 'pref.position_cue',
-                label: 'Position cue',
-                description: 'After leaving edit mode, briefly highlights where your place landed when the view had to move or the format changed shape.',
             },
         ],
     },

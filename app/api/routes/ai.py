@@ -33,21 +33,17 @@ from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import validate_openai_model
 from app.services.agent.openai_cost_tracking import OpenAICostSnapshot
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
-from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
-from app.services.agent.prompt_settings import resolve_agent_prompt_set
 from app.services.agent.retrieval_settings import resolve_agent_retrieval_settings
 from app.services.agent.scope import AgentScopeDescriptor
 from app.services.agent.scope import scoped_search_snapshot_factory
 from app.services.agent.runtime import AgentRuntime
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
-from app.services.agent.skill_settings import resolve_agent_skill_set
 from app.services.agent.token_estimation import estimate_input_tokens
-from app.services.agent.tools import read_only_agent_tools
 from app.services.agent.trace import agent_trace_store
 from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.client_state_service import load_client_preferences
@@ -62,7 +58,7 @@ from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.agent.web_settings import resolve_agent_web_settings
 from app.services.agent.web_evidence import web_evidence_store
-from app.services.agent.tagging import TAGGING_PROMPT_KEY, TAGGING_POLICY_KEY, DEFAULT_TAGGING_PROMPT
+from app.services.agent.tagging import TAGGING_POLICY_KEY
 from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_proposal_changes
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.tab_state import tab_state_store
@@ -79,8 +75,6 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
         context_builder=agent_context_builder,
         inference=inference,
         model_policy=SingleModelPolicy(),
-        permission_policy=AgentPermissionPolicy(),
-        tool_registry=read_only_agent_tools,
         trace_store=agent_trace_store,
         provider_label=inference.provider_label,
     )
@@ -134,23 +128,6 @@ class CloudPrivacyPreviewRequest(BaseModel):
 
 class CloudPrivacyPreviewResponse(BaseModel):
     hidden_note_ids: list[str]
-
-
-class AiSkillDefaultResponse(BaseModel):
-    skill_id: str
-    title: str
-    description: str
-    trigger_action: str
-    preference_key: str
-    content: str
-    superseded_preference_keys: list[str]
-
-
-class AiPromptDefaultsResponse(BaseModel):
-    system_prompt: str
-    final_response_prompt: str
-    tool_result_prompt: str
-    skills: list[AiSkillDefaultResponse]
 
 
 class AiChatRequest(BaseModel):
@@ -384,32 +361,6 @@ def reset_openai_cost(
     return _openai_cost_response(openai_cost_tracker.snapshot())
 
 
-@router.get("/prompts/defaults", response_model=AiPromptDefaultsResponse)
-def get_ai_prompt_defaults(
-    response: Response,
-    token: Annotated[str, Depends(require_request_auth_token)],
-) -> AiPromptDefaultsResponse:
-    del token
-    response.headers["Cache-Control"] = "no-store"
-    return AiPromptDefaultsResponse(
-        system_prompt=DEFAULT_AGENT_PROMPTS.system_prompt,
-        final_response_prompt=DEFAULT_AGENT_PROMPTS.final_response_prompt,
-        tool_result_prompt=DEFAULT_AGENT_PROMPTS.tool_result_prompt,
-        skills=[
-            AiSkillDefaultResponse(
-                skill_id=skill.skill_id,
-                title=skill.title,
-                description=skill.description,
-                trigger_action=skill.trigger_action,
-                preference_key=skill.preference_key,
-                content=skill.content,
-                superseded_preference_keys=list(skill.superseded_preference_keys),
-            )
-            for skill in DEFAULT_AGENT_SKILLS.skills
-        ],
-    )
-
-
 @router.post(
     "/cloud-privacy/preview",
     response_model=CloudPrivacyPreviewResponse,
@@ -637,8 +588,8 @@ def stream_ai_chat(
         session_key=session_key,
     )
     preferences = load_client_preferences(token=token)
-    prompts = resolve_agent_prompt_set(preferences=preferences)
-    skills = resolve_agent_skill_set(preferences=preferences)
+    prompts = DEFAULT_AGENT_PROMPTS
+    skills = DEFAULT_AGENT_SKILLS
     retrieval_settings = resolve_agent_retrieval_settings(
         preferences=preferences,
         provider=payload.provider,
@@ -731,11 +682,11 @@ async def _stream_runtime_events(
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
     yield dict(type='action_status', action=action, status='completed', label=ready_label,
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
-    events = runtime.stream_scoped(session_key=session_key, base_url=base_url,
+    events = runtime.stream_agent(session_key=session_key, base_url=base_url,
             selected_model=payload.model, thinking_level=payload.thinking_level,
             canonical_messages=provider_messages, prompts=prompts, skills=skills,
             retrieval_settings=retrieval_settings, web_settings=web_settings,
-            frozen_scope=frozen_scope, tag_handler=tagging_run.stream)
+            frozen_scope=frozen_scope, tagging_run=tagging_run)
     try:
         async for event in events:
             yield event
@@ -771,6 +722,8 @@ class BulkAnswerRequest(BaseModel):
         "prefix_focus_both",
         "summarize_all",
         "use_prefix",
+        "yes",
+        "no",
     ]
 
 
@@ -820,6 +773,4 @@ def manage_bulk_proposals(payload: BulkManageRequest, token: Annotated[str, Depe
 @router.get("/proposals/settings")
 def get_tagging_settings(token: Annotated[str, Depends(require_request_auth_token)]):
     preferences = load_client_preferences(token=token)
-    return {"policy": preferences.get(TAGGING_POLICY_KEY, ""),
-            "prompt": preferences.get(TAGGING_PROMPT_KEY, DEFAULT_TAGGING_PROMPT),
-            "default_prompt": DEFAULT_TAGGING_PROMPT}
+    return {"policy": preferences.get(TAGGING_POLICY_KEY, "")}

@@ -69,10 +69,6 @@
       "tags": ["ai", "agent", "cloud", "privacy", "private", "security", "whitelist", "blacklist", "allowlist", "blocklist", "tags", "phrases", "settings"]
     },
     {
-      "id": "form.agent_prompts",
-      "tags": ["ai", "agent", "assistant", "prompt", "prompts", "system", "instructions", "inspect", "edit", "alter", "override", "defaults", "developer", "settings"]
-    },
-    {
       "id": "action.expand_all",
       "tags": ["expand", "all", "collapsed", "root", "top-level", "notes", "view"]
     },
@@ -217,8 +213,8 @@
       "tags": ["ai", "tags", "proposals", "suggestions", "reject", "remove", "clear", "all", "current", "context", "search", "view", "bulk"]
     },
     {
-      "id": "form.tagging_prompt",
-      "tags": ["ai", "tags", "tagging", "prompt", "vocabulary", "existing", "new", "settings"]
+      "id": "form.tagging_vocabulary",
+      "tags": ["ai", "tags", "tagging", "vocabulary", "existing", "new", "settings"]
     }
   ]
 }

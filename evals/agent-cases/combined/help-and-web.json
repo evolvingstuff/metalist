@@ -1,0 +1,91 @@
+{
+  "schema_version": 3,
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "answer_questions": "no",
+  "provenance": {
+    "source": "synthetic-agent-combinations-v1",
+    "personal_data": false
+  },
+  "id": "combined-help-and-web",
+  "description": "A release question that also asks for the GitHub changelog needs help (release notes) and the web; the old routing could only do one.",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What's new in MetaList 0.11.0? Also check the GitHub releases page at https://github.com/metalist/metalist/releases for anything newer."
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "full",
+    "retained_urls": [],
+    "pages": [
+      {
+        "evidence_id": "40000000-0000-4000-8000-000000000001",
+        "url": "https://github.com/metalist/metalist/releases",
+        "title": "Releases \u00b7 metalist",
+        "content_text": "MetaList releases. 0.11.0 \u2014 large namespaces stay fast while scrolling. No newer release is published.",
+        "links": []
+      }
+    ]
+  },
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": [
+          {
+            "topics": [
+              "releases"
+            ]
+          }
+        ]
+      },
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": [
+          {
+            "urls": [
+              "https://github.com/metalist/metalist/releases"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "release",
+        "instruction": "Describe at least one 0.11.0 change from MetaList's release notes, such as large namespaces staying fast while scrolling."
+      },
+      {
+        "id": "newer",
+        "instruction": "Say that the GitHub releases page shows no newer release, citing that page."
+      }
+    ],
+    "reference_facts": "Release notes for 0.11.0 include faster scrolling in large namespaces, faster tag suggestions and exclusion-only searches. The recorded GitHub releases page lists 0.11.0 and says no newer release is published."
+  }
+}

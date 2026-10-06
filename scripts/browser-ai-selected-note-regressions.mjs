@@ -94,6 +94,18 @@ export async function checkAiSelectedNote(page) {
     await checkSelected(ids[1]);
     await page.waitForFunction(async () => !(await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js')).AiChatPanel._isBusy);
 
+    // Every header button sits inside the chat panel, so its clicks never reach the notes.
+    const outsideButtons = await page.evaluate(() => {
+        const panel = document.getElementById('ai-chat-panel').getBoundingClientRect();
+        return [...document.querySelectorAll('.ai-chat-header-actions button')]
+            .filter((button) => !button.hidden)
+            .filter((button) => {
+                const box = button.getBoundingClientRect();
+                return box.left < panel.left || box.right > panel.right;
+            })
+            .map((button) => button.id);
+    });
+    assert.deepEqual(outsideButtons, []);
     await page.click('#ai-chat-close');
     await checkSelected(ids[1]);
     await page.click('#chat-toggle-button');

@@ -13,5 +13,5 @@ def load_prompt(name: str) -> str:
 
 
 AGENT_SYSTEM_PROMPT = load_prompt("system.md")
+AGENT_LOOP_INSTRUCTIONS = load_prompt("agent.md")
 FINAL_RESPONSE_REQUEST_PROMPT = load_prompt("final-response.md")
-TOOL_RESULT_PROMPT = load_prompt("tool-result.md")

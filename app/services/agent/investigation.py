@@ -36,6 +36,21 @@ class RootPrefixRetention:
 
 
 @dataclass(frozen=True, slots=True)
+class RootTreeRead:
+    """Whole root trees read for one tool call, in view order, within the budget.
+
+    unread_root_ids fit no more in this read and can be requested next;
+    too_large_root_ids exceed the budget on their own and can never be read;
+    unknown_ids are not in the frozen view.
+    """
+
+    payload: InvestigationEvidencePayload
+    unread_root_ids: tuple[str, ...]
+    too_large_root_ids: tuple[str, ...]
+    unknown_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CompleteRootBatchPlan:
     """Every visible root tree partitioned into ordered evidence payloads."""
 
@@ -83,6 +98,10 @@ class InvestigationState:
     @property
     def snapshot(self) -> ScopedSearchSnapshot:
         return self._snapshot
+
+    @property
+    def max_page_approximate_tokens(self) -> int:
+        return self._settings.max_page_approximate_tokens
 
     def retain_root_prefix_within_token_budget(self, *, reserved_approximate_tokens: int) -> RootPrefixRetention:
         assert 0 <= reserved_approximate_tokens <= self._settings.max_page_approximate_tokens
@@ -152,6 +171,54 @@ class InvestigationState:
             result_tree_ids=self._retained_root_ids,
             result_trees=result_trees,
             returned_approximate_token_count=token_count,
+        )
+
+    def read_root_trees(self, *, requested_ids: tuple[str, ...]) -> RootTreeRead:
+        """Read whole trees for requested notes (any note in a tree selects it).
+
+        With no requested ids, read the view from its first tree. Trees are
+        taken in view order until the next one no longer fits the budget.
+        """
+        assert isinstance(requested_ids, tuple)
+        unknown_ids: list[str] = []
+        wanted_root_ids: set[str] = set()
+        for note_id in requested_ids:
+            if note_id in self._snapshot.notes_by_id:
+                wanted_root_ids.add(self._snapshot.notes_by_id[note_id].root_note_id)
+            elif note_id in self._snapshot.tree_nodes_by_id:
+                wanted_root_ids.add(self._snapshot.tree_nodes_by_id[note_id].root_note_id)
+            elif note_id not in unknown_ids:
+                unknown_ids.append(note_id)
+        candidate_root_ids = self._snapshot.ordered_root_ids
+        if requested_ids:
+            candidate_root_ids = tuple(
+                root_id for root_id in candidate_root_ids if root_id in wanted_root_ids
+            )
+        token_limit = self._settings.max_page_approximate_tokens
+        note_ids_by_root_id = self._note_ids_by_root_id()
+        read_root_ids: list[str] = []
+        unread_root_ids: list[str] = []
+        too_large_root_ids: list[str] = []
+        read_token_count = 0
+        for root_id in candidate_root_ids:
+            root_token_count = self._full_root_token_cost(
+                root_id=root_id, note_ids=note_ids_by_root_id[root_id],
+            )
+            if root_token_count > token_limit:
+                too_large_root_ids.append(root_id)
+            elif unread_root_ids or read_token_count + root_token_count > token_limit:
+                unread_root_ids.append(root_id)
+            else:
+                read_root_ids.append(root_id)
+                read_token_count += root_token_count
+        payload = self._payload_for_roots(tuple(read_root_ids))
+        if payload.returned_approximate_token_count > token_limit:
+            raise RuntimeError("Serialized root-tree read exceeded its precomputed token budget")
+        return RootTreeRead(
+            payload=payload,
+            unread_root_ids=tuple(unread_root_ids),
+            too_large_root_ids=tuple(too_large_root_ids),
+            unknown_ids=tuple(unknown_ids),
         )
 
     def plan_complete_root_batches(

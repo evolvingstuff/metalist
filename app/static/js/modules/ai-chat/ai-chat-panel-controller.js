@@ -2,6 +2,8 @@ import { executeAgentMenuRequest } from './agent-menu-actions.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { isNetworkTransportError } from '../api-failure-classification-service.js';
+import { showConfirmationCard } from './confirmation-card.js';
+import { CONFIRMATION_QUESTION_KIND } from './confirmation-question.js';
 import {
     bulkProgressEndsAtCompletion,
     closeBulkProgress,
@@ -27,7 +29,6 @@ import {
     collapseCompletedActivityPairs,
     formatOpenAiCostUsd,
     selectPersistentNonDiagnosticActivities,
-    splitSearchActivityLabel,
     synchronizeExpandedReferenceMessage,
     validateOpenAiCostSnapshot,
 } from './ai-chat-panel-service.js';
@@ -142,34 +143,28 @@ export function captureActiveAgentScope() {
 
 
 const AI_ACTIVITY_ACTIONS = new Set([
-    'planning',
     'model_request',
     'validation',
     'retry',
     'skill',
-    'search_notes',
-    'read_notes_by_id',
     'respond',
     'cancel',
     'provider_runtime',
     'model_context',
     'scope',
-    'investigate_current_scope',
-    'summarize_current_scope',
-    'tag_proposals',
-    'metalist_help',
-    'evidence_selection',
-    'investigation_step',
     'investigation_evidence',
-    'investigation_facets',
-    'investigation_refinement',
     'investigation_sources',
     'evidence_root_prefix',
-    'context_narrowing',
-    'context_narrowing_plan',
-    'context_narrowing_test',
-    'web_planning',
     'open_web_pages',
+    // Tool-using agent (agent_loop.py).
+    'agent_turn',
+    'lookup_metalist_help',
+    'view_overview',
+    'search_view_notes',
+    'read_view_notes',
+    'open_menu',
+    'confirmation',
+    'tool_call_rejected',
 ]);
 
 
@@ -238,6 +233,9 @@ class AiChatPanelController {
         this._savePanelWidth = null;
         this._getDiagnosticsVisible = null;
         this._saveDiagnosticsVisible = null;
+        this._getSpendVisible = null;
+        this._saveSpendVisible = null;
+        this._showSpend = false;
         this._getComposerHeight = null;
         this._saveComposerHeight = null;
         this._composerHeightBeforePointerInteraction = 0;
@@ -269,6 +267,8 @@ class AiChatPanelController {
         savePanelWidth,
         getDiagnosticsVisible,
         saveDiagnosticsVisible,
+        getSpendVisible,
+        saveSpendVisible,
         getComposerHeight,
         saveComposerHeight,
         setVisible,
@@ -296,6 +296,12 @@ class AiChatPanelController {
         if (typeof saveDiagnosticsVisible !== 'function') {
             throw new Error('AiChatPanel.init requires saveDiagnosticsVisible');
         }
+        if (typeof getSpendVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires getSpendVisible');
+        }
+        if (typeof saveSpendVisible !== 'function') {
+            throw new Error('AiChatPanel.init requires saveSpendVisible');
+        }
         if (typeof getComposerHeight !== 'function') {
             throw new Error('AiChatPanel.init requires getComposerHeight');
         }
@@ -314,6 +320,8 @@ class AiChatPanelController {
         this._savePanelWidth = savePanelWidth;
         this._getDiagnosticsVisible = getDiagnosticsVisible;
         this._saveDiagnosticsVisible = saveDiagnosticsVisible;
+        this._getSpendVisible = getSpendVisible;
+        this._saveSpendVisible = saveSpendVisible;
         this._getComposerHeight = getComposerHeight;
         this._saveComposerHeight = saveComposerHeight;
         this._setVisible = setVisible;
@@ -358,6 +366,7 @@ class AiChatPanelController {
                 'ai-chat-diagnostics-toggle',
                 HTMLButtonElement,
             ),
+            spendToggle: requireElement('ai-chat-spend-toggle', HTMLButtonElement),
             clear: requireElement('ai-chat-clear', HTMLButtonElement),
             settings: requireElement('ai-chat-settings', HTMLButtonElement),
             close: requireElement('ai-chat-close', HTMLButtonElement),
@@ -371,6 +380,11 @@ class AiChatPanelController {
         if (this._showDiagnosticActivities !== diagnosticVisibility) this._showDiagnosticActivities = diagnosticVisibility;
         if (typeof this._showDiagnosticActivities !== 'boolean') {
             throw new Error('Stored AI chat diagnostic visibility must be boolean');
+        }
+        const spendVisibility = this._getSpendVisible();
+        if (this._showSpend !== spendVisibility) this._showSpend = spendVisibility;
+        if (typeof this._showSpend !== 'boolean') {
+            throw new Error('Stored AI chat spend visibility must be boolean');
         }
         this._bindEvents();
         const notesContainer = requireElement('notes-container', HTMLElement);
@@ -387,6 +401,7 @@ class AiChatPanelController {
         await AgentDebugView.init();
         this._initialized = true;
         this._syncDiagnosticActivityToggle();
+        this._syncSpendToggle();
         this._syncSettingsControls();
         const savedWidth = this._getPanelWidth();
         if (savedWidth !== null) {
@@ -440,6 +455,7 @@ class AiChatPanelController {
             'click',
             () => void this._toggleDiagnosticActivities(),
         );
+        elements.spendToggle.addEventListener('click', () => void this._toggleSpend());
         elements.clear.addEventListener('click', () => void this._clearSession());
         elements.openAiCostReset.addEventListener(
             'click',
@@ -603,6 +619,21 @@ class AiChatPanelController {
         );
         this._elements.diagnosticsToggle.setAttribute('aria-label', actionLabel);
         this._elements.diagnosticsToggle.title = actionLabel;
+    }
+
+    _syncSpendToggle() {
+        const actionLabel = this._showSpend ? 'Hide estimated spend' : 'Show estimated spend';
+        this._elements.spendToggle.setAttribute('aria-pressed', String(this._showSpend));
+        this._elements.spendToggle.setAttribute('aria-label', actionLabel);
+        this._elements.spendToggle.title = actionLabel;
+    }
+
+    async _toggleSpend() {
+        const nextVisibility = !this._showSpend;
+        await this._saveSpendVisible(nextVisibility);
+        this._showSpend = nextVisibility;
+        this._syncSpendToggle();
+        this._syncOpenAiCostVisibility();
     }
 
     async _toggleDiagnosticActivities() {
@@ -865,7 +896,11 @@ class AiChatPanelController {
     _syncOpenAiCostVisibility() {
         const settings = this._getSettings();
         const isOpenAi = settings.provider === 'openai';
-        this._elements.openAiCost.hidden = !isOpenAi;
+        // Spend keeps updating while hidden; the $ button only shows or hides it.
+        let isSpendShown = false;
+        if (isOpenAi) isSpendShown = this._showSpend;
+        this._elements.openAiCost.hidden = !isSpendShown;
+        this._elements.spendToggle.hidden = !isOpenAi;
         return isOpenAi;
     }
 
@@ -1218,14 +1253,14 @@ class AiChatPanelController {
                             openMenu: this._openMenu, acknowledge: acknowledgeAgentMenu });
                         return;
                     }
-                    if (event.type.startsWith('bulk_')) {
+                    if (event.type === 'bulk_question' && event.kind === CONFIRMATION_QUESTION_KIND) {
+                        this._ensureOperationPanel(assistantMessage.id);
+                        // Not awaited: the server waits for the answer, and Stop must still end the stream.
+                        void showConfirmationCard({ event, host: this._bulkPanel, signal: abortController.signal })
+                            .then(() => this._removeOperationPanelIfEmpty());
+                    } else if (event.type.startsWith('bulk_')) {
                         const needsBulkPanel = ['bulk_question', 'bulk_progress'].includes(event.type);
-                        if (needsBulkPanel && this._bulkPanel === null) {
-                            this._bulkPanel = document.createElement('div');
-                            this._bulkPanel.className = 'ai-chat-message ai-chat-message-assistant ai-chat-operation-card';
-                            this._bulkPanelAnchorMessageId = assistantMessage.id;
-                            this._elements.messages.append(this._bulkPanel);
-                        }
+                        if (needsBulkPanel) this._ensureOperationPanel(assistantMessage.id);
                         handleBulkEvent(event, abortController, this._bulkPanel);
                         if (event.type === 'bulk_complete' && bulkProgressEndsAtCompletion()) {
                             await closeBulkProgress();
@@ -1443,6 +1478,26 @@ class AiChatPanelController {
             model: settings.model,
             activities: [],
         });
+        this._render({ shouldScrollToBottom: true });
+    }
+
+    _ensureOperationPanel(assistantMessageId) {
+        if (this._bulkPanel !== null) {
+            if (this._bulkPanelAnchorMessageId !== assistantMessageId) {
+                throw new Error('AI chat operation panel belongs to another message');
+            }
+            return;
+        }
+        this._bulkPanel = document.createElement('div');
+        this._bulkPanel.className = 'ai-chat-message ai-chat-message-assistant ai-chat-operation-card';
+        this._bulkPanelAnchorMessageId = assistantMessageId;
+        this._elements.messages.append(this._bulkPanel);
+    }
+
+    _removeOperationPanelIfEmpty() {
+        // The request may already have ended and removed the panel.
+        if (this._bulkPanel === null || this._bulkPanel.childElementCount > 0) return;
+        this._removeBulkPanel();
         this._render({ shouldScrollToBottom: true });
     }
 
@@ -1707,14 +1762,7 @@ class AiChatPanelController {
                 : (activity.status === 'completed' ? '✓' : '•');
             const label = document.createElement('span');
             label.className = 'ai-chat-activity-label';
-            const labelParts = splitSearchActivityLabel(activity);
-            label.textContent = labelParts.statusLabel;
-            if (labelParts.searchQuery !== '') {
-                const query = document.createElement('code');
-                query.className = 'ai-chat-activity-query';
-                query.textContent = labelParts.searchQuery;
-                label.append(document.createTextNode(' · '), query);
-            }
+            label.textContent = activity.label;
             panel.append(marker, label);
             if (!isPersistentNotice) {
                 const tokenCount = document.createElement('span');

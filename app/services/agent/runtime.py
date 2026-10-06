@@ -10,23 +10,11 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from app.services.agent.actions import AgentRouteAction
-from app.services.agent.actions import AgentRouteEnvelope
-from app.services.agent.actions import ContextualWebActionEnvelope
-from app.services.agent.actions import OpenWebPagesAction
-from app.services.agent.actions import ReadNotesByIdAction
-from app.services.agent.actions import RespondAction
-from app.services.agent.actions import SearchNotesIntent
-from app.services.agent.actions import SearchNotesAction
-from app.services.agent.actions import SearchQueryEnvelope
-from app.services.agent.actions import ScopedRouteEnvelope
-from app.services.agent.actions import parse_agent_route_json
-from app.services.agent.actions import parse_search_query_json
+from app.services.agent.failure_explanations import FailureSetup, explain_structured_failure
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.context import serialize_investigation_evidence_payload
 from app.services.agent.inference import InferenceAdapter
@@ -37,6 +25,8 @@ from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.investigation import InvestigationEvidencePayload
+from app.services.agent.agent_loop import AgentLoopMixin
+from app.services.agent.execution_errors import AgentExecutionError
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import CompleteRootBatchPlan
 from app.services.agent.model_policy import InferencePurpose
@@ -50,36 +40,24 @@ from app.services.agent.staged_summary import partition_summary_results
 from app.services.agent.staged_summary import structural_placeholder_note_ids
 from app.services.agent.staged_summary import summary_reference_note_ids
 from app.services.agent.staged_summary import summarize_partial_findings
-from app.services.agent.permissions import AgentPermissionPolicy
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import AgentSkill
 from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.scope import ScopedSearchSnapshot
-from app.services.agent.tools import ReadOnlyAgentToolRegistry
-from app.services.agent.tools import ToolExecutionResult
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.web_settings import AgentWebSettings
-from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_evidence import WebPageEvidence
-from app.services.agent.web_evidence import WebEvidenceCapacityError
 from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
-from app.services.agent.web_fetch import fetch_web_pages
-from app.services.public_http import normalize_public_http_url
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.agent.history import record_history
-from app.services.exception_capture import CapturedExceptionContext
-from app.services.agent.help_catalog import MetaListHelpResponse, MENU_BY_ID
-from app.services.agent.menu_actions import menu_action_store
-from app.services.search_query import parse_search_query
 
 
-_MAX_ACTION_STEPS = 8
 _STAGED_SUMMARY_CONCURRENCY = 4
 _MAX_STAGED_SUMMARY_REDUCTION_LEVELS = 8
 # One corrective request when a summary cites IDs that were not disclosed as evidence.
@@ -90,14 +68,7 @@ _SUMMARY_PREVIEW_TAIL_CHARACTERS = 240
 _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
     "OpenAI": 8_192,
 }
-_SearchClauseKey = tuple[
-    frozenset[str],
-    frozenset[str],
-    frozenset[str],
-    frozenset[str],
-]
-_SearchQueryKey = frozenset[_SearchClauseKey]
-_SearchRequestKey = _SearchQueryKey
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,10 +100,6 @@ _SummaryBatchTransition = (
 )
 
 
-class AgentExecutionError(Exception):
-    """Expected failure caused by provider/model output during an agent run."""
-
-
 def _final_response_max_output_tokens(*, provider_label: str) -> int:
     if provider_label not in _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER:
         raise ValueError(f"Unsupported inference provider: {provider_label}")
@@ -161,15 +128,13 @@ class _FinalStreamState:
     did_finish: bool
 
 
-class AgentRuntime:
+class AgentRuntime(AgentLoopMixin):
     def __init__(
         self,
         *,
         context_builder: AgentContextBuilder,
         inference: InferenceAdapter,
         model_policy: SingleModelPolicy,
-        permission_policy: AgentPermissionPolicy,
-        tool_registry: ReadOnlyAgentToolRegistry,
         trace_store: AgentTraceStore,
         provider_label: str,
     ) -> None:
@@ -178,12 +143,10 @@ class AgentRuntime:
         self._context_builder = context_builder
         self._inference = inference
         self._model_policy = model_policy
-        self._permission_policy = permission_policy
-        self._tool_registry = tool_registry
         self._trace_store = trace_store
         self._provider_label = provider_label
 
-    async def stream_scoped(
+    async def stream_agent(
         self,
         *,
         session_key: str,
@@ -196,28 +159,20 @@ class AgentRuntime:
         retrieval_settings: AgentRetrievalSettings,
         web_settings: AgentWebSettings,
         frozen_scope: ScopedSearchSnapshot,
-        tag_handler,
+        tagging_run,
     ) -> AsyncIterator[dict[str, object]]:
-        run, initial_messages = self._start_run(
-            session_key=session_key,
-            base_url=base_url,
-            selected_model=selected_model,
-            thinking_level=thinking_level,
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-            skills=skills,
-            retrieval_settings=retrieval_settings,
-            web_settings=web_settings,
+        """Answer with the tool-using agent loop (see agent_loop.py)."""
+        run, _initial_messages = self._start_run(
+            session_key=session_key, base_url=base_url, selected_model=selected_model,
+            thinking_level=thinking_level, canonical_messages=canonical_messages, prompts=prompts,
+            skills=skills, retrieval_settings=retrieval_settings, web_settings=web_settings,
         )
         with record_history(self._trace_store, session_key=session_key, run_id=run.run_id):
-            # lint: allow-PY001 rationale="record every scoped run failure before immediately re-raising"
+            # lint: allow-PY001 rationale="record every agent run failure before immediately re-raising"
             try:
-                async with aclosing(self._run_scoped_steps(
-                    run=run,
-                    canonical_messages=canonical_messages,
-                    initial_messages=initial_messages,
-                    frozen_scope=frozen_scope,
-                    tag_handler=tag_handler,
+                async with aclosing(self._run_agent_loop(
+                    run=run, canonical_messages=canonical_messages, frozen_scope=frozen_scope,
+                    tagging_run=tagging_run,
                 )) as steps:
                     async for event in steps:
                         self._trace_store.append_event(
@@ -228,174 +183,26 @@ class AgentRuntime:
                         yield event
             # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
             except asyncio.CancelledError:
-                self._record_failure(
-                    session_key=session_key,
-                    run_id=run.run_id,
-                    error="Agent run interrupted",
-                )
+                self._record_failure(session_key=session_key, run_id=run.run_id, error="Agent run interrupted")
                 raise
             # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
             except Exception as exc:
-                self._record_failure(
-                    session_key=session_key,
-                    run_id=run.run_id,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
+                self._record_failure(session_key=session_key, run_id=run.run_id,
+                                     error=f"{type(exc).__name__}: {exc}")
                 raise
 
-    async def _run_scoped_steps(
+    async def _stream_view_summary(
         self,
         *,
         run: _RunContext,
         canonical_messages: list[dict[str, str]],
-        initial_messages: list[dict[str, str]],
-        frozen_scope: ScopedSearchSnapshot,
-        tag_handler,
+        snapshot: ScopedSearchSnapshot,
+        state: InvestigationState,
+        selected_note_tokens: int,
+        route_tokens: int,
     ) -> AsyncIterator[dict[str, object]]:
-        if not isinstance(frozen_scope, ScopedSearchSnapshot):
-            raise TypeError("frozen_scope must be ScopedSearchSnapshot")
-        if frozen_scope.session_key != run.session_key:
-            raise RuntimeError("Frozen scope belongs to another session")
-        snapshot = frozen_scope
-        selected_note_tokens = 0
-        if snapshot.selected_note.status == "available":
-            selected_note_tokens = estimate_input_tokens(snapshot.selected_note.as_payload())
-        if selected_note_tokens > run.retrieval_settings.max_page_approximate_tokens:
-            raise AgentExecutionError("The selected note tree exceeds the configured evidence token limit")
-        initial_messages = self._context_builder.append_selected_note_context(
-            messages=initial_messages, snapshot=snapshot,
-        )
-        response_messages = initial_messages
-        initial_capabilities = build_web_url_capabilities(
-            canonical_messages=canonical_messages,
-            selected_note=snapshot.selected_note,
-            investigation_evidence=None,
-            retained_web_urls=web_evidence_store.retained_urls(
-                session_key=run.session_key
-            ),
-        )
-        initial_messages = self._context_builder.append_web_access_context(
-            messages=initial_messages,
-            settings=run.web_settings,
-            available_urls=initial_capabilities.normalized_urls,
-        )
-        initial_tokens = estimate_message_tokens(initial_messages)
-        state = InvestigationState.start(
-            snapshot=snapshot,
-            settings=run.retrieval_settings,
-        )
-        scope_label = (
-            f"Scope ready · {snapshot.descriptor.label} · {snapshot.note_count} "
-            f"notes in {snapshot.result_tree_count} result trees"
-        )
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="FROZEN_SCOPE",
-            label="Frozen active MetaList scope",
-            detail={
-                "descriptor": snapshot.descriptor.model_dump(mode="json"),
-                "note_count": snapshot.note_count,
-                "result_tree_count": snapshot.result_tree_count,
-                "ordered_note_ids": list(snapshot.ordered_note_ids),
-                "ordered_root_ids": list(snapshot.ordered_root_ids),
-                "selected_note": snapshot.selected_note.as_payload(),
-            },
-            duration_ms=0.0,
-        )
-        yield self._status_event(
-            "scope",
-            "completed",
-            scope_label,
-            approx_input_tokens=initial_tokens,
-        )
-        async for event in self._ensure_model_context(run=run, messages=initial_messages):
-            yield event
-
-        route_messages = self._context_builder.build_scoped_route_messages(
-            canonical_messages=canonical_messages,
-            prompts=run.prompts,
-            snapshot=snapshot,
-        )
-        route_request = route_messages[-1]
-        route_messages = self._context_builder.append_web_access_context(
-            messages=route_messages[:-1],
-            settings=run.web_settings,
-            available_urls=initial_capabilities.normalized_urls,
-        )
-        route_messages.append(route_request)
-        route_progress: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
-        route_task = asyncio.create_task(
-            self._select_scoped_route(
-                run=run,
-                messages=route_messages,
-                on_progress=lambda progress: self._publish_inference_progress(
-                    run=run,
-                    progress_queue=route_progress,
-                    progress=progress,
-                    purpose=InferencePurpose.ACTION_SELECTION,
-                ),
-            )
-        )
-        async for progress in self._stream_progress_until_complete(
-            progress_queue=route_progress,
-            action_task=route_task,
-        ):
-            yield self._progress_status_event(
-                progress,
-                purpose=InferencePurpose.ACTION_SELECTION,
-                provider_label=self._provider_label,
-            )
-        route = await route_task
-        route_tokens = estimate_message_tokens(route_messages)
-        yield self._status_event(
-            route.kind,
-            "completed",
-            f"Selected action · {route.kind.replace('_', ' ')} · {self._compact_status_reason(route.reason)}",
-            approx_input_tokens=route_tokens,
-        )
-        if route.kind == "metalist_help":
-            async with aclosing(self._stream_help(run=run, canonical_messages=canonical_messages,
-                                                  topics=route.help_topics, snapshot=snapshot)) as events:
-                async for event in events:
-                    yield event
-            return
-
-        if route.kind == "respond":
-            action = RespondAction(kind="respond", basis=route.reason)
-            async for event in self._stream_web_response(
-                run=run,
-                canonical_messages=canonical_messages,
-                messages=response_messages,
-                action=action,
-                snapshot=snapshot,
-                investigation_evidence=None,
-                reference_note_ids=snapshot.selected_note.reference_note_ids,
-            ):
-                yield event
-            return
-
-        if route.kind == "tag_proposals":
-            if tag_handler is None:
-                raise AgentExecutionError("Tag proposal operations are not available in this runtime")
-            tag_skill = run.skills.for_action("tag_proposals")
-            self._record_skill_activation(run=run, skill=tag_skill)
-            yield self._status_event(
-                "skill",
-                "completed",
-                f"Activated skill · {tag_skill.title}",
-                approx_input_tokens=route_tokens,
-            )
-            async for event in tag_handler(inference=self._inference, run=run):
-                yield event
-            self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
-            return
-
-        assert route.kind in {
-            "investigate_current_scope",
-            "summarize_current_scope",
-        }
-        skill = run.skills.for_action(route.kind)
+        """Summarize the whole frozen view after the user confirms (the agent's summarize_view)."""
+        skill = run.skills.for_action("summarize_current_scope")
         self._record_skill_activation(run=run, skill=skill)
         yield self._status_event(
             "skill",
@@ -403,45 +210,39 @@ class AgentRuntime:
             f"Activated skill · {skill.title}",
             approx_input_tokens=route_tokens,
         )
-        if route.kind == "summarize_current_scope":
-            # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
-            try:
-                batch_plan = await asyncio.to_thread(
-                    state.plan_complete_root_batches,
-                    reserved_approximate_tokens=selected_note_tokens,
-                )
-            # lint: allow-PY001 rationale="an atomic root can legitimately exceed the user-configured summary batch limit"
-            except ValueError as exc:
-                raise AgentExecutionError(str(exc)) from exc
-            choice = ""
-            prefix_root_count = batch_plan.result_tree_count
-            question_choices = ("summarize_all", "cancel")
-            if len(batch_plan.batches) > 1:
-                prefix_retention = InvestigationState.start(
-                    snapshot=snapshot,
-                    settings=run.retrieval_settings,
-                ).retain_root_prefix_within_token_budget(
-                    reserved_approximate_tokens=selected_note_tokens,
-                )
-                prefix_root_count = prefix_retention.retained_result_tree_count
-                question_choices = ("summarize_all", "use_prefix", "cancel")
+        # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
+        try:
+            batch_plan = await asyncio.to_thread(
+                state.plan_complete_root_batches,
+                reserved_approximate_tokens=selected_note_tokens,
+            )
+        # lint: allow-PY001 rationale="an atomic root can legitimately exceed the user-configured summary batch limit"
+        except ValueError as exc:
+            raise AgentExecutionError(str(exc)) from exc
+        # One evidence payload means one ordinary model call: no batches to pay
+        # for or choose between, so the summary starts without a question.
+        if len(batch_plan.batches) > 1:
+            prefix_root_count = InvestigationState.start(
+                snapshot=snapshot,
+                settings=run.retrieval_settings,
+            ).retain_root_prefix_within_token_budget(
+                reserved_approximate_tokens=selected_note_tokens,
+            ).retained_result_tree_count
             with bulk_operation_guard.acquire(run.session_key):
                 question_id, answer = bulk_operation_guard.question(
-                    question_choices
+                    ("summarize_all", "use_prefix", "cancel")
                 )
                 # Report scope size against the evidence budget, as tag proposals do.
                 budget_ratio = (
                     (batch_plan.approximate_token_count + selected_note_tokens)
                     / run.retrieval_settings.max_page_approximate_tokens
                 )
-                operation_description = (
-                    f"This scope contains {batch_plan.result_tree_count} root notes "
-                    "and fits in one evidence payload "
-                    f"(approximately {budget_ratio:.2f}× the evidence budget)."
-                )
-                if len(batch_plan.batches) > 1:
-                    minimum_model_calls = len(batch_plan.batches) + 1
-                    operation_description = (
+                minimum_model_calls = len(batch_plan.batches) + 1
+                yield {
+                    "type": "bulk_question",
+                    "question_id": question_id,
+                    "kind": "summary_confirmation",
+                    "label": (
                         f"This scope uses approximately {budget_ratio:.2f}× the "
                         f"evidence budget: its {batch_plan.result_tree_count} root "
                         f"notes need {len(batch_plan.batches)} evidence batches "
@@ -449,12 +250,7 @@ class AgentRuntime:
                         f"(at least {minimum_model_calls} model calls). "
                         f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
                         "batch requests at once."
-                    )
-                yield {
-                    "type": "bulk_question",
-                    "question_id": question_id,
-                    "kind": "summary_confirmation",
-                    "label": operation_description,
+                    ),
                     "root_count": batch_plan.result_tree_count,
                     "batch_count": len(batch_plan.batches),
                     "prefix_root_count": prefix_root_count,
@@ -478,7 +274,7 @@ class AgentRuntime:
                         "reference_web_ids": [],
                     }
                     return
-                if choice == "summarize_all" and len(batch_plan.batches) > 1:
+                if choice == "summarize_all":
                     async with aclosing(self._stream_staged_scope_summary(
                         run=run,
                         canonical_messages=canonical_messages,
@@ -489,10 +285,7 @@ class AgentRuntime:
                         async for event in staged_events:
                             yield event
                     return
-                if choice == "use_prefix":
-                    assert len(batch_plan.batches) > 1
-                else:
-                    assert choice == "summarize_all"
+                assert choice == "use_prefix"
                 yield {"type": "bulk_complete", "changed": False}
         retention = await asyncio.to_thread(
             state.retain_root_prefix_within_token_budget,
@@ -582,43 +375,28 @@ class AgentRuntime:
             ),
             approx_input_tokens=final_tokens,
         )
-        if run.web_settings.can_open_pages:
-            planning_messages = self._replace_final_request_with_evidence_context(
-                final_messages
-            )
-            async for event in self._stream_web_response(
-                run=run,
-                canonical_messages=canonical_messages,
-                messages=planning_messages,
-                action=RespondAction(kind="respond", basis=basis),
-                snapshot=snapshot,
-                investigation_evidence=evidence_payload,
-                reference_note_ids=reference_note_ids,
-            ):
-                yield event
-        else:
-            final_request = final_messages[-1]
-            capabilities = build_web_url_capabilities(
-                canonical_messages=canonical_messages,
-                selected_note=snapshot.selected_note,
-                investigation_evidence=evidence_payload,
-                retained_web_urls=web_evidence_store.retained_urls(
-                    session_key=run.session_key
-                ),
-            )
-            final_messages = self._context_builder.append_web_access_context(
-                messages=final_messages[:-1],
-                settings=run.web_settings,
-                available_urls=capabilities.normalized_urls,
-            )
-            final_messages.append(final_request)
-            async for event in self._stream_prebuilt_final_response(
-                run=run,
-                final_messages=final_messages,
-                reference_note_ids=reference_note_ids,
-                reference_web_evidence=(),
-            ):
-                yield event
+        final_request = final_messages[-1]
+        capabilities = build_web_url_capabilities(
+            canonical_messages=canonical_messages,
+            selected_note=snapshot.selected_note,
+            investigation_evidence=evidence_payload,
+            retained_web_urls=web_evidence_store.retained_urls(
+                session_key=run.session_key
+            ),
+        )
+        final_messages = self._context_builder.append_web_access_context(
+            messages=final_messages[:-1],
+            settings=run.web_settings,
+            available_urls=capabilities.normalized_urls,
+        )
+        final_messages.append(final_request)
+        async for event in self._stream_prebuilt_final_response(
+            run=run,
+            final_messages=final_messages,
+            reference_note_ids=reference_note_ids,
+            reference_web_evidence=(),
+        ):
+            yield event
 
     async def _stream_staged_scope_summary(
         self,
@@ -1145,358 +923,6 @@ class AgentRuntime:
             on_stream=lambda progress: None,
         )
 
-    async def _stream_web_response(
-        self,
-        *,
-        run: _RunContext,
-        canonical_messages: list[dict[str, str]],
-        messages: list[dict[str, str]],
-        action: RespondAction,
-        snapshot: ScopedSearchSnapshot,
-        investigation_evidence: InvestigationEvidencePayload | None,
-        reference_note_ids: tuple[str, ...],
-    ) -> AsyncIterator[dict[str, object]]:
-        capabilities = build_web_url_capabilities(
-            canonical_messages=canonical_messages,
-            selected_note=snapshot.selected_note,
-            investigation_evidence=investigation_evidence,
-            retained_web_urls=web_evidence_store.retained_urls(
-                session_key=run.session_key
-            ),
-        )
-        current_messages = self._context_builder.append_web_access_context(
-            messages=messages,
-            settings=run.web_settings,
-            available_urls=capabilities.normalized_urls,
-        )
-        if not run.web_settings.can_open_pages:
-            async for event in self._stream_final_response(
-                run=run,
-                messages=current_messages,
-                action=action,
-                reference_note_ids=reference_note_ids,
-                reference_web_evidence=(),
-            ):
-                yield event
-            return
-        skill = run.skills.for_action("web_browsing")
-        self._record_skill_activation(run=run, skill=skill)
-        current_messages = self._context_builder.activate_skill(
-            messages=current_messages,
-            skill=skill,
-        )
-        yield self._status_event(
-            "skill",
-            "completed",
-            f"Activated skill · {skill.title}",
-            approx_input_tokens=estimate_message_tokens(current_messages),
-        )
-        retained, omitted_retained_count = web_evidence_store.prompt_evidence(
-            session_key=run.session_key
-        )
-        if retained:
-            current_messages = self._context_builder.append_retained_web_evidence(
-                messages=current_messages,
-                evidence=retained,
-                omitted_count=omitted_retained_count,
-            )
-        reference_web_evidence = list(retained)
-        for _step in range(_MAX_ACTION_STEPS):
-            planning_messages = self._context_builder.append_web_action_request(
-                messages=current_messages,
-                settings=run.web_settings,
-            )
-            input_tokens = estimate_message_tokens(planning_messages)
-            yield self._status_event(
-                "web_planning",
-                "started",
-                "Choosing web action",
-                approx_input_tokens=input_tokens,
-            )
-            response_model: type[BaseModel] = ContextualWebActionEnvelope
-            response = await self._request_structured_inference(
-                run=run,
-                model=self._model_policy.for_stage(
-                    purpose=InferencePurpose.ACTION_SELECTION,
-                    selected_model=run.selected_model,
-                ),
-                messages=planning_messages,
-                response_model=response_model,
-                purpose=InferencePurpose.ACTION_SELECTION,
-                on_progress=lambda progress: self._record_inference_progress(
-                    run=run,
-                    progress=progress,
-                    purpose=InferencePurpose.ACTION_SELECTION,
-                ),
-            )
-            envelope = response_model.model_validate_json(response.content)
-            web_action = envelope.to_action()
-            self._record_structured_attempts(
-                run=run,
-                attempts=response.attempts,
-                parsed=web_action.model_dump(),
-                purpose=InferencePurpose.ACTION_SELECTION,
-            )
-            yield self._status_event(
-                "web_planning",
-                "completed",
-                f"Selected web action · {web_action.kind.replace('_', ' ')}",
-                approx_input_tokens=input_tokens,
-            )
-            if isinstance(web_action, RespondAction):
-                async for event in self._stream_final_response(
-                    run=run,
-                    messages=current_messages,
-                    action=web_action,
-                    reference_note_ids=reference_note_ids,
-                    reference_web_evidence=tuple(reference_web_evidence),
-                ):
-                    yield event
-                return
-            assert isinstance(web_action, OpenWebPagesAction)
-            yield self._status_event(
-                "open_web_pages",
-                "started",
-                f"Opening {len(web_action.urls)} web pages",
-                approx_input_tokens=input_tokens,
-            )
-            result_payload, opened_evidence = await self._open_web_action(
-                run=run,
-                action=web_action,
-                capabilities=capabilities,
-            )
-            for evidence in opened_evidence:
-                if all(
-                    retained_page.evidence_id != evidence.evidence_id
-                    for retained_page in reference_web_evidence
-                ):
-                    reference_web_evidence.append(evidence)
-            succeeded = sum(item["status"] == "ok" for item in result_payload)
-            truncated = sum(item["truncated"] is True for item in result_payload)
-            yield self._status_event(
-                "open_web_pages",
-                "completed",
-                (
-                    f"Web pages ready · {succeeded} succeeded · "
-                    f"{len(result_payload) - succeeded} failed · {truncated} truncated"
-                ),
-                approx_input_tokens=input_tokens,
-            )
-            current_messages = self._context_builder.append_web_tool_result(
-                messages=current_messages,
-                action_payload=web_action.model_dump(mode="json"),
-                action_name=web_action.kind,
-                result_payload={"results": result_payload},
-                prompts=run.prompts,
-            )
-        raise AgentExecutionError(
-            f"The agent reached the {_MAX_ACTION_STEPS}-step web action limit"
-        )
-
-    async def _open_web_action(
-        self,
-        *,
-        run: _RunContext,
-        action: OpenWebPagesAction,
-        capabilities,
-    ) -> tuple[list[dict[str, object]], tuple[WebPageEvidence, ...]]:
-        pending_urls: list[str] = []
-        pending_indexes: list[int] = []
-        cached_by_index: dict[int, WebPageEvidence] = {}
-        blocked_indexes: set[int] = set()
-        for index, url in enumerate(action.urls):
-            normalized = normalize_public_http_url(url)
-            if normalized is None:
-                blocked_indexes.add(index)
-                continue
-            if run.web_settings.mode == "contextual" and not capabilities.allows(normalized):
-                blocked_indexes.add(index)
-                continue
-            cached = web_evidence_store.find_by_url(
-                session_key=run.session_key,
-                url=normalized,
-            )
-            if cached is not None:
-                cached_by_index[index] = cached
-            else:
-                pending_urls.append(normalized)
-                pending_indexes.append(index)
-        fetched_results: tuple[WebPageFetchResult, ...] = ()
-        if pending_urls:
-            fetched_results = await fetch_web_pages(pending_urls)
-        fetched_by_index = dict(zip(pending_indexes, fetched_results, strict=True))
-        payload: list[dict[str, object]] = []
-        evidence_items: list[WebPageEvidence] = []
-        for index, url in enumerate(action.urls):
-            if index in blocked_indexes:
-                payload.append({
-                    "requested_url": url,
-                    "status": "blocked",
-                    "error_kind": "not_available_in_permitted_context",
-                    "cached": False,
-                    "truncated": False,
-                })
-                continue
-            if index in cached_by_index:
-                evidence = cached_by_index[index]
-                status = "ok"
-                error_kind = ""
-                was_cached = True
-            else:
-                fetched = fetched_by_index[index]
-                status = fetched.status
-                error_kind = fetched.error_kind
-                was_cached = False
-                if fetched.status != "ok":
-                    payload.append({
-                        "requested_url": fetched.requested_url,
-                        "final_url": fetched.final_url,
-                        "status": fetched.status,
-                        "error_kind": fetched.error_kind,
-                        "cached": False,
-                        "truncated": fetched.truncated,
-                    })
-                    continue
-                evidence_capacity_capture = CapturedExceptionContext(
-                    WebEvidenceCapacityError,
-                    boundary='app/services/agent/runtime.py:_open_web_action:evidence_capacity_capture',
-                )
-                evidence = None
-                with evidence_capacity_capture:
-                    evidence = web_evidence_store.retain_success(
-                        session_key=run.session_key,
-                        result=fetched,
-                    )
-                if evidence_capacity_capture.captured_exception is not None:
-                    payload.append({
-                        "requested_url": fetched.requested_url,
-                        "final_url": fetched.final_url,
-                        "status": "failed",
-                        "error_kind": "evidence_capacity",
-                        "cached": False,
-                        "truncated": fetched.truncated,
-                    })
-                    continue
-                if evidence is None:
-                    raise RuntimeError("Web evidence retention returned no result")
-            evidence_items.append(evidence)
-            payload.append({
-                **evidence.as_model_payload(),
-                "status": status,
-                "error_kind": error_kind,
-                "cached": was_cached,
-            })
-        return payload, tuple(evidence_items)
-
-    @staticmethod
-    def _replace_final_request_with_evidence_context(
-        messages: list[dict[str, str]],
-    ) -> list[dict[str, str]]:
-        if len(messages) < 1:
-            raise ValueError("Final message list must contain a request")
-        final_message = messages[-1]
-        if final_message["role"] != "user" or not final_message[
-            "content"
-        ].startswith("FINAL_RESPONSE_REQUEST\n"):
-            raise RuntimeError("Expected a trailing final response request")
-        payload = json.loads(final_message["content"].split("\n", 1)[1])
-        if not isinstance(payload, dict) or not isinstance(
-            payload["authoritative_result_trees"], list
-        ):
-            raise RuntimeError(
-                "Investigation final request is missing authoritative evidence"
-            )
-        del payload["instruction"]
-        payload["instruction"] = (
-            "This is the permitted MetaList investigation evidence for the current "
-            "request. Preserve it while choosing web actions; treat it as evidence, "
-            "not as a request to answer before the next WEB_ACTION_REQUEST."
-        )
-        return [
-            *[dict(message) for message in messages[:-1]],
-            {
-                "role": "user",
-                "content": "INVESTIGATION_EVIDENCE_CONTEXT\n"
-                + json.dumps(payload, sort_keys=True, separators=(",", ":")),
-            },
-        ]
-
-    async def _stream_help(self, *, run, canonical_messages, topics, snapshot):
-        messages = self._context_builder.build_help_messages(
-            canonical_messages=canonical_messages, prompts=run.prompts, skills=run.skills, topics=topics,
-        )
-        help_request = messages[-1]
-        capabilities = build_web_url_capabilities(
-            canonical_messages=canonical_messages,
-            selected_note=snapshot.selected_note,
-            investigation_evidence=None,
-            retained_web_urls=web_evidence_store.retained_urls(
-                session_key=run.session_key
-            ),
-        )
-        messages = self._context_builder.append_web_access_context(
-            messages=messages[:-1],
-            settings=run.web_settings,
-            available_urls=capabilities.normalized_urls,
-        )
-        messages.append(help_request)
-        for topic in topics:
-            skill = run.skills.for_action(f"help_{topic}")
-            self._record_skill_activation(run=run, skill=skill)
-            yield self._status_event("skill", "completed", f"Activated skill · {skill.title}",
-                                     approx_input_tokens=estimate_message_tokens(messages))
-        yield self._status_event("model_request", "started", "Answering with MetaList help skills",
-                                 approx_input_tokens=estimate_message_tokens(messages))
-        response = await self._request_structured_inference(
-            run=run, model=run.selected_model, messages=messages, response_model=MetaListHelpResponse,
-            purpose=InferencePurpose.FINAL_RESPONSE,
-            on_progress=lambda progress: self._record_inference_progress(
-                run=run, progress=progress, purpose=InferencePurpose.FINAL_RESPONSE),
-        )
-        answer = MetaListHelpResponse.model_validate_json(response.content)
-        self._record_structured_attempts(run=run, attempts=response.attempts,
-            parsed=answer.model_dump(), purpose=InferencePurpose.FINAL_RESPONSE)
-        yield self._status_event("model_request", "completed", "MetaList help ready",
-                                 approx_input_tokens=estimate_message_tokens(messages))
-        yield {"type": "content_delta", "text": answer.answer, "reference_note_ids": [], "reference_web_ids": []}
-        if answer.menu_id != "none":
-            async with aclosing(self._open_help_menu(run=run, menu_id=answer.menu_id, snapshot=snapshot)) as events:
-                async for event in events:
-                    yield event
-        self._trace_store.complete_run(session_key=run.session_key, run_id=run.run_id)
-        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
-
-    async def _open_help_menu(self, *, run, menu_id, snapshot):
-        pending = menu_action_store.create(session_key=run.session_key, menu_id=menu_id)
-        request = {"type": "menu_open", "request_id": pending.request_id, "menu_id": menu_id,
-                   "scope": snapshot.descriptor.model_dump(mode="json")}
-        self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
-            event_type="MENU_REQUESTED", label="Requested menu opening", detail=request, duration_ms=0.0)
-        # lint: allow-PY001 rationale="wait for external browser acknowledgment and preserve cancellation"
-        try:
-            yield request
-            result = await menu_action_store.wait(pending)
-        # lint: allow-PY001 rationale="record cancellation of browser menu acknowledgment, then propagate it"
-        except (asyncio.CancelledError, GeneratorExit):
-            self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
-                event_type="MENU_RESULT", label="Menu cancelled", detail={
-                    "request_id": pending.request_id, "menu_id": menu_id,
-                    "status": "cancelled", "detail": "Chat request ended before acknowledgment.",
-                }, duration_ms=0.0)
-            raise
-        finally:
-            menu_action_store.discard(pending)
-        self._trace_store.append_event(session_key=run.session_key, run_id=run.run_id,
-            event_type="MENU_RESULT", label=f"Menu {result.status}",
-            detail={**result.model_dump(), "menu_id": menu_id}, duration_ms=0.0)
-        label = MENU_BY_ID[menu_id]["label"]
-        text = f"Opened **{label}**."
-        if MENU_BY_ID[menu_id]["presentation"] == "palette":
-            text = f"Opened the menu at **{label}**; the command has not been executed."
-        if result.status != "opened":
-            text = f"Could not open **{label}** ({result.status})."
-        yield {"type": "content_delta", "text": "\n\n" + text, "reference_note_ids": [], "reference_web_ids": []}
-
     async def _ensure_model_context(
         self,
         *,
@@ -1526,50 +952,6 @@ class AgentRuntime:
             f"{self._provider_label} context ready · {context_window.loaded_tokens:,} tokens",
             approx_input_tokens=input_tokens,
         )
-
-    async def stream(
-        self,
-        *,
-        session_key: str,
-        base_url: str,
-        selected_model: str,
-        thinking_level: str,
-        canonical_messages: list[dict[str, str]],
-        prompts: AgentPromptSet,
-        skills: AgentSkillSet,
-        retrieval_settings: AgentRetrievalSettings,
-    ) -> AsyncIterator[dict[str, object]]:
-        run, messages = self._start_run(
-            session_key=session_key,
-            base_url=base_url,
-            selected_model=selected_model,
-            thinking_level=thinking_level,
-            canonical_messages=canonical_messages,
-            prompts=prompts,
-            skills=skills,
-            retrieval_settings=retrieval_settings,
-            web_settings=DEFAULT_AGENT_WEB_SETTINGS,
-        )
-        # lint: allow-PY001 rationale="record every run failure in the session trace before re-raising"
-        try:
-            async for event in self._run_steps(run=run, messages=messages):
-                yield event
-        # lint: allow-PY001 rationale="record interrupted external inference before preserving cancellation"
-        except asyncio.CancelledError:
-            self._record_failure(
-                session_key=session_key,
-                run_id=run.run_id,
-                error="Agent run interrupted",
-            )
-            raise
-        # lint: allow-PY001 rationale="record internal failure details and immediately re-raise"
-        except Exception as exc:
-            self._record_failure(
-                session_key=session_key,
-                run_id=run.run_id,
-                error=f"{type(exc).__name__}: {exc}",
-            )
-            raise
 
     def _start_run(
         self,
@@ -1607,302 +989,6 @@ class AgentRuntime:
         )
         return run, messages
 
-    async def _run_steps(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-    ) -> AsyncIterator[dict[str, object]]:
-        current_input_tokens = estimate_message_tokens(messages)
-        yield self._status_event(
-            "model_context",
-            "started",
-            self._model_context_check_label(),
-            approx_input_tokens=current_input_tokens,
-        )
-        context_window = await self._inference.inspect_context_window(
-            base_url=run.base_url,
-            model=run.selected_model,
-        )
-        self._record_model_context(run=run, context_window=context_window)
-        if not context_window.is_sufficient:
-            yield self._status_event(
-                "model_context",
-                "completed",
-                (
-                    f"{self._provider_label} context too small · "
-                    f"{context_window.loaded_tokens:,} loaded · "
-                    f"{context_window.required_tokens:,} required"
-                ),
-                approx_input_tokens=current_input_tokens,
-            )
-            raise AgentExecutionError(
-                f"{context_window.model} is loaded with "
-                f"{context_window.loaded_tokens:,} context tokens; MetaList requires "
-                f"{context_window.required_tokens:,} for this model (declared maximum "
-                f"{context_window.maximum_tokens:,}). The MetaList-managed runtime is "
-                "not honoring its required context configuration. Restart MetaList and "
-                "inspect Agent Debug if the problem continues."
-            )
-        yield self._status_event(
-            "model_context",
-            "completed",
-            f"{self._provider_label} context ready · {context_window.loaded_tokens:,} tokens",
-            approx_input_tokens=current_input_tokens,
-        )
-        current_messages = messages
-        reference_note_ids: list[str] = []
-        completed_search_count = 0
-        completed_search_requests: set[_SearchRequestKey] = set()
-        for _ in range(_MAX_ACTION_STEPS):
-            current_input_tokens = estimate_message_tokens(current_messages)
-            yield self._status_event(
-                "planning",
-                "started",
-                "Preparing action selection",
-                approx_input_tokens=current_input_tokens,
-            )
-            progress_queue: asyncio.Queue[StructuredInferenceProgress] = asyncio.Queue()
-            route_task = asyncio.create_task(
-                self._select_action(
-                    run=run,
-                    messages=current_messages,
-                    on_progress=lambda progress: self._publish_inference_progress(
-                        run=run,
-                        progress_queue=progress_queue,
-                        progress=progress,
-                        purpose=InferencePurpose.ACTION_SELECTION,
-                    ),
-                )
-            )
-            async for progress in self._stream_progress_until_complete(
-                progress_queue=progress_queue,
-                action_task=route_task,
-            ):
-                yield self._progress_status_event(
-                    progress,
-                    purpose=InferencePurpose.ACTION_SELECTION,
-                    provider_label=self._provider_label,
-                )
-            route_action, current_messages = await route_task
-            yield self._selected_action_status_event(
-                route_action,
-                completed_search_count=completed_search_count,
-                approx_input_tokens=current_input_tokens,
-            )
-            if isinstance(route_action, SearchNotesIntent):
-                skill = run.skills.for_action(route_action.kind)
-                self._record_skill_activation(run=run, skill=skill)
-                skill_messages = self._context_builder.activate_skill(
-                    messages=current_messages,
-                    skill=skill,
-                )
-                yield self._status_event(
-                    "skill",
-                    "completed",
-                    f"Activated skill · {skill.title}",
-                    approx_input_tokens=estimate_message_tokens(skill_messages),
-                )
-                skill_progress_queue: asyncio.Queue[StructuredInferenceProgress] = (
-                    asyncio.Queue()
-                )
-                search_action_task = asyncio.create_task(
-                    self._prepare_search_action(
-                        run=run,
-                        messages=skill_messages,
-                        on_progress=lambda progress: self._publish_inference_progress(
-                            run=run,
-                            progress_queue=skill_progress_queue,
-                            progress=progress,
-                            purpose=InferencePurpose.SEARCH_QUERY,
-                        ),
-                    )
-                )
-                async for progress in self._stream_progress_until_complete(
-                    progress_queue=skill_progress_queue,
-                    action_task=search_action_task,
-                ):
-                    yield self._progress_status_event(
-                        progress,
-                        purpose=InferencePurpose.SEARCH_QUERY,
-                        provider_label=self._provider_label,
-                    )
-                action = await search_action_task
-            else:
-                action = route_action
-            if isinstance(action, RespondAction):
-                async for event in self._stream_final_response(
-                    run=run,
-                    messages=current_messages,
-                    action=action,
-                    reference_note_ids=tuple(reference_note_ids),
-                ):
-                    yield event
-                return
-            if isinstance(action, SearchNotesAction):
-                search_request_key = self._search_request_key(action)
-                if search_request_key in completed_search_requests:
-                    respond_action = RespondAction(
-                        kind="respond",
-                        basis=(
-                            "The proposed search repeats a completed query, so "
-                            "do not execute it again. Answer using the evidence already "
-                            "retrieved."
-                        ),
-                    )
-                    self._record_duplicate_search_policy(run=run, action=action)
-                    yield self._status_event(
-                        "search_notes",
-                        "completed",
-                        f"Skipped duplicate search · {action.query}",
-                        approx_input_tokens=current_input_tokens,
-                    )
-                    self._record_action(run=run, action=respond_action)
-                    yield self._selected_action_status_event(
-                        respond_action,
-                        completed_search_count=completed_search_count,
-                        approx_input_tokens=current_input_tokens,
-                    )
-                    async for event in self._stream_final_response(
-                        run=run,
-                        messages=current_messages,
-                        action=respond_action,
-                        reference_note_ids=tuple(reference_note_ids),
-                    ):
-                        yield event
-                    return
-            status_label = self._tool_status_label(action)
-            yield self._status_event(
-                action.kind,
-                "started",
-                status_label,
-                approx_input_tokens=current_input_tokens,
-            )
-            current_messages, tool_result = self._execute_tool(
-                run=run,
-                messages=current_messages,
-                action=action,
-            )
-            reference_note_ids = self._merge_reference_note_ids(
-                current_note_ids=reference_note_ids,
-                tool_result=tool_result,
-            )
-            completed_status_label = self._tool_completed_status_label(
-                action=action,
-                result=tool_result,
-            )
-            yield self._status_event(
-                action.kind,
-                "completed",
-                completed_status_label,
-                approx_input_tokens=estimate_message_tokens(current_messages),
-            )
-            if isinstance(action, SearchNotesAction):
-                completed_search_requests.add(self._search_request_key(action))
-                completed_search_count += 1
-        raise AgentExecutionError(f"Agent exceeded {_MAX_ACTION_STEPS} action steps")
-
-    async def _select_action(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> tuple[AgentRouteAction, list[dict[str, str]]]:
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.ACTION_SELECTION,
-            selected_model=run.selected_model,
-        )
-        response = await self._request_structured_inference(
-            run=run,
-            model=model,
-            messages=messages,
-            response_model=AgentRouteEnvelope,
-            purpose=InferencePurpose.ACTION_SELECTION,
-            on_progress=on_progress,
-        )
-        action = parse_agent_route_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=action.model_dump(),
-            purpose=InferencePurpose.ACTION_SELECTION,
-        )
-        self._record_action(run=run, action=action)
-        return action, messages
-
-    async def _select_scoped_route(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> ScopedRouteEnvelope:
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.ACTION_SELECTION,
-            selected_model=run.selected_model,
-        )
-        response = await self._request_structured_inference(
-            run=run,
-            model=model,
-            messages=messages,
-            response_model=ScopedRouteEnvelope,
-            purpose=InferencePurpose.ACTION_SELECTION,
-            on_progress=on_progress,
-        )
-        route = ScopedRouteEnvelope.model_validate_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=route.model_dump(),
-            purpose=InferencePurpose.ACTION_SELECTION,
-        )
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="ACTION",
-            label=f"Action: {route.kind}",
-            detail={"action": route.model_dump(mode="json")},
-            duration_ms=0.0,
-        )
-        return route
-
-    async def _prepare_search_action(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        on_progress: Callable[[StructuredInferenceProgress], None],
-    ) -> SearchNotesAction:
-        model = self._model_policy.for_stage(
-            purpose=InferencePurpose.SEARCH_QUERY,
-            selected_model=run.selected_model,
-        )
-        response = await self._request_structured_inference(
-            run=run,
-            model=model,
-            messages=messages,
-            response_model=SearchQueryEnvelope,
-            purpose=InferencePurpose.SEARCH_QUERY,
-            on_progress=on_progress,
-        )
-        action = parse_search_query_json(response.content)
-        self._record_structured_attempts(
-            run=run,
-            attempts=response.attempts,
-            parsed=action.model_dump(),
-            purpose=InferencePurpose.SEARCH_QUERY,
-        )
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="ACTION_ARGUMENTS",
-            label="Prepared action: search_notes",
-            detail={"action": action.model_dump()},
-            duration_ms=0.0,
-        )
-        return action
-
     async def _request_structured_inference(
         self,
         *,
@@ -1930,60 +1016,13 @@ class AgentRuntime:
                 parsed={},
                 purpose=purpose,
             )
-            response_label = "agent route"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                response_label = "search query"
-            attempt_count = len(exc.attempts)
-            attempt_label = "attempt"
-            if attempt_count != 1:
-                attempt_label = "attempts"
-            raise AgentExecutionError(
-                f"The model could not produce a valid {response_label} after "
-                f"{attempt_count} {attempt_label}. Open Agent Debug for exact request "
-                "and response details."
-            ) from exc
-
-    @staticmethod
-    async def _stream_progress_until_complete(
-        *,
-        progress_queue: asyncio.Queue[StructuredInferenceProgress],
-        action_task: asyncio.Task[object],
-    ) -> AsyncIterator[StructuredInferenceProgress]:
-        try:
-            while not action_task.done():
-                receive_task = asyncio.create_task(progress_queue.get())
-                completed, _ = await asyncio.wait(
-                    {action_task, receive_task},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if receive_task in completed:
-                    yield receive_task.result()
-                    continue
-                receive_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await receive_task
-            while not progress_queue.empty():
-                yield progress_queue.get_nowait()
-        finally:
-            if not action_task.done():
-                action_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await action_task
-
-    def _record_action(
-        self,
-        *,
-        run: _RunContext,
-        action: AgentRouteAction,
-    ) -> None:
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="ACTION",
-            label=f"Action: {action.kind}",
-            detail={"action": action.model_dump()},
-            duration_ms=0.0,
-        )
+            # Explain the failure in the chat itself (and the saved turn), so
+            # it can be understood later without the Agent Debug trace.
+            raise AgentExecutionError(explain_structured_failure(
+                response_model=response_model,
+                attempts=exc.attempts,
+                setup=FailureSetup(model=model, thinking_level=run.thinking_level, web_mode=run.web_settings.mode),
+            )) from exc
 
     def _record_inference_progress(
         self,
@@ -2064,121 +1103,6 @@ class AgentRuntime:
             },
             duration_ms=0.0,
         )
-
-    def _record_duplicate_search_policy(
-        self,
-        *,
-        run: _RunContext,
-        action: SearchNotesAction,
-    ) -> None:
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="POLICY_DECISION",
-            label="Skipped duplicate search",
-            detail={
-                "tool": action.kind,
-                "allowed": False,
-                "permission": "read",
-                "mutates": False,
-                "reason": "The same semantic query already completed.",
-                "arguments": action.model_dump(),
-            },
-            duration_ms=0.0,
-        )
-
-    def _publish_inference_progress(
-        self,
-        *,
-        run: _RunContext,
-        progress_queue: asyncio.Queue[StructuredInferenceProgress],
-        progress: StructuredInferenceProgress,
-        purpose: InferencePurpose,
-    ) -> None:
-        self._record_inference_progress(run=run, progress=progress, purpose=purpose)
-        progress_queue.put_nowait(progress)
-
-    def _execute_tool(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        action: SearchNotesAction | ReadNotesByIdAction,
-    ) -> tuple[list[dict[str, str]], ToolExecutionResult]:
-        spec = self._tool_registry.spec_for(action)
-        decision = self._permission_policy.authorize(spec=spec)
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="POLICY_DECISION",
-            label=f"Allowed: {spec.name}",
-            detail={
-                "tool": spec.name,
-                "allowed": decision.allowed,
-                "permission": decision.permission,
-                "mutates": spec.mutates,
-                "reason": decision.reason,
-            },
-            duration_ms=0.0,
-        )
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="TOOL_CALL",
-            label=f"Tool call: {spec.name}",
-            detail={"tool": spec.name, "arguments": action.model_dump()},
-            duration_ms=0.0,
-        )
-        started_at = time.perf_counter()
-        result = self._tool_registry.execute(
-            action,
-            settings=run.retrieval_settings,
-        )
-        duration_ms = (time.perf_counter() - started_at) * 1_000
-        self._trace_store.append_event(
-            session_key=run.session_key,
-            run_id=run.run_id,
-            event_type="TOOL_RESULT",
-            label=f"Tool result: {spec.name}",
-            detail={"tool": spec.name, "payload": result.payload},
-            duration_ms=duration_ms,
-        )
-        with_action = self._context_builder.append_action(messages=messages, action=action)
-        return (
-            self._context_builder.append_tool_result(
-                messages=with_action,
-                result=result,
-                prompts=run.prompts,
-            ),
-            result,
-        )
-
-    async def _stream_final_response(
-        self,
-        *,
-        run: _RunContext,
-        messages: list[dict[str, str]],
-        action: RespondAction,
-        reference_note_ids: tuple[str, ...],
-        reference_web_evidence: tuple[WebPageEvidence, ...],
-    ) -> AsyncIterator[dict[str, object]]:
-        if not isinstance(reference_note_ids, tuple):
-            raise TypeError("reference_note_ids must be a tuple")
-        final_messages = self._context_builder.append_final_request(
-            messages=messages,
-            action=action,
-            reference_note_ids=reference_note_ids,
-            prompts=run.prompts,
-            current_user_request=run.current_user_request,
-            reference_web_evidence=reference_web_evidence,
-        )
-        async for event in self._stream_prebuilt_final_response(
-            run=run,
-            final_messages=final_messages,
-            reference_note_ids=reference_note_ids,
-            reference_web_evidence=reference_web_evidence,
-        ):
-            yield event
 
     async def _stream_prebuilt_final_response(
         self,
@@ -2332,38 +1256,6 @@ class AgentRuntime:
         )
 
     @staticmethod
-    def _merge_reference_note_ids(
-        *,
-        current_note_ids: list[str],
-        tool_result: ToolExecutionResult,
-    ) -> list[str]:
-        if not isinstance(current_note_ids, list):
-            raise TypeError("current_note_ids must be a list")
-        raw_notes = tool_result.payload["notes"]
-        if not isinstance(raw_notes, list):
-            raise RuntimeError("Agent tool result notes must be a list")
-        merged_note_ids = list(current_note_ids)
-        seen_note_ids = set(current_note_ids)
-        if len(seen_note_ids) != len(current_note_ids):
-            raise RuntimeError("Current reference note ids contain duplicates")
-        for raw_note in raw_notes:
-            if not isinstance(raw_note, dict):
-                raise RuntimeError("Agent tool result note must be an object")
-            note_id = raw_note["note_id"]
-            if not isinstance(note_id, str) or note_id == "":
-                raise RuntimeError("Agent tool result note_id must be non-empty")
-            content_is_redacted = raw_note["content_is_redacted"]
-            if not isinstance(content_is_redacted, bool):
-                raise RuntimeError(
-                    "Agent tool result content_is_redacted must be boolean"
-                )
-            if content_is_redacted or note_id in seen_note_ids:
-                continue
-            seen_note_ids.add(note_id)
-            merged_note_ids.append(note_id)
-        return merged_note_ids
-
-    @staticmethod
     def _consume_final_event(
         *,
         event: dict[str, object],
@@ -2501,65 +1393,6 @@ class AgentRuntime:
         self._trace_store.fail_run(session_key=session_key, run_id=run_id, error=error)
 
     @staticmethod
-    def _tool_status_label(action: SearchNotesAction | ReadNotesByIdAction) -> str:
-        if isinstance(action, SearchNotesAction):
-            return f"Searching notes · {action.query}"
-        count = len(action.note_ids)
-        noun = "notes"
-        if count == 1:
-            noun = "note"
-        return f"Reading {count} {noun} by ID"
-
-    @staticmethod
-    def _tool_completed_status_label(
-        *,
-        action: SearchNotesAction | ReadNotesByIdAction,
-        result: ToolExecutionResult,
-    ) -> str:
-        assert result.action_name == action.kind
-        if isinstance(action, SearchNotesAction):
-            matched_count = result.payload["matched_count"]
-            matched_note_count = result.payload["matched_note_count"]
-            returned_count = result.payload["returned_count"]
-            returned_note_count = result.payload["returned_note_count"]
-            omitted_count = result.payload["omitted_count"]
-            assert isinstance(matched_count, int) and not isinstance(matched_count, bool)
-            assert isinstance(matched_note_count, int) and not isinstance(
-                matched_note_count,
-                bool,
-            )
-            assert isinstance(returned_note_count, int) and not isinstance(
-                returned_note_count,
-                bool,
-            )
-            assert isinstance(returned_count, int) and not isinstance(
-                returned_count,
-                bool,
-            )
-            assert isinstance(omitted_count, int) and not isinstance(
-                omitted_count,
-                bool,
-            )
-            assert matched_count >= 0
-            assert matched_note_count >= 0
-            assert returned_count >= 0
-            assert returned_note_count >= 0
-            assert omitted_count >= 0
-            result_tree_noun = "result trees"
-            if matched_count == 1:
-                result_tree_noun = "result tree"
-            matching_note_noun = "matching notes"
-            if matched_note_count == 1:
-                matching_note_noun = "matching note"
-            return (
-                f"Search complete · {returned_count} of {matched_count} "
-                f"{result_tree_noun} · {returned_note_count} of {matched_note_count} "
-                f"{matching_note_noun} · {omitted_count} trailing result trees "
-                f"omitted · {action.query}"
-            )
-        return AgentRuntime._tool_status_label(action)
-
-    @staticmethod
     def _progress_status_event(
         progress: StructuredInferenceProgress,
         *,
@@ -2581,11 +1414,7 @@ class AgentRuntime:
             progress.wire_request
         )
         if progress.phase == "attempt_started":
-            operation_label = f"{provider_label} choosing next action"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                operation_label = (
-                    f"{provider_label} preparing MetaList search query"
-                )
+            operation_label = f"{provider_label} writing a structured reply"
             label = f"{operation_label}{attempt_suffix}"
             if progress.attempt > 1:
                 label = f"Instructor retrying · {label}"
@@ -2598,11 +1427,7 @@ class AgentRuntime:
                 duration_ms=progress.duration_ms,
             )
         if progress.phase == "output_progress":
-            operation_label = f"{provider_label} choosing next action"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                operation_label = (
-                    f"{provider_label} preparing MetaList search query"
-                )
+            operation_label = f"{provider_label} writing a structured reply"
             return AgentRuntime._output_status_event(
                 "model_request",
                 "started",
@@ -2612,11 +1437,7 @@ class AgentRuntime:
                 duration_ms=progress.duration_ms,
             )
         if progress.phase == "response_received":
-            response_label = f"{provider_label} returned next-action choice"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                response_label = (
-                    f"{provider_label} returned search-query proposal"
-                )
+            response_label = f"{provider_label} returned a structured reply"
             return AgentRuntime._output_status_event(
                 "validation",
                 "started",
@@ -2647,9 +1468,7 @@ class AgentRuntime:
                 duration_ms=progress.duration_ms,
             )
         if progress.phase == "attempt_succeeded":
-            output_label = "Structured action validated"
-            if purpose == InferencePurpose.SEARCH_QUERY:
-                output_label = "Structured search query validated"
+            output_label = "Structured reply validated"
             return AgentRuntime._output_status_event(
                 "validation",
                 "completed",
@@ -2695,76 +1514,6 @@ class AgentRuntime:
         return estimate_message_tokens(messages) + estimate_input_tokens(
             request_without_messages
         )
-
-    @staticmethod
-    def _selected_action_status_event(
-        action: AgentRouteAction,
-        *,
-        completed_search_count: int,
-        approx_input_tokens: int,
-    ) -> dict[str, object]:
-        if (
-            not isinstance(completed_search_count, int)
-            or isinstance(completed_search_count, bool)
-            or completed_search_count < 0
-        ):
-            raise ValueError("Completed search count must be a non-negative integer")
-        if isinstance(action, SearchNotesIntent):
-            label = "Selected action · Search notes"
-            if completed_search_count > 0:
-                label = "Selected action · Search again"
-            reason = action.rationale
-        elif isinstance(action, ReadNotesByIdAction):
-            count = len(action.note_ids)
-            noun = "notes"
-            if count == 1:
-                noun = "note"
-            label = f"Selected action · Read {count} {noun} by ID"
-            reason = action.rationale
-        elif isinstance(action, RespondAction):
-            label = "Selected action · Respond to user"
-            reason = action.basis
-        else:
-            raise TypeError(f"Unsupported selected action: {type(action)}")
-        label = f"{label} · {AgentRuntime._compact_status_reason(reason)}"
-        return AgentRuntime._status_event(
-            action.kind,
-            "completed",
-            label,
-            approx_input_tokens=approx_input_tokens,
-        )
-
-    @staticmethod
-    def _search_request_key(action: SearchNotesAction) -> _SearchRequestKey:
-        if not isinstance(action, SearchNotesAction):
-            raise TypeError("Search request key requires a SearchNotesAction")
-        return AgentRuntime._search_query_semantic_key(action.query)
-
-    @staticmethod
-    def _search_query_semantic_key(query: str) -> _SearchQueryKey:
-        if not isinstance(query, str) or query.strip() == "":
-            raise ValueError("Search query semantic key requires non-empty text")
-        parsed_query = parse_search_query(query)
-        clause_keys = frozenset(
-            (
-                frozenset(term.casefold() for term in clause.required_tags),
-                frozenset(term.casefold() for term in clause.forbidden_tags),
-                frozenset(term.casefold() for term in clause.required_text),
-                frozenset(term.casefold() for term in clause.forbidden_text),
-            )
-            for clause in parsed_query.clauses
-        )
-        return clause_keys
-
-    @staticmethod
-    def _compact_status_reason(reason: str) -> str:
-        if not isinstance(reason, str) or reason.strip() == "":
-            raise ValueError("Activity reason must be a non-empty string")
-        normalized_reason = " ".join(reason.split())
-        maximum_characters = 240
-        if len(normalized_reason) <= maximum_characters:
-            return normalized_reason
-        return f"{normalized_reason[: maximum_characters - 1].rstrip()}…"
 
     @staticmethod
     def _status_event(

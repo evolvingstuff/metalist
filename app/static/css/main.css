@@ -2397,6 +2397,7 @@ body.ai-chat-resizing * {
 }
 
 .ai-chat-header h2 {
+    flex: 0 0 auto;
     margin: 0;
     font-size: 16px;
     line-height: 1.25;
@@ -2404,6 +2405,11 @@ body.ai-chat-resizing * {
 
 .ai-chat-header-actions {
     display: flex;
+    /* In a narrow panel the buttons wrap onto right-aligned rows instead of
+       spilling past the panel edge, where clicks would land on the notes. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
     gap: 4px;
 }
 
@@ -2421,6 +2427,11 @@ body.ai-chat-resizing * {
     color: #475569;
     cursor: pointer;
     font-size: 16px;
+}
+
+/* inline-flex would otherwise override the hidden attribute. */
+.ai-chat-header-actions button[hidden] {
+    display: none;
 }
 
 .ai-chat-header-actions button:hover:not(:disabled) {
@@ -2443,7 +2454,8 @@ body.ai-chat-resizing * {
     stroke-width: 1.8;
 }
 
-.ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"] {
+.ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"],
+.ai-chat-header-actions #ai-chat-spend-toggle[aria-pressed="true"] {
     border-color: #93c5fd;
     background: #eff6ff;
     color: #0369a1;
@@ -2866,8 +2878,8 @@ body.ai-chat-resizing * {
     color: #9a3412;
 }
 
-.ai-chat-activity-panel[data-action="search_notes"],
-.ai-chat-activity-panel[data-action="read_notes_by_id"] {
+.ai-chat-activity-panel[data-action="search_view_notes"],
+.ai-chat-activity-panel[data-action="read_view_notes"] {
     border-color: #93c5fd;
     border-left-color: #0284c7;
     background: #eff6ff;
@@ -3048,6 +3060,8 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     margin-top: 8px;
     padding: 8px 10px;
     overflow-wrap: anywhere;
+    /* Failure explanations are several lines (step, attempts, setup, advice). */
+    white-space: pre-line;
     background: #fef2f2;
     border: 1px solid #fecaca;
     border-left: 4px solid #ef4444;
@@ -3170,141 +3184,6 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 
 .ai-agent-settings-modal-content {
     width: min(560px, 94vw);
-}
-
-.agent-prompt-editor-modal-content {
-    width: min(1100px, 96vw);
-}
-
-.agent-prompt-editor-description,
-.agent-prompt-editor-source,
-.agent-prompt-editor-loading {
-    margin: 0 0 14px;
-    line-height: 1.5;
-}
-
-.agent-prompt-editor-source {
-    font-size: 13px;
-    font-weight: 700;
-}
-
-.agent-prompt-editor-fields {
-    display: grid;
-    gap: 12px;
-}
-
-.agent-prompt-editor-field {
-    border: 1px solid var(--modal-border);
-    border-radius: 10px;
-    background: var(--modal-surface-raised);
-    overflow: hidden;
-}
-
-.agent-prompt-editor-field summary {
-    padding: 12px 14px;
-    color: var(--modal-text);
-    cursor: pointer;
-    font-weight: 700;
-}
-
-.agent-prompt-editor-field[open] summary {
-    border-bottom: 1px solid var(--modal-border);
-}
-
-.agent-prompt-editor-field > p {
-    margin: 12px 14px 8px;
-    color: var(--modal-text-muted);
-    font-size: 13px;
-}
-
-.agent-prompt-editor-field code {
-    color: var(--modal-text);
-}
-
-.agent-prompt-editor-field textarea {
-    display: block;
-    width: calc(100% - 28px);
-    min-height: 150px;
-    margin: 0 14px 14px;
-    padding: 12px;
-    box-sizing: border-box;
-    resize: vertical;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-}
-
-.agent-prompt-editor-field[data-prompt="system"] textarea {
-    min-height: 340px;
-}
-
-.agent-skill-editor-section {
-    display: grid;
-    gap: 12px;
-    margin-top: 8px;
-    padding-top: 16px;
-    border-top: 1px solid var(--modal-border);
-}
-
-.agent-skill-editor-section > h3,
-.agent-skill-editor-section > p {
-    margin: 0;
-}
-
-.agent-skill-editor-section > p {
-    color: var(--modal-text-muted);
-    font-size: 13px;
-    line-height: 1.5;
-}
-
-.agent-skill-editor-field summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    list-style: none;
-}
-
-.agent-skill-editor-field summary::-webkit-details-marker {
-    display: none;
-}
-
-.agent-skill-editor-summary-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-}
-
-.agent-skill-editor-chevron {
-    display: inline-block;
-    font-size: 13px;
-    transform-origin: center;
-    transition: transform 120ms ease;
-}
-
-.agent-skill-editor-field[open] .agent-skill-editor-chevron {
-    transform: rotate(90deg);
-}
-
-.agent-skill-editor-field summary code {
-    font-size: 12px;
-    font-weight: 500;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .agent-skill-editor-chevron {
-        transition: none;
-    }
-}
-
-.agent-prompt-editor-actions {
-    position: sticky;
-    bottom: -24px;
-    margin: 18px -24px -24px;
-    padding: 14px 24px 24px;
-    border-top: 1px solid var(--modal-border);
-    background: linear-gradient(180deg, rgba(12, 17, 24, 0.94), rgba(12, 17, 24, 1));
 }
 
 .ai-agent-settings-controls {
@@ -3584,8 +3463,8 @@ html[data-theme="dark"] .ai-chat-activity-panel[data-action="retry"] {
     color: #fed7aa;
 }
 
-html[data-theme="dark"] .ai-chat-activity-panel[data-action="search_notes"],
-html[data-theme="dark"] .ai-chat-activity-panel[data-action="read_notes_by_id"] {
+html[data-theme="dark"] .ai-chat-activity-panel[data-action="search_view_notes"],
+html[data-theme="dark"] .ai-chat-activity-panel[data-action="read_view_notes"] {
     border-color: #075985;
     border-left-color: #38bdf8;
     background: #082f49;
@@ -3690,7 +3569,8 @@ html[data-theme="dark"] .ai-chat-header-actions button {
     color: #d4d4d4;
 }
 
-html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"] {
+html[data-theme="dark"] .ai-chat-header-actions #ai-chat-diagnostics-toggle[aria-pressed="true"],
+html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-pressed="true"] {
     border-color: #075985;
     background: #082f49;
     color: #bae6fd;
@@ -6060,30 +5940,6 @@ body:not(.pref-drag-ghost) .note-drag-ghost,
 body:not(.pref-drop-indicator) .note-drop-target,
 body:not(.pref-drop-indicator) .note-drop-line {
     display: none !important;
-}
-
-/* "You are here" cue after leaving edit mode: a page overlay over the landing
-   block that fades out; it never changes the note itself. */
-/* Starts at full strength (no fade-in) and fades out; the left bar catches
-   the eye when the user is looking elsewhere. Keep the duration in step with
-   CUE_DURATION_MS in viewport-hold-service.js. */
-.note-position-cue {
-    position: absolute;
-    pointer-events: none;
-    z-index: 8999;
-    border-radius: 6px;
-    background-color: rgba(250, 204, 21, 0.4);
-    box-shadow: inset 4px 0 0 rgb(234, 179, 8);
-    animation: note-position-cue-fade 600ms ease-in forwards;
-}
-
-html[data-theme="dark"] .note-position-cue {
-    background-color: rgba(250, 204, 21, 0.28);
-}
-
-@keyframes note-position-cue-fade {
-    0%, 25% { opacity: 1; }
-    100% { opacity: 0; }
 }
 
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */
@@ -8833,6 +8689,18 @@ html[data-theme="dark"] body.loading::after {
 }
 .ai-chat-tag-operation,
 .ai-chat-summary-operation { width: 100%; font-size: 13px; }
+.ai-chat-confirmation { width: 100%; font-size: 13px; }
+.ai-chat-confirmation h2 { margin: 0 0 6px; font-size: 14px; }
+.ai-chat-confirmation-label { margin: 0 0 8px; line-height: 1.45; }
+/* One item (e.g. a web address) per line, monospace, breaking anywhere when long. */
+.ai-chat-confirmation-items { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 4px; }
+.ai-chat-confirmation-items code {
+    display: block; padding: 4px 8px; border-radius: 6px; background: rgb(255 255 255 / 8%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px;
+    line-height: 1.4; overflow-wrap: anywhere;
+}
+#ai-chat-panel .ai-chat-confirmation .form-actions { display: flex; flex-direction: row; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+#ai-chat-panel .ai-chat-confirmation .form-actions button { flex: 0 0 auto; width: auto; min-width: 64px; padding: 4px 14px; font-size: 13px; }
 .ai-chat-tag-controls { position: relative; }
 .ai-chat-tag-controls progress { width: 100%; height: 10px; accent-color: #8ab4ff; border: 0; border-radius: 8px; overflow: hidden; }
 .ai-chat-tag-controls progress::-webkit-progress-bar { background: #354256; border-radius: 8px; }

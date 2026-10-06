@@ -1,0 +1,233 @@
+{
+  "schema_version": 3,
+  "id": "synthetic-tagging-help",
+  "description": "Asking how proposals work is not permission to generate them.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "How do tag proposals work?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-0",
+        "parent_id": "",
+        "content_text": "Note 0",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "Note 1",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "Note 2",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-3",
+        "parent_id": "",
+        "content_text": "Note 3",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-4",
+        "parent_id": "",
+        "content_text": "Note 4",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-5",
+        "parent_id": "",
+        "content_text": "Note 5",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-6",
+        "parent_id": "",
+        "content_text": "Note 6",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-7",
+        "parent_id": "",
+        "content_text": "Note 7",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-8",
+        "parent_id": "",
+        "content_text": "Note 8",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-9",
+        "parent_id": "note-0",
+        "content_text": "Note 9",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-10",
+        "parent_id": "note-1",
+        "content_text": "Note 10",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-11",
+        "parent_id": "note-2",
+        "content_text": "Note 11",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-12",
+        "parent_id": "note-3",
+        "content_text": "Note 12",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-13",
+        "parent_id": "note-4",
+        "content_text": "Note 13",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-14",
+        "parent_id": "note-5",
+        "content_text": "Note 14",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-15",
+        "parent_id": "note-6",
+        "content_text": "Note 15",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-16",
+        "parent_id": "note-7",
+        "content_text": "Note 16",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-17",
+        "parent_id": "note-8",
+        "content_text": "Note 17",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-18",
+        "parent_id": "note-0",
+        "content_text": "Note 18",
+        "tags": "",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-19",
+        "parent_id": "note-1",
+        "content_text": "Note 19",
+        "tags": "",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": [
+          {
+            "topics": [
+              "ai"
+            ]
+          },
+          {
+            "topics": [
+              "tags"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "view_overview",
+      "search_view_notes",
+      "read_view_notes",
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/actions/tagging-help.json",
+    "mapping": "Product help, not note investigation or an operation.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "metalist_help",
+          "help_topics": [
+            "ai"
+          ]
+        },
+        {
+          "kind": "metalist_help",
+          "help_topics": [
+            "tags"
+          ]
+        }
+      ]
+    },
+    "source": "synthetic-action-suite-v1",
+    "note": "Invented requests, conversations, and view metadata. No personal notes or exports.",
+    "expectation_review": "Both AI and tags skills document proposals and bulk undo behavior. Accept either topic for this question; do not allow mutation routes."
+  }
+}

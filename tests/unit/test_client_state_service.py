@@ -149,6 +149,7 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
         "pref.ai.openai_model": "gpt-5.6-sol",
         "pref.ai.thinking_level": "low",
         "pref.ai.show_diagnostics": "false",
+        "pref.ai.show_spend": "true",
         "pref.ai.web_access_mode": "contextual",
         "pref.ai.tagging.vocabulary": "new",
         "pref.ai.tagging.focus": "both",
@@ -158,10 +159,6 @@ def test_save_client_preferences_accepts_ai_configuration(memory_settings_db) ->
             '"whitelist_phrases":[],"whitelist_tags":["project"]}'
         ),
         "pref.ai.openai.retrieval.max_page_approximate_tokens": "500000",
-        "pref.ai.prompt.system": "Custom MetaList agent",
-        "pref.ai.prompt.final_response": "FINAL\n{basis}",
-        "pref.ai.prompt.tool_result": "TOOL {action_name}\n{payload_json}",
-        "pref.ai.skill.scoped_investigation_v7": "Custom direct investigation skill",
         "pref.ai.chat_width": "640",
         "pref.ai.composer_height": "180",
     }
@@ -283,26 +280,23 @@ def test_save_client_preferences_rejects_invalid_agent_retrieval_limits(
 
 
 @pytest.mark.parametrize(
-    ("key", "value"),
+    "key",
     [
-        ("pref.ai.prompt.system", "   "),
-        ("pref.ai.prompt.final_response", "Missing basis"),
-        ("pref.ai.prompt.final_response", "{basis} {unknown}"),
-        ("pref.ai.prompt.tool_result", "{action_name}"),
-        ("pref.ai.prompt.tool_result", "{action_name} {payload_json} {unknown}"),
-        ("pref.ai.skill.search_notes", "   "),
-        ("pref.ai.skill.search_notes", "x" * 32_001),
+        "pref.ai.prompt.system",
+        "pref.ai.prompt.final_response",
+        "pref.ai.prompt.tool_result",
+        "pref.ai.prompt.tagging",
+        "pref.ai.skill.scoped_investigation_v7",
+        "pref.ai.skill.help_ai_v1",
+        "pref.ai.skill.search_notes",
     ],
 )
-def test_save_client_preferences_rejects_invalid_agent_prompts(
-    memory_settings_db,
-    key,
-    value,
-) -> None:
+def test_saved_prompt_and_skill_overrides_are_ignored_and_dropped(memory_settings_db, key) -> None:
     del memory_settings_db
-
-    with pytest.raises(ValueError):
-        save_client_preferences(preferences={key: value}, token="")
+    # AI instructions are no longer editable; old overrides must not reach the model.
+    saved = save_client_preferences(preferences={key: "Custom instructions", "pref.ai.thinking_level": "low"}, token="")
+    assert saved == {"pref.ai.thinking_level": "low"}
+    assert load_client_preferences(token="") == {"pref.ai.thinking_level": "low"}
 
 
 def test_retired_local_settings_discard_obsolete_model_selection(memory_settings_db):

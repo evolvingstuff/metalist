@@ -139,6 +139,8 @@ class WebEvidenceStore:
         self._sessions: dict[str, dict[str, WebPageEvidence]] = {}
         self._evidence_by_id: dict[str, dict[str, WebPageEvidence]] = {}
         self._references_by_id: dict[str, dict[str, WebCitationReference]] = {}
+        # Short per-session numbers the model cites as [[web:N]]: long ids are easy to miscopy.
+        self._short_numbers: dict[str, dict[str, int]] = {}
         self._lock = Lock()
 
     def reset(self) -> None:
@@ -146,6 +148,7 @@ class WebEvidenceStore:
             self._sessions.clear()
             self._evidence_by_id.clear()
             self._references_by_id.clear()
+            self._short_numbers.clear()
 
     def clear_session(self, *, session_key: str) -> None:
         _validate_session_key(session_key)
@@ -153,6 +156,7 @@ class WebEvidenceStore:
             self._sessions.pop(session_key, None)
             self._evidence_by_id.pop(session_key, None)
             self._references_by_id.pop(session_key, None)
+            self._short_numbers.pop(session_key, None)
 
     def find_by_url(self, *, session_key: str, url: str) -> WebPageEvidence | None:
         _validate_session_key(session_key)
@@ -228,7 +232,25 @@ class WebEvidenceStore:
             references_by_id.update(
                 (reference.evidence_id, reference) for reference in references
             )
+            short_numbers = self._short_numbers.setdefault(session_key, {})
+            for reference in references:
+                assert reference.evidence_id not in short_numbers
+                short_numbers[reference.evidence_id] = len(short_numbers) + 1
             return evidence
+
+    def short_citation_token(self, *, session_key: str, evidence_id: str) -> str:
+        """The [[web:N]] token the model cites for a retained page or link."""
+        _validate_session_key(session_key)
+        with self._lock:
+            return f"[[web:{self._short_numbers[session_key][evidence_id]}]]"
+
+    def evidence_ids_by_short_number(self, *, session_key: str) -> dict[int, str]:
+        """Every short citation number of the session, mapped to its full evidence id."""
+        _validate_session_key(session_key)
+        with self._lock:
+            if session_key not in self._short_numbers:
+                return {}
+            return {number: evidence_id for evidence_id, number in self._short_numbers[session_key].items()}
 
     def get(self, *, session_key: str, evidence_id: str) -> WebPageEvidence:
         _validate_session_key(session_key)

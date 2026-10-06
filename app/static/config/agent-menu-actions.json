@@ -12,21 +12,15 @@
     "presentation": "dialog"
   },
   {
-    "id": "form.agent_prompts",
-    "label": "Agent prompts",
-    "selector": "#agent-prompt-editor-modal",
-    "presentation": "dialog"
-  },
-  {
     "id": "form.proposals",
     "label": "Manage tag proposals",
     "selector": "dialog[aria-label=\"Manage tag proposals\"]",
     "presentation": "dialog"
   },
   {
-    "id": "form.tagging_prompt",
-    "label": "Tagging prompt and vocabulary",
-    "selector": "dialog[aria-label=\"Tagging prompt and vocabulary\"]",
+    "id": "form.tagging_vocabulary",
+    "label": "Tagging vocabulary",
+    "selector": "dialog[aria-label=\"Tagging vocabulary\"]",
     "presentation": "dialog"
   },
   {

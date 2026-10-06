@@ -1,14 +1,18 @@
-# Agent Harness: Read-only Investigation and Complete-scope Summaries
+# Agent Harness: the Tool-using Agent
 
 ## Contract
 
-MetaList owns orchestration and evidence access. The selected model can either
-answer normally or investigate the exact result scope visible when the user pressed
-Send. Investigation cannot search outside that boundary or mutate notes. Explicit tag proposal requests use a separate application-owned bulk operation described below.
+MetaList owns orchestration, evidence access and every change. The selected model
+answers each chat message by calling tools as needed (product help, notes in the
+view, web pages, menus) and then writing one answer. Tools read only the exact
+result scope visible when the user pressed Send, through the privacy boundary.
+Nothing changes notes without the user's explicit Yes: tag proposal operations and
+whole-view summaries hand over to application-owned operations that ask first.
 
-The supported provider is the OpenAI API. Instructor owns
-the small structured routing call; final prose streams through the provider's native
-client. LiteLLM is not part of the current path.
+The supported provider is the OpenAI API; the agent talks to it only through the
+provider-neutral tool-calling interface (`tool_calling.py`,
+`InferenceAdapter.stream_tool_turn`), implemented with the Responses API. Instructor
+remains for the structured summary and tagging batches. LiteLLM is not used.
 
 ## Runtime Flow
 
@@ -18,29 +22,22 @@ POST /api2/ai/chat + AgentScopeDescriptor
   → resolve canonical search/sort/date membership server-side
   → apply the provider disclosure boundary
   → freeze immutable ScopedSearchSnapshot S0
-  → select provider and verify its runtime/credential
-  → Instructor route: respond | investigate_current_scope | summarize_current_scope | tag_proposals | metalist_help
-      respond:
-        stream final prose, including the selected note when available
-      investigate_current_scope:
-        activate scoped-investigation skill
-        walk complete root trees in canonical order
-        retain the longest leading prefix within the provider token limit
-        serialize one full nested evidence payload
-        stream the final answer directly from that payload
-      summarize_current_scope:
-        ask permission before any summary model call
-        partition every complete root tree into ordered evidence batches
-        summarize batch 1 alone, then run later batches up to four at once
-        recursively condense oversized intermediate results
-        synthesize one answer only after every batch succeeds
+  → AgentRuntime.stream_agent (agent_loop.py), at most 8 model turns:
+      instructions (prompts/agent.md) + web skill when web access is on
+      + conversation + view/selected-note and web-access context
+      each turn: the model streams text and/or calls tools
+        read-only tools run and their results are appended
+        open_menu asks the browser and reports what opened
+        full-mode web addresses carrying note text ask Yes/No first
+        summarize_view / propose_tag_* hand over to their operation (ends the run)
+      a turn without tool calls is the answer
   → complete the in-memory chat turn
 ```
 
-Ordinary investigation has no paging cursor, next-page decision, working summary,
-source-ranking memory, facet browser, or automatic tag narrowing. Its request gets
-at most one evidence payload. Explicit complete-scope summaries use the separate
-staged path above.
+A rejected tool call (unknown tool, invalid arguments) is explained back to the
+model. Two failed tool turns in a row, or the eighth turn, ask the model to answer
+with what it has; a turn that ends silently gets one reminder before the run fails
+with a clear message. References may grow while the answer streams but never shrink.
 
 ## Conversation disclosure boundaries
 
@@ -50,7 +47,7 @@ the provider, configured privacy policy, and the namespace-wide set of permitted
 note IDs before each turn. A policy edit, newly applied/inherited `@password`
 restriction, changed ontology/content match, or removal of previously permitted
 notes invalidates prior history. Unknown history provenance is excluded
-conservatively. Both route selection and final generation consume this filtered
+conservatively. Every agent request consumes this filtered
 history, including when the current evidence scope is empty. Returning to an old
 provider does not automatically restore its previous context.
 
@@ -98,15 +95,19 @@ view; its containing tree is supplied separately without replacing the originati
 search scope. The whole selected tree counts toward the evidence token budget;
 an oversized tree fails visibly before provider calls rather than being clipped.
 
-`SELECTED_NOTE_CONTEXT` accompanies routing and final generation. The model uses
+`SELECTED_NOTE_CONTEXT` accompanies every agent request. The model uses
 selection, conversation, and the request together to infer the intended target;
-there is no keyword or singular/plural routing rule. `has_selection` distinguishes
+there is no keyword or singular/plural rule. `has_selection` distinguishes
 no selection from a selected but unavailable note. Unavailable selections expose
-only status, selection presence, and a reason: blacklisted, not whitelisted,
-password protected, search redacted, or not found. Restrictions inherited from
-ancestors also apply; reasons never expose the matching rule, note ID, tags, or
-content. The AI explains the restriction without suggesting reselection or pasting
-blocked content as a workaround. Each Send replaces prior selection
+only status, selection presence, a reason (`private`, `search_redacted`, or
+`not_found`) and the same in plain words ("The user is editing a note you cannot
+see: it is excluded by the current search."). `private` covers every AI privacy setting (blacklist, whitelist,
+password protection); the model is never told which one, and the specific setting
+stays internal. Restrictions inherited from ancestors also apply; reasons never
+expose the matching rule, note ID, tags, or content. The AI explains the restriction
+without suggesting reselection or pasting blocked content as a workaround. With no
+selection, a request about "this note" is answered by saying the AI does not know
+which note is meant. Each Send replaces prior selection
 context. This adds no note editing or child-creation capability.
 
 For broader search investigation, only true matches are evidence. An ancestor
@@ -131,40 +132,44 @@ Debug. The hover preview calls the same evaluator and gives hidden notes a reada
 gray background; the preview is explanatory, while server filtering is the security
 boundary.
 
-## One Evidence Payload
+## Reading Notes in the View
 
-`app/services/agent/investigation.py` performs one lazy ordered prefix walk after
-the route chooses `investigate_current_scope`:
+The note tools (`agent_tools.py`) read only the frozen, privacy-filtered snapshot:
 
-1. Serialize and estimate each complete root tree in canonical order.
-2. Retain it if the cumulative estimate remains within the provider limit.
-3. Stop before the first root that would overflow.
-4. Omit that root and every following root.
-5. Fail visibly if the first complete root alone exceeds the limit.
+- `view_overview`: the view label, counts, the selected note's tree, and a preview of
+  each root tree, listed until a quarter of the evidence budget.
+- `search_view_notes`: notes whose text or tags contain every query word, then the
+  trees they belong to.
+- `read_view_notes`: whole trees for requested notes (any note selects its tree), or
+  the view from its first tree.
 
-A root is atomic and never split. Retained notes contain their full disclosure-safe
-content; there is no per-note character limit or truncation metadata. Token sizing
-is not performed during startup, normal note interaction, route selection, or search
-rendering.
+Reads use `InvestigationState.read_root_trees()`: trees in view order until the next
+one would exceed the evidence budget. A tree is atomic and never split. The result
+reports `unread_root_ids` (read them in a later call), `too_large_root_ids` (larger
+than the budget alone) and `unknown_ids`. Retained notes contain their full
+disclosure-safe content.
 
-The payload is a `result_trees` array. Each root is a JSON object with recursively
-nested `children`. Evidence nodes contain `note_id`, `content_text`, created/updated
+The payload is a `trees` array. Each root is a JSON object with recursively nested
+`children`. Evidence nodes contain `note_id`, `content_text`, created/updated
 timestamps, directly assigned raw `tags` when present, and direct `proposed_tags`
 when present. Proposed tags remain separate from accepted tags; inherited and
-ontology-expanded terms are not serialized as stored sources. Leaf nodes omit
-`children`; nesting communicates parent/root relationships.
-Contentless structural ancestors contain only their ID, `is_evidence: false`, and
-the retained child path.
+ontology-expanded terms are not serialized as stored sources. Contentless
+structural ancestors contain only their ID, `is_evidence: false`, and the retained
+child path.
 
-The final request includes exact original/included/omitted note and root counts. If
-anything was omitted, the model is told not to claim exhaustive scope coverage.
-The current user request, rather than the broad search topic, defines relevance.
+The model sees short per-run note aliases (`n1`, `n2`…, `note_aliases.py`) in every
+tool result and in the selected-note context instead of 36-character UUIDs, which it
+sometimes miscopied. Aliases in `read_view_notes` arguments are translated back.
+In contextual web mode, a note tool result also lists `web_addresses_now_openable`:
+addresses written in the notes it returned.
 
 ## Complete-scope Staged Summaries
 
-`summarize_current_scope` is reserved for requests that summarize, compare, or
-synthesize the complete frozen result scope. It always asks the user before model
-work begins, even when the entire scope fits in one payload. When multiple payloads
+The `summarize_view` tool is for requests that summarize, compare, or synthesize
+the complete frozen result scope; a question about part of it is answered by
+searching and reading notes. In an empty view the tool reports that there is
+nothing to summarize, without a card. Otherwise it hands over to the staged summary,
+which starts right away when the entire scope fits in one payload (one ordinary model call, nothing to choose) and otherwise asks the user before model work begins. When multiple payloads
 are necessary, the dialog reports the root and batch counts, the minimum number of
 model calls, and offers either complete processing, the previous leading-prefix
 behavior, or cancellation.
@@ -220,40 +225,39 @@ Old preferences for maximum note characters, character-sized pages, roots per
 page, ranked tags per facet, working-summary characters, and ideal narrowed-scope
 tokens are obsolete. They are ignored and removed during normal preference writes.
 
-## Routing and Prompts
+## Instructions, Tools and Default Order
 
-The route sees canonical conversation history, the disclosure-safe selected tree
-when available, and a content-free block containing
-the exact current user request, user search, scope kind/label, sort/date state, and
-note/root counts. It does not serialize the broader result content to choose a route.
+`prompts/agent.md` holds the agent's instructions; prompts and skills are packaged
+and not editable. Tools (`agent_tools.py`), in their default order:
 
-`respond` is for conversation or answers supported by the supplied selected tree.
-Every supplied tree node is an allowed citation source; answers cite the actual
-supporting child, sibling, or ancestor. The model
-interprets the request and conversation to choose investigation or a tag operation.
-Instructor validates supported action names, required fields, and field types;
-no keyword classifier, prompt signal, or rationale-text heuristic overrides the
-model decision. Execution still enforces permissions, scope, and tool limits.
-Selected-note evidence must fit the configured evidence token limit before any
-provider request; broader investigation reserves that cost before retaining its
-root prefix. Selection remains available even when its root is beyond that prefix.
-Action regression expectations measure whether the selected action was appropriate.
+1. `lookup_metalist_help` (help topics, including release notes generated from the
+   README) and `open_menu`;
+2. `view_overview`, `search_view_notes`, `read_view_notes`;
+3. `open_web_pages` (only when web access is on);
+4. `propose_tag_generation`, `propose_tag_review`, `summarize_view`.
 
-The packaged scoped skill describes one authoritative payload and direct final
-answer and is sent with every single-payload investigation. The separate
-staged-summary skill describes batch findings, verified coverage, recursive
-condensation, and final synthesis; it is also sent when a summary fits one payload
-or the user chooses the leading prefix. An activated skill is always sent to the
-model, never only recorded. No skill or prompt describes
-model-directed page traversal, facet selection, or automatic context narrowing.
+Independent tools follow that order; a later group may come first only when it
+needs an earlier result (a web page whose address came from a note, reading notes a
+search found, proposing tags after reading the notes). The live evals check the
+order. Questions about MetaList itself are answered only from help; a request only
+to open a menu needs no help lookup, and no menu opens for a feature MetaList lacks.
+Every tool argument is required and independent of the others, so the schema alone
+describes each valid call (OpenAI strict mode enforces it).
+
+When the selected note's tree already answers the question, the model answers from
+it without note tools. Selected-note evidence must fit the evidence limit before any
+provider request.
 
 ## Citations and References
 
-Evidence note IDs are valid citation sources. The model cites a supporting claim by
-copying `[[UUID]]` from the same note object whose `content_text` supports it. The
-server rejects invented, stale, prior-turn, or undisclosed UUIDs, deduplicates
-repeated adjacent citations, orders citation groups numerically, and renders
-clickable superscript numbers.
+The model cites a note as `[[n12]]`, copying the alias of the note whose
+`content_text` supports the claim, and a web page or a link found on it as
+`[[web:N]]` (per-session numbers from the web evidence store). The agent loop
+(`citation_tokens.py`) translates both into full `[[UUID]]` and `[[web:UUID]]`
+tokens as the answer streams, holding back a token split across chunks; storage
+and rendering only ever see full tokens. The server rejects invented, stale,
+prior-turn, or undisclosed ids, deduplicates repeated adjacent citations, orders
+citation groups numerically, and renders clickable superscript numbers.
 
 The References disclosure is assembled after streaming completes and starts
 collapsed. Visible reference links are deduplicated by root for navigation, while
@@ -268,49 +272,33 @@ state. Only user and completed assistant prose become later canonical conversati
 context. Clear Chat and Stop abort active provider work; logout, auth reset, lock,
 or process restart releases run state.
 
-Developer-eye mode shows route validation, selected action/reason, root-prefix
-retention, evidence payload size, retries, final writing, approximate token counts,
-and per-step duration. Agent Debug always retains the latest run in session memory
-so it can be opened after a failure. Its evidence event contains the exact one
-payload sent for answer generation, and Copy all produces complete formatted JSON.
+Developer-eye mode shows each agent turn, the tools it used and their results,
+confirmations, approximate token counts, and per-step duration. Agent Debug always retains the latest run in session memory
+so it can be opened after a failure. Its tool-call events contain exactly what each tool returned to the model, and
+Copy all produces complete formatted JSON.
 Traces are never persisted.
 
-## Web action loop
+## Web Pages
 
-Each run freezes `pref.ai.web_access_mode` with the note scope. `none` exposes no
-web action schema, while `contextual` and `full` expose only `open_web_pages`.
-Full mode permits direct public page URLs proposed by the model; it does not add a
-search-engine action. Ordinary lookups open a Google results URL through
-`open_web_pages`, then may open useful result URLs in another batch. Google and
-source pages use the application-owned fetcher, independent of the inference
-provider. The application validates every contextual URL
-against capabilities built only from user messages, disclosure-safe selected or
-investigation evidence, and retained web evidence. It never scans hidden NoteStore
-records to authorize a URL.
+Each run freezes `pref.ai.web_access_mode` with the note scope. `none` offers no
+`open_web_pages` tool. In `contextual` mode the agent may open only addresses from
+user messages, the selected-note tree, notes a note tool returned (reported as
+`web_addresses_now_openable`) and pages opened earlier in the chat; every redirect
+hop is checked the same way, and a `#fragment` is ignored when comparing.
 
-The conditionally loaded `web_browsing_v1` skill describes batching, citations,
-partial failures, and the untrusted-content boundary. Application checks remain
-authoritative. Page-open actions accept at most eight independent URLs. Page work
-is concurrent and results stay in submitted order; normalized duplicates share one
-retained evidence object.
+In `full` mode any public page may be opened, through the application-owned fetcher
+(independent of the inference provider). Against prompt injection, `NoteTextGuard`
+(`web_actions.py`) asks the user Yes/No before opening an address that contains
+words from notes shown to the model that the user did not type and that were not
+part of an address already seen; Google Search and Google Finance are exempt, and
+every redirect hop gets the same check. The `web_browsing_v1` skill describes
+batching, citations, partial failures and the untrusted-content boundary.
 
-Opened pages enter a bounded, session-owned evidence store. Subsequent planning
-can reuse them without another request, but links merely mentioned by their page
-bodies do not become contextual capabilities. The final response receives exact
-`[[web:UUID]]` tokens and a catalog of allowed external references. Streaming,
-reload, copying an answer to a note, and mixed note/web reference rendering all
-use that same authorization scope.
-
-HTML extraction also records a bounded, deduplicated set of visible labeled links.
-Each receives a separate `page_link` reference whose URL and label came from the
-opened source page; this does not fetch the target or authorize it in contextual
-mode. The opened document remains an `opened_page` reference. Direct article or
-report summaries cite that opened document. Aggregator, index, directory, and
-search-result summaries use the relevant item `page_link` references, so the
-rendered References entries open the actual listed destinations. The browsing
-skill and final prompt require body-only cited bullets for those list summaries and
-forbid claims about an unopened target beyond its visible label and source-page
-metadata.
+Opened pages enter a bounded, session-owned evidence store. The agent does not carry
+earlier pages in its prompt: a follow-up re-opens the page, served from that store
+without another fetch. HTML extraction records visible labeled links as separate
+`page_link` references; listing items from a list page cites each item's own link,
+so the References entries open the actual destinations.
 
 ## Provider Details
 
@@ -326,24 +314,28 @@ process restart.
 
 ## Main Files
 
-- `app/services/agent/runtime.py`: orchestration and streaming.
+- `app/services/agent/runtime.py`: run start/recording and the staged summary.
+- `app/services/agent/agent_loop.py`: the tool-using loop and confirmations.
+- `app/services/agent/agent_tools.py`: tool definitions and read-only tools.
+- `app/services/agent/tool_calling.py`: provider-neutral tools and conversation.
+- `app/services/agent/openai_inference.py`: the OpenAI (Responses API) adapter.
+- `app/services/agent/note_aliases.py`, `citation_tokens.py`: short ids for the model.
+- `app/services/agent/web_actions.py`, `web_fetch.py`: opening pages and their guards.
 - `app/services/agent/scope.py`: immutable user-bounded scope.
-- `app/services/agent/investigation.py`: ordered complete-root retention.
-- `app/services/agent/evidence_serialization.py`: full nested evidence JSON.
-- `app/services/agent/context.py`: route and direct final request assembly.
-- `app/services/agent/retrieval_settings.py`: provider evidence-token limit.
+- `app/services/agent/investigation.py`: whole-tree reads within the budget.
+- `app/services/agent/evidence_serialization.py`: nested evidence JSON.
+- `app/services/agent/context.py`: agent and summary request assembly.
 - `app/services/agent/cloud_privacy.py`: cloud disclosure policy.
 - `app/services/agent/trace.py`: session-only debug events.
 
-
 ## Tag Proposal Operations
 
-An explicit chat request can select `tag_proposals`. A second structured interpretation resolves generation, bulk acceptance, or bulk removal and its scope/filter; ambiguous or unsupported requests receive clarification without mutation. Unrelated conversation remains read-only.
+Only an explicit chat request leads the agent to `propose_tag_generation` (the current view) or `propose_tag_review` (accept or remove, current view or whole namespace, one named tag or all). Questions about tagging, hypotheticals and quoted commands are answered from help. Both tools hand over to `TaggingRun` and end the run.
 
 Generation captures the search-visible trees. Visible ancestors supply content, but unseen sibling branches do not enter tagging evidence. Parent proposals inherit normally to unseen descendants. Privacy exclusions remain enforced before disclosure.
 
 - Existing vocabulary is accepted tags in the entire disclosed search context, computed before batching and shared by all requests; never the namespace catalog or pending proposals. `pref.ai.tagging.vocabulary` is one categorical permission (`existing`/`new`), while `pref.ai.tagging.focus` remembers the exact last selector choice (`existing`/`new`/`both`). Submitting existing-only saves existing permission; new-only or both permits new tags. There is no separate vocabulary setup question.
-- Tag suggestion guidance is the packaged `tag_proposals_v1` skill (`skills/tag-proposals.md`, title "Suggest tags"). It keeps the original `pref.ai.prompt.tagging` preference key, so existing customizations become its override; it is editable both in AI Agent Settings and through **Tagging prompt and vocabulary…** in the menu. The route records its activation, and every tagging batch sends it as an `ACTIVE_SKILL` system message; validation-critical rules (vocabulary mode, 12-tag limit, note-ID scope) stay in code.
+- Tag suggestion guidance is the packaged `tag_proposals_v1` skill (`skills/tag-proposals.md`, title "Suggest tags"). Like every prompt and skill it is not editable; a tagging prompt saved by an older version (`pref.ai.prompt.tagging`) is ignored and dropped. The agent records its activation, and every tagging batch sends it as an `ACTIVE_SKILL` system message; validation-critical rules (vocabulary mode, 12-tag limit, note-ID scope) stay in code.
 - Every batch receives the exact generation request. A named subject is a binding semantic filter rather than a general hint: examples disambiguate its intended meaning, proposals favor specific concepts/methods/entities inside that subject, and unrelated notes or broad neighboring classifications are omitted.
 - Existing-only requests explicitly require exact supplied vocabulary terms, without synonyms or variants. Every batch payload also carries an explicit machine-readable pass mode. New-only instructions require a final case-insensitive comparison against the supplied accepted vocabulary before output.
 - Each batch tolerates up to 10% invalid tag assignments, dropping those assignments and omitting notes left without valid tags. A separate 10% threshold applies to duplicate or non-batch note-ID entries; tolerated entries are discarded whole. Validation distinguishes an ID in another batch of the current permitted scope, a real namespace note outside the current permitted scope, and a nonexistent ID. It uses frozen ID-set membership only and never reads an out-of-scope note. A real out-of-scope ID may have been disclosed under an earlier conversation scope, so it is not labeled proof of a new disclosure leak. The denominators are distinct case-insensitive note/tag assignments and total proposal entries respectively. Existing-only accepts terms found either in disclosed context vocabulary or, after inference, in accepted namespace tags; the latter are canonicalized without disclosing the namespace catalog to the model. New-only rejects accepted tags disclosed in the context. If a new-only candidate happens to match an accepted tag elsewhere in the namespace that was never disclosed to the model, validation silently drops it without counting it as a model error. Both mode permits existing or new terms. Invalid syntax and command tags are invalid in every mode. Above either threshold, the model receives the cumulative validation failures and may regenerate the complete batch up to three times; if the third correction still fails, the pass fails atomically. Malformed response structure remains strict.
@@ -357,59 +349,43 @@ Generation captures the search-visible trees. Visible ancestors supply content, 
 - A successful generation response lists each newly added proposal and cites every note that received it. Inline numbered markers remain clickable, while the ordinary expandable References section is replaced for this response type by one **Show all new tag proposals** link. That link uses the same combined exact-note query as Open all references. Canonical conversation history retains the tag names while stripping citation UUIDs before later model calls; subsequent tagging also reads each note's authoritative pending proposals and explicitly excludes duplicates.
 - Failure/cancellation applies no pending results; no-change results preserve history. Individual proposal controls retain their undo semantics.
 
-Bulk acceptance/removal resolves the complete requested target set programmatically, independent of provider disclosure and token limits. Current context is the default; entire-namespace scope must be explicit. Menu and chat support an exact case-insensitive tag filter or all proposals. These operations execute directly without an additional confirmation or tagging inference. Removing proposals creates no rejection memory.
+Bulk acceptance/removal resolves the complete requested target set programmatically, independent of provider disclosure and token limits. Current context is the default; entire-namespace scope must be explicit. Menu and chat support an exact case-insensitive tag filter or all proposals. From chat, a Yes/No `change_confirmation` first states exactly what will change (how many proposals, of which tag, across how many notes, where); nothing changes without Yes. The Manage tag proposals menu executes directly. Removing proposals creates no rejection memory.
 
 Implementation: `app/services/agent/tagging.py`, `tagging_run.py`, `app/services/bulk_operation.py`, and `app/usecases/bulk_tag_proposals.py`. Structured questions and direct menu operations use authenticated `/api2/ai/proposals/*` endpoints.
 
 
-## Session history and explicit regression replay
+## Session History and Live Evals
 
-`history.py` binds an inference recorder to the scoped run using task-local context.
-The OpenAI adapter records logical call inputs, actual HTTP bodies, structured
-attempt outputs, and raw text-stream chunks, including errors and cancellation.
+`history.py` binds an inference recorder to each run using task-local context. The
+OpenAI adapter records logical call inputs, actual HTTP bodies, tool turns,
+structured attempt outputs and raw stream chunks, including errors and cancellation.
 `AgentTraceStore` retains every run for the session while its debug snapshot still
 returns the latest run. Authenticated `GET /api2/ai/history` exports chronological
 input/output pairs with `Cache-Control: no-store`. Clear Chat/logout/reset remove
-history; there is no new persistence or provider-side storage.
+history; there is no persistence or provider-side storage.
 
-History recording never inserts old instructions or evidence into new requests.
-Each call records precisely its own context. Skills in future replay steps must
-be explicitly included; loading a skill once does not make it permanent history.
-The existing scoped investigation path records skill activation for its policy;
-that activation record alone does not prove the skill text was sent to a model.
-The exported actual request is authoritative.
+`python -m evals agent` runs fixed cases through the real agent loop with current
+production instructions, skills and tool schemas, on Luna at Low thinking. Each case
+checks required and forbidden tool calls, the default order, whether a confirmation
+was asked, and a judged answer, against fixture notes and recorded web pages; tag
+operations are recorded, never applied. See [the suite guide](../../evals/README.md).
 
-`evals/` uses the production inference adapter and response models for explicit
-prompt tests. Ten independent repetitions report rates, with structured action
-expectations or an Instructor-validated output judge. This initial replay layer
-checks decisions/outputs; it does not execute UI or note mutations. See
-[the suite guide](../../evals/README.md) for prompt bindings, fixture authoring,
-comparison rules, and limitations. Additional application actions remain planned.
+## Help Lookup and Menus
 
-## Product help route and browser acknowledgments
+`lookup_metalist_help` returns the selected help skills (`skills/help-*.md`) and the
+installed version; help text is transient and never becomes conversation history.
+The `releases` topic is generated from the README "Changes in" sections by
+`scripts/sync_release_notes_help.py`; a unit test fails when they drift.
 
-`ScopedRouteEnvelope` requires `help_topics`: a nonempty, unique supported list for
-`metalist_help`, and an empty list for all other routes. This is structural
-validation; there is no keyword-based intent override. The content-free routing
-request includes ten topic descriptions. `build_help_messages` adds only those
-selected skills to a fresh canonical conversation and the compact menu catalog.
-The second Instructor call returns `MetaListHelpResponse(answer, menu_id)`. Help
-prose is buffered until the structured response validates. Overrides are loaded
-through the existing skill registry, recorded with their effective text, and
-never saved as subsequent conversation instructions.
-
-The shared JSON menu catalog is the application-owned destination allowlist.
-`dialog` invokes an existing form-opening handler; `palette` opens and highlights
-an existing entry without invoking its operation. Help cannot change preferences
-or submit a form. Explicit proposal mutations still use the separate tagging
-route. The browser checks scope/cancellation/modal availability and visible DOM,
-then POSTs `{request_id, status, detail}` to `/ai/menu-result`. Requests are bound
-to the authenticated session, single use, and expire after 30 seconds. Unknown,
-wrong-session and replayed acknowledgments return 409; malformed input returns
-422. Cancellation closes pending futures. The application appends actual opening
-status to the answer; model wording is not an execution record.
+`open_menu` accepts only ids from the shared JSON menu catalog, the
+application-owned destination allowlist. `dialog` invokes an existing form-opening
+handler; `palette` opens and highlights an existing entry without invoking its
+operation. Opening never changes a setting or submits a form, so it needs no
+confirmation. The browser checks scope/cancellation/modal availability and visible
+DOM, then POSTs `{request_id, status, detail}` to `/ai/menu-result`. Requests are
+bound to the authenticated session, single use, and expire after 30 seconds.
+Unknown, wrong-session and replayed acknowledgments return 409; malformed input
+returns 422. The actual status goes back to the model as the tool result.
 
 `AgentTraceStore.export_history` associates `MENU_REQUESTED` and `MENU_RESULT`
-with the producing output pair under `application_events`, retaining request IDs,
-menu IDs, scope and outcome. History remains session-only. Tests use disposable
-state/controlled handlers; opt-in live cases only evaluate model choices/answers.
+with the producing output pair under `application_events`.

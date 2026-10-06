@@ -1,0 +1,83 @@
+{
+  "schema_version": 3,
+  "id": "help-output-diagram-code-fences",
+  "description": "How can I draw charts or diagrams in MetaList, with a valid Mermaid source example?",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Do you know how I can draw charts or diagrams in MetaList? Please show an example of the text-based option."
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [
+      {
+        "id": "accurate",
+        "instruction": "Explain the supported Excalidraw and Mermaid options faithfully to the reference facts without unsupported claims or claimed execution."
+      },
+      {
+        "id": "valid_markdown_fences",
+        "instruction": "Show the literal Mermaid source inside a four-backtick outer code fence, with the inner triple-backtick Mermaid fence and outer fence both closed before subsequent prose. A direct Mermaid fence would render the diagram instead of showing its source, and an equal-length nested triple-backtick fence is invalid."
+      }
+    ],
+    "reference_facts": "Excalidraw provides editable hand-drawn diagrams through Add Excalidraw diagram. A note tagged @markdown renders a fenced mermaid block as a local responsive SVG in view mode. Mermaid source remains ordinary stored note text, stays searchable, and can enter AI note context when that note is otherwise permitted; Excalidraw's hidden embedded-text limitation does not apply. In AI chat a direct mermaid fence renders the diagram, so a help answer that teaches the source must wrap the literal triple-backtick mermaid block in an outer fence of four backticks and put all later prose outside that closed outer fence."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/output-diagram-code-fences.json",
+    "mapping": "Help answers now come from a help lookup; same judge criteria.",
+    "legacy_stage": "help",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "accurate",
+          "instruction": "Explain the supported Excalidraw and Mermaid options faithfully to the reference facts without unsupported claims or claimed execution."
+        },
+        {
+          "id": "valid_markdown_fences",
+          "instruction": "Show the literal Mermaid source inside a four-backtick outer code fence, with the inner triple-backtick Mermaid fence and outer fence both closed before subsequent prose. A direct Mermaid fence would render the diagram instead of showing its source, and an equal-length nested triple-backtick fence is invalid."
+        }
+      ],
+      "reference_facts": "Excalidraw provides editable hand-drawn diagrams through Add Excalidraw diagram. A note tagged @markdown renders a fenced mermaid block as a local responsive SVG in view mode. Mermaid source remains ordinary stored note text, stays searchable, and can enter AI note context when that note is otherwise permitted; Excalidraw's hidden embedded-text limitation does not apply. In AI chat a direct mermaid fence renders the diagram, so a help answer that teaches the source must wrap the literal triple-backtick mermaid block in an outer fence of four backticks and put all later prose outside that closed outer fence."
+    },
+    "source": "reported-help-code-fence-regression-2026-09-27",
+    "personal_data": false
+  }
+}

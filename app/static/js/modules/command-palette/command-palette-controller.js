@@ -55,11 +55,6 @@ import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
-import { AgentPromptEditorModal } from '../modals/agent-prompt-editor-modal.js';
-import {
-    AGENT_PROMPT_PREFERENCE_KEYS,
-    validateAgentInstructionSet,
-} from '../ai-chat/agent-prompt-service.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     DEFAULT_AI_THINKING_LEVEL,
@@ -355,7 +350,6 @@ class CommandPaletteController {
         this._searchSuggestionStatisticsModal = null;
         this._confirmationModal = null;
         this._aiAgentSettingsModal = null;
-        this._agentPromptEditorModal = null;
 
         this._elements = null;
 
@@ -433,7 +427,6 @@ class CommandPaletteController {
                 setIsUntaggedView: this.setIsUntaggedView.bind(this),
                 openAiAgentSettings: this.openAiAgentSettings.bind(this),
                 openCloudPrivacySettings: this.openCloudPrivacySettings.bind(this),
-                openAgentPromptEditor: this.openAgentPromptEditor.bind(this),
                 openProposalManager: async () => {
                     if (await this._prepareForModalOpen('proposalManager')) await openProposalMenu(this._preferences, false);
                 },
@@ -452,8 +445,8 @@ class CommandPaletteController {
                         await removeAllTagSuggestionsFromCurrentContext();
                     }
                 },
-                openTaggingPrompt: async () => {
-                    if (await this._prepareForModalOpen('taggingPrompt')) await openProposalMenu(this._preferences, true);
+                openTaggingVocabulary: async () => {
+                    if (await this._prepareForModalOpen('taggingVocabulary')) await openProposalMenu(this._preferences, true);
                 },
             },
         });
@@ -570,9 +563,6 @@ class CommandPaletteController {
 
         const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
-
-        const positionCue = this._getBoolean('pref.position_cue', true);
-        document.body.classList.toggle('pref-position-cue', positionCue);
 
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
@@ -758,6 +748,17 @@ class CommandPaletteController {
         );
     }
 
+    getAiChatSpendVisible() {
+        return this._getBoolean('pref.ai.show_spend', false);
+    }
+
+    async saveAiChatSpendVisible(isVisible) {
+        if (typeof isVisible !== 'boolean') {
+            throw new Error('AI chat spend visibility must be boolean');
+        }
+        await this._preferences.setRaw('pref.ai.show_spend', isVisible ? 'true' : 'false');
+    }
+
     getAiChatComposerHeight() {
         const rawHeight = this._preferences.getRaw('pref.ai.composer_height');
         if (rawHeight === null) {
@@ -844,59 +845,6 @@ class CommandPaletteController {
             'metalist:ai-settings-changed',
             { detail: { reloadModels: true } },
         ));
-    }
-
-    _readAgentPromptOverrides(skills) {
-        if (!Array.isArray(skills) || skills.length === 0) {
-            throw new Error('Agent prompt editor requires packaged skills');
-        }
-        return {
-            systemPrompt: this._preferences.getRaw(
-                AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt,
-            ),
-            finalResponsePrompt: this._preferences.getRaw(
-                AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt,
-            ),
-            toolResultPrompt: this._preferences.getRaw(
-                AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt,
-            ),
-            skills: skills.map((skill) => ({
-                skillId: skill.skillId,
-                content: this._preferences.getRaw(skill.preferenceKey),
-                incompatiblePreferenceKeys: skill.supersededPreferenceKeys.filter(
-                    (key) => this._preferences.getRaw(key) !== null,
-                ),
-            })),
-        };
-    }
-
-    async _saveAgentPromptOverrides(settings) {
-        const instructions = validateAgentInstructionSet(settings);
-        const preferences = {
-            [AGENT_PROMPT_PREFERENCE_KEYS.systemPrompt]: instructions.systemPrompt,
-            [AGENT_PROMPT_PREFERENCE_KEYS.finalResponsePrompt]: instructions.finalResponsePrompt,
-            [AGENT_PROMPT_PREFERENCE_KEYS.toolResultPrompt]: instructions.toolResultPrompt,
-        };
-        for (const skill of instructions.skills) {
-            preferences[skill.preferenceKey] = skill.content;
-        }
-        const supersededKeys = instructions.skills.flatMap(
-            (skill) => skill.supersededPreferenceKeys,
-        );
-        await this._preferences.setManyAndRemove(preferences, supersededKeys);
-    }
-
-    async _resetAgentPromptOverrides(skills) {
-        if (!Array.isArray(skills) || skills.length === 0) {
-            throw new Error('Agent prompt reset requires packaged skills');
-        }
-        await this._preferences.removeMany(
-            [
-                ...Object.values(AGENT_PROMPT_PREFERENCE_KEYS),
-                ...skills.map((skill) => skill.preferenceKey),
-                ...skills.flatMap((skill) => skill.supersededPreferenceKeys),
-            ],
-        );
     }
 
     isOpen() {
@@ -2502,23 +2450,6 @@ class CommandPaletteController {
 
     async openCloudPrivacySettings() {
         await this.openAiAgentSettings(true);
-    }
-
-    async openAgentPromptEditor() {
-        const isReady = await this._prepareForModalOpen(
-            'commandPalette.openAgentPromptEditor',
-        );
-        if (!isReady) {
-            return;
-        }
-        if (this._agentPromptEditorModal === null) {
-            this._agentPromptEditorModal = new AgentPromptEditorModal(
-                this._readAgentPromptOverrides.bind(this),
-                this._saveAgentPromptOverrides.bind(this),
-                this._resetAgentPromptOverrides.bind(this),
-            );
-        }
-        await this._agentPromptEditorModal.open();
     }
 
     async openSearchSuggestionStatistics() {

@@ -57,7 +57,11 @@ def _call(kind: str, arguments: dict):
         "messages": deepcopy(arguments["messages"]),
         "response_model": response_model.__name__ if response_model else "",
         "response_schema": response_model.model_json_schema() if response_model else {},
-        "max_output_tokens": arguments["max_output_tokens"] if kind == "text" else 0,
+        "max_output_tokens": arguments["max_output_tokens"] if kind in {"text", "tool"} else 0,
+        "tools": [
+            {"name": tool.name, "description": tool.description, "schema": tool.arguments_schema()}
+            for tool in arguments["tools"]
+        ] if kind == "tool" else [],
     }
     record_provider_event("LLM_CALL_STARTED", request)
     # lint: allow-PY001 rationale="record inference failure or cancellation and immediately re-raise"
@@ -89,6 +93,20 @@ def record_structured_call(function):
                 "usage": response.usage,
             })
             return response
+    return recorded
+
+
+def record_tool_turn(function):
+    @wraps(function)
+    async def recorded(self, **arguments):
+        with _call("tool", arguments):
+            stream = function(self, **arguments)
+            try:
+                async for event in stream:
+                    record_provider_event("LLM_STREAM_EVENT", event)
+                    yield event
+            finally:
+                await stream.aclose()
     return recorded
 
 

@@ -1,0 +1,63 @@
+{
+  "schema_version": 3,
+  "id": "request-proposals",
+  "description": "Generate tag proposals for the current notes.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Generate tag proposals for the current notes."
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "propose_tag_generation"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [],
+    "forbidden_calls": [],
+    "confirmation": "asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/request-proposals.json",
+    "mapping": "The explicit tag request calls propose_tag_generation; the user answers No, so nothing changes.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "tag_proposals"
+        }
+      ]
+    },
+    "source": "synthetic initial cases from PLAN.md"
+  }
+}

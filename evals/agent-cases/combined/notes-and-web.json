@@ -1,0 +1,98 @@
+{
+  "schema_version": 3,
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "answer_questions": "no",
+  "provenance": {
+    "source": "synthetic-agent-combinations-v1",
+    "personal_data": false
+  },
+  "id": "combined-notes-and-web",
+  "description": "Opening a page whose address is in a note needs notes then the web (an allowed dependency).",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Open the report linked in my soil testing note and tell me the recommended pH."
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "Soil testing: see https://soil.example/report",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "Seed order list",
+        "tags": "garden",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "contextual",
+    "retained_urls": [],
+    "pages": [
+      {
+        "evidence_id": "40000000-0000-4000-8000-000000000002",
+        "url": "https://soil.example/report",
+        "title": "Soil report",
+        "content_text": "Vegetable beds do best at a pH between 6.0 and 7.0.",
+        "links": []
+      }
+    ]
+  },
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "search_view_notes",
+          "read_view_notes",
+          "view_overview"
+        ],
+        "arguments_any_of": []
+      },
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": [
+          {
+            "urls": [
+              "https://soil.example/report"
+            ]
+          }
+        ]
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [
+      {
+        "id": "ph",
+        "instruction": "State that the report recommends a pH between 6.0 and 7.0, citing the report."
+      }
+    ],
+    "reference_facts": "The soil report linked from note-1 says vegetable beds do best at a pH between 6.0 and 7.0."
+  }
+}

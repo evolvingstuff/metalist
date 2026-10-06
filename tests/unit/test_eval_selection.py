@@ -17,8 +17,21 @@ ROOT = Path(__file__).resolve().parents[2]
 JUDGE = JudgeConfig.model_validate_json((ROOT / "evals/judge.json").read_text())
 
 
+SUMMARY_CASE = ROOT / "evals/cases/staged-summary/complete-scope.json"
+
+
 def cases():
-    return [RegressionCase.model_validate_json(p.read_text()) for p in sorted((ROOT / "evals/cases").rglob("*.json"))]
+    """The live summary case plus single-step variants, so selection has something to tell apart."""
+    complete = json.loads(SUMMARY_CASE.read_text())
+    batch_only = complete | {"id": "summary-batch-only", "steps": complete["steps"][:1]}
+    final_only = complete | {"id": "summary-final-only", "steps": complete["steps"][1:]}
+    return [RegressionCase.model_validate(case) for case in (complete, batch_only, final_only)]
+
+
+def write_case(directory, case):
+    path = directory / f"{case.id}.json"
+    path.write_text(case.model_dump_json())
+    return path
 
 
 def save_baseline(path, scenarios):
@@ -35,46 +48,21 @@ def selection(scenarios, baseline):
         judge=JUDGE, repetitions=5, baseline_path=baseline)[0]
 
 
-def test_skill_edit_selects_only_cases_that_actually_load_that_skill(tmp_path, monkeypatch):
+@pytest.mark.parametrize("skill_file,selects_all", [("staged-summary.md", True), ("help-ai.md", False),
+                                                     ("web-browsing.md", False)])
+def test_skill_edit_selects_only_cases_that_actually_load_that_skill(tmp_path, monkeypatch, skill_file, selects_all):
     scenarios = cases()
     baseline = tmp_path / "before.json"
     save_baseline(baseline, scenarios)
     loader = production.load_skill
     monkeypatch.setattr(production, "load_skill", lambda name:
-        loader(name) + "\nChanged AI skill guidance." if name == "help-ai.md" else loader(name))
+        loader(name) + "\nChanged skill guidance." if name == skill_file else loader(name))
     plan = selection(scenarios, baseline)
-    expected = {case.id for case in scenarios if any(step.context.stage == "help"
-        and "ai" in step.context.topics for step in case.steps)}
-    assert expected and len(expected) < len(scenarios)
+    expected = set()
+    if selects_all:
+        expected = {case.id for case in scenarios}
     assert {entry["case_id"] for entry in plan["selected"]} == expected
     assert all(entry["reason"] == "effective_fingerprint" for entry in plan["selected"])
-
-
-def test_web_skill_edit_selects_only_web_skill_cases(tmp_path, monkeypatch):
-    scenarios = cases()
-    baseline = tmp_path / "before.json"
-    save_baseline(baseline, scenarios)
-    loader = production.load_skill
-    monkeypatch.setattr(
-        production,
-        "load_skill",
-        lambda name: (
-            loader(name) + "\nChanged browsing guidance."
-            if name == "web-browsing.md"
-            else loader(name)
-        ),
-    )
-    plan = selection(scenarios, baseline)
-    expected = {
-        case.id
-        for case in scenarios
-        if any(
-            step.context.stage in {"web_action", "web_respond"}
-            for step in case.steps
-        )
-    }
-    assert expected and len(expected) < len(scenarios)
-    assert {entry["case_id"] for entry in plan["selected"]} == expected
 
 
 def test_system_prompt_edit_selects_every_existing_case(tmp_path, monkeypatch):
@@ -91,10 +79,11 @@ def test_schema_change_selects_only_applicable_cases(tmp_path, monkeypatch):
     scenarios = cases()
     baseline = tmp_path / "before.json"
     save_baseline(baseline, scenarios)
-    model = production.RESPONSE_MODELS["ScopedRouteEnvelope"]
-    schema = model.model_json_schema() | {"description": "Changed route schema"}
+    model = production.RESPONSE_MODELS["SummaryFindingsResult"]
+    schema = model.model_json_schema() | {"description": "Changed findings schema"}
     monkeypatch.setattr(model, "model_json_schema", classmethod(lambda cls: schema))
-    expected = {case.id for case in scenarios if any(step.context.stage == "route" for step in case.steps)}
+    expected = {case.id for case in scenarios if any(step.context.stage == "summary_batch" for step in case.steps)}
+    assert expected == {"staged-summary-complete-scope", "summary-batch-only"}
     assert {entry["case_id"] for entry in selection(scenarios, baseline)["selected"]} == expected
 
 
@@ -146,8 +135,8 @@ def test_partial_run_retains_unchanged_coverage_and_provenance(tmp_path):
 
 @pytest.mark.parametrize("status,exit_code", [("correct", 0), ("incorrect", 1), ("error", 2)])
 def test_no_change_makes_no_calls_and_keeps_historical_failures(tmp_path, monkeypatch, status, exit_code):
-    path = ROOT / "evals/cases/actions/hello.json"
-    scenario = RegressionCase.model_validate_json(path.read_text())
+    scenario = cases()[1]
+    path = write_case(tmp_path, scenario)
     baseline = tmp_path / "before.json"
     save_baseline(baseline, [scenario])
     prior = json.loads(baseline.read_text())
@@ -199,7 +188,7 @@ def test_cli_runs_only_changed_cases_and_carries_forward_the_rest(tmp_path, monk
     monkeypatch.setenv("OPENAI_API_KEY", "fixture")
     monkeypatch.setattr(cli, "OpenAIInferenceAdapter", lambda **kwargs: object())
     monkeypatch.setattr(cli, "run_cases", execute)
-    args = SimpleNamespace(cases=paths, repetitions=5, concurrency=4, judge=None,
+    args = SimpleNamespace(cases=paths, repetitions=5, concurrency=4, judge=ROOT / "evals/judge.json",
         changed_since=baseline, live=True, output=tmp_path / "after")
     asyncio.run(cli.run(args))
     report = json.loads((args.output / "report.json").read_text())
@@ -208,8 +197,7 @@ def test_cli_runs_only_changed_cases_and_carries_forward_the_rest(tmp_path, monk
 
 
 def test_legacy_report_rechecks_unknown_judge_schema_and_rejects_corrupt_fingerprint(tmp_path):
-    scenarios = [RegressionCase.model_validate_json((ROOT / path).read_text()) for path in
-        ("evals/cases/actions/hello.json", "evals/cases/faithful-summary.json")]
+    scenarios = [cases()[1], cases()[2]]
     reports = []
     for case in scenarios:
         prepared = prepare_case(case)

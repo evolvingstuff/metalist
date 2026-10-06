@@ -1,0 +1,107 @@
+{
+  "schema_version": 3,
+  "id": "web-cited-answer",
+  "description": "A web-grounded final answer uses the supplied web citation.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What measured value does the report give?"
+    }
+  ],
+  "view": {
+    "scope_kind": "all_notes",
+    "label": "All notes",
+    "search_query": "",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "full",
+    "pages": [
+      {
+        "evidence_id": "10000000-0000-4000-8000-000000000001",
+        "url": "https://example.com/report",
+        "title": "Example report",
+        "content_text": "The 2026 report states that the measured value is 42. It links to https://outside.example/details.",
+        "links": [
+          {
+            "evidence_id": "10000000-0000-4000-8000-000000000002",
+            "title": "Outside details",
+            "url": "https://outside.example/details"
+          }
+        ]
+      }
+    ],
+    "retained_urls": [
+      "https://example.com/report"
+    ]
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [
+      {
+        "id": "fact",
+        "instruction": "State that the report gives a measured value of 42."
+      },
+      {
+        "id": "citation",
+        "instruction": "Cite that claim with [[web:10000000-0000-4000-8000-000000000001]]."
+      },
+      {
+        "id": "opened-report-source",
+        "instruction": "Do not cite the merely linked Outside details token [[web:10000000-0000-4000-8000-000000000002]] as support for the measured value stated in the opened report."
+      }
+    ],
+    "reference_facts": "The opened 2026 report says the measured value is 42."
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/web/cited-answer.json",
+    "mapping": "The page was opened earlier in the chat; the agent re-opens it (served from cache) and is judged on the same criteria.",
+    "legacy_stage": "web_respond",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "output",
+      "criteria": [
+        {
+          "id": "fact",
+          "instruction": "State that the report gives a measured value of 42."
+        },
+        {
+          "id": "citation",
+          "instruction": "Cite that claim with [[web:10000000-0000-4000-8000-000000000001]]."
+        },
+        {
+          "id": "opened-report-source",
+          "instruction": "Do not cite the merely linked Outside details token [[web:10000000-0000-4000-8000-000000000002]] as support for the measured value stated in the opened report."
+        }
+      ],
+      "reference_facts": "The opened 2026 report says the measured value is 42."
+    },
+    "source": "synthetic final web citation regression",
+    "expectation_change": "Re-opens the earlier page: the agent does not carry old pages in its context."
+  }
+}

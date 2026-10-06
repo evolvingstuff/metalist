@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent.tagging import (
-    DEFAULT_TAGGING_PROMPT, TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TAGGING_PROMPT_KEY, TagBatchResult,
-    TagOperationIntent, make_batch, partition_trees, shuffle_trees_for_batches,
+    TAGGING_FOCUS_KEY, TAGGING_POLICY_KEY, TagBatchResult,
+    make_batch, partition_trees, shuffle_trees_for_batches,
     validate_proposals,
 )
 import app.services.agent.tagging as tagging
@@ -18,8 +18,9 @@ import app.usecases.bulk_tag_proposals as mutations
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.bulk_operation import BulkOperationGuard, BulkOperationBusy
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import InferenceAttempt
+from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
-from app.services.agent.skill_settings import resolve_agent_skill_set
 
 
 @pytest.fixture(autouse=True)
@@ -279,8 +280,6 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
 
     async def infer(inference, run, messages, model, on_progress):
         assert not applied
-        if model is TagOperationIntent:
-            return SimpleNamespace(content='{"action":"generate","scope":"current","focus":"both","tag_filter":"","explanation":"requested"}')
         calls.append(messages)
         if len(calls) == 2 and outcome == "failure":
             raise InferenceProviderError("provider unavailable")
@@ -296,7 +295,7 @@ def test_whole_pass_publication_and_failure_atomicity(monkeypatch, outcome):
     async def consume():
         operation = runs.TaggingRun(token="token", snapshot=snapshot,
             preferences={TAGGING_POLICY_KEY: "new"}, sync_uuid="sync", batch_tokens=run.retrieval_settings.max_page_approximate_tokens)
-        async for event in operation.stream(inference=SimpleNamespace(inspect_context_window=inspect_context_window), run=run):
+        async for event in operation.stream_generation(inference=SimpleNamespace(inspect_context_window=inspect_context_window), run=run):
             if event["type"] == "bulk_question":
                 assert not applied
                 # Focus and scope are one card, answered once.
@@ -617,37 +616,22 @@ def test_new_only_rejects_existing_vocabulary_case_insensitively():
 
 
 def test_tagging_prompts_make_the_requested_topic_a_specific_binding_filter():
+    DEFAULT_TAGGING_PROMPT = DEFAULT_AGENT_SKILLS.for_action("tag_proposals").content
     assert "binding topical constraint" in DEFAULT_TAGGING_PROMPT
     assert "specific concepts, methods, or named entities" in DEFAULT_TAGGING_PROMPT
     assert "examples to disambiguate the intended semantic scope" in DEFAULT_TAGGING_PROMPT
     assert "omit notes outside that topic" in DEFAULT_TAGGING_PROMPT
 
 
-@pytest.mark.parametrize(("user_request", "model_focus"), [
-    ("Add tags related to optimizers like AdamW, etc.", "new"),
-    ("Suggest existing tags related to optimizers", "existing"),
-    ("Suggest new tags related to optimizers", "new"),
-    ("Suggest both existing and new tags related to optimizers", "both"),
-])
-def test_every_generation_request_requires_focus_choice(monkeypatch, user_request, model_focus):
+def test_agent_generation_always_lets_the_user_choose_the_focus(monkeypatch):
+    # The agent never decides the focus from the request text; the scope card asks.
     selected_focuses = []
     monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
-
-    async def infer(inference, run, messages, model, on_progress):
-        assert model is TagOperationIntent
-        return SimpleNamespace(content=TagOperationIntent(
-            action="generate",
-            scope="current",
-            focus=model_focus,
-            tag_filter="",
-            explanation="Tag generation requested.",
-        ).model_dump_json())
 
     async def generate(self, *, inference, run, focus):
         selected_focuses.append(focus)
         yield {"type": "done"}
 
-    monkeypatch.setattr(runs, "infer_with_progress", infer)
     monkeypatch.setattr(runs.TaggingRun, "generate", generate)
     operation = runs.TaggingRun(
         token="token",
@@ -656,17 +640,9 @@ def test_every_generation_request_requires_focus_choice(monkeypatch, user_reques
         sync_uuid="sync",
         batch_tokens=1000,
     )
-    run = SimpleNamespace(
-        base_url="http://local", skills=DEFAULT_AGENT_SKILLS,
-        selected_model="test",
-        thinking_level="low",
-        run_id="run",
-        session_key="focus-regression",
-        current_user_request=user_request,
-    )
 
     async def consume():
-        return [event async for event in operation.stream(inference=None, run=run)]
+        return [event async for event in operation.stream_generation(inference=None, run=None)]
 
     assert asyncio.run(consume()) == [{"type": "done"}]
     assert selected_focuses == ["unspecified"]
@@ -902,17 +878,13 @@ def test_leading_tree_prefix_is_the_longest_canonical_prefix_within_budget():
     assert tagging.leading_tree_count_within_budget(roots, make_batch(roots[:1]).tokens - 1) == 0
 
 
-def test_tag_suggestions_are_a_packaged_skill_that_keeps_existing_customizations():
+def test_tag_suggestions_are_a_packaged_skill():
     skill = DEFAULT_AGENT_SKILLS.for_action("tag_proposals")
     assert skill.skill_id == "tag_proposals_v1"
-    # Reusing the original key keeps prompts customized before tagging became a skill.
-    assert skill.preference_key == TAGGING_PROMPT_KEY == "pref.ai.prompt.tagging"
-    assert skill.content == DEFAULT_TAGGING_PROMPT
-    customized = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
-    assert customized.for_action("tag_proposals").content == "Only tag birds."
+    assert "binding topical constraint" in skill.content
 
 
-def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
+def test_tag_batches_send_the_packaged_tag_skill(monkeypatch):
     roots = (tree("a", "accepted", ()),)
     snapshot = SimpleNamespace(session_key="session", tree_nodes_by_id={"a": None})
     monkeypatch.setattr(runs, "tagging_trees", lambda _: roots)
@@ -932,15 +904,14 @@ def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
     async def inspect(**kwargs):
         return SimpleNamespace(loaded_tokens=1_000_000)
 
-    skills = resolve_agent_skill_set(preferences={TAGGING_PROMPT_KEY: "Only tag birds."})
     run = SimpleNamespace(base_url="http://local", selected_model="test",
-        current_user_request="Suggest tags", skills=skills,
+        current_user_request="Suggest tags", skills=DEFAULT_AGENT_SKILLS,
         retrieval_settings=SimpleNamespace(max_page_approximate_tokens=1_000_000))
 
     async def consume():
-        # Stale in-memory preferences must not override the run's resolved skill.
+        # A tagging prompt saved when prompts were editable must never reach the model.
         operation = runs.TaggingRun(token="token", snapshot=snapshot,
-            preferences={TAGGING_POLICY_KEY: "new", TAGGING_PROMPT_KEY: "Stale prompt"},
+            preferences={TAGGING_POLICY_KEY: "new", "pref.ai.prompt.tagging": "Stale prompt"},
             sync_uuid="sync", batch_tokens=1_000_000)
         with runs.bulk_operation_guard.acquire("session"):
             async for _event in operation.generate(
@@ -952,7 +923,8 @@ def test_tag_batches_send_the_resolved_tag_skill(monkeypatch):
 
     assert sent[0][0] == {
         "role": "system",
-        "content": "ACTIVE_SKILL tag_proposals_v1\nTrigger action: tag_proposals\n\nOnly tag birds.",
+        "content": "ACTIVE_SKILL tag_proposals_v1\nTrigger action: tag_proposals\n\n"
+        + DEFAULT_AGENT_SKILLS.for_action("tag_proposals").content,
     }
 
 
@@ -1013,3 +985,81 @@ def test_combined_tag_card_can_choose_focus_and_the_leading_prefix(monkeypatch):
     assert questions[0]["prefix_root_count"] == 1
     assert reviewed == ["root-0"]
     assert saved == [{TAGGING_POLICY_KEY: "new", TAGGING_FOCUS_KEY: "new"}]
+
+
+def test_a_failed_tagging_call_explains_itself_like_the_chat_steps() -> None:
+    cut_off = InferenceAttempt(
+        request={"max_completion_tokens": 8_192},
+        response={
+            "choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}],
+            "usage": {"completion_tokens": 8_192, "completion_tokens_details": {"reasoning_tokens": 8_192}},
+        },
+        error="IncompleteOutputException: The output is incomplete due to a max_tokens length limit.",
+        duration_ms=10_000.0,
+        validation_errors=(),
+    )
+
+    async def infer_structured(**arguments):
+        raise StructuredInferenceError(attempts=[cut_off, cut_off])
+
+    run = SimpleNamespace(
+        base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol", thinking_level="high",
+        web_settings=SimpleNamespace(mode="none"), session_key="session", run_id="run",
+    )
+    with pytest.raises(InferenceProviderError) as failure:
+        asyncio.run(runs.infer_with_progress(
+            SimpleNamespace(infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
+        ))
+
+    message = str(failure.value)
+    assert "it failed while proposing tags" in message
+    assert "all 8192 tokens went to thinking" in message
+    assert "Setup: gpt-5.6-sol, High thinking, web access off." in message
+
+
+@pytest.mark.parametrize("answer,applies", [("yes", True), ("no", False)])
+def test_agent_tag_review_shows_the_exact_change_and_applies_only_after_yes(monkeypatch, answer, applies):
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "proposal_scope_ids", lambda descriptor: ("a", "b"))
+    monkeypatch.setattr(
+        runs,
+        "prepare_proposal_changes",
+        lambda *args: ({"a": ("x", ""), "b": ("x", "")}, 3, {"a": ("x",), "b": ("x", "y")}),
+    )
+    applied = []
+    monkeypatch.setattr(runs, "apply_bulk_proposals", lambda **kwargs: applied.append(kwargs))
+    operation = runs.TaggingRun(token="token", snapshot=SimpleNamespace(session_key="review-session", descriptor=None),
+                                preferences={}, sync_uuid="sync", batch_tokens=1000)
+
+    async def collect_events():
+        events = []
+        async for event in operation.stream_review(action="accept", scope="current_view", tag_filter="x"):
+            events.append(event)
+            if event["type"] == "bulk_question":
+                runs.bulk_operation_guard.answer("review-session", event["question_id"], answer)
+        return events
+
+    events = asyncio.run(collect_events())
+    question = events[0]
+    assert question["kind"] == "change_confirmation"
+    assert question["label"] == "Accept 3 pending proposals of the tag `x` across 2 notes in the current view?"
+    assert bool(applied) is applies
+    text = "".join(event["text"] for event in events if event["type"] == "content_delta")
+    if applies:
+        assert text == "Accepted 3 tag proposals across 2 notes."
+    else:
+        assert text == "Cancelled. No proposals changed."
+
+
+def test_agent_tag_review_with_nothing_to_change_asks_nothing(monkeypatch):
+    monkeypatch.setattr(runs.TaggingRun, "validate_current", lambda self: None)
+    monkeypatch.setattr(runs, "prepare_proposal_changes", lambda *args: ({}, 0, {}))
+    operation = runs.TaggingRun(token="token", snapshot=SimpleNamespace(session_key="review-empty", descriptor=None),
+                                preferences={}, sync_uuid="sync", batch_tokens=1000)
+
+    async def collect_events():
+        return [event async for event in operation.stream_review(action="remove", scope="namespace", tag_filter="")]
+
+    events = asyncio.run(collect_events())
+    assert [event["type"] for event in events] == ["bulk_complete", "content_delta", "done"]
+    assert events[1]["text"] == "There are no pending tag proposals in the whole namespace. Nothing changed."

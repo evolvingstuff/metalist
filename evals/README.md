@@ -6,15 +6,22 @@ selected-note data or evidence, and expectations. They contain no executable
 captured system prompts, catalogs, response schemas, or prompt bindings.
 
 `evals/production.py` calls the application's `AgentContextBuilder` with current
-packaged prompts and skills. Routing instructions, help/menu catalogs, selected-note
-context, final-response formatting, and response schemas therefore track production
-changes automatically. The suite tests packaged defaults; it does not read a user's
-namespace prompt overrides, credentials, or live note database.
+packaged prompts and skills. Instructions, skills, selected-note context,
+final-response formatting, and response schemas therefore track production changes
+automatically. Prompts and skills are not user-editable, so the packaged
+defaults the suite tests are what every user runs; it does not read credentials or
+a live note database.
 
-Latest measured run: [September 19 results](RESULTS-2026-09-19.md): 757/760 correct;
-three existing cases scored 4/5, with no provider errors. All 95 selected-note
-trials passed, including 35 availability trials. Each case ran five times. A subsequent focused cached-title run passed 10/10;
-all 152 earlier effective requests were verified unchanged.
+There are two kinds of cases:
+
+- **Agent cases** (`agent-cases/`, run with `python -m evals agent`): a whole run of
+  the production tool-using agent. See [Agent cases](#agent-cases).
+- **Summary-stage cases** (`cases/staged-summary/`, run with `python -m evals run`):
+  single structured or text requests of the whole-view summary the agent hands over
+  to. The rest of this README up to "Agent cases" describes this runner.
+
+Historical results: [September 19](RESULTS-2026-09-19.md), 757/760 correct on the
+earlier up-front routing design; they describe that design, not the current agent.
 
 ## Run current prompts and compare reports
 
@@ -42,24 +49,19 @@ provider, including judges and retries. See the
 
 ```bash
 # Validate all cases against current production code; no paid calls.
-.venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
-  evals/cases/help/*.json evals/cases/selected-note/*.json \
-  evals/cases/staged-summary/*.json evals/cases/web/*.json \
+.venv/bin/python -m evals run evals/cases/staged-summary/*.json \
   --judge evals/judge.json --output /tmp/metalist-regressions-check
 
 # Record current performance before editing production prompts.
-.venv/bin/python -m evals run evals/cases/actions/*.json \
-  --live --output /tmp/metalist-before
+# Output steps need an explicit judge; five repetitions is the default.
+.venv/bin/python -m evals run evals/cases/staged-summary/*.json \
+  --judge evals/judge.json --live --output /tmp/metalist-before
 
 # After editing prompts/code, repeat the same cases and compare saved reports.
-.venv/bin/python -m evals run evals/cases/actions/*.json \
-  --live --output /tmp/metalist-after
+.venv/bin/python -m evals run evals/cases/staged-summary/*.json \
+  --judge evals/judge.json --live --output /tmp/metalist-after
 .venv/bin/python -m evals compare \
   /tmp/metalist-before/report.json /tmp/metalist-after/report.json
-
-# Output cases need an explicit judge; five repetitions is the default.
-.venv/bin/python -m evals run evals/cases/selected-note/*.json \
-  --judge evals/judge.json --repetitions 5 --live --output /tmp/metalist-selected
 ```
 
 ## Run only affected cases
@@ -71,9 +73,7 @@ calls. No hand-maintained skill dependencies or frozen-prompt execution are used
 
 ```bash
 # Preview affected cases and why they were selected; no API calls.
-.venv/bin/python -m evals run evals/cases/*.json evals/cases/actions/*.json \
-  evals/cases/help/*.json evals/cases/selected-note/*.json \
-  evals/cases/staged-summary/*.json evals/cases/web/*.json \
+.venv/bin/python -m evals run evals/cases/staged-summary/*.json \
   --judge evals/judge.json --changed-since /tmp/metalist-before/report.json \
   --output /tmp/metalist-affected-preview
 
@@ -122,28 +122,13 @@ Small samples and LLM judges have uncertainty; inspect individual verdicts.
 
 ## Fixed expectations and scenarios
 
-The [24 action cases](cases/actions/README.md) check initial route selection;
-[105 help cases](cases/help/README.md) cover routing, menus, and explanations.
-Starter cases and 21 selected-note cases cover additional requests and output quality,
-including URL parents with child abstracts, sibling comparisons, ancestor context,
-per-node tags, citations to the actual supporting node, and no-selection versus
-selected-but-blocked explanations.
-Two cached-title cases store raw HTML and fixed cached URL/title pairs; current
-production text extraction formats that evidence on every run. These cases verify
-identifying a selected abstract's title from its parent URL and citing that parent.
-Web output cases distinguish an opened document from the visible labeled links it
-contains. `web-list-page-item-links` supplies a fixed 30-story list snapshot and
-requires at least eight distinct destination citations while checking every named
-story against its exact link token. `web-cited-answer` is the direct-article control:
-claims from the article body must cite the opened article rather than an incidental
-outgoing link.
 The staged-summary case builds one structured batch request and one final synthesis
 request through the current production system prompt, summary skill, context
 builders, and response schema. It checks supporting-note selection, preservation of
 fixed facts, original-note citation tokens, and complete-scope wording; deterministic
 tests verify application-owned exact root coverage.
-The v2 migration preserved all 133 original expectations. Historical measured
-results remain historical; they do not establish current prompt accuracy.
+Historical measured results remain historical; they do not establish current
+prompt accuracy.
 
 Action `expectation.alternatives` entries match specified dictionary fields.
 Arrays must match exactly in length/order; scalar types must match. Do not score
@@ -152,15 +137,11 @@ instructions, and reference facts. Every criterion must pass; missing or duplica
 judge criteria count as errors. Do not revise expectations simply to pass a new prompt.
 
 Each step has `conversation`, a tagged `context`, `max_output_tokens`, and
-`expectation`. Supported contexts are `route`, `help`, `respond`, `investigation`,
-`summary_batch`, `summary_final`, `web_action`, and `web_respond`.
+`expectation`. Supported contexts are `summary_batch` and `summary_final`.
 Scope metadata and selected-note state are explicit. Selection fixtures can provide
 a complete containing tree with required node IDs, parent IDs, content, and tags;
-production code derives the edited-node marker from the selected ID. Existing
-single-node scenarios remain fixed and use the same current tree serializer.
-Help contexts select topics;
-current skills and catalogs are assembled by production code. Investigation and
-summary-batch contexts supply fixed result trees and coverage IDs; summary-final
+production code derives the edited-node marker from the selected ID.
+Summary-batch contexts supply fixed result trees and coverage IDs; summary-final
 contexts supply verified structured findings with original supporting note IDs. A
 scenario never executes application actions or retrieves actual notes.
 
@@ -172,25 +153,12 @@ instructions are reconstructed for each step and never accumulate implicitly.
 ## Capture a failure
 
 AI Chat's **⇩ Export LLM history** exports chronological `[input, output]` pairs,
-one per provider attempt. `input.request` records the HTTP request;
-`input.invocation` records application messages before Instructor's schema/retry
-instructions. Output records responses, chunks, status, errors, and application
-menu events. Exported note content is real: review it before committing fixtures.
-No credential headers are included. History covers the authenticated session since
-Clear Chat; logout/server restart also clear it.
-
-```bash
-.venv/bin/python -m evals from-export /path/to/history.json \
-  --pair 0 --output evals/cases/my-failure.json
-```
-
-Indices are zero-based. Extraction produces an **unreviewed** scenario draft.
-It strips generated instructions, retaining fixed conversation/scope/selection and
-help-topic inputs. The original pair remains diagnostic provenance only. Expected
-behavior must be written independently; observed output is never adopted as truth.
-Review the extracted scenario, description, and expectations before setting
-`reviewed: true`. Unsupported stages fail explicitly; investigation exports
-currently require manual extraction of fixed evidence into an investigation context.
+one per provider attempt, including the agent's tool turns. Exported note content is
+real: review it before using it in a fixture. No credential headers are included.
+The command that drafted cases from an export handled only the removed routing
+stages; agent-stage cases (Phase 6) will bring their own way to capture a failure.
+Until then, write the case by hand from the exported conversation, with expectations
+written independently of the observed output.
 
 ## Coverage boundary
 
@@ -201,10 +169,57 @@ tests cover those paths separately. A passing mocked harness test or dry run pro
 wiring, **not live model behavior**.
 
 `tests/unit/test_prompt_regressions.py` checks production-change propagation,
-fixed expectations, output judging, repetition isolation, exports, comparisons,
-and failure exit statuses without paid calls. `test_agent_history.py` checks the
+fixed expectations, output judging, repetition isolation, comparisons, and failure
+exit statuses without paid calls. `test_agent_history.py` checks the
 real SDK/Instructor against a simulated provider. Browser history export can be
 checked with `BROWSER_TEST_SUITE=ai-history npm run test:browser`.
 
 The suite belongs in Git but is excluded from PyPI wheels/source distributions.
 The history recording/export feature remains part of the installed application.
+
+## Agent cases
+
+`python -m evals agent <cases…> --judge evals/judge.json [--live] [--repetitions N]
+[--concurrency N] --output DIR` runs each case through `AgentRuntime.stream_agent`
+with the real OpenAI adapter and the current production instructions, skills and tool
+schemas. Without `--live` it validates the cases and prints the run count. Live runs
+use **Luna at Low thinking only** (the case format allows nothing else): stronger
+models are not worth paying to find failures Luna doesn't have.
+
+A case (`schema_version: 3`, `evals/agent_models.py`) fixes:
+
+- the conversation, ending with the user's request;
+- the view: scope label, search and the notes (id, parent, text, tags, pending
+  proposals); the selected note uses the same fixtures as summary cases;
+- web access: the mode, the pages a fixture web serves (with fixed citation ids the
+  judge criteria refer to), and pages already opened earlier in the chat;
+- how the simulated user answers any Yes/No or scope question (`yes` or `no`);
+- the expectation: required calls (a tool, optionally with argument values; lists
+  match as subsets and addresses after normalization), forbidden tools, forbidden
+  specific calls, whether a confirmation must be asked, and judge criteria for the
+  final answer.
+
+Every run also checks the **default tool order** (help and menus, then notes, then
+the web, then changes); going back to an earlier group is a failure. The runner
+(`evals/agent_runner.py`) serves only recorded pages, records tag operations without
+writing anything, acknowledges menus as opened, gives each trial its own question
+guard so trials can run concurrently, and maps live web citation ids onto the
+fixture ids before judging. Reports use the same `case_id`, fingerprints, counts and
+`compare` as summary-stage reports; each trial is saved under `trials/`. Exit status
+is 0 when every run passed, 1 for a wrong behavior, 2 for a provider error.
+
+Three `actions/summarize-*` cases (non-neural papers, vegetarian and non-meat
+recipes) guard a reported regression: a summary of notes chosen by a category the
+notes don't spell out must use the whole-view summary, not a word search.
+`papers-without-notes-word` is back to its legacy expectation for the same reason.
+Three `combined/` cases cover requests the old routing could not handle (help + web,
+notes + help, notes + web). The 168 others were migrated from the routing-era suite. Each records its source, the
+mapping applied and the legacy expectation in `provenance`; 15 whose expected
+behavior the redesign changed carry an `expectation_change` reason (re-opening
+earlier web pages, opening menus directly, topical and empty-view summaries, a
+truthful "settings opened", and the new release-notes help topic).
+
+Latest run (2026-10-05, Luna Low, 5 runs per case): 832/840 correct, no errors,
+161/168 cases 5/5; the misses are answer wording and three miscopied note ids.
+Since then the model sees short note ids (`n12`) instead of UUIDs; the cases that
+miscopied ids pass 5/5.

@@ -1,0 +1,151 @@
+{
+  "schema_version": 3,
+  "id": "selected-note-explain-current",
+  "description": "Explain the note I am working on.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Explain the note I am working on."
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-0",
+        "parent_id": "",
+        "content_text": "garden note 0",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "garden note 1",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "garden note 2",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-3",
+        "parent_id": "",
+        "content_text": "garden note 3",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-4",
+        "parent_id": "",
+        "content_text": "garden note 4",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-5",
+        "parent_id": "note-0",
+        "content_text": "garden note 5",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-6",
+        "parent_id": "note-1",
+        "content_text": "garden note 6",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-7",
+        "parent_id": "note-2",
+        "content_text": "garden note 7",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-8",
+        "parent_id": "note-3",
+        "content_text": "garden note 8",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-9",
+        "parent_id": "note-4",
+        "content_text": "garden note 9",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-10",
+        "parent_id": "note-0",
+        "content_text": "garden note 10",
+        "tags": "garden",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-11",
+        "parent_id": "note-1",
+        "content_text": "garden note 11",
+        "tags": "garden",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "available",
+    "note_id": "orchard-note",
+    "content_text": "I planted three apple trees in April. Two survived the summer.",
+    "tags": "garden"
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [],
+    "forbidden_tools": [
+      "lookup_metalist_help",
+      "view_overview",
+      "search_view_notes",
+      "read_view_notes",
+      "open_web_pages",
+      "open_menu",
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/selected-note/explain-current.json",
+    "mapping": "A direct reply: no tools.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "respond"
+        }
+      ]
+    },
+    "source": "synthetic selected-note scenario"
+  }
+}

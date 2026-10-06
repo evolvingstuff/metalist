@@ -59,14 +59,14 @@ def check_distribution(distribution_directory: Path) -> None:
         subprocess.run(
             [sys.executable, "-I", "-c", (
                 "import sys; sys.path.insert(0, sys.argv[1]); "
-                "from app.services.agent.skills import SCOPED_INVESTIGATION_SKILL; "
                 "from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS; "
-                "from app.services.agent.help_catalog import HELP_TOPICS, MENU_ACTIONS, HELP_RESPONSE_INSTRUCTION; "
+                "from app.services.agent.help_catalog import HELP_TOPICS, MENU_ACTIONS; "
                 "assert all(DEFAULT_AGENT_SKILLS.for_action('help_' + topic).content.strip() for topic in HELP_TOPICS); "
-                "assert MENU_ACTIONS and HELP_RESPONSE_INSTRUCTION.strip(); "
-                "from app.services.agent.prompts import AGENT_SYSTEM_PROMPT, FINAL_RESPONSE_REQUEST_PROMPT, TOOL_RESULT_PROMPT; "
-                "assert all(value.strip() for value in (SCOPED_INVESTIGATION_SKILL, "
-                "AGENT_SYSTEM_PROMPT, FINAL_RESPONSE_REQUEST_PROMPT, TOOL_RESULT_PROMPT))"
+                "assert all(skill.content.strip() for skill in DEFAULT_AGENT_SKILLS.skills); "
+                "assert MENU_ACTIONS; "
+                "from app.services.agent.prompts import AGENT_SYSTEM_PROMPT, AGENT_LOOP_INSTRUCTIONS, FINAL_RESPONSE_REQUEST_PROMPT; "
+                "assert all(value.strip() for value in ("
+                "AGENT_SYSTEM_PROMPT, AGENT_LOOP_INSTRUCTIONS, FINAL_RESPONSE_REQUEST_PROMPT))"
             ), str(wheels[0].resolve())],
             cwd=temporary_directory, check=True, timeout=30,
         )

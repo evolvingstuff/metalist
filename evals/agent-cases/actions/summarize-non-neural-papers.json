@@ -1,0 +1,154 @@
+{
+  "schema_version": 3,
+  "id": "summarize-non-neural-papers",
+  "description": "Reported regression: a summary of papers chosen by a category no note spells out must use the whole-view summary, not a word search.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "can you summarize all of the non-neural papers?"
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "arXiv",
+    "search_query": "arXiv",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "paper-0",
+        "parent_id": "",
+        "content_text": "arXiv: Recursive Language Models",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-1",
+        "parent_id": "",
+        "content_text": "arXiv: Evolution Strategies at the Hyperscale",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-2",
+        "parent_id": "",
+        "content_text": "[1909.10140] A new coefficient of correlation",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-3",
+        "parent_id": "",
+        "content_text": "Do Transformers Need Three Projections?",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-4",
+        "parent_id": "",
+        "content_text": "What can a Single Attention Layer Learn?",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-5",
+        "parent_id": "",
+        "content_text": "Formal Language Recognition by Hard Attention Transformers",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-6",
+        "parent_id": "",
+        "content_text": "arXiv: StableTTA: Training-Free Test-Time Adaptation",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-7",
+        "parent_id": "",
+        "content_text": "arXiv: H-Neurons: On the Existence, Impact and Origin of Hallucination-Associated Neurons",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-8",
+        "parent_id": "",
+        "content_text": "Quantum field inspired model of decision making",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-9",
+        "parent_id": "",
+        "content_text": "2017.01.02: Quantum Bayesian networks for cognition",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-10",
+        "parent_id": "",
+        "content_text": "Evaluating Protein Transfer Learning with TAPE: self-supervised neural models compared with state-of-the-art non-neural techniques",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-11",
+        "parent_id": "",
+        "content_text": "Random Forests (Breiman)",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-12",
+        "parent_id": "",
+        "content_text": "Support-Vector Networks",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-13",
+        "parent_id": "",
+        "content_text": "A tutorial on hidden Markov models and selected applications in speech recognition",
+        "tags": "arxiv",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "summarize_view"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "source": "user report 2026-10-05 (screenshot); titles from the visible list, no note bodies",
+    "note": "Expected behavior as in the routing design, which chose the whole-view summary for this request."
+  }
+}

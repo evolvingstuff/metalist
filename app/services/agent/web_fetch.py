@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from io import BytesIO
 import re
+from collections.abc import Callable
 from typing import Literal
 from urllib.parse import urljoin
 
@@ -227,11 +228,23 @@ class _ReadableHtmlParser(HTMLParser):
         return tuple(self._outgoing_links)
 
 
-def fetch_web_page(normalized_url: str) -> WebPageFetchResult:
+def fetch_web_page(normalized_url: str, *, allows_target: Callable[[str], bool]) -> WebPageFetchResult:
+    """Fetch one page; ``allows_target`` must approve every address, including each
+    redirect hop (contextual web mode allows only addresses already in context)."""
     if normalize_public_http_url(normalized_url) != normalized_url:
         raise ValueError("fetch_web_page requires a normalized HTTP(S) URL")
     current_url = normalized_url
     for _redirect_index in range(MAX_WEB_REDIRECTS + 1):
+        if not allows_target(current_url):
+            error_kind = "not_available_in_permitted_context"
+            if current_url != normalized_url:
+                error_kind = "redirect_not_available_in_permitted_context"
+            return _error_result(
+                requested_url=normalized_url,
+                final_url=current_url,
+                status="blocked",
+                error_kind=error_kind,
+            )
         target_capture = CapturedExceptionContext(
             PublicHttpTargetRejected,
             boundary='app/services/agent/web_fetch.py:fetch_web_page:target_capture',
@@ -300,7 +313,7 @@ def fetch_web_page(normalized_url: str) -> WebPageFetchResult:
     )
 
 
-async def fetch_web_pages(urls: list[str]) -> tuple[WebPageFetchResult, ...]:
+async def fetch_web_pages(urls: list[str], *, allows_target: Callable[[str], bool]) -> tuple[WebPageFetchResult, ...]:
     if not isinstance(urls, list) or len(urls) < 1 or len(urls) > MAX_WEB_PAGE_URLS:
         raise ValueError(f"Web page batch must contain 1–{MAX_WEB_PAGE_URLS} URLs")
     normalized_by_input: list[str | None] = []
@@ -317,7 +330,7 @@ async def fetch_web_pages(urls: list[str]) -> tuple[WebPageFetchResult, ...]:
 
     async def fetch_one(url: str) -> WebPageFetchResult:
         async with semaphore:
-            return await asyncio.to_thread(fetch_web_page, url)
+            return await asyncio.to_thread(fetch_web_page, url, allows_target=allows_target)
 
     fetched = await asyncio.gather(*(fetch_one(url) for url in unique_urls))
     result_by_url = dict(zip(unique_urls, fetched, strict=True))

@@ -1,4 +1,4 @@
-"""Explicit CLI: python -m evals {from-export,run,compare}."""
+"""Explicit CLI: python -m evals {run,agent,compare}."""
 
 import argparse
 import asyncio
@@ -8,10 +8,11 @@ from pathlib import Path
 
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_inference import OpenAIInferenceAdapter, validate_openai_model
+from evals.agent_models import AgentCase
+from evals.agent_runner import build_snapshot, run_agent_cases
 from evals.models import JudgeConfig, RegressionCase
 from evals.runner import REPETITIONS, prepare_case
 from evals.scheduling import CONCURRENCY, run_cases
-from evals.scenarios import scenario_from_invocation
 from evals.selection import build_coverage, load_coverage, plan_selection
 
 
@@ -19,30 +20,6 @@ def write_new(path: Path, payload) -> None:
     with path.open("x", encoding="utf-8") as output:
         json.dump(payload, output, indent=2)
         output.write("\n")
-
-
-def from_export(arguments):
-    history = json.loads(arguments.history.read_text(encoding="utf-8"))
-    pair = history[arguments.pair]
-    request, _response = pair
-    if request["schema_version"] != 1:
-        raise ValueError("Unsupported export version")
-    invocation = request["invocation"]
-    # lint: allow-PY004 rationale="choose the editable case expectation shape by call kind"
-    expectation = ({"kind": "action", "alternatives": [{"REPLACE_WITH_EXPECTED_FIELD": "EXPECTED_VALUE"}]}
-                   if invocation["kind"] == "structured" else
-                   {"kind": "output", "criteria": [{"id": "correct", "instruction": "REPLACE_WITH_EXPECTED_BEHAVIOR"}],
-                    "reference_facts": ""})
-    case = RegressionCase.model_validate({
-        "schema_version": 2, "id": arguments.output.stem,
-        "description": "Describe this failure and the intended behavior.",
-        "reviewed": False, "model": invocation["model"],
-        "thinking_level": invocation["thinking_level"],
-        "steps": [scenario_from_invocation(invocation, expectation).model_dump()],
-        "provenance": {"export_pair_index": arguments.pair, "recorded_pair": pair},
-    })
-    write_new(arguments.output, case.model_dump())
-    print(f"Created {arguments.output}; set expectations and reviewed=true before running.")
 
 
 async def run(arguments):
@@ -120,6 +97,65 @@ async def run(arguments):
         raise SystemExit(1)
 
 
+async def run_agent(arguments):
+    """Agent-stage cases: the whole production agent loop, per model and thinking level."""
+    cases = [AgentCase.model_validate_json(path.read_text(encoding="utf-8")) for path in arguments.cases]
+    if len({case.id for case in cases}) != len(cases):
+        raise ValueError("Case IDs must be unique")
+    judge = None
+    if arguments.judge is not None:
+        judge = JudgeConfig.model_validate_json(arguments.judge.read_text(encoding="utf-8"))
+        validate_openai_model(judge.model)
+    # Validate everything before spending tokens or creating a report directory.
+    for case in cases:
+        if not case.reviewed:
+            raise ValueError(f"Review expected behavior and set reviewed=true: {case.id}")
+        validate_openai_model(case.model)
+        build_snapshot(case, session_key="validation")
+        if case.expectation.answer_criteria and judge is None:
+            raise ValueError(f"Cases with answer criteria require --judge: {case.id}")
+    trials = len(cases) * arguments.repetitions
+    if not arguments.live:
+        print(f"Validated {len(cases)} agent cases; --live would make {trials} agent runs "
+              f"({arguments.repetitions} per case, Luna at Low thinking).")
+        return
+    costs = OpenAICostTracker()
+    arguments.output.mkdir(parents=True, exist_ok=False)
+    (arguments.output / "trials").mkdir()
+    trial_number = 0
+
+    def preserve(case, model, level, outcome):
+        nonlocal trial_number
+        trial_number += 1
+        write_new(arguments.output / "trials" / f"{trial_number:05d}.json",
+                  {"case_id": case.id, "model": model, "thinking_level": level, **outcome})
+        detail = ""
+        if outcome["status"] != "correct":
+            detail = f" — {outcome['error'] or '; '.join(outcome['failures'])}"
+        print(f"[{trial_number}/{trials}] {case.id} @ {model}/{level} #{outcome['repetition']}: "
+              f"{outcome['status']}{detail}", flush=True)
+
+    adapter = OpenAIInferenceAdapter(api_key=os.environ["OPENAI_API_KEY"], cost_tracker=costs)
+    reports = await run_agent_cases(cases, adapter=adapter, judge=judge,
+        repetitions=arguments.repetitions, concurrency=arguments.concurrency, on_trial=preserve)
+    usage = costs.snapshot()
+    summaries = [{key: value for key, value in report.items() if key != "outcomes"} for report in reports]
+    write_new(arguments.output / "report.json", {"kind": "agent",
+        "cases": summaries, "concurrency": arguments.concurrency,
+        "token_usage": {"uncached_input_tokens": usage.uncached_input_tokens,
+                        "cached_input_tokens": usage.cached_input_tokens,
+                        "cache_write_tokens": usage.cache_write_tokens, "output_tokens": usage.output_tokens},
+        "estimated_cost_usd": str(usage.estimated_cost_usd)})
+    for report in summaries:
+        print(f"{report['case_id']}: {report['counts']['correct']}/{report['repetitions']} correct; "
+              f"{report['counts']['error']} errors")
+    print(f"Estimated cost ${usage.estimated_cost_usd}", flush=True)
+    if any(report["counts"]["error"] for report in summaries):
+        raise SystemExit(2)
+    if any(report["counts"]["incorrect"] for report in summaries):
+        raise SystemExit(1)
+
+
 def compare(arguments):
     baseline_report = json.loads(arguments.baseline.read_text(encoding="utf-8"))
     candidate_report = json.loads(arguments.candidate.read_text(encoding="utf-8"))
@@ -153,10 +189,6 @@ def compare(arguments):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    extract = commands.add_parser("from-export")
-    extract.add_argument("history", type=Path)
-    extract.add_argument("--pair", type=int, required=True, help="Zero-based exported pair index")
-    extract.add_argument("--output", type=Path, required=True)
     execute = commands.add_parser("run")
     execute.add_argument("--repetitions", type=int, default=REPETITIONS, help="Independent trials per case (default: 5)")
     execute.add_argument("--concurrency", type=int, default=CONCURRENCY,
@@ -167,16 +199,21 @@ def main():
     execute.add_argument("--changed-since", type=Path,
         help="Rebuild all requests but run only changed/new cases relative to this report")
     execute.add_argument("--output", type=Path, required=True, help="New directory for reports")
+    agent = commands.add_parser("agent", help="Run agent-stage cases through the production agent loop")
+    agent.add_argument("cases", type=Path, nargs="+")
+    agent.add_argument("--judge", type=Path)
+    agent.add_argument("--live", action="store_true")
+    agent.add_argument("--repetitions", type=int, default=REPETITIONS, help="Runs per case and setting (default: 5)")
+    agent.add_argument("--concurrency", type=int, default=CONCURRENCY, help="Agent runs at once (default: 4)")
+    agent.add_argument("--output", type=Path, required=True, help="New directory for reports")
     comparison = commands.add_parser("compare")
     comparison.add_argument("baseline", type=Path)
     comparison.add_argument("candidate", type=Path)
     arguments = parser.parse_args()
-    if arguments.command == "from-export":
-        if arguments.pair < 0:
-            parser.error("--pair must be nonnegative")
-        from_export(arguments)
-    elif arguments.command == "run":
+    if arguments.command == "run":
         asyncio.run(run(arguments))
+    elif arguments.command == "agent":
+        asyncio.run(run_agent(arguments))
     else:
         compare(arguments)
 

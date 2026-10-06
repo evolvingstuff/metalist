@@ -39,42 +39,14 @@ test('expanding another note does not record the current edit session', () => {
     );
 });
 
-test('shouldPersistExpandedEditSession never persists expansion for collapsed edit sessions', () => {
-    assert.equal(
-        shouldPersistExpandedEditSession({
-            startedCollapsed: true,
-            hasEdits: true,
-            expandedPersisted: false,
-        }),
-        false,
-    );
-
-    assert.equal(
-        shouldPersistExpandedEditSession({
-            startedCollapsed: false,
-            hasEdits: true,
-            expandedPersisted: false,
-        }),
-        false,
-    );
-
-    assert.equal(
-        shouldPersistExpandedEditSession({
-            startedCollapsed: true,
-            hasEdits: false,
-            expandedPersisted: false,
-        }),
-        false,
-    );
-
-    assert.equal(
-        shouldPersistExpandedEditSession({
-            startedCollapsed: true,
-            hasEdits: true,
-            expandedPersisted: true,
-        }),
-        false,
-    );
+test('shouldPersistExpandedEditSession keeps only an edited, collapsed note expanded', () => {
+    // Edited: stays expanded so the changes stay in view.
+    assert.equal(shouldPersistExpandedEditSession({ startedCollapsed: true, hasEdits: true, expandedPersisted: false }), true);
+    // Opened and left unchanged: collapses again.
+    assert.equal(shouldPersistExpandedEditSession({ startedCollapsed: true, hasEdits: false, expandedPersisted: false }), false);
+    // Not collapsed to begin with, or already saved as expanded.
+    assert.equal(shouldPersistExpandedEditSession({ startedCollapsed: false, hasEdits: true, expandedPersisted: false }), false);
+    assert.equal(shouldPersistExpandedEditSession({ startedCollapsed: true, hasEdits: true, expandedPersisted: true }), false);
 });
 
 test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that started collapsed', () => {

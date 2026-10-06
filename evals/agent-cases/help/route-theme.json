@@ -1,0 +1,76 @@
+{
+  "schema_version": 3,
+  "id": "help-route-theme",
+  "description": "Open the theme control in the menu.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Open the theme control in the menu."
+    }
+  ],
+  "view": {
+    "scope_kind": "search",
+    "label": "garden",
+    "search_query": "garden",
+    "sort_mode": "normal",
+    "notes": []
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "lookup_metalist_help",
+          "open_menu"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "view_overview",
+      "search_view_notes",
+      "read_view_notes",
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "not_asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "migrated_from": "evals/legacy-cases/help/route-theme.json",
+    "mapping": "Product help, not note investigation or an operation.",
+    "legacy_stage": "route",
+    "legacy_thinking_level": "off",
+    "legacy_expectation": {
+      "kind": "action",
+      "alternatives": [
+        {
+          "kind": "metalist_help",
+          "help_topics": [
+            "menus"
+          ]
+        }
+      ]
+    },
+    "source": "synthetic-metalist-help-v1",
+    "personal_data": false,
+    "expectation_change": "A request only to open a menu may open it directly; the old design had to route it through help."
+  }
+}

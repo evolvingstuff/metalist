@@ -8,10 +8,6 @@ import assert from 'node:assert/strict';
 
 const SETTLE_MS = 1500;
 const TOLERANCE_PX = 2;
-// The cue follows a collapsing note frame by frame; a few pixels of per-frame
-// measurement jitter are expected. The bug it guards against was a cue
-// hundreds of pixels too tall, covering the notes below.
-const CUE_FRAME_TOLERANCE_PX = 12;
 
 function paragraphs(label, count) {
   return Array.from({length: count}, (_, index) =>
@@ -128,54 +124,35 @@ async function clickParagraph(page, prefix) {
   await page.mouse.click(point.x, point.y);
 }
 
-// Escape, sampling the tracked paragraph's position on every frame until settled.
-// With `cueNoteId`, also samples how far any position cue's box is from that
-// note's box on each frame it is shown.
-async function exitWithEscape(page, prefix, cueNoteId) {
-  await page.evaluate(({prefix, cueNoteId}) => {
-    window.__cueMismatch = [];
+// Leaves edit mode with Escape, sampling the tracked paragraph every frame and
+// counting decorative overlays (click-through elements added to the page body,
+// as the removed position cue was) meanwhile: leaving edit mode must never put
+// a highlight over the notes. Mermaid's temporary render boxes are not overlays.
+async function exitWithEscape(page, prefix) {
+  await page.evaluate(prefix => {
     window.__scrollSamples = [];
-    window.__positionCues = 0;
-    window.__cueAt = null;
-    window.__movedAt = null;
-    const startScrollY = window.scrollY;
+    window.__bodyOverlays = 0;
     new MutationObserver(records => {
       for (const record of records) {
         for (const node of record.addedNodes) {
-          if (node instanceof HTMLElement && node.classList.contains('note-position-cue')) {
-            window.__positionCues += 1;
-            if (window.__cueAt === null) window.__cueAt = performance.now();
-          }
+          if (node instanceof HTMLElement && getComputedStyle(node).pointerEvents === 'none') window.__bodyOverlays += 1;
         }
       }
     }).observe(document.body, {childList: true});
     const sample = () => {
-      // Measured after every animation-frame callback of this frame has run,
-      // i.e. as the frame is painted.
-      setTimeout(() => {
-        const cue = document.querySelector('.note-position-cue');
-        const note = cueNoteId === null ? null : document.querySelector(`[data-note-id="${cueNoteId}"]`);
-        if (cue !== null && note !== null) {
-          const cueRect = cue.getBoundingClientRect();
-          const noteRect = note.getBoundingClientRect();
-          window.__cueMismatch.push(Math.max(Math.abs(cueRect.top - noteRect.top), Math.abs(cueRect.bottom - noteRect.bottom)));
-        }
-      }, 0);
-      // The first frame that starts after the view moved a long way.
-      if (window.__movedAt === null && Math.abs(window.scrollY - startScrollY) > 40) window.__movedAt = performance.now();
       const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
       if (paragraph) window.__scrollSamples.push(paragraph.getBoundingClientRect().top);
       if (window.__scrollSamples.length < 120) requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
-  }, {prefix, cueNoteId});
+  }, prefix);
   await page.keyboard.press('Escape');
   await page.waitForFunction(async () => {
     const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
     return !mode.isEditing && !mode.isLoading;
   });
   await pause(SETTLE_MS);
-  return page.evaluate(() => ({samples: window.__scrollSamples, cues: window.__positionCues, cueAt: window.__cueAt, movedAt: window.__movedAt, cueMismatch: window.__cueMismatch}));
+  return page.evaluate(() => ({samples: window.__scrollSamples, overlays: window.__bodyOverlays}));
 }
 
 function assertStayed(label, before, after, samples) {
@@ -211,10 +188,9 @@ async function caretVisibleCase(page, longId, label) {
   await pause(400);
   const tracked = 'Long paragraph 60:';
   const before = await paragraphY(page, tracked);
-  const {samples, cues} = await exitWithEscape(page, tracked, null);
+  const {samples, overlays} = await exitWithEscape(page, tracked);
   assertStayed(`${label}, caret on screen`, before, await paragraphY(page, tracked), samples);
-  // Nothing moved, so no "you are here" cue distracts.
-  assert.equal(cues, 0, `${label}: no position cue when the text stayed exactly in place`);
+  assert.equal(overlays, 0, `${label}: nothing may highlight the note when leaving edit mode`);
 }
 
 async function readingLineCase(page, longId, label) {
@@ -226,7 +202,7 @@ async function readingLineCase(page, longId, label) {
   const readingLineY = headerBottom + (viewportHeight - headerBottom) / 3;
   await scrollParagraphTo(page, 'Long paragraph 30:', readingLineY - 5);
   const before = await paragraphY(page, 'Long paragraph 30:');
-  await exitWithEscape(page, 'Long paragraph 30:', null);
+  await exitWithEscape(page, 'Long paragraph 30:');
   assertStayed(`${label}, caret off screen (reading line)`, before, await paragraphY(page, 'Long paragraph 30:'), null);
 }
 
@@ -320,7 +296,7 @@ async function lateContentCase(page) {
 
 // A formatted note whose raw text at the reading line does not survive
 // rendering (Mermaid source, Markdown syntax): with no text to match, the
-// note's top stays put and nothing is cued, rather than guessing a spot.
+// note's top stays put rather than guessing a spot.
 async function unmatchedFormatCase(page, ids) {
   const noteId = await page.evaluate(async () => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -350,9 +326,9 @@ async function unmatchedFormatCase(page, ids) {
   await page.evaluate(delta => window.scrollBy(0, delta), lineY - readingLineY + 4);
   await pause(300);
   const before = (await layout(page, noteId)).noteTop;
-  const {cues} = await exitWithEscape(page, 'Paragraph 1 after', null);
+  const {overlays} = await exitWithEscape(page, 'Paragraph 1 after');
   const after = (await layout(page, noteId)).noteTop;
-  assert.equal(cues, 0, 'unmatched formatted text: no position cue on a guessed spot');
+  assert.equal(overlays, 0, 'unmatched formatted text: nothing may highlight the note when leaving edit mode');
   assert.ok(Math.abs(after - before) <= TOLERANCE_PX,
     `unmatched formatted text: the note's top stays put: y=${Math.round(before)} -> ${Math.round(after)}`);
 }
@@ -439,10 +415,10 @@ async function enterEditCase(page, noteId, prefix, label) {
     `${label}: the clicked line should stay under the pointer: y=${Math.round(before)} -> ${Math.round(after)}`);
   const caretLine = await caretLineText(page);
   assert.ok(caretLine.includes(prefix), `${label}: the caret should be on the clicked line, got "${caretLine.slice(0, 40)}"`);
-  // Leaving again: the line stays put and, as the note stays expanded, no cue
-  // appears (even when a diagram above grows back and the page scrolls).
-  const {cues} = await exitWithEscape(page, prefix, null);
-  assert.equal(cues, 0, `${label}: no position cue after leaving an expanded note`);
+  // Leaving again: the line stays put and nothing highlights the note (even
+  // when a diagram above grows back and the page scrolls).
+  const {overlays} = await exitWithEscape(page, prefix);
+  assert.equal(overlays, 0, `${label}: nothing may highlight the note when leaving edit mode`);
   const back = await lineY(page, noteId, prefix);
   assert.ok(Math.abs(back - before) <= TOLERANCE_PX, `${label}: after Escape the line is back where it was: y=${Math.round(before)} -> ${Math.round(back)}`);
 }
@@ -631,8 +607,8 @@ async function formattedClickCase(page, ids, spec) {
   const problems = [];
   if (!caret.text.includes(spec.source)) problems.push(`caret on "${caret.text.trim().slice(0, 40)}" instead of the "${spec.source}" source line`);
   if (point.y < caret.top - 4 || point.y > caret.bottom + 4) problems.push(`caret line at y=${Math.round(caret.top)}-${Math.round(caret.bottom)}, click at y=${Math.round(point.y)}`);
-  const {cues} = await exitWithEscape(page, '__none__', null);
-  if (cues !== 0) problems.push(`${cues} position cue(s) after Escape`);
+  const {overlays} = await exitWithEscape(page, '__none__');
+  if (overlays !== 0) problems.push(`${overlays} overlay(s) added while leaving edit mode`);
   const back = await targetBox();
   if (back === null) problems.push('target missing after Escape');
   else if (Math.abs(back.top - box.top) > TOLERANCE_PX) problems.push(`after Escape the spot moved: y=${Math.round(box.top)} -> ${Math.round(back.top)}`);
@@ -647,6 +623,195 @@ async function formattedClickCases(page, ids) {
 
 // Enter outside edit mode adds an empty note at the top and scrolls up to it,
 // so it is visible below the search controls.
+function noteTopOf(page, prefix) {
+  return page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    return paragraph.closest('.note').getBoundingClientRect().top;
+  }, prefix);
+}
+
+function headerBottomOf(page) {
+  return page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().bottom);
+}
+
+// Drags the note holding the `source` paragraph to `to` (viewport point) with
+// the mouse. Returns window.scrollY on every frame until it settles, and the
+// drop line's screen position just before release (null for sideways drags).
+async function dragNoteTo(page, source, to) {
+  const from = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    const rect = paragraph.getBoundingClientRect();
+    return {x: rect.left + 40, y: rect.top + Math.min(10, rect.height / 2)};
+  }, source);
+  const headerBottom = await headerBottomOf(page);
+  const innerHeight = await page.evaluate(() => window.innerHeight);
+  assert.ok(from.y > headerBottom && from.y < innerHeight - 4,
+    `drag: "${source}" should be on screen below the search controls (y=${Math.round(from.y)}, window ${innerHeight})`);
+  await page.evaluate(() => {
+    window.__dragScrolls = [];
+    const sample = () => {
+      window.__dragScrolls.push(window.scrollY);
+      if (window.__dragScrolls.length < 180) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // A vertical drag (no `to.x`) stays straight, so it is never read as an indent.
+  const toX = Object.prototype.hasOwnProperty.call(to, 'x') ? to.x : from.x;
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step += 1) {
+    await page.mouse.move(from.x + (toX - from.x) * step / 12, from.y + (to.y - from.y) * step / 12);
+    await pause(16);
+  }
+  const lineTop = await page.evaluate(() => {
+    const line = document.querySelector('.note-drop-line');
+    return line === null || line.hidden ? null : line.getBoundingClientRect().top;
+  });
+  await page.mouse.up();
+  await page.waitForNetworkIdle({idleTime: 300});
+  await pause(SETTLE_MS);
+  return {scrolls: await page.evaluate(() => window.__dragScrolls), lineTop};
+}
+
+function noteRectOf(page, prefix) {
+  return page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    const rect = paragraph.closest('.note').getBoundingClientRect();
+    return {top: rect.top, bottom: rect.bottom};
+  }, prefix);
+}
+
+function assertNoScroll(label, scrolls, scrollBefore) {
+  const worst = Math.max(...scrolls.map(y => Math.abs(y - scrollBefore)));
+  assert.ok(worst < 1, `${label}: the page should not scroll, but moved up to ${Math.round(worst)}px`);
+}
+
+// The drop line sits 1px outside the edge of the note it marks, so a note moved
+// up lands with its top 1px below the line, and one moved down with its bottom
+// 1px above it: where the user saw it would go.
+async function assertLandedOnLine(page, label, source, direction, lineTop) {
+  assert.notEqual(lineTop, null, `${label}: a drop line should have shown where the note would land`);
+  const rect = await noteRectOf(page, source);
+  const edge = direction === 'up' ? rect.top : rect.bottom;
+  const expected = direction === 'up' ? lineTop + 1 : lineTop - 1;
+  assert.ok(Math.abs(edge - expected) <= TOLERANCE_PX,
+    `${label}: the note's ${direction === 'up' ? 'top' : 'bottom'} should land on the drop line (y≈${Math.round(expected)}), got y=${Math.round(edge)}`);
+}
+
+async function scrollNoteTopTo(page, prefix, viewportY) {
+  const top = (await noteRectOf(page, prefix)).top;
+  await page.evaluate(delta => window.scrollBy(0, delta), top - viewportY);
+  await pause(400);
+}
+
+// Principles 1 and 2 (docs/ui/interaction-principles.md): a dropped note lands
+// where the drop line showed, and nothing scrolls. Moving a short note down
+// onto a note that runs past the bottom of the window.
+async function dragShortNoteDownCase(page) {
+  await reload(page);
+  const source = 'Above 4 paragraph 1:';
+  const target = 'Above 6 paragraph 1:';
+  await scrollNoteTopTo(page, target, (await page.evaluate(() => window.innerHeight)) - 50);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  const {scrolls, lineTop} = await dragNoteTo(page, source, {y: await page.evaluate(() => window.innerHeight - 10)});
+  assert.ok((await noteRectOf(page, source)).top > (await noteRectOf(page, target)).top, `drag a short note down: "${source}" should have moved below "${target}"`);
+  assertNoScroll('drag a short note down', scrolls, scrollBefore);
+  await assertLandedOnLine(page, 'drag a short note down', source, 'down', lineTop);
+}
+
+// Moving a short note up onto a note in the middle of the window.
+async function dragShortNoteUpCase(page) {
+  await reload(page);
+  // After the drag-down case the order is Above 3, 5, 6, 4, 7…: move Above 4 up two places.
+  const source = 'Above 4 paragraph 1:';
+  const target = 'Above 5 paragraph 1:';
+  await scrollNoteTopTo(page, target, 150);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  const dropY = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    const rect = paragraph.getBoundingClientRect();
+    return rect.top + rect.height / 2;
+  }, target);
+  const {scrolls, lineTop} = await dragNoteTo(page, source, {y: dropY});
+  const order = await page.evaluate(() => [...document.querySelectorAll('#notes-container p')]
+    .map(p => p.textContent.trim().split(' paragraph')[0]).filter((label, index, all) => all.indexOf(label) === index).slice(0, 12).join(', '));
+  assert.ok((await noteRectOf(page, source)).top < (await noteRectOf(page, target)).top,
+    `drag a short note up: "${source}" should have moved above "${target}" (line at ${lineTop === null ? 'none' : Math.round(lineTop)}, drop y=${Math.round(dropY)}; order: ${order})`);
+  assertNoScroll('drag a short note up', scrolls, scrollBefore);
+  await assertLandedOnLine(page, 'drag a short note up', source, 'up', lineTop);
+}
+
+// Moving a tall note (its top already above the screen) down to the bottom
+// edge: its bottom lands on the drop line and the page does not scroll, least
+// of all to the note's top.
+async function dragTallNoteDownCase(page, longId) {
+  await setCollapsed(page, longId, false);
+  const source = 'Long paragraph 59:';
+  const target = 'Below 2 paragraph 1:';
+  await scrollParagraphTo(page, 'Long paragraph 60:', Math.round((await page.evaluate(() => window.innerHeight)) * 0.4));
+  const dropY = await page.evaluate(() => window.innerHeight - 10);
+  assert.ok((await noteRectOf(page, target)).bottom > dropY, `drag a tall note down: "${target}" should run past the bottom of the window`);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  const {scrolls, lineTop} = await dragNoteTo(page, source, {y: dropY});
+  assert.ok((await noteRectOf(page, source)).top > (await noteRectOf(page, target)).top, `drag a tall note down: the long note should have moved below "${target}"`);
+  assertNoScroll('drag a tall note down', scrolls, scrollBefore);
+  await assertLandedOnLine(page, 'drag a tall note down', source, 'down', lineTop);
+}
+
+// Principle 3: dropping a note before one whose top is hidden under the sticky
+// search controls would land it behind them, out of sight; the page scrolls
+// just enough to put it right below them, with the usual gap and no more.
+async function dragUnderSearchBarCase(page) {
+  await reload(page);
+  // After the previous drag cases the order is Above 3, 4, 5, 6…: move Above 6 up two places.
+  const source = 'Above 6 paragraph 1:';
+  const target = 'Above 4 paragraph 1:';
+  const headerBottom = await headerBottomOf(page);
+  await scrollNoteTopTo(page, target, headerBottom - 30);
+  await dragNoteTo(page, source, {y: headerBottom + 12});
+  assert.ok((await noteRectOf(page, source)).top < (await noteRectOf(page, target)).top, `drag under the search bar: "${source}" should have moved above "${target}"`);
+  const top = (await noteRectOf(page, source)).top;
+  const gap = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    return parseFloat(getComputedStyle(paragraph.closest('.note')).marginTop);
+  }, source);
+  assert.ok(Math.abs(top - (headerBottom + gap)) <= TOLERANCE_PX,
+    `drag under the search bar: the moved note should sit right below the search controls (y≈${Math.round(headerBottom + gap)}), got y=${Math.round(top)}`);
+}
+
+// Sideways drags (indent, then outdent back) change the note's level in place;
+// nothing scrolls.
+async function dragSidewaysCase(page) {
+  await reload(page);
+  const source = 'Above 11 paragraph 1:';
+  await scrollNoteTopTo(page, source, 300);
+  const {y} = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    return {y: paragraph.getBoundingClientRect().top + 8};
+  }, source);
+  const x = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    return paragraph.getBoundingClientRect().left + 40;
+  }, source);
+  let scrollBefore = await page.evaluate(() => window.scrollY);
+  const indent = await dragNoteTo(page, source, {x: x + 120, y});
+  const isChild = () => page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    return paragraph.closest('.note').parentElement.closest('.note') !== null;
+  }, source);
+  assert.equal(await isChild(), true, `drag sideways: "${source}" should have been indented`);
+  assertNoScroll('drag sideways to indent', indent.scrolls, scrollBefore);
+  scrollBefore = await page.evaluate(() => window.scrollY);
+  const outdentFrom = await page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    const rect = paragraph.getBoundingClientRect();
+    return {x: rect.left + 40, y: rect.top + 8};
+  }, source);
+  const outdent = await dragNoteTo(page, source, {x: outdentFrom.x - 120, y: outdentFrom.y});
+  assert.equal(await isChild(), false, `drag sideways: "${source}" should have been outdented back`);
+  assertNoScroll('drag sideways to outdent', outdent.scrolls, scrollBefore);
+}
+
 async function newNoteAtTopCase(page, ids) {
   await reload(page);
   await page.evaluate(() => window.scrollTo(0, 1500));
@@ -695,39 +860,44 @@ export async function checkExitEditScroll(page) {
     // Collapsed note with an edit: it is shown collapsed again after saving
     // (edits do not change a note's saved collapse state), so the collapsed row
     // stays in view, just below the search controls when it would be above them.
+    // Collapsed note with an edit: it stays expanded on leaving edit mode, so
+    // the change stays in view, with the edited line where it was and nothing
+    // highlighting it; it is saved expanded (still expanded after a reload).
     await check('collapsed with edit', async () => {
       await setCollapsed(page, longId, true);
-      await scrollParagraphTo(page, 'Long paragraph 1:', 200);
+      await scrollParagraphTo(page, 'Long paragraph 1:', 300);
       await clickParagraph(page, 'Long paragraph 1:');
       await waitForEditing(page, longId);
-      await caretToEnd(page, longId);
-      await page.keyboard.type(' ');
+      // Type at the end of the clicked line, keeping the paragraph's prefix intact.
+      await page.keyboard.press('End');
+      await page.keyboard.type(' x');
       await pause(400);
-      await exitWithEscape(page, 'Long paragraph 1:', null);
-      const collapsedLayout = await layout(page, longId);
-      assert.ok(Math.abs(collapsedLayout.noteTop - (collapsedLayout.headerBottom + 8)) <= 4,
-        `collapsed note with an edit: the collapsed row should sit just below the search controls ` +
-        `(y≈${Math.round(collapsedLayout.headerBottom + 8)}), got y=${Math.round(collapsedLayout.noteTop)}`);
+      const before = await paragraphY(page, 'Long paragraph 1:');
+      const {samples, overlays} = await exitWithEscape(page, 'Long paragraph 1:');
+      assertStayed('collapsed note with an edit', before, await paragraphY(page, 'Long paragraph 1:'), samples);
+      assert.equal(overlays, 0, 'collapsed note with an edit: nothing may highlight the note when leaving edit mode');
+      const shownCollapsed = () => page.evaluate(id => document.querySelector(`[data-note-id="${id}"]`).classList.contains('collapsed'), longId);
+      assert.equal(await shownCollapsed(), false, 'collapsed note with an edit: it should stay expanded after Escape');
+      await reload(page);
+      assert.equal(await shownCollapsed(), false, 'collapsed note with an edit: it should be saved expanded');
     });
 
-    // Collapsed note opened and closed without scrolling: the collapsed row
-    // stays where it is, and (as whenever a note collapses again on leaving
-    // edit mode) it is briefly cued, covering just that row.
+    // Collapsed note opened and closed without scrolling: it simply shows
+    // collapsed again where it is, with nothing highlighting it.
     await check('collapsed in place', async () => {
       await setCollapsed(page, longId, true);
       await scrollParagraphTo(page, 'Long paragraph 1:', 300);
       const rowBefore = (await layout(page, longId)).noteTop;
       await clickParagraph(page, 'Long paragraph 1:');
       await waitForEditing(page, longId);
-      const {cues, cueMismatch} = await exitWithEscape(page, 'Long paragraph 1:', longId);
+      const {overlays} = await exitWithEscape(page, 'Long paragraph 1:');
       const rowAfter = (await layout(page, longId)).noteTop;
       assert.ok(Math.abs(rowAfter - rowBefore) <= 4, `collapsed in place: the row should stay put: y=${Math.round(rowBefore)} -> ${Math.round(rowAfter)}`);
-      assert.equal(cues, 1, 'collapsed in place: one position cue because the note collapsed again');
-      assert.ok(Math.max(...cueMismatch) <= CUE_FRAME_TOLERANCE_PX, `collapsed in place: the cue should cover just the collapsed note, but was ${Math.round(Math.max(...cueMismatch))}px off`);
+      assert.equal(overlays, 0, 'collapsed in place: nothing may highlight the note when it collapses again');
     });
 
     // A collapsed root with child notes (shown while editing) that collapses
-    // again: the cue covers only the collapsed row, never the notes below.
+    // again: nothing highlights it.
     await check('collapsed with children', async () => {
       const parentId = await page.evaluate(async () => {
         const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -745,10 +915,8 @@ export async function checkExitEditScroll(page) {
       await scrollParagraphTo(page, 'Parent with children', 300);
       await clickParagraph(page, 'Parent with children');
       await waitForEditing(page, parentId);
-      const {cues, cueMismatch} = await exitWithEscape(page, 'Parent with children', parentId);
-      assert.equal(cues, 1, 'collapsed with children: one position cue because the note collapsed again');
-      assert.ok(Math.max(...cueMismatch) <= CUE_FRAME_TOLERANCE_PX,
-        `collapsed with children: the cue should cover just the collapsed note, but was ${Math.round(Math.max(...cueMismatch))}px off`);
+      const {overlays} = await exitWithEscape(page, 'Parent with children');
+      assert.equal(overlays, 0, 'collapsed with children: nothing may highlight the note when it collapses again');
     });
 
     // Collapsed note without an edit: it collapses again; the collapsed row
@@ -760,22 +928,19 @@ export async function checkExitEditScroll(page) {
     await waitForEditing(page, longId);
     await page.evaluate(() => window.scrollBy(0, 1500));
     await pause(300);
-    const {cues, cueAt, movedAt, cueMismatch} = await exitWithEscape(page, 'Long paragraph 1:', longId);
+    const {overlays} = await exitWithEscape(page, 'Long paragraph 1:');
     const collapsedLayout = await layout(page, longId);
-    // The view had to move a long way, so the landing row is briefly cued.
-    assert.equal(cues, 1, 'collapsed note without an edit: one position cue after the big readjustment');
-    // Already there in the first frame showing the moved view, not added later.
-    assert.notEqual(movedAt, null, 'collapsed note without an edit: the view should have moved');
-    assert.ok(cueAt < movedAt, `the position cue should be shown with the moved view, not ${Math.round(cueAt - movedAt)}ms after it`);
-    // The cue marks the collapsed row only (it is drawn 3px outside the note),
-    // never the notes below it, on every frame it is shown.
-    assert.ok(cueMismatch.length > 0, 'the cue should be sampled while shown');
-    const worstCue = Math.max(...cueMismatch);
-    assert.ok(worstCue <= CUE_FRAME_TOLERANCE_PX, `the position cue should cover just the collapsed note, but was ${Math.round(worstCue)}px off on some frame`);
+    assert.equal(overlays, 0, 'collapsed note without an edit: nothing may highlight the note after the view moves');
     assert.ok(Math.abs(collapsedLayout.noteTop - (collapsedLayout.headerBottom + 8)) <= 4,
       `collapsed note without an edit: the collapsed row should sit just below the search controls ` +
       `(y≈${Math.round(collapsedLayout.headerBottom + 8)}), got y=${Math.round(collapsedLayout.noteTop)}`);
     });
+
+    await check('drag a short note down', () => dragShortNoteDownCase(page));
+    await check('drag a short note up', () => dragShortNoteUpCase(page));
+    await check('drag under the search bar', () => dragUnderSearchBarCase(page));
+    await check('drag a tall note down', () => dragTallNoteDownCase(page, longId));
+    await check('drag sideways', () => dragSidewaysCase(page));
 
     // Sorted by content volume: typing changes the note's volume, so saving may
     // re-sort it; the caret's text still stays put.
