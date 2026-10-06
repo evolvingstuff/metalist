@@ -1,5 +1,11 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-10-06 (America/Los_Angeles)
+
+The 0.12.0 main-branch release audit failed on one newly published advisory:
+
+- `multidict` 6.7.1 (CVE-2026-104874, GHSA-54p9-h82j-f925), a transitive dependency through `instructor` → `aiohttp`/`yarl`, fixed by locking `multidict` **6.9.1** (`uv lock --upgrade-package multidict`; no other package moved; exports regenerated). The local audit then reported no known advisories across 95 Python versions and 87 vendor versions.
+
 ## Update dated 2026-10-04 (America/Los_Angeles)
 
 The main-branch release audit failed on two newly published advisories:
