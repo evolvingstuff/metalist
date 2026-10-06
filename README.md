@@ -12,6 +12,16 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.12.0
+
+- AI chat is now a tool-using agent: in one answer it can look up MetaList help, read and search the notes in your view, open web pages, and open menus, instead of picking a single route up front. Answers cite notes and web pages with clickable references, including each item listed from a web page.
+- Nothing changes without your Yes: tag operations ask first with the exact change, and web addresses that carry words from your notes ask before opening. Summaries that fit in one pass start without a dialog, and summaries never block other edits while they run.
+- "How do I change…" questions open the menu that holds the setting; release notes are part of the help. AI prompts and skills are no longer editable, and a $ button shows or hides the spend estimate.
+- The AI is told only that a note is private, never which privacy setting hides it, and failed AI steps are explained in the chat.
+- Leaving edit mode keeps your place, with no highlight; a collapsed note you changed stays expanded. Clicking into a note keeps the clicked spot under the pointer, including in diagrams and formulas.
+- Dragging a note shows a ghost, a drop line and a direction cursor; the note lands where you dropped it without the page scrolling.
+- Searches that cannot be parsed are explained politely instead of failing.
+
 ## Changes in 0.11.0
 
 - Large namespaces stay fast while scrolling: only a band of root notes around the viewport is loaded, the server remembers what each tab shows so the browser no longer sends note hashes, and rendered notes are cached.
