@@ -107,6 +107,13 @@ class TabSearchInteractionRequest(TypedDict):
     searchQuery: Text
 
 @with_config(ConfigDict(strict=True))
+class DictationPasteRequest(TypedDict):
+    """Text pasted into the search bar or the tag bar, and the field's current value."""
+    text: Text
+    target: Literal["search", "tags"]
+    current_value: Text
+
+@with_config(ConfigDict(strict=True))
 class TagSuggestionsRequest(TypedDict):
     note_id: Identifier
     anchors: list[Identifier]

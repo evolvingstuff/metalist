@@ -16,6 +16,7 @@ Sources: docs/ui/tag-bar.md, docs/design/ontology-rules-v1.md
 - Each note has a tag string (`notes.tags`) that round-trips through the view snapshot (`snapshot.notes[*].tags`).
 - The tag bar editor enforces a small grammar in the browser so invalid characters/sequences are removed as you type.
 - When leaving the tag bar (Tab toggle or click-away) the input is **sanitized**: incomplete/broken items are removed.
+- Pasting (never typing) dictated text into the tag bar turns it into tags: punctuation and filler words are dropped, spoken "dash"/"hyphen"/"underscore"/"slash" join words (Superwhisper's `foo-Dash bar` gives `foo-bar`), the longest run of words matching an existing tag becomes that tag (spelled as used most often), "quote … end quote" becomes one tag such as `machine-learning`, and other words become new tags, lowercased unless they look like an acronym. Tags already in the bar are not added again. One undo restores the pasted text (without commas). Full rules: `docs/ui/dictation-paste.md`.
 - When tags are shown in the note list, one line of tags shares the note's existing row height; the row grows only when its tags wrap onto additional lines.
 
 ## Whitespace + Tokens

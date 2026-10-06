@@ -24,6 +24,7 @@ import {checkWritingAssistantCorrections} from './browser-writing-assistant-regr
 import {checkExitEditScroll} from './browser-scroll-regressions.mjs';
 import {checkSortedTabs} from './browser-sorted-tab-regressions.mjs';
 import {checkSearchInputRejected} from './browser-search-input-regressions.mjs';
+import {checkDictationPaste} from './browser-dictation-paste-regressions.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
 const probe = createServer();
@@ -78,7 +79,7 @@ try {
   browser.on('targetdestroyed', target => lifecycle(`target destroyed ${target.type()} ${target.url()}`));
   browser.on('targetcreated', target => lifecycle(`target created ${target.type()} ${target.url()}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll', 'sorted-tabs', 'search-input'].includes(process.env.BROWSER_TEST_SUITE)) {
+  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll', 'sorted-tabs', 'search-input', 'dictation-paste'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -125,6 +126,10 @@ try {
     await checkSearchInputRejected(page);
     assert.deepEqual(errors, []);
     console.log(`PASS search input regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'dictation-paste') {
+    await checkDictationPaste(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS dictation paste regressions in ${await browser.version()}`);
   } else {
   assert(process.env.BROWSER_TEST_SUITE === undefined, 'Unknown BROWSER_TEST_SUITE');
   await checkAppUpdates(page, updateFixture);
@@ -345,6 +350,7 @@ try {
   await checkBackgroundSortMenu(page);
   // After the sort menu check: its searches persist in search history.
   await checkSearchInputRejected(page);
+  await checkDictationPaste(page);
   await checkFloatingNotes(page);
   await checkAiSelectedNote(page);
   assert.deepEqual(errors, []);

@@ -20,6 +20,7 @@ from app.api.note_requests import (
     SearchSuggestionInteractionRequest,
     TabSearchInteractionRequest,
     TagSuggestionsRequest,
+    DictationPasteRequest,
     CreateNoteTopRequest,
     CreateSiblingRequest,
     CreateChildRequest,
@@ -127,6 +128,7 @@ from app.services.html_export import build_notes_export_filename
 from app.services.note_fullscreen import build_note_fullscreen_markup
 from app.services.link_titles import link_title_store
 from app.services.search_index import search_index
+from app.services.dictation_cleanup import clean_dictated_paste
 from app.services.tag_suggestions import suggest_tags_for_note
 from app.services.undo_state import reset_undo_stack
 from app.usecases.prioritize import list_prioritize_tag_suggestions
@@ -549,6 +551,19 @@ def delete_tag_interactions(request: Request) -> Dict[str, object]:
     token = _require_bearer_token(request)
     deleted_count = reset_search_history(token=token)
     return {"deletedCount": deleted_count}
+
+
+@router.post("/notes/dictation-paste")
+@transactional_route
+def dictation_paste(payload: DictationPasteRequest) -> Dict[str, object]:
+    """Read-only: the cleaned-up text to insert for a paste (docs/ui/dictation-paste.md)."""
+    text = clean_dictated_paste(
+        text=payload["text"],
+        target=payload["target"],
+        existing_tag_frequencies=search_index.list_explicit_tag_frequencies(),
+        current_value=payload["current_value"],
+    )
+    return {"text": text}
 
 
 @router.post("/notes/tag-suggestions")
