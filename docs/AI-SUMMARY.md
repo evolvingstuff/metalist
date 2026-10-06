@@ -21,6 +21,7 @@
 
 ## Project: MetaList
 - Single-user FastAPI app for hierarchical notes with SSR + a diff-based `POST /api2/notes/view`.
+- Why everything is in server memory (search over encrypted data, speed, single-user scale, thin wire): `docs/design/in_memory_store.md#design-rationale`.
 
 ## Architecture
 - Entry: installed CLI `metalist` → `main.py:main()`; both plain `metalist` and source-checkout `python main.py` bootstrap every known namespace and exit after printing the per-namespace URLs. Explicit namespace/port arguments are forwarded by the installed console wrapper into the same parser.

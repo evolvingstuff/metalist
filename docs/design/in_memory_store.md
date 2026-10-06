@@ -6,6 +6,16 @@
 - Provide fast lookups for rendering, search, and hierarchy manipulation.
 - Keep undo/redo viable (temporary DB reads are permitted via explicit guard overrides).
 
+## Design Rationale
+Why the whole hierarchy lives in server memory instead of being queried from SQLite:
+
+- **Search over encrypted data.** With a namespace password, note content and tags are stored encrypted, so the database cannot search or filter them. Decrypting once (at startup, or at login for protected namespaces) and searching in memory is what makes search possible at all.
+- **Speed, even without encryption.** Rendering, search, sorting and tag inheritance never wait on the database, which makes them dramatically faster than per-request queries. This applies to plaintext namespaces too.
+- **Single-user by design.** The approach is affordable because one process serves one user's notes. It would not scale to one instance serving hundreds or thousands of users, whose combined data would not fit in memory. Do not "fix" the memory use by moving ordinary reads back to the database.
+- **Thin client, small wire.** The server also remembers what each tab displays, so the browser sends only which roots it can see and receives only what changed. See `differential-view-protocol.md`.
+
+Consequences accepted: memory use grows with the namespace, large encrypted namespaces take time to hydrate after login, and an unlocked process holds decrypted data in RAM (see the threat model in `docs/security/README.md`).
+
 ## Core Components (As Implemented)
 - `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content, accepted/proposed tag sources, effective inherited terms, and ordering metadata.
 - `app/services/content_cache.py`: decrypts each note, sanitizes its HTML, extracts plain text once, then publishes the completed content/accepted-tag/proposed-tag/text caches in bulk.
