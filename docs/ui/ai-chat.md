@@ -13,25 +13,22 @@
 - Product questions load selected MetaList help skills. Requests can open an
   existing settings/help dialog or highlight a menu command. Highlighting does
   not execute that command; forms are not submitted and settings are not changed.
-- Instructor owns structured route/investigation/help calls. Help returns a
-  validated answer and menu destination; other final natural-language
-  prose streams directly from the selected provider. OpenAI requests disable
-  provider-side storage.
+- The agent answers by calling tools (help lookup, menus, reading notes in the
+  view, opening web pages, tag operations, summaries) and then streams its answer
+  directly from the selected provider. Instructor remains for the structured
+  summary and tagging batches. OpenAI requests disable provider-side storage.
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
-- Every generation is bounded over the wire. Each structured step (route selection,
-  search queries, web planning, help answers, summaries, tag work, answer checks)
-  allows at least 8,192 output tokens, and final prose 8,192, with OpenAI: its
-  reasoning models count hidden thinking against that limit, so a step whose answer is
-  only a few dozen tokens still needs room to think first (a 512-token routing limit
-  could be used up entirely by Medium or High thinking). If OpenAI reports that the
+- Every generation is bounded over the wire. Each agent turn and each structured
+  step (summaries, tag work) allows at least 8,192 output tokens with OpenAI: its
+  reasoning models count hidden thinking against that limit, so even a short reply
+  needs room to think first. If OpenAI reports that the
   limit truncated its output, the run fails visibly instead of presenting partial prose
   as complete.
 - When a structured step's reply is rejected on every attempt (cut off at the output
   limit, not matching the required format, empty, or refused), the chat explains the
-  failure in the error itself: which step failed (for example "deciding how to handle
-  your request"), what went wrong on each attempt in plain words (including the
+  failure in the error itself: which step failed, what went wrong on each attempt in plain words (including the
   rule broken and what the model chose), the setup (model, thinking level, web
   access), and what to try. The explanation is saved with the turn, so a screenshot is
   enough to diagnose it; Agent Debug remains for the raw requests and responses
@@ -70,23 +67,26 @@ available to contextual browsing.
 
 ## Product help and menus
 
-The first model call selects relevant topics from a compact catalog: notes,
-search, tags, formatting, references, menus, reminders, AI, privacy, or data.
-Only selected skill text is loaded into the second call. There is no additional
-model lookup call. Those instructions are not retained in later conversation
-turns; the export records exactly what the model saw.
+Questions about MetaList itself are answered only from help: the agent looks up
+the relevant topics (notes, search, tags, formatting, references, menus,
+reminders, AI, privacy, data, or release notes) and answers from those skills.
+Help text is not retained in later conversation turns; the export records exactly
+what the model saw. "Where do I…" and "how do I change…" questions look up help and then open the menu
+that holds the setting.
+A request only to open a menu opens it directly, and no menu opens for a feature
+MetaList does not have.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
 AI settings and identifies Maximum approximate evidence tokens = 250000, leaving
 the user to save. “Open Create backup in the menu” highlights its command without
-creating a backup. Explicit tag-proposal operations retain their existing route.
+creating a backup.
 
 Before opening, the browser checks the originating scope, cancellation and other
-open dialogs. It acknowledges actual visibility; the application appends the
-result to the answer. Missing acknowledgment times out after 30 seconds and is
-recorded as unavailable. Exported LLM history includes the requested destination
-and browser result, rather than treating model prose as proof of execution.
+open dialogs. It acknowledges actual visibility, and the agent is told whether the
+menu opened. Missing acknowledgment times out after 30 seconds and is reported as
+unavailable. Exported LLM history includes the requested destination and browser
+result, rather than treating model prose as proof of execution.
 
 ## Scope at Send
 
@@ -113,10 +113,9 @@ panel. If the evidence limit omits trailing roots, a calm informational notice
 appears before the answer as `Only using X of Y root notes for answer`; detailed retention
 counts remain in Agent Debug.
 
-The same note/tree counts are supplied to the route-selection model before note
-content is loaded. Evidence sizing is deferred until the selected action actually
-needs saved-note content; evidence panels then report the retained payload and its
-approximate token count.
+The same note/tree counts are supplied to the agent before note content is loaded.
+Note content reaches the model only through the note tools; their activity panels
+report what was read and its approximate token count.
 
 Every Send captures a fresh authoritative MetaList scope. Conversation history is
 used to resolve follow-ups, but earlier assistant claims about unavailable notes do
@@ -137,29 +136,26 @@ original search set—drives counts, evidence, references, and debug payloads.
 
 ## Investigation Behavior
 
-The first structured call chooses:
+The agent decides from the conversation which tools it needs; there is no keyword
+classifier. General conversation needs no tools. When the selected note's tree
+already holds the answer, it answers from that. Otherwise it reads the frozen
+result view with:
 
-- `respond` for ordinary conversation/general knowledge that does not require the
-  user's saved notes;
-- `investigate_current_scope` when the answer depends on evidence in the frozen
-  result view;
-- `summarize_current_scope` when the user asks to summarize, compare, or synthesize
-  the complete frozen result scope;
-- `tag_proposals` for explicit requests to generate, accept, or remove proposals.
+- `view_overview`: counts, the selected note's tree and a preview of each tree;
+- `search_view_notes`: notes containing every query word, with their trees;
+- `read_view_notes`: whole trees for given notes, or the view in order.
 
-The routing request also receives a content-free `ROUTE_SELECTION_REQUEST` block
-with the exact active user search query, scope label/kind, sort state, and
-result counts. The model interprets the request in context; Instructor validates
-the action structure without keyword-based intent overrides.
-Note content enters the model context only after investigation is selected.
+Reads take complete trees in visible order until the evidence limit; a result says
+which trees were left unread (readable in a later call) or are too large on their
+own. The model sees short note ids (`n1`, `n2`…) instead of UUIDs and cites them as
+`[[n12]]`; MetaList turns these into ordinary note references as the answer streams.
 
-An investigation walks matching root trees in visible order and retains the longest
-leading prefix of complete trees that fits the selected provider's evidence-token
-limit. It then sends that one nested payload directly to final response generation.
-There is no second evidence page, working summary, facet selection, tag-narrowing
-step, or source-rehydration pass.
+`summarize_view` is for summarizing, comparing or synthesizing the complete view.
+In an empty view the agent says there is nothing to summarize.
 
-A complete-scope summary always asks for permission before any summary call. The
+When the whole scope fits in one evidence payload, the summary is one ordinary model
+call and starts without a question. When it needs several batches, it asks for
+permission before any summary call. The
 dialog shows how many roots and evidence batches will be processed and the scope's
 size as a multiple of the evidence budget. Tag proposals ask the same single card,
 with the tag-focus selector (existing, new, or both) added above the buttons:
@@ -193,13 +189,10 @@ root coverage and disclosed original-note citations are validated at each stage.
 The final answer appears only after every batch succeeds. Failure or cancellation
 stops outstanding work and never presents a partial result as complete.
 
-Every retained note carries its full disclosure-safe content. If a later root would
-overflow the limit, that root and every following root are omitted. The final model
-receives exact included/omitted note and root counts and is forbidden from claiming
-exhaustive coverage when anything was omitted.
+Every retained note carries its full disclosure-safe content. The agent is told
+exactly which trees it has not read and must not claim exhaustive coverage of them.
 
-The agent cannot expand beyond the frozen scope, request another evidence payload,
-or cite an undisclosed note ID. Those boundaries are enforced programmatically.
+The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. Those boundaries are enforced programmatically.
 
 ## Ordering and Evidence Limit
 
@@ -207,7 +200,7 @@ or cite an undisclosed note ID. Those boundaries are enforced programmatically.
   order. SearchIndex membership never becomes ordering.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
-- MetaList greedily packs complete result trees into one payload. OpenAI defaults
+- Each note read packs complete result trees up to the limit. OpenAI defaults
   to 500,000 approximate tokens and is configurable from 500–500,000.
 - A root tree is never divided. If the first root alone exceeds the limit, the run
   fails visibly; otherwise the first root that would overflow and all following
@@ -217,7 +210,7 @@ or cite an undisclosed note ID. Those boundaries are enforced programmatically.
 - The estimate covers compact serialized JSON, including content, UUIDs, tags,
   timestamps, hierarchy, object keys, and punctuation. The same deterministic
   estimator drives the debug-panel token estimates.
-- The payload is a `result_trees` array of root note objects with recursively nested
+- The payload is a `trees` array of root note objects with recursively nested
   `children`, not a flat note list. Content-bearing nodes expose note IDs, content,
   created/updated timestamps, and directly assigned raw tags in tag-bar order.
   Untagged notes omit `tags`; leaf notes omit `children`; parent/root IDs are not
@@ -369,10 +362,10 @@ See `docs/design/agent-harness.md` for service and invariant details.
 The chat header's **⇩ Export LLM history** button downloads the current session's
 chronological `[input, output]` pairs as JSON. Inputs include the exact provider
 request and original application invocation; outputs include responses or stream
-chunks and completed/running/error/cancelled status. Routing, tagging, retries,
-and final answers are included. Exporting makes no model call.
+chunks and completed/running/error/cancelled status. Agent turns and tool
+results, tagging, retries, and final answers are included. Exporting makes no model call.
 
 Page reloads retain server-session history. Clear Chat, logout, and server restart
 clear it. The existing Agent Debug dialog and Copy all still concern the latest
 run. See [prompt regression authoring](../../evals/README.md) to turn an exported
-failure into a five-run action or output-quality case.
+failure into an agent case.

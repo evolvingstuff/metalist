@@ -208,6 +208,10 @@ fixture ids before judging. Reports use the same `case_id`, fingerprints, counts
 `compare` as summary-stage reports; each trial is saved under `trials/`. Exit status
 is 0 when every run passed, 1 for a wrong behavior, 2 for a provider error.
 
+Three `actions/summarize-*` cases (non-neural papers, vegetarian and non-meat
+recipes) guard a reported regression: a summary of notes chosen by a category the
+notes don't spell out must use the whole-view summary, not a word search.
+`papers-without-notes-word` is back to its legacy expectation for the same reason.
 Three `combined/` cases cover requests the old routing could not handle (help + web,
 notes + help, notes + web). The 168 others were migrated from the routing-era suite. Each records its source, the
 mapping applied and the legacy expectation in `provenance`; 15 whose expected
@@ -217,3 +221,5 @@ truthful "settings opened", and the new release-notes help topic).
 
 Latest run (2026-10-05, Luna Low, 5 runs per case): 832/840 correct, no errors,
 161/168 cases 5/5; the misses are answer wording and three miscopied note ids.
+Since then the model sees short note ids (`n12`) instead of UUIDs; the cases that
+miscopied ids pass 5/5.

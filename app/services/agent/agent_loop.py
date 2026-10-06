@@ -49,7 +49,8 @@ from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.bulk_operation import bulk_operation_guard
-from app.services.agent.web_citation_tokens import ShortWebTokenTranslator
+from app.services.agent.citation_tokens import ShortCitationTranslator
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.execution_errors import AgentExecutionError
 
 
@@ -72,10 +73,12 @@ _ANSWER_REQUIRED = (
 class AgentLoopState:
     """What one run has shown the user and the model so far."""
 
-    def __init__(self, *, capabilities, selected_note_text: str, session_key: str) -> None:
+    def __init__(self, *, capabilities, selected_note_text: str, session_key: str, note_aliases: NoteAliases) -> None:
         self.reference_note_ids: list[str] = []
-        self.web_tokens = ShortWebTokenTranslator(
-            evidence_ids_by_number=lambda: web_evidence_store.evidence_ids_by_short_number(session_key=session_key))
+        self.note_aliases = note_aliases
+        self.web_tokens = ShortCitationTranslator(
+            evidence_ids_by_number=lambda: web_evidence_store.evidence_ids_by_short_number(session_key=session_key),
+            note_ids_by_alias=note_aliases.id_by_alias())
         self.web_evidence: list[WebPageEvidence] = []
         self.capabilities = capabilities
         self.content = ""
@@ -156,13 +159,14 @@ class AgentLoopMixin:
         selected_note_text = "\n".join(
             f"{note.content_text} {note.tags}" for note in snapshot.selected_note.tree_notes
         )
+        note_aliases = NoteAliases.from_snapshot(snapshot)
         state = AgentLoopState(capabilities=capabilities, selected_note_text=selected_note_text,
-                               session_key=run.session_key)
+                               session_key=run.session_key, note_aliases=note_aliases)
         for note_id in snapshot.selected_note.reference_note_ids:
             state.reference_note_ids.append(note_id)
         messages = self._context_builder.build_agent_messages(
             canonical_messages=canonical_messages, skills=run.skills, web_settings=run.web_settings,
-            snapshot=snapshot, available_urls=capabilities.normalized_urls,
+            snapshot=snapshot, available_urls=capabilities.normalized_urls, note_aliases=note_aliases,
         )
         self._trace_store.append_event(
             session_key=run.session_key, run_id=run.run_id, event_type="FROZEN_SCOPE",
@@ -380,14 +384,27 @@ class AgentLoopMixin:
         )
         yield self._status_event(call["name"], "started", self._tool_started_label(parsed),
                                  approx_input_tokens=input_tokens)
-        result = await run_agent_tool(name=call["name"], arguments=call["arguments"], context=context)
+        result = await run_agent_tool(name=call["name"], arguments=self._with_note_ids(call, state.note_aliases),
+                                      context=context)
         if run.web_settings.mode == "contextual":
             result = self._with_newly_openable_addresses(result=result, state=state)
+        # The model sees short note aliases, never full note ids.
+        result = dataclasses.replace(result, content=json.dumps(
+            state.note_aliases.aliased(json.loads(result.content)), ensure_ascii=False, separators=(",", ":")))
         for skill in result.activated_skills:
             self._record_skill_activation(run=run, skill=skill)
         yield self._status_event(call["name"], "completed", self._tool_completed_label(parsed, result),
                                  approx_input_tokens=max(1, estimate_text_tokens(result.content)))
         result_holder.append(result)
+
+    @staticmethod
+    def _with_note_ids(call: dict[str, str], note_aliases: NoteAliases) -> str:
+        """Tool arguments with the model's note aliases replaced by note ids."""
+        if call["name"] != "read_view_notes":
+            return call["arguments"]
+        arguments = json.loads(call["arguments"])
+        arguments["note_ids"] = [note_aliases.note_id(value) for value in arguments["note_ids"]]
+        return json.dumps(arguments)
 
     @staticmethod
     def _with_newly_openable_addresses(*, result: ToolResult, state: AgentLoopState) -> ToolResult:

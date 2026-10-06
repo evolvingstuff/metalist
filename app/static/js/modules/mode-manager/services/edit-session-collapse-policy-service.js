@@ -28,11 +28,13 @@ export function shouldMarkExpandedEditSession({
     );
 }
 
+// A collapsed note that was edited stays expanded after leaving edit mode, so
+// the changes stay in view; one opened and left unchanged collapses again.
 export function shouldPersistExpandedEditSession({ startedCollapsed, hasEdits, expandedPersisted }) {
     requireBoolean('startedCollapsed', startedCollapsed);
     requireBoolean('hasEdits', hasEdits);
     requireBoolean('expandedPersisted', expandedPersisted);
-    return false;
+    return startedCollapsed && hasEdits && !expandedPersisted;
 }
 
 export function shouldRestoreCollapsedStateLocally({ startedCollapsed, hasEdits, expandedPersisted }) {

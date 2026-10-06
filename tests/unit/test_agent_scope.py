@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app.services import snapshot as view_snapshot
 from app.services.agent.context import AgentContextBuilder
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.web_settings import DEFAULT_AGENT_WEB_SETTINGS
 from app.services.agent.cloud_privacy import CloudPrivacyBoundary
@@ -20,6 +21,21 @@ from app.services.note_store import NoteRecord
 from app.services.link_titles import link_title_store
 from app.services.search_index import SearchIndex, SearchRecord
 from app.services.snapshot import ResolvedViewScope
+
+
+# What the model is told about a selected note it cannot see: a coarse reason
+# and the same in plain words (never which privacy setting hides it).
+_UNAVAILABLE_DESCRIPTIONS = {
+    "private": "The user is editing a note you cannot see: they keep it private from the AI.",
+    "search_redacted": "The user is editing a note you cannot see: it is excluded by the current search.",
+    "not_found": "The note the user had selected no longer exists.",
+}
+
+
+def _unavailable(reason: str) -> dict[str, object]:
+    return {"status": "unavailable", "has_selection": True, "reason": reason,
+            "description": _UNAVAILABLE_DESCRIPTIONS[reason]}
+
 
 
 class _FakeNotes:
@@ -204,7 +220,10 @@ def test_selected_note_is_frozen_and_privacy_filtered(selected_id, expected) -> 
     else:
         payload = {"status": expected, "has_selection": selected_id != ""}
         if expected == "unavailable":
-            payload["reason"] = {"secret": "password_protected", "secret-child": "password_protected",
+            # The model sees only "private"; the specific setting stays internal.
+            payload = _unavailable({"secret": "private", "secret-child": "private",
+                "gray": "search_redacted", "missing": "not_found"}[selected_id])
+            assert selected.unavailable_reason == {"secret": "password_protected", "secret-child": "password_protected",
                 "gray": "search_redacted", "missing": "not_found"}[selected_id]
         assert selected.as_payload() == payload
         assert selected.reference_note_ids == ()
@@ -277,7 +296,8 @@ def test_selected_note_respects_cloud_blacklist() -> None:
         run_id="selected-run", session_key="session-1", privacy_boundary=_cloud_privacy_boundary(policy),
         selected_note_id="match",
     )
-    assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": "blacklisted"}
+    assert snapshot.selected_note.as_payload() == _unavailable("private")
+    assert snapshot.selected_note.unavailable_reason == "blacklisted"
 
 
 @pytest.mark.parametrize("tags,phrases,whitelist,reason", [
@@ -297,7 +317,8 @@ def test_selected_block_reason_includes_ancestors_without_exposing_rule(tags, ph
         descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal",
         authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal",
         run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id="match")
-    assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": reason}
+    assert snapshot.selected_note.as_payload() == _unavailable("private")
+    assert snapshot.selected_note.unavailable_reason == reason
     assert snapshot.selected_note.reference_note_ids == ()
 
 
@@ -324,8 +345,8 @@ def test_selected_tree_never_discloses_redacted_children_even_when_selected(sele
         run_id="selected-run", session_key="session-1", privacy_boundary=boundary, selected_note_id=selected_id)
     payload = snapshot.selected_note.as_payload()
     if selected_id == "gray":
-        assert payload == {"status": "unavailable", "has_selection": True,
-            "reason": "blacklisted" if restriction == "blacklist" else "search_redacted"}
+        expected_reason = {"blacklist": "private", "search": "search_redacted"}[restriction]
+        assert payload == _unavailable(expected_reason)
         assert snapshot.selected_note.reference_note_ids == ()
     else:
         assert [node["note_id"] for node in payload["tree_notes"]] == ["root", "match"]
@@ -335,7 +356,8 @@ def test_selected_tree_never_discloses_redacted_children_even_when_selected(sele
         assert withheld not in str(payload)
     builder = AgentContextBuilder()
     agent = builder.build_agent_messages(canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
-        skills=DEFAULT_AGENT_SKILLS, web_settings=DEFAULT_AGENT_WEB_SETTINGS, snapshot=snapshot, available_urls=())
+        skills=DEFAULT_AGENT_SKILLS, web_settings=DEFAULT_AGENT_WEB_SETTINGS, snapshot=snapshot, available_urls=(),
+        note_aliases=NoteAliases.from_snapshot(snapshot))
     for messages in (agent,):
         for withheld in ("gray-child", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
             assert withheld not in str(messages)
@@ -358,7 +380,7 @@ def test_selection_respects_real_search_membership(monkeypatch, search, selected
         authoritative_active_search_query=search, authoritative_active_sort_mode="normal",
         run_id="selected-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(), selected_note_id=selected_id)
     if selected_id == "gray":
-        assert snapshot.selected_note.as_payload() == {"status": "unavailable", "has_selection": True, "reason": "search_redacted"}
+        assert snapshot.selected_note.as_payload() == _unavailable("search_redacted")
     else:
         assert snapshot.selected_note.reference_note_ids == ("root", "match")
         assert [node["note_id"] for node in snapshot.selected_note.as_payload()["tree_notes"] if node["is_selected"]] == [selected_id]

@@ -44,6 +44,10 @@ visible order and asks before using several batches. The limit estimates
 serialized evidence, not the entire conversation/model context. Raising it can
 include more evidence and increase cost. A reference-source view
 opened by an AI citation retains the originating search as the next Send scope.
+The note being edited at Send goes along with its whole tree. If AI privacy
+settings hide it, the AI is told only that it is private, never which setting
+(blacklist, whitelist or password protection) or rule. With no note selected, it
+asks which note "this note" means.
 
 The chat AI decides which tools a request needs, in a default order (MetaList
 help, then notes in the view, then the web, then a change), and may use several

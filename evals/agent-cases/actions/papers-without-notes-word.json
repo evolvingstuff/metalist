@@ -161,10 +161,7 @@
     "required_calls": [
       {
         "tools": [
-          "summarize_view",
-          "view_overview",
-          "search_view_notes",
-          "read_view_notes"
+          "summarize_view"
         ],
         "arguments_any_of": []
       }
@@ -193,6 +190,6 @@
     },
     "source": "synthetic-action-suite-v1",
     "note": "Invented requests, conversations, and view metadata. No personal notes or exports.",
-    "expectation_change": "A summary about one topic may use the whole-view summary or search and read the matching notes."
+    "expectation_restored": "2026-10-05: the loosened expectation ('A summary about one topic may use the whole-view summary or search and read the matching notes.') let a word search replace the whole-view summary; restored to the legacy summarize_current_scope behavior after a reported regression."
   }
 }

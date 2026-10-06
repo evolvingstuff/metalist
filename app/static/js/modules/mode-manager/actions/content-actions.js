@@ -3,7 +3,6 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
-import { persistExpandedEditSessionIfNeeded } from '../services/edit-session-collapse-service.js';
 import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 
 function getNoteElementIfPresent(noteId) {
@@ -47,12 +46,7 @@ export async function actionSaveNote(noteId) {
         Logger.logDebug('Skipping save for missing note element', { noteId });
         return Promise.resolve();
     }
-    let contentHTML = reconcileContentBeforeSave(noteElement);
-    if (await persistExpandedEditSessionIfNeeded(noteId)) {
-        // Expansion made a server round trip; include corrections received
-        // while it was pending rather than saving the earlier DOM snapshot.
-        contentHTML = reconcileContentBeforeSave(noteElement);
-    }
+    const contentHTML = reconcileContentBeforeSave(noteElement);
     const tags = getTagBarValue(noteElement);
     const previousTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
     const tagsChanged = tags !== previousTags;
@@ -101,10 +95,7 @@ export async function actionSaveNoteOnIdle(noteId) {
         Logger.logDebug('Skipping idle save for missing note element', { noteId });
         return Promise.resolve();
     }
-    let contentHTML = reconcileContentBeforeSave(noteElement);
-    if (await persistExpandedEditSessionIfNeeded(noteId)) {
-        contentHTML = reconcileContentBeforeSave(noteElement);
-    }
+    const contentHTML = reconcileContentBeforeSave(noteElement);
 
     if (!ModeContext.isDirty) {
         Logger.logDebug('Note not dirty, skipping idle save', { 

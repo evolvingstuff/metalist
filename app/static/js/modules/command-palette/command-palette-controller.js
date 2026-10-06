@@ -564,9 +564,6 @@ class CommandPaletteController {
         const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
 
-        const positionCue = this._getBoolean('pref.position_cue', true);
-        document.body.classList.toggle('pref-position-cue', positionCue);
-
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
             windows: storedSearchWindows === null ? DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE : storedSearchWindows,

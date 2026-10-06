@@ -666,7 +666,29 @@ export async function moveNoteToTop(noteId) {
     scheduleMovedNoteIntoView(noteId);
 }
 
-export async function moveNoteToSiblingPosition(noteId, siblingId, position, newParentId) {
+// The screen position a dropped note lands at, as a viewport hold: the edge at
+// the drop line stays on it, its top when moved up and its bottom when moved
+// down (the drop line marks the sibling's top for BEFORE, its bottom for AFTER,
+// with the usual gap between notes on the far side).
+function dropLandingHold(noteId, siblingId, position, dragDirection) {
+    const noteElement = DOMUtils.getNoteById(noteId);
+    const noteRect = noteElement.getBoundingClientRect();
+    const siblingRect = DOMUtils.getNoteById(siblingId).getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(noteElement).marginTop);
+    if (Number.isNaN(gap)) {
+        throw new Error('dropLandingHold: note margin-top is not a number');
+    }
+    let top;
+    if (dragDirection === 'up') {
+        top = position === 'BEFORE' ? siblingRect.top : siblingRect.bottom + gap;
+    } else {
+        const bottom = position === 'AFTER' ? siblingRect.bottom : siblingRect.top - gap;
+        top = bottom - noteRect.height;
+    }
+    return { kind: 'top', noteId, top, keepVisible: false };
+}
+
+export async function moveNoteToSiblingPosition(noteId, siblingId, position, newParentId, dragDirection) {
     const startedAt = performance.now();
 
     Logger.logAction('moveNoteToSiblingPosition', {
@@ -694,6 +716,9 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     if (newParentId !== null && newParentId !== undefined && typeof newParentId !== 'string') {
         throw new Error('Cannot move note: newParentId must be a string, null, or undefined');
     }
+    if (dragDirection !== 'up' && dragDirection !== 'down') {
+        throw new Error('Cannot move note: dragDirection must be up or down');
+    }
     if ((newParentId === null || typeof newParentId === 'undefined') && shouldBlockRootReorder(noteId, 'moveNoteToSiblingPosition')) {
         return;
     }
@@ -701,6 +726,10 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
+
+    // Where the user dropped it (docs/ui/interaction-principles.md): taken before
+    // the move, held through the re-render so the page does not follow the note.
+    const landingHold = dropLandingHold(noteId, siblingId, normalizedPosition, dragDirection);
 
     const moveResponse = await NotesAPI.moveNote(noteId, siblingId, normalizedPosition, newParentId);
     await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
@@ -712,13 +741,16 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     const newContent = await actionRefreshAndMaybeSelect({
         startedAt,
         context: 'moveNoteToSiblingPosition',
+        viewportHold: landingHold,
     });
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
 
-    scheduleMovedNoteIntoView(noteId);
+    // The note lands where it was dropped: its top at the drop line when moved
+    // up, its bottom when moved down. Scroll only if that edge is hidden.
+    scheduleScrollNoteIntoView(noteId, { scrollOptions: { dropEdge: dragDirection === 'up' ? 'top' : 'bottom' } });
 }
 
 export async function indentNote(noteId) {

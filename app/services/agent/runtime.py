@@ -219,87 +219,74 @@ class AgentRuntime(AgentLoopMixin):
         # lint: allow-PY001 rationale="an atomic root can legitimately exceed the user-configured summary batch limit"
         except ValueError as exc:
             raise AgentExecutionError(str(exc)) from exc
-        choice = ""
-        prefix_root_count = batch_plan.result_tree_count
-        question_choices = ("summarize_all", "cancel")
+        # One evidence payload means one ordinary model call: no batches to pay
+        # for or choose between, so the summary starts without a question.
         if len(batch_plan.batches) > 1:
-            prefix_retention = InvestigationState.start(
+            prefix_root_count = InvestigationState.start(
                 snapshot=snapshot,
                 settings=run.retrieval_settings,
             ).retain_root_prefix_within_token_budget(
                 reserved_approximate_tokens=selected_note_tokens,
-            )
-            prefix_root_count = prefix_retention.retained_result_tree_count
-            question_choices = ("summarize_all", "use_prefix", "cancel")
-        with bulk_operation_guard.acquire(run.session_key):
-            question_id, answer = bulk_operation_guard.question(
-                question_choices
-            )
-            # Report scope size against the evidence budget, as tag proposals do.
-            budget_ratio = (
-                (batch_plan.approximate_token_count + selected_note_tokens)
-                / run.retrieval_settings.max_page_approximate_tokens
-            )
-            operation_description = (
-                f"This scope contains {batch_plan.result_tree_count} root notes "
-                "and fits in one evidence payload "
-                f"(approximately {budget_ratio:.2f}× the evidence budget)."
-            )
-            if len(batch_plan.batches) > 1:
+            ).retained_result_tree_count
+            with bulk_operation_guard.acquire(run.session_key):
+                question_id, answer = bulk_operation_guard.question(
+                    ("summarize_all", "use_prefix", "cancel")
+                )
+                # Report scope size against the evidence budget, as tag proposals do.
+                budget_ratio = (
+                    (batch_plan.approximate_token_count + selected_note_tokens)
+                    / run.retrieval_settings.max_page_approximate_tokens
+                )
                 minimum_model_calls = len(batch_plan.batches) + 1
-                operation_description = (
-                    f"This scope uses approximately {budget_ratio:.2f}× the "
-                    f"evidence budget: its {batch_plan.result_tree_count} root "
-                    f"notes need {len(batch_plan.batches)} evidence batches "
-                    "plus a final synthesis "
-                    f"(at least {minimum_model_calls} model calls). "
-                    f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
-                    "batch requests at once."
-                )
-            yield {
-                "type": "bulk_question",
-                "question_id": question_id,
-                "kind": "summary_confirmation",
-                "label": operation_description,
-                "root_count": batch_plan.result_tree_count,
-                "batch_count": len(batch_plan.batches),
-                "prefix_root_count": prefix_root_count,
-            }
-            choice = await answer
-            if choice == "cancel":
-                self._trace_store.complete_run(
-                    session_key=run.session_key,
-                    run_id=run.run_id,
-                )
+                yield {
+                    "type": "bulk_question",
+                    "question_id": question_id,
+                    "kind": "summary_confirmation",
+                    "label": (
+                        f"This scope uses approximately {budget_ratio:.2f}× the "
+                        f"evidence budget: its {batch_plan.result_tree_count} root "
+                        f"notes need {len(batch_plan.batches)} evidence batches "
+                        "plus a final synthesis "
+                        f"(at least {minimum_model_calls} model calls). "
+                        f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
+                        "batch requests at once."
+                    ),
+                    "root_count": batch_plan.result_tree_count,
+                    "batch_count": len(batch_plan.batches),
+                    "prefix_root_count": prefix_root_count,
+                }
+                choice = await answer
+                if choice == "cancel":
+                    self._trace_store.complete_run(
+                        session_key=run.session_key,
+                        run_id=run.run_id,
+                    )
+                    yield {"type": "bulk_complete", "changed": False}
+                    yield {
+                        "type": "content_delta",
+                        "text": "Summary cancelled.",
+                        "reference_note_ids": [],
+                        "reference_web_ids": [],
+                    }
+                    yield {
+                        "type": "done",
+                        "reference_note_ids": [],
+                        "reference_web_ids": [],
+                    }
+                    return
+                if choice == "summarize_all":
+                    async with aclosing(self._stream_staged_scope_summary(
+                        run=run,
+                        canonical_messages=canonical_messages,
+                        state=state,
+                        skill=skill,
+                        plan=batch_plan,
+                    )) as staged_events:
+                        async for event in staged_events:
+                            yield event
+                    return
+                assert choice == "use_prefix"
                 yield {"type": "bulk_complete", "changed": False}
-                yield {
-                    "type": "content_delta",
-                    "text": "Summary cancelled.",
-                    "reference_note_ids": [],
-                    "reference_web_ids": [],
-                }
-                yield {
-                    "type": "done",
-                    "reference_note_ids": [],
-                    "reference_web_ids": [],
-                }
-                return
-            if choice == "summarize_all" and len(batch_plan.batches) > 1:
-                async with aclosing(self._stream_staged_scope_summary(
-                    run=run,
-                    canonical_messages=canonical_messages,
-                    state=state,
-                    skill=skill,
-                    plan=batch_plan,
-                )) as staged_events:
-                    async for event in staged_events:
-                        yield event
-                return
-            if choice == "use_prefix":
-                assert len(batch_plan.batches) > 1
-            else:
-                assert choice == "summarize_all"
-            yield {"type": "bulk_complete", "changed": False}
         retention = await asyncio.to_thread(
             state.retain_root_prefix_within_token_budget,
             reserved_approximate_tokens=selected_note_tokens,

@@ -31,6 +31,7 @@ from app.services.agent.history import record_history
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.agent.model_policy import SingleModelPolicy
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.prompts import AGENT_LOOP_INSTRUCTIONS
@@ -215,13 +216,23 @@ def fixture_environment():
          runtime_module.bulk_operation_guard) = saved
 
 
-def tool_calls_from_trace(traces: AgentTraceStore, session_key: str) -> list[dict[str, object]]:
+def tool_calls_from_trace(traces: AgentTraceStore, session_key: str,
+                          note_aliases: NoteAliases) -> list[dict[str, object]]:
+    """Tool calls with the model's short note aliases translated back to the fixture's note ids."""
     run = traces.snapshot(session_key=session_key)["run"]
-    return [
-        {"name": event["detail"]["name"], "arguments": json.loads(event["detail"]["arguments"]),
-         "result": event["detail"]["result"]}
-        for event in run["events"] if event["type"] == "TOOL_CALL"
-    ]
+    calls = []
+    for event in run["events"]:
+        if event["type"] != "TOOL_CALL":
+            continue
+        result = event["detail"]["result"]
+        # Operations record a plain marker; every other result is JSON.
+        if result.startswith("{"):
+            result = json.dumps(note_aliases.unaliased(json.loads(result)))
+        arguments = json.loads(event["detail"]["arguments"])
+        if event["detail"]["name"] == "read_view_notes":
+            arguments = {**arguments, "note_ids": [note_aliases.note_id(value) for value in arguments["note_ids"]]}
+        calls.append({"name": event["detail"]["name"], "arguments": arguments, "result": result})
+    return calls
 
 
 def _contains(expected, actual) -> bool:
@@ -311,6 +322,7 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
         for url in case.web.retained_urls:
             web_evidence_store.retain_success(session_key=session_key,
                                               result=_page_result(normalize_public_http_url(url)))
+        snapshot = build_snapshot(case, session_key=session_key)
         runtime = AgentRuntime(context_builder=AgentContextBuilder(), inference=adapter,
             model_policy=SingleModelPolicy(), trace_store=traces, provider_label="OpenAI")
         run_id = "eval"
@@ -325,7 +337,7 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
                     retrieval_settings=AgentRetrievalSettings(
                         max_page_approximate_tokens=DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS),
                     web_settings=AgentWebSettings(mode=case.web.mode),
-                    frozen_scope=build_snapshot(case, session_key=session_key), tagging_run=tagging,
+                    frozen_scope=snapshot, tagging_run=tagging,
                 ):
                     if event["type"] == "content_delta":
                         answer += event["text"]
@@ -339,7 +351,7 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
             # lint: allow-PY001 rationale="persist external provider and model-output errors as failed trials"
             except (InferenceProviderError, AgentExecutionError) as exc:
                 status, error = "error", f"{type(exc).__name__}: {exc}"
-        calls = tool_calls_from_trace(traces, session_key)
+        calls = tool_calls_from_trace(traces, session_key, NoteAliases.from_snapshot(snapshot))
         # The judge's criteria cite the fixture's fixed evidence ids: map the answer's full
         # tokens and the short tokens the model saw in tool results onto them.
         fixed_ids = fixture_evidence_ids(case, session_key)

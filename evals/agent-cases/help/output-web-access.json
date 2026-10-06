@@ -49,7 +49,7 @@
     "answer_criteria": [
       {
         "id": "accurate",
-        "instruction": "State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. Mention the AI Agent Settings control without claiming it was changed."
+        "instruction": "State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. It may mention where the setting is (AI Agent Settings) but must not claim it was changed."
       }
     ],
     "reference_facts": "WEB_ACCESS_CONTEXT mode is none. Contextual mode can open only URLs in permitted disclosed context and cannot follow page links. Full mode can open a Google results URL and useful result pages through MetaList's provider-independent page opener, with no separate search action. Privacy-withheld note URLs remain unavailable."
@@ -70,6 +70,7 @@
       "reference_facts": "WEB_ACCESS_CONTEXT mode is none. Contextual mode can open only URLs in permitted disclosed context and cannot follow page links. Full mode can open a Google results URL and useful result pages through MetaList's provider-independent page opener, with no separate search action. Privacy-withheld note URLs remain unavailable."
     },
     "source": "synthetic current-mode product-help regression",
-    "personal_data": false
+    "personal_data": false,
+    "expectation_change": "2026-10-06, at the user's request: naming the AI Agent Settings control is optional in this answer. Previous criterion: State that this run has No web access, then accurately distinguish contextual link opening from full-mode public-page opening. Explain that full mode can open a Google results page and useful result pages through MetaList's page opener, without an LLM-provider search service or a separate search action. Mention the AI Agent Settings control without claiming it was changed."
   }
 }

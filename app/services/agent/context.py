@@ -7,6 +7,7 @@ import json
 from app.services.agent.investigation import InvestigationEvidencePayload
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.prompt_settings import AgentPromptSet
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.prompts import AGENT_LOOP_INSTRUCTIONS
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.skill_settings import AgentSkill
@@ -131,9 +132,8 @@ class AgentContextBuilder:
                 "This selection supersedes prior-turn selections. "
                 "has_selection explicitly says whether a note is selected. If status is none, no note is selected. "
                 "If unavailable, a note IS selected but its contents were withheld; explain the supplied reason. "
-                "blacklisted means blocked by the AI privacy blacklist (possibly on an ancestor); "
-                "not_whitelisted means excluded by the AI privacy whitelist; password_protected means "
-                "the note or an ancestor has password-note protection; search_redacted means excluded "
+                "private means the user keeps it private from the AI (you are not told how; name no "
+                "setting or rule); search_redacted means excluded "
                 "by the current search; not_found means the selected note no longer exists. "
                 "For unspecified, say only that the selected note is unavailable. "
                 "Never say no note is selected when has_selection is true. For privacy/search restrictions, "
@@ -157,6 +157,7 @@ class AgentContextBuilder:
         web_settings: AgentWebSettings,
         snapshot: ScopedSearchSnapshot,
         available_urls: tuple[str, ...],
+        note_aliases: NoteAliases,
     ) -> list[dict[str, object]]:
         """The tool-using agent's opening conversation.
 
@@ -177,7 +178,8 @@ class AgentContextBuilder:
             "search_query": descriptor.search_query,
             "note_count": snapshot.note_count,
             "tree_count": snapshot.result_tree_count,
-            "selected_note": snapshot.selected_note.as_payload(),
+            # The model sees short note aliases (n1, n2…), never full note ids.
+            "selected_note": note_aliases.aliased(snapshot.selected_note.as_payload()),
             "instruction": (
                 "The view and the note being edited when the user sent this message. Tools read this "
                 "view only. selected_note is the conversational focus, not a limit on the request."

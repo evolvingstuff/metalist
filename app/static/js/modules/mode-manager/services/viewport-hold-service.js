@@ -22,10 +22,6 @@ const MAX_HOLD_MS = 4000;
 // Characters of context recorded on each side of an anchored text position.
 const CONTEXT_CHARS = 30;
 const USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'mousedown', 'pointerdown'];
-// A "you are here" cue follows a hold only when the user's place had to move
-// this far, or could only be found approximately.
-const CUE_MIN_MOVE_PX = 40;
-const CUE_DURATION_MS = 600;
 // Shorter text fragments match too easily to count as the same place.
 const MIN_MATCH_CHARS = 8;
 // The longest LaTeX delimiter ($$, \\[, \\( and their closers).
@@ -33,9 +29,6 @@ const FORMULA_DELIMITER_CHARS = 2;
 
 const moduleState = ApplicationState.createFields('viewport-hold-service', {
     session: null,
-    // The cue shown for a hold reference; a hold restarted with the same
-    // reference (the refresh after saving re-holds it) keeps this cue.
-    lastCue: null,
 });
 
 // A note being edited keeps its `collapsed` class but shows its content.
@@ -126,13 +119,6 @@ function textPositionToY(content, position, affinity) {
     }
     const parentRect = point.node.parentElement.getBoundingClientRect();
     return parentRect.height > 0 ? parentRect.top : null;
-}
-
-// Only leaving edit mode may show a position cue (captureNoteAnchor records
-// the note's first line for exactly that); entering edit mode, switching
-// notes and band shifts never do.
-function isEditExitAnchor(reference) {
-    return Object.prototype.hasOwnProperty.call(reference, 'contentTop');
 }
 
 // Screen Y of the content's first line of text (its box top when it has no text).
@@ -622,10 +608,7 @@ function validateReference(reference) {
     throw new Error(`Unknown viewport hold kind: ${reference.kind}`);
 }
 
-// The scroll delta that puts the reference back in place, whether it was found
-// only approximately, whether a position cue may follow (only holds that keep
-// the user's place through an edit; band shifts while scrolling never do), and
-// the element to cue; null when its note is gone.
+// The scroll delta that puts the reference back in place; null when its note is gone.
 function locateReference(reference) {
     if (reference.kind === 'sorted') {
         if (sortedRootMoved(reference)) {
@@ -643,7 +626,7 @@ function locateReference(reference) {
         if (position !== null) {
             const y = textPositionToY(content, position, 'forward');
             if (y !== null) {
-                return { delta: y - reference.screenY, displacedPx: 0, approximate: false, eligible: false, cueElement: element };
+                return { delta: y - reference.screenY };
             }
         }
     }
@@ -655,10 +638,7 @@ function locateReference(reference) {
         const content = noteContent(element);
         const formula = formulaAtEditedOffset(content, reference.editText, reference.textOffset);
         if (formula !== null) {
-            return {
-                delta: formula.getBoundingClientRect().top - reference.screenY, displacedPx: 0, approximate: false,
-                eligible: isEditExitAnchor(reference), cueElement: formula,
-            };
+            return { delta: formula.getBoundingClientRect().top - reference.screenY };
         }
     }
     if (reference.kind === 'text') {
@@ -667,10 +647,7 @@ function locateReference(reference) {
         if (found.exact) {
             const y = textPositionToY(content, found.position, found.affinity);
             if (y !== null && !isShownCollapsed(element)) {
-                return {
-                    delta: y - reference.screenY, displacedPx: 0, approximate: false,
-                    eligible: isEditExitAnchor(reference), cueElement: blockAtTextPosition(content, found.position),
-                };
+                return { delta: y - reference.screenY };
             }
         }
     }
@@ -681,111 +658,25 @@ function locateReference(reference) {
         if (typeof reference.contentTop !== 'number') {
             throw new Error('A hold contentTop must be a number');
         }
-        const heldDelta = firstLineTop(noteContent(element)) - reference.contentTop;
-        let delta = heldDelta;
+        let delta = firstLineTop(noteContent(element)) - reference.contentTop;
         if (reference.keepVisible) {
             const inset = getViewportTopInset();
             if (rect.top - delta + rect.height < inset + MIN_VISIBLE_PX) {
                 delta = rect.top - inset;
             }
         }
-        return {
-            delta, displacedPx: Math.abs(delta - heldDelta), approximate: true,
-            eligible: isEditExitAnchor(reference), cueElement: element,
-        };
+        return { delta };
     }
     // Unmatched text has no place, and a hold without a first line to keep
     // holds the note's top, keeping it in view.
-    const heldTarget = reference.kind === 'top' ? reference.top : reference.noteTop;
-    let target = heldTarget;
+    let target = reference.kind === 'top' ? reference.top : reference.noteTop;
     if (reference.keepVisible) {
         const inset = getViewportTopInset();
         if (target + rect.height < inset + MIN_VISIBLE_PX) {
             target = inset;
         }
     }
-    const eligible = isEditExitAnchor(reference);
-    // A note that collapsed again changed shape: the user's exact place is
-    // hidden, so it always counts as approximate (and is cued).
-    const approximate = isShownCollapsed(element);
-    return { delta: rect.top - target, displacedPx: Math.abs(target - heldTarget), approximate, eligible, cueElement: element };
-}
-
-// The block-level element (paragraph, list item, heading…) holding a text position.
-function blockAtTextPosition(content, position) {
-    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
-    let consumed = 0;
-    let node = walker.nextNode();
-    while (node !== null) {
-        if (consumed + node.data.length >= position) {
-            let element = node.parentElement;
-            while (element !== content && getComputedStyle(element).display.startsWith('inline')) {
-                element = element.parentElement;
-            }
-            return element;
-        }
-        consumed += node.data.length;
-        node = walker.nextNode();
-    }
-    return content;
-}
-
-// `displacedPx`: how far the user's place ends up from where it was on
-// screen (scrolling that keeps it still does not count). The cue marks only
-// a place that collapsed or could not be kept where it was.
-export function shouldShowPositionCue({ eligible, approximate, displacedPx }) {
-    if (typeof eligible !== 'boolean' || typeof approximate !== 'boolean' || typeof displacedPx !== 'number') {
-        throw new Error('shouldShowPositionCue requires eligible, approximate and displacedPx');
-    }
-    return eligible && (approximate || displacedPx > CUE_MIN_MOVE_PX);
-}
-
-// A highlight over where the user's place landed: shown at full strength in
-// the same frame the note lands (so it never "appears" on its own), then
-// fading. An overlay anchored to the page, so it scrolls with the text and the
-// note itself never changes; skipped under reduced motion or when the
-// "position cue" preference is off. Returns the overlay, or null.
-function showPositionCue(element) {
-    if (!document.body.classList.contains('pref-position-cue')) {
-        return null;
-    }
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        return null;
-    }
-    const rect = element.getBoundingClientRect();
-    if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) {
-        return null;
-    }
-    const overlay = document.createElement('div');
-    overlay.className = 'note-position-cue';
-    overlay.setAttribute('aria-hidden', 'true');
-    const cue = { overlay, target: element };
-    placePositionCue(cue);
-    document.body.appendChild(overlay);
-    // Follow the target every frame while shown: a note that collapses again
-    // shrinks over several frames, and the hold may end before the fade does.
-    const follow = () => {
-        if (!overlay.isConnected) {
-            return;
-        }
-        if (!cue.target.isConnected) {
-            overlay.remove();
-            return;
-        }
-        placePositionCue(cue);
-        window.requestAnimationFrame(follow);
-    };
-    window.requestAnimationFrame(follow);
-    window.setTimeout(() => overlay.remove(), CUE_DURATION_MS);
-    return cue;
-}
-
-function placePositionCue(cue) {
-    const rect = cue.target.getBoundingClientRect();
-    cue.overlay.style.left = `${rect.left + window.scrollX - 6}px`;
-    cue.overlay.style.top = `${rect.top + window.scrollY - 3}px`;
-    cue.overlay.style.width = `${rect.width + 12}px`;
-    cue.overlay.style.height = `${Math.min(rect.height, window.innerHeight) + 6}px`;
+    return { delta: rect.top - target };
 }
 
 function endHold() {
@@ -809,41 +700,18 @@ export function holdViewportRoot(reference) {
     root.style.overflowAnchor = 'none';
     let expectedScrollY = window.scrollY;
     let quietTimer = null;
-    let cueShown = false;
-    let cue = null;
-    if (moduleState.lastCue !== null && moduleState.lastCue.reference === reference) {
-        cueShown = true;
-        cue = moduleState.lastCue.cue;
-    }
 
-    // Runs before paint (ResizeObserver), so a cue starts in the frame the
-    // corrected view is first shown.
+    // Runs before paint (ResizeObserver), so the corrected view is the first one shown.
     const correct = () => {
         const located = locateReference(reference);
         if (located === null) {
             endHold();
             return;
         }
-        const scrolledFrom = window.scrollY;
         if (Math.abs(located.delta) >= 1) {
             window.scrollBy(0, located.delta);
         }
-        // What the page could not scroll (its top or bottom) leaves the place displaced.
-        const unscrolled = Math.abs(located.delta - (window.scrollY - scrolledFrom));
         expectedScrollY = window.scrollY;
-        // Follow the landing element as it settles (collapsing, or replaced
-        // by a re-render), so the cue never covers the notes around it.
-        if (cue !== null) {
-            cue.target = located.cueElement;
-            placePositionCue(cue);
-        }
-        if (!cueShown && shouldShowPositionCue({
-            eligible: located.eligible, approximate: located.approximate, displacedPx: located.displacedPx + unscrolled,
-        })) {
-            cueShown = true;
-            cue = showPositionCue(located.cueElement);
-            moduleState.lastCue = { reference, cue };
-        }
     };
     const scheduleQuietEnd = () => {
         window.clearTimeout(quietTimer);

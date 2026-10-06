@@ -127,7 +127,7 @@
     "answer_criteria": [
       {
         "id": "availability",
-        "instruction": "No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note."
+        "instruction": "No note is selected and the user refers to 'this note'. Say you don't know which note the user is referring to and ask them to select it or say which one. Do not read, list or describe the view's notes, invent a privacy or search restriction, or claim to have read a note."
       }
     ],
     "reference_facts": "No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note. No note content, title, tags, or ID was supplied."
@@ -147,6 +147,7 @@
       ],
       "reference_facts": "No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note. No note content, title, tags, or ID was supplied."
     },
-    "source": "User reported misleading unavailable response for selected blacklisted note; content-free synthetic fixture."
+    "source": "User reported misleading unavailable response for selected blacklisted note; content-free synthetic fixture.",
+    "expectation_change": "2026-10-05, at the user's request: answer that you don't know which note is meant. Previous criterion: No note is currently selected. State this clearly and ask the user to select the intended note. Do not invent a privacy or search restriction or claim to have read a note."
   }
 }

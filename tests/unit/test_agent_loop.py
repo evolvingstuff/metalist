@@ -407,3 +407,26 @@ def test_contextual_mode_tells_the_model_which_note_addresses_it_may_now_open(mo
 
     asyncio.run(collect())
     assert _tool_results(model.conversations[1])[0]["web_addresses_now_openable"] == ["https://soil.example/report"]
+
+
+def test_the_model_sees_and_cites_short_note_aliases_and_the_chat_gets_full_ids() -> None:
+    # Tool results and the selected-note context carry n1, n2…; aliases in tool
+    # arguments are translated back; [[n2]] citations become full note ids.
+    model = _ScriptedModel([_turn("", [("read_view_notes", {"note_ids": ["n2"]})])])
+    original = model.stream_tool_turn
+
+    async def cite_second_read(**kwargs):
+        if len(model.conversations) == 1:
+            trees = _tool_results(kwargs["messages"])[0]["trees"]
+            child = trees[0]["children"][0]["note_id"]
+            model.turns.append(_turn(f"Child alpha.[[{child[:2]}|{child[2:]}]]", []))
+        async for event in original(**kwargs):
+            yield event
+
+    model.stream_tool_turn = cite_second_read
+    events = _run_agent(model, web_mode="none", message="Read the child note", tagging=None, on_event=_ignore)
+    result = _tool_results(model.conversations[1])[0]
+    assert result["trees"][0]["note_id"] == "n1" and result["trees"][0]["children"][0]["note_id"] == "n2"
+    assert "root-a" not in json.dumps(result) and "child-a" not in json.dumps(result)
+    assert _answer(events) == "Child alpha.[[child-a]]"
+    assert events[-1]["reference_note_ids"] == ["root-a", "child-a"]

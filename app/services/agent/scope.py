@@ -113,6 +113,19 @@ class SelectedTreeNote:
     tags: str
 
 
+# The model learns only that a note is private, never which privacy setting hides it.
+_MODEL_UNAVAILABLE_REASON = {"blacklisted": "private", "not_whitelisted": "private",
+                             "password_protected": "private", "search_redacted": "search_redacted",
+                             "not_found": "not_found", "unspecified": "unspecified"}
+# The same, in plain words the model can repeat to the user.
+_MODEL_UNAVAILABLE_DESCRIPTION = {
+    "private": "The user is editing a note you cannot see: they keep it private from the AI.",
+    "search_redacted": "The user is editing a note you cannot see: it is excluded by the current search.",
+    "not_found": "The note the user had selected no longer exists.",
+    "unspecified": "The user is editing a note you cannot see.",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class SelectedNoteContext:
     status: Literal["none", "available", "unavailable"]
@@ -142,7 +155,9 @@ class SelectedNoteContext:
         if self.status != "available":
             payload = {"status": self.status, "has_selection": self.status != "none"}
             if self.status == "unavailable":
-                payload["reason"] = self.unavailable_reason
+                reason = _MODEL_UNAVAILABLE_REASON[self.unavailable_reason]
+                payload["reason"] = reason
+                payload["description"] = _MODEL_UNAVAILABLE_DESCRIPTION[reason]
             return payload
         return {"status": self.status, "has_selection": True, "note_id": self.note_id,
                 "root_note_id": self.tree_notes[0].note_id,

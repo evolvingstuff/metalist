@@ -59,6 +59,19 @@ Any change to the persistent schema of the notes database **or its sibling `*.fi
 - Tests must cover: migrating a database created before the change; migrating one the app already upgraded on open; the audit before and after the new version; and updated `applied_versions` expectations.
 - Document readable structural metadata in `docs/security/README.md`.
 
+## CRITICAL: On-screen Behavior Follows the Interaction Principles
+
+What MetaList does on screen after an action (scrolling, editing, dragging, collapsing, highlighting, layout) is derived from `docs/ui/interaction-principles.md`, not decided case by case. In short: keep the user's point of attention still; only the user's action changes the screen; if something would leave sight, move it the minimum distance back; deliberate choices persist and the user's work stays visible; never highlight the results of the user's own actions.
+
+Before changing any such behavior:
+
+1. Name the principle the change follows.
+2. List every case it touches (for example dragging up and down, short and tall notes, landing in view, behind the search controls, past the window edge) with the expected result. Get the user's agreement on that list before changing code.
+3. Write a test per case that checks exact positions, with no loose tolerances that would let the reported problem pass. Run the tests for cases that work today against the unchanged code first, so a regression fails a test instead of reaching the user.
+4. Change one behavior at a time, and let the user try it before stacking the next change.
+
+Never answer an unwanted behavior with "you can turn it off": fix the behavior.
+
 ## Git Permissions Policy
 
 ### CRITICAL: Test All Platforms Before a PyPI Release Tag

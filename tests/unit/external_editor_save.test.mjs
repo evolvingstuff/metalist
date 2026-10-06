@@ -7,8 +7,6 @@ const source = readFileSync(new URL('../../app/static/js/modules/mode-manager/ac
 
 function harness() {
     const saves = [];
-    const expansionChecks = [];
-    const expansion = {async persist() { return false; }};
     const note = {innerHTML:'<p>Choas</p>', dataset:{noteTags:''}, tags:''};
     const mode = {
         currentNoteId:'note-1', currentContent:note.innerHTML, lastSavedContent:null,
@@ -26,23 +24,19 @@ function harness() {
         document:{querySelector:() => note},
         getTagBarValue:element => element.tags,
         setTagBarValue(element, value) { element.tags = value; element.dataset.noteTags = value; },
-        async persistExpandedEditSessionIfNeeded() {
-            expansionChecks.push(mode.editSessionHasEdits);
-            return expansion.persist();
-        },
         sanitizeNoteHtmlForStorage:html => html.replaceAll(' data-render-only="true"', ''),
     };
     const actions = new Function(...Object.keys(dependencies), `${source}\nreturn {actionSaveNote, actionSaveNoteOnIdle};`)(...Object.values(dependencies));
-    return {note, mode, saves, expansionChecks, expansion, ...actions};
+    return {note, mode, saves, ...actions};
 }
 
 for (const saveAction of ['actionSaveNote', 'actionSaveNoteOnIdle']) {
-    test(`${saveAction} captures external correction once and records edit before collapse persistence`, async () => {
+    test(`${saveAction} captures external correction once and records the edit`, async () => {
         const h = harness();
         h.note.innerHTML = '<p>Chaos</p>';
         await h[saveAction]('note-1');
         assert.deepEqual(h.saves, [['note-1', '<p>Chaos</p>', '']]);
-        assert.deepEqual(h.expansionChecks, [true]);
+        assert.equal(h.mode.editSessionHasEdits, true);
         assert.equal(h.mode.currentContent, h.note.innerHTML);
         assert.equal(h.mode.lastSavedContent, '<p>Chaos</p>');
         assert.equal(h.mode.isDirty, false);
@@ -57,20 +51,14 @@ for (const saveAction of ['actionSaveNote', 'actionSaveNoteOnIdle']) {
         assert.deepEqual(h.saves, []);
         assert.equal(h.mode.editSessionHasEdits, false);
     });
-
-    test(`${saveAction} includes a later correction arriving during expansion persistence`, async () => {
-        const h = harness();
-        h.note.innerHTML = '<p>Chaos</p>';
-        h.expansion.persist = async () => {
-            h.note.innerHTML = '<p>Foundation and Chaos</p>';
-            return true;
-        };
-        await h[saveAction]('note-1');
-        assert.deepEqual(h.saves, [['note-1', '<p>Foundation and Chaos</p>', '']]);
-        assert.equal(h.mode.currentContent, h.note.innerHTML);
-        assert.equal(h.mode.isDirty, false);
-    });
 }
+
+// Saving never expands a collapsed note; an edited one is kept expanded only on
+// leaving edit mode (selection-actions.js), so it never unfolds mid-edit.
+test('saving never changes a note\'s collapse state', () => {
+    assert.equal(source.includes('persistExpandedEditSessionIfNeeded'), false);
+    assert.equal(source.includes('expandNote'), false);
+});
 
 test('tag-only save still persists tags without claiming a content edit', async () => {
     const h = harness();

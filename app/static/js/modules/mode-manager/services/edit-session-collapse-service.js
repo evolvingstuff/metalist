@@ -6,9 +6,15 @@ import {
     shouldRestoreCollapsedStateLocally,
 } from './edit-session-collapse-policy-service.js';
 
-export async function persistExpandedEditSessionIfNeeded(noteId) {
+// Called when leaving edit mode (never while editing, so the note does not
+// unfold mid-edit): saves an edited, collapsed note as expanded and shows it so.
+export async function persistExpandedEditSessionIfNeeded(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('persistExpandedEditSessionIfNeeded requires note element');
+    }
+    const noteId = noteElement.dataset.noteId;
     if (typeof noteId !== 'string' || noteId.length === 0) {
-        throw new Error('persistExpandedEditSessionIfNeeded requires noteId');
+        throw new Error('persistExpandedEditSessionIfNeeded requires a note id');
     }
 
     const shouldPersist = shouldPersistExpandedEditSession({
@@ -22,6 +28,7 @@ export async function persistExpandedEditSessionIfNeeded(noteId) {
 
     await NotesAPI.expandNote(noteId);
     ModeContext.markEditSessionExpandedPersisted();
+    setNoteCollapsedLocally(noteElement, false);
     return true;
 }
 

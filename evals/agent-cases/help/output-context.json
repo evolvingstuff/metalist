@@ -37,6 +37,16 @@
           "lookup_metalist_help"
         ],
         "arguments_any_of": []
+      },
+      {
+        "tools": [
+          "open_menu"
+        ],
+        "arguments_any_of": [
+          {
+            "menu_id": "form.ai_agent_settings"
+          }
+        ]
       }
     ],
     "forbidden_tools": [
@@ -71,6 +81,6 @@
     },
     "source": "synthetic-metalist-help-v1",
     "personal_data": false,
-    "expectation_change": "The agent really opens the menu before answering, so saying it opened is now true; claiming a changed setting is still wrong."
+    "expectation_change": "2026-10-06, at the user's request: asking how to change a setting also opens the menu that holds it. Previous required calls: lookup_metalist_help only."
   }
 }

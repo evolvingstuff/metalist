@@ -721,7 +721,8 @@ def test_complete_scope_summary_cancel_starts_no_batch_calls() -> None:
     )
 
 
-def test_single_payload_scope_summary_still_requires_permission() -> None:
+def test_single_payload_scope_summary_starts_without_a_question() -> None:
+    # One payload is one ordinary model call: nothing to choose, so no dialog.
     inference = _FakeInference()
 
     events, calls_at_question = _events_with_summary_answer(
@@ -732,15 +733,10 @@ def test_single_payload_scope_summary_still_requires_permission() -> None:
         answer="summarize_all",
     )
 
-    question = next(event for event in events if event["type"] == "bulk_question")
-    assert question["batch_count"] == 1
-    assert re.match(
-        r"This scope contains 2 root notes and fits in one evidence payload "
-        r"\(approximately 0\.\d\d× the evidence budget\)\.$",
-        question["label"],
-    )
-    assert calls_at_question == 0
+    assert not any(event["type"] in {"bulk_question", "bulk_complete"} for event in events)
+    assert calls_at_question == -1
     assert inference.summary_batch_calls == []
+    assert inference.final_messages
     assert any(event["type"] == "done" for event in events)
 
 

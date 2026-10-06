@@ -985,6 +985,7 @@ function handleMoveDragMouseUp(event) {
                 drop.siblingId,
                 drop.position,
                 drop.newParentId,
+                drop.direction,
             );
         });
         return;

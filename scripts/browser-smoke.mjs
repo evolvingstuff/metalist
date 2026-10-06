@@ -68,6 +68,15 @@ try {
     if (frame === page.mainFrame()) browserDiagnostics.push(`${new Date().toISOString()} navigate ${frame.url()}`);
   });
   page.on('requestfailed', request => browserDiagnostics.push(`${new Date().toISOString()} failed ${request.url()} ${request.failure()?.errorText}`));
+  // Why a page or frame goes away mid-check (renderer crash, close, disconnect).
+  // Kept in browser.log, written when a check fails.
+  const lifecycle = message => browserDiagnostics.push(`${new Date().toISOString()} LIFECYCLE ${message}`);
+  page.on('error', error => lifecycle(`page crashed: ${error.message}`));
+  page.on('close', () => lifecycle('page closed'));
+  page.on('framedetached', frame => lifecycle(`frame detached ${frame.url()} main=${frame === page.mainFrame()}`));
+  browser.on('disconnected', () => lifecycle('browser disconnected'));
+  browser.on('targetdestroyed', target => lifecycle(`target destroyed ${target.type()} ${target.url()}`));
+  browser.on('targetcreated', target => lifecycle(`target created ${target.type()} ${target.url()}`));
   const updateFixture = await prepareUpdateFixture(page);
   if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll', 'sorted-tabs', 'search-input'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases

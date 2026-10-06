@@ -5942,30 +5942,6 @@ body:not(.pref-drop-indicator) .note-drop-line {
     display: none !important;
 }
 
-/* "You are here" cue after leaving edit mode: a page overlay over the landing
-   block that fades out; it never changes the note itself. */
-/* Starts at full strength (no fade-in) and fades out; the left bar catches
-   the eye when the user is looking elsewhere. Keep the duration in step with
-   CUE_DURATION_MS in viewport-hold-service.js. */
-.note-position-cue {
-    position: absolute;
-    pointer-events: none;
-    z-index: 8999;
-    border-radius: 6px;
-    background-color: rgba(250, 204, 21, 0.4);
-    box-shadow: inset 4px 0 0 rgb(234, 179, 8);
-    animation: note-position-cue-fade 600ms ease-in forwards;
-}
-
-html[data-theme="dark"] .note-position-cue {
-    background-color: rgba(250, 204, 21, 0.28);
-}
-
-@keyframes note-position-cue-fade {
-    0%, 25% { opacity: 1; }
-    100% { opacity: 0; }
-}
-
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */
 
 body.loading::after {

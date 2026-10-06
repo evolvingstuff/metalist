@@ -156,7 +156,8 @@ SEARCH_VIEW_NOTES_TOOL = AgentTool(
     name="search_view_notes",
     description=(
         "Find notes in the user's current view whose text or tags contain every query word, "
-        "and read the trees they belong to. Searches only the current view. Cite notes as [[note_id]]."
+        "and read the trees they belong to. Words only: it cannot find notes by a category or meaning "
+        "they do not spell out. Searches only the current view. Cite notes as [[note_id]]."
     ),
     arguments_model=SearchViewNotesArguments,
 )
@@ -180,7 +181,8 @@ OPEN_MENU_TOOL = AgentTool(
 SUMMARIZE_VIEW_TOOL = AgentTool(
     name="summarize_view",
     description=(
-        "Summarize every note in the current view, in batches when it is large. MetaList asks the user "
+        "Summarize every note in the current view, or every note in it that fits the user's description "
+        "(the summary follows the user's request), in batches when it is large. MetaList asks the user "
         "to confirm large summaries, then writes the summary. Ends your turn."
     ),
     arguments_model=SummarizeViewArguments,

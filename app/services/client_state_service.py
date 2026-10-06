@@ -38,7 +38,6 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.drag_ghost": {"true", "false"},
     "pref.drop_indicator": {"true", "false"},
     "pref.drag_direction_icon": {"true", "false"},
-    "pref.position_cue": {"true", "false"},
     "pref.update_notice_version": "release_version",
     "pref.reminder_surface_expanded": {"true", "false"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
@@ -95,6 +94,7 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.ai.openai.retrieval.max_ranked_tags_per_page",
         "pref.ai.openai.retrieval.max_working_summary_characters",
         "pref.ai.openai.retrieval.ideal_narrowed_scope_approximate_tokens",
+        "pref.position_cue",
         *RETIRED_PROMPT_PREFERENCE_KEYS,
         *RETIRED_SKILL_PREFERENCE_KEYS,
     }

@@ -1,14 +1,14 @@
 {
   "schema_version": 3,
-  "id": "help-route-context-limit",
-  "description": "How do I change the agent context to 250k tokens?",
+  "id": "help-route-change-web-access",
+  "description": "Asking how to change a setting looks it up in help and opens the menu that holds it.",
   "reviewed": true,
   "model": "gpt-5.6-luna",
   "thinking_level": "low",
   "conversation": [
     {
       "role": "user",
-      "content": "How do I change the agent context to 250k tokens?"
+      "content": "How do I change the web access setting?"
     }
   ],
   "view": {
@@ -69,23 +69,6 @@
     "reference_facts": ""
   },
   "provenance": {
-    "migrated_from": "evals/legacy-cases/help/route-context-limit.json",
-    "mapping": "Product help, not note investigation or an operation.",
-    "legacy_stage": "route",
-    "legacy_thinking_level": "off",
-    "legacy_expectation": {
-      "kind": "action",
-      "alternatives": [
-        {
-          "kind": "metalist_help",
-          "help_topics": [
-            "ai"
-          ]
-        }
-      ]
-    },
-    "source": "synthetic-metalist-help-v1",
-    "personal_data": false,
-    "expectation_change": "2026-10-06, at the user's request: asking how to change a setting also opens the menu that holds it. Previous required calls: lookup_metalist_help only."
+    "source": "synthetic, 2026-10-06: the user asked that 'how do I change X' open the menu automatically"
   }
 }

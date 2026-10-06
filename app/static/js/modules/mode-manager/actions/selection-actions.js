@@ -6,7 +6,7 @@ import { actionSaveNote } from './content-actions.js';
 import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
-import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
+import { persistExpandedEditSessionIfNeeded, restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
 import { captureNoteAnchor, captureSortedExitAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
@@ -141,6 +141,7 @@ export async function actionDeselectNote() {
         }
         holdViewportRoot(viewportHold);
         await actionSaveNote(noteId);
+        await persistExpandedEditSessionIfNeeded(noteElement);
         restoreCollapsedStateLocallyIfNeeded(noteElement);
     } else {
         Logger.logDebug('Deselecting after note disappeared from DOM', { noteId });
@@ -179,6 +180,7 @@ export async function actionSaveAndExitEditingWithoutRefreshing() {
     await actionSaveNote(noteId);
     const noteElement = getNoteElementIfPresent(noteId);
     if (noteElement !== null) {
+        await persistExpandedEditSessionIfNeeded(noteElement);
         restoreCollapsedStateLocallyIfNeeded(noteElement);
     }
 
@@ -275,6 +277,7 @@ export async function actionSwitchNotes(newNoteId, options) {
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 
     if (currentNoteElement) {
+        await persistExpandedEditSessionIfNeeded(currentNoteElement);
         restoreCollapsedStateLocallyIfNeeded(currentNoteElement);
         DOMUtils.setNoteEditable(currentNoteElement, false);
         clearTagBar();
