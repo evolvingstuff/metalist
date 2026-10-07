@@ -30,8 +30,12 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
   gives `scratchpad`.
 - "at" before the name of a built-in meta tag gives that meta tag: "at to do" gives
   `@todo`, "at done" `@done`, "at list bulleted" `@list-bulleted`. Otherwise "at"
-  is ignored.
-- "quote … end quote" (also "unquote") marks a phrase.
+  is ignored. One "at" covers a run of meta tags: "at green bold" gives
+  `@green @bold` (Superwhisper drops a repeated "at" anyway), even if the user also
+  has a plain tag such as `bold`.
+- "quote … end quote" (the default quote phrases) or quote marks mark a phrase, in
+  the search bar and tag relationship conditions only; in tag fields the quote
+  phrases are dropped.
 - Filler words (a, an, and, at, the, tag, tags, comma, period, um, uh) are ignored,
   unless the word is itself one of the user's tags. A spoken word that is a tag
   always stays that tag.
@@ -39,17 +43,26 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
 
 ## Where to paste
 
-- **Search bar:** words matching no tag are dropped. "or" becomes `OR`, "not" and
-  "minus" exclude the next tag ("neural network not python" gives
-  `neural-network -python`), and a quoted phrase becomes a text search.
+- **Search bar:** words matching no tag are dropped. "or" becomes `OR`, the
+  exclusion phrase ("minus" by default) excludes the next term ("neural network
+  minus python" gives `neural-network -python`), and a quoted phrase becomes a text
+  search. "not" is an ordinary word unless it is set as the exclusion phrase.
 - **Tag bar:** words matching no tag become new tags, lowercased unless they look
-  like an acronym (`GPT`). A quoted phrase becomes one tag: "quote machine learning
-  end quote" gives `machine-learning`.
+  like an acronym (`GPT`). Each word is its own tag unless the words together match
+  one of the user's tags; a new multi-word tag has to be typed.
+- **Other one-tag fields** (Edit Tag Relationships' search box, Add tag, Implied
+  tag, Synonym tag, Rename tag; Prioritize Tag; Manage tag proposals' tag filter):
+  the whole paste becomes one tag, "Machine learning" gives `machine-learning`.
+- **Tag relationship conditions:** existing tags and quoted text; no regular
+  expressions by voice.
+- **AI privacy tag lists:** tags, one per line.
 - **A note being edited:** say the tag phrase, **"start tags"** by default, then the
   tags. The text before the phrase goes into the note; the words after it are added
   to the note's tags with the tag-bar rules. "Here is my content. Start tags. Neural
   network, at to do." adds the content and the tags `neural-network @todo`. Saying
   only "Start tags, scratch pad." adds just the tag. Only the first phrase counts.
+  Words that together match no existing tag become separate tags: "spring planning"
+  gives `spring` and `planning`, never `spring-planning` (type a new multi-word tag).
   Without the phrase, a paste into a note is an ordinary paste.
 
 It is a phrase rather than a repeated word because Superwhisper drops a word said
@@ -61,17 +74,19 @@ One undo (Cmd/Ctrl+Z) right after the paste brings back what was pasted in the
 search bar or tag bar (in the tag bar without commas, which tags cannot contain).
 After a paste into a note, one undo removes both the pasted text and the added tags.
 
-## Setting the tag phrase
+## Dictation Settings
 
-The command palette's **Dictation Settings** dialog sets the phrase that starts tags
-in a note. It must be words of letters, 2 to 64 characters: "start tags", "now add
-these tags", or one unusual word such as "armadillo". Save applies it.
+The command palette's **Dictation Settings** dialog sets four phrases, each words of
+letters (2 to 64 characters): the phrase that starts tags in a note ("start tags"),
+the phrases that start and end a quote ("quote", "end quote"), and the phrase that
+excludes the next search term ("minus"). One unusual word such as "armadillo" also
+works. The quote and exclusion phrases must differ. Save applies them.
 
 ## Tips and limits
 
 - Plurals do not match: "transformers" is not the tag `transformer`. In search it
   is dropped; in the tag bar it becomes a new tag.
-- A new multi-word tag needs quoting ("quote scratch pad end quote" gives
-  `scratch-pad`); without quotes the words become separate tags.
+- In the tag bar, a new multi-word tag has to be typed: dictated words become
+  separate tags unless together they match an existing tag.
 - Saying "dash" in its ordinary sense ("100 meter dash") joins the words around it.
 - `@size=…` and other values cannot be dictated; type them.

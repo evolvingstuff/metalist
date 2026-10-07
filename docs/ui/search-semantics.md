@@ -64,6 +64,11 @@ Text matching is:
 - Case-insensitive (`casefold`).
 - Against **visible text**, extracted by stripping HTML (scripts/styles ignored).
 - Also against tag-bar `/* ... */` comment text (whitespace-normalized).
+- A space at the edge of the quotes marks a word boundary on that side: `"fat "` needs
+  the word to end there (a space, punctuation or the end of the text follows), so it
+  matches "fat cat" and "fat." but not "father"; `" fat"` needs it to start there, so
+  it does not match "sulfate"; `" fat "` matches only the word "fat". Without edge
+  spaces a term matches anywhere, also inside words (`"fat"` matches "father").
 
 ### UUID Terms
 - UUIDs in positive terms are treated as direct note targets (including when pasted as `[[UUID]]`).

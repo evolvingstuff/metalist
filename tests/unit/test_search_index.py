@@ -11,6 +11,7 @@ from app.services.search_index import (
 )
 from app.services.input_errors import InputRejected
 from app.services.search_query import parse_search_query
+from app.services.search_text import text_term_matches
 from app.utils.text_utils import strip_html
 
 
@@ -469,3 +470,49 @@ def test_suggestion_co_occurrence_strategies_rank_identically(monkeypatch: pytes
         ])
     assert rankings[0] == rankings[1]
     assert any(suggestions for suggestions, _ in rankings[0])
+
+
+# A space at the edge of a quoted term marks a word boundary on that side
+# (docs/ui/search-semantics.md): "fat " ends a word, " fat" starts one.
+@pytest.mark.parametrize("term,text,expected", [
+    ("fat", "a father-of-two", True),
+    ("fat", "sulfate", True),
+    ("fat ", "a fat cat", True),
+    ("fat ", "it was fat.", True),
+    ("fat ", "it was fat, really", True),
+    ("fat ", "the end is fat", True),
+    ("fat ", "a father-of-two", False),
+    (" fat", "fat cat", True),
+    (" fat", "the fat", True),
+    (" fat", "(fat)", True),
+    (" fat", "sulfate", False),
+    (" fat ", "the fat cat", True),
+    (" fat ", "a father", False),
+    (" fat ", "sulfate", False),
+    (" fat ", "Fat.", True),
+])
+def test_quoted_text_edge_spaces_mark_word_boundaries(term: str, text: str, expected: bool) -> None:
+    assert text_term_matches(term, text.casefold()) is expected
+
+
+def test_search_query_parser_keeps_one_edge_space_in_quoted_text() -> None:
+    clause = parse_search_query('interesting "Fat "').first_clause
+    assert clause.required_text == ("Fat ",)
+    assert parse_search_query('"  fat   cat  "').first_clause.required_text == (" fat cat ",)
+    assert parse_search_query('"hello world"').first_clause.required_text == ("hello world",)
+
+
+def test_search_index_matches_word_boundaries_in_quoted_text() -> None:
+    index = _build_index(
+        [
+            SearchRecord(note_id="n1", content_text="Rhys Hibbert, a father-of-two",
+                         tags="interesting", tag_terms=extract_tags_for_search("interesting")),
+            SearchRecord(note_id="n2", content_text="A fat cat.", tags="interesting",
+                         tag_terms=extract_tags_for_search("interesting")),
+            SearchRecord(note_id="n3", content_text="Saturated fat", tags="interesting",
+                         tag_terms=extract_tags_for_search("interesting")),
+        ]
+    )
+    assert index.query_note_ids('interesting "Fat"') == {"n1", "n2", "n3"}
+    assert index.query_note_ids('interesting "Fat "') == {"n2", "n3"}
+    assert index.query_note_ids('interesting -"fat "') == {"n1"}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.services.search_index import extract_tags_for_search, search_index
 from app.services.search_query import parse_search_query
-from app.services.search_text import build_searchable_text_casefold
+from app.services.search_text import build_searchable_text_casefold, text_term_matches
 from app.services.store import store
 from app.services.tag_case import (
     build_preferred_tag_case_map,
@@ -79,7 +79,7 @@ def ensure_tags_match_search_query(
     searchable = build_searchable_text_casefold(content, next_tags)
     missing_phrases: list[str] = []
     for phrase in first_clause.required_text:
-        if phrase.casefold() in searchable:
+        if text_term_matches(phrase, searchable):
             continue
         missing_phrases.append(phrase)
 
@@ -92,7 +92,8 @@ def ensure_tags_match_search_query(
             raise TypeError(f"search phrase must be a string, got {type(phrase)}")
         if "/*" in phrase or "*/" in phrase:
             continue
-        comment_tokens.append(f"/*{phrase}*/")
+        # The words only: a comment matches the term's word boundaries by itself.
+        comment_tokens.append(f"/*{phrase.strip()}*/")
 
     if not comment_tokens:
         return next_tags

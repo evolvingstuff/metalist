@@ -18,6 +18,7 @@ import {
     parseCloudPrivacyTextFields,
 } from '../ai-chat/cloud-privacy-policy.js';
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
+import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 
 
 function escapeHtml(value) {
@@ -367,6 +368,9 @@ export class AiAgentSettingsModal extends BaseModal {
                 Number(maxPageApproximateTokensInput.value),
             );
         };
+        // Dictated text pasted into a tag list becomes tags, one per line.
+        whitelistTagsInput.onpaste = (event) => handleDictationPasteEvent(event, 'tag-lines');
+        blacklistTagsInput.onpaste = (event) => handleDictationPasteEvent(event, 'tag-lines');
         whitelistTagsInput.oninput = () => {
             this.updateModalState({ whitelistTagsText: whitelistTagsInput.value, error: '' });
         };

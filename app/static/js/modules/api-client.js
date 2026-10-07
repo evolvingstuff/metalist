@@ -774,23 +774,6 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, options);
     },
 
-    // Cleaned-up text for a paste into the search bar or tag bar (dictation-paste-service.js).
-    async cleanDictationPaste(text, target, currentValue) {
-        if (typeof text !== 'string') {
-            throw new Error('NotesAPI.cleanDictationPaste requires text string');
-        }
-        if (target !== 'search' && target !== 'tags') {
-            throw new Error('NotesAPI.cleanDictationPaste requires target search or tags');
-        }
-        if (typeof currentValue !== 'string') {
-            throw new Error('NotesAPI.cleanDictationPaste requires currentValue string');
-        }
-        return this._apiCall(CONFIG.API.NOTES.DICTATION_PASTE, {
-            method: 'POST',
-            body: JSON.stringify({ text, target, current_value: currentValue }),
-        });
-    },
-
     async fetchBacklinks(noteId, searchQuery) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchBacklinks requires noteId string');

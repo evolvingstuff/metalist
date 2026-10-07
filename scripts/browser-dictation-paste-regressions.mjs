@@ -100,6 +100,14 @@ export async function checkDictationPaste(page) {
     await NotesAPI.saveNote(note.id, '<p>Dictation paste fixture</p>', 'neural-network python');
     return note.id;
   });
+  // A plain "bold" tag (as typos leave behind) must not stop "at ... bold" from
+  // giving the meta tag @bold.
+  const plainBoldNoteId = await page.evaluate(async () => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const note = await NotesAPI.createNote(null, '');
+    await NotesAPI.saveNote(note.id, '<p>Plain bold tag fixture</p>', 'bold');
+    return note.id;
+  });
   try {
     await page.reload();
     await page.waitForSelector('[data-app-ready="true"]');
@@ -116,6 +124,26 @@ export async function checkDictationPaste(page) {
       const input = document.getElementById('search-input');
       input.select();
     });
+    await page.keyboard.press('Backspace');
+    await idle(page);
+
+    // The spoken exclusion before a quoted phrase excludes that text.
+    await paste(page, '#search-input', 'Neural network minus quote attention end quote');
+    await waitForValue(page, '#search-input', 'neural-network -"attention"', 'search paste: minus before a quoted phrase excludes it');
+    await page.evaluate(() => document.getElementById('search-input').select());
+    await page.keyboard.press('Backspace');
+    await idle(page);
+    // What Superwhisper types for "at green at bold" (it drops the repeated "at").
+    await paste(page, '#search-input', 'At green, bold.');
+    await waitForValue(page, '#search-input', '@green @bold', 'search paste: Superwhisper\'s "At green, bold." gives two meta tags');
+    await page.evaluate(() => document.getElementById('search-input').select());
+    await page.keyboard.press('Backspace');
+    await idle(page);
+    // What Superwhisper actually types for "neural network minus quote attention
+    // end quote": an em dash for "minus", quote marks, and a leftover "end quote".
+    await paste(page, '#search-input', 'Neural network\u2014"attention"\u2014end quote.');
+    await waitForValue(page, '#search-input', 'neural-network -"attention"', 'search paste: Superwhisper\'s em dash before a quote excludes it');
+    await page.evaluate(() => document.getElementById('search-input').select());
     await page.keyboard.press('Backspace');
     await idle(page);
 
@@ -136,6 +164,14 @@ export async function checkDictationPaste(page) {
     await undo(page);
     // The tag bar's live clean-up drops the comma, as it does when typing one.
     await waitForValue(page, tagBar, 'neural-network python Neural network transformers.', 'tag bar paste: one undo restores the pasted text');
+    // Superwhisper's "At green, bold." in the tag bar.
+    await page.evaluate(selector => {
+      const input = document.querySelector(selector);
+      input.value = 'neural-network python';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+    }, tagBar);
+    await paste(page, tagBar, 'At green, bold.');
+    await waitForValue(page, tagBar, 'neural-network python @green @bold', 'tag bar paste: Superwhisper\'s "At green, bold." gives two meta tags');
     // Back to the original tags for the next part (as if typed).
     await page.evaluate(selector => {
       const input = document.querySelector(selector);
@@ -162,11 +198,34 @@ export async function checkDictationPaste(page) {
     assert.equal(await noteText(page, noteId), textBefore, 'note paste: undoing tags pasted alone leaves the text');
     await page.keyboard.press('Escape');
     await idle(page);
+
+    // One-tag fields: Edit Tag Relationships' search box and its "Implied tag"
+    // field take the whole paste as one existing tag.
+    await page.evaluate(async () => {
+      const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+      await CommandPalette.openOntologyEditor();
+    });
+    await page.waitForSelector('#ontology-search-input', {visible: true});
+    await paste(page, '#ontology-search-input', 'Python.');
+    await waitForValue(page, '#ontology-search-input', 'python', 'tag relationships search: a dictated tag becomes the tag');
+    await page.focus('#ontology-search-input');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('[data-action="add-right"]', {visible: true});
+    await page.click('[data-action="add-right"]');
+    await page.waitForSelector('#ontology-dialog-input', {visible: true});
+    await paste(page, '#ontology-dialog-input', 'Neural network.');
+    await waitForValue(page, '#ontology-dialog-input', 'neural-network', 'implied tag: a dictated phrase becomes one existing tag');
+    await page.click('[data-action="dialog-cancel"]');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => {
+      const modal = document.getElementById('ontology-modal');
+      return modal === null || modal.style.display === 'none';
+    });
     assert.equal(await fatalText(page), '', 'dictation paste: no fatal error');
   } finally {
-    await page.evaluate(async noteId => {
+    await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      await NotesAPI.deleteNote(noteId);
-    }, noteId);
+      for (const id of ids) await NotesAPI.deleteNote(id);
+    }, [noteId, plainBoldNoteId]);
   }
 }

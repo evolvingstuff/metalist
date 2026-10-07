@@ -12,8 +12,10 @@ only pastes.
 2. Spoken joiners join words: "dash" and "hyphen" give `-`, "underscore" `_`,
    "slash" `/`. Superwhisper's `foo-Dash bar` (a typed `-` plus the word) and
    the variants `foo -Dash bar`, `foo - Dash bar`, `foo dash bar` all give `foo-bar`.
-3. "quote … end quote" (also "unquote", "close quote") or quote marks, straight
-   or curly, mark a phrase.
+3. The quote phrases ("quote" … "end quote" by default) or quote marks, straight or
+   curly, mark a phrase. Quoting applies in search and incoming-rule conditions
+   only; in tag fields the quote phrases are dropped and the words inside are
+   ordinary words.
 4. At each word, the longest run of words matching an existing tag becomes that
    tag. Matching ignores case and treats space, `-`, `_`, `.` and `/` alike (as
    Add as Tag does); the spelling used most often wins. `neural network` becomes
@@ -23,7 +25,11 @@ only pastes.
    (with both `to-do` and `todo`, "to do" is `to-do`).
 5. "at" (or a typed `@`) before words naming a built-in meta tag is that meta tag:
    "at to do", "At todo.", "@ to do" and `@todo` all give `@todo`; "at list
-   bulleted" gives `@list-bulleted`. The built-in list is `KNOWN_META_TAGS` in
+   bulleted" gives `@list-bulleted`. Superwhisper drops a repeated "at" ("at green at
+   bold" arrives as `At green, bold.`), so right after a meta tag, words naming other
+   meta tags continue the run (`@green @bold`), even when the user also has a plain tag of
+   that name (usually a typo for the meta tag);
+   meta tags typed together (`@green@bold`) are split. The built-in list is `KNOWN_META_TAGS` in
    `tag-syntax-service.js`, mirrored in `dictation_cleanup.py` (a test keeps them
    equal). `@size=…` is keyboard only.
 6. Repeats collapse to one, and tags already in the field are not added again.
@@ -40,14 +46,32 @@ only pastes.
 |---|---|---|
 | Word or phrase matching an existing tag | the tag | the tag |
 | Unknown word | dropped | a new tag, lowercased unless it looks like an acronym (`GPT`, `LLM`) |
-| Quoted phrase | a text search, `"attention is all you need"` | one tag, `machine-learning` (or the existing tag it matches) |
+| Quoted phrase | a text search, `"attention is all you need"` | no quoting: the words are ordinary words |
 | "or" | `OR` between clauses | dropped |
-| "not", "minus" | exclude the next tag, `-python` | dropped |
+| The exclusion phrase ("minus" by default), or a typed `-`, `−` or em dash `—` before a term (Superwhisper types "minus" as an em dash) | exclude the next term, `-python`, `-"fat"` | dropped |
 | Pasted search syntax (`-tag`, `+tag`, `OR`, `"text"`) | kept as is | not applicable |
 
 A spoken word that is one of the user's tags is always that tag: with a tag
-`not`, "not python" is `not python`. An operator with nothing to apply to (a
-leading or trailing "or", "not" before an unknown word) is dropped.
+`minus`, "minus python" is `minus python`. An operator with nothing to apply to (a
+leading or trailing "or", the exclusion phrase before an unknown word) is dropped.
+
+## Other tag fields
+
+| Field | Paste becomes |
+|---|---|
+| Edit Tag Relationships: search box, Add tag, Implied tag, Synonym tag, edit implied tag or synonym, Rename tag; Prioritize Tag To Front/Back; Manage tag proposals' tag filter | one tag: the whole paste, an existing tag when it matches (also one-word or meta tags), otherwise one new tag with its words joined by dashes ("Machine learning" gives `machine-learning`) |
+| Edit Tag Relationships: Add condition, Edit incoming rule | existing tags and quoted text (`"…"`); no "or" or exclusion, and no spoken regular expressions |
+| AI Agent Settings: whitelisted and blacklisted tags | the tag-bar rules, one tag per line |
+
+A paste into a rule-text field stays as it is.
+
+## Dictation Settings
+
+The command palette's **Dictation Settings** holds four phrases, each words of
+letters (2 to 64 characters): the phrase that starts tags in a note (`start tags`),
+the phrases that start and end a quote (`quote`, `end quote`), and the phrase that
+excludes the next search term (`minus`). The quote and exclusion phrases must all
+differ.
 
 ## Dictating Tags into a Note
 
@@ -81,7 +105,8 @@ twice because dictation tools such as Superwhisper drop a repeated word.
 
 - Server: `app/services/dictation_cleanup.py` `clean_dictated_paste()`, against
   `search_index.list_explicit_tag_frequencies()`; read-only endpoint
-  `POST /api2/notes/dictation-paste` `{text, target: "search"|"tags", current_value}`.
+  `POST /api2/notes/dictation-paste` `{text, target: "search"|"tags"|"tag"|"condition",
+  current_value, quote_open, quote_close, negate_phrase}`.
 - Browser: `dictation-paste-service.js` handles `paste` on `#search-input` and on
   `.note-tag-bar-input`. It inserts the pasted text as is, then replaces it with
   the cleaned text, both as native edits, so the field's own undo restores the
@@ -90,7 +115,7 @@ twice because dictation tools such as Superwhisper drop a repeated word.
   `handleDictatedNotePaste()` in `dictation-paste-service.js` inserts the text as one
   native edit and adds the cleaned tags; `undoDictatedNotePasteTags()` runs from the
   undo shortcut and puts the tag bar back. The keyword reaches it from the command
-  palette's preference effects (`receiveDictationTagPhrase`).
+  palette's preference effects (`receiveDictationPhrases`, all four phrases).
 - In-app help: the `dictation` help topic (`app/services/agent/skills/help-dictation.md`);
   live evals `evals/agent-cases/help/*dictation*.json`.
 - Tests: `tests/unit/test_dictation_cleanup.py` (every case above),

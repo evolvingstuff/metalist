@@ -562,6 +562,9 @@ def dictation_paste(payload: DictationPasteRequest) -> Dict[str, object]:
         target=payload["target"],
         existing_tag_frequencies=search_index.list_explicit_tag_frequencies(),
         current_value=payload["current_value"],
+        quote_open=payload["quote_open"],
+        quote_close=payload["quote_close"],
+        negate_phrase=payload["negate_phrase"],
     )
     return {"text": text}
 

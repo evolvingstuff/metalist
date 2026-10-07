@@ -4,6 +4,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
+import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 
 const SUGGESTION_LIMIT = 20;
 
@@ -374,6 +375,8 @@ export class PrioritizeModal extends BaseModal {
                 void this.fetchSuggestions(input.value);
             }
         };
+        // Dictated text pasted here becomes one tag (dictation-paste-service.js).
+        input.onpaste = (event) => handleDictationPasteEvent(event, 'tag');
         input.oninput = () => {
             this.updateModalState({
                 tagInput: input.value,

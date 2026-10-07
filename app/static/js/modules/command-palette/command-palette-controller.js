@@ -53,8 +53,17 @@ import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal.js';
 import { DictationSettingsModal } from '../modals/dictation-settings-modal.js';
-import { DEFAULT_DICTATION_TAG_PHRASE, DICTATION_TAG_PHRASE_PREFERENCE } from '../mode-manager/services/dictation-note-paste.js';
-import { receiveDictationTagPhrase } from '../mode-manager/services/dictation-paste-service.js';
+import {
+    DEFAULT_DICTATION_NEGATE,
+    DEFAULT_DICTATION_QUOTE_CLOSE,
+    DEFAULT_DICTATION_QUOTE_OPEN,
+    DEFAULT_DICTATION_TAG_PHRASE,
+    DICTATION_NEGATE_PREFERENCE,
+    DICTATION_QUOTE_CLOSE_PREFERENCE,
+    DICTATION_QUOTE_OPEN_PREFERENCE,
+    DICTATION_TAG_PHRASE_PREFERENCE,
+} from '../mode-manager/services/dictation-note-paste.js';
+import { receiveDictationPhrases } from '../mode-manager/services/dictation-paste-service.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
 import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
@@ -569,7 +578,7 @@ class CommandPaletteController {
         const dragDirectionIcon = this._getBoolean('pref.drag_direction_icon', true);
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
 
-        receiveDictationTagPhrase(this._dictationTagPhrase());
+        receiveDictationPhrases(this._dictationPhrases());
 
         const storedSearchWindows = this._preferences.getRaw('pref.search_suggestion_windows');
         receiveSearchSuggestionPreferences({
@@ -2437,12 +2446,31 @@ class CommandPaletteController {
         await this._visualCuesModal.open();
     }
 
-    _dictationTagPhrase() {
-        const stored = this._preferences.getRaw(DICTATION_TAG_PHRASE_PREFERENCE);
+    _dictationPhrase(key, defaultPhrase) {
+        const stored = this._preferences.getRaw(key);
         if (stored === null) {
-            return DEFAULT_DICTATION_TAG_PHRASE;
+            return defaultPhrase;
         }
         return stored;
+    }
+
+    _dictationPhrases() {
+        return {
+            tagPhrase: this._dictationPhrase(DICTATION_TAG_PHRASE_PREFERENCE, DEFAULT_DICTATION_TAG_PHRASE),
+            quoteOpen: this._dictationPhrase(DICTATION_QUOTE_OPEN_PREFERENCE, DEFAULT_DICTATION_QUOTE_OPEN),
+            quoteClose: this._dictationPhrase(DICTATION_QUOTE_CLOSE_PREFERENCE, DEFAULT_DICTATION_QUOTE_CLOSE),
+            negate: this._dictationPhrase(DICTATION_NEGATE_PREFERENCE, DEFAULT_DICTATION_NEGATE),
+        };
+    }
+
+    async _saveDictationPhrases({ tagPhrase, quoteOpen, quoteClose, negate }) {
+        await this._preferences.setMany({
+            [DICTATION_TAG_PHRASE_PREFERENCE]: tagPhrase,
+            [DICTATION_QUOTE_OPEN_PREFERENCE]: quoteOpen,
+            [DICTATION_QUOTE_CLOSE_PREFERENCE]: quoteClose,
+            [DICTATION_NEGATE_PREFERENCE]: negate,
+        });
+        this._applyPreferenceEffectsFromStorage();
     }
 
     async openDictationSettings() {
@@ -2452,8 +2480,8 @@ class CommandPaletteController {
         }
         if (this._dictationSettingsModal === null) {
             this._dictationSettingsModal = new DictationSettingsModal(
-                () => this._dictationTagPhrase(),
-                (phrase) => this.applyPreference(DICTATION_TAG_PHRASE_PREFERENCE, phrase),
+                () => this._dictationPhrases(),
+                (phrases) => this._saveDictationPhrases(phrases),
             );
         }
         await this._dictationSettingsModal.open();

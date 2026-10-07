@@ -5,6 +5,14 @@
 
 export const DEFAULT_DICTATION_TAG_PHRASE = 'start tags';
 export const DICTATION_TAG_PHRASE_PREFERENCE = 'pref.dictation.tag_phrase';
+// The spoken phrases around a quoted phrase (a text search, or one tag).
+export const DEFAULT_DICTATION_QUOTE_OPEN = 'quote';
+export const DEFAULT_DICTATION_QUOTE_CLOSE = 'end quote';
+export const DICTATION_QUOTE_OPEN_PREFERENCE = 'pref.dictation.quote_open';
+export const DICTATION_QUOTE_CLOSE_PREFERENCE = 'pref.dictation.quote_close';
+// Spoken before a search term to exclude it.
+export const DEFAULT_DICTATION_NEGATE = 'minus';
+export const DICTATION_NEGATE_PREFERENCE = 'pref.dictation.negate';
 
 // Words of letters separated by single spaces (one unusual word is enough).
 export function isValidDictationTagPhrase(phrase) {

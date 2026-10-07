@@ -10,7 +10,7 @@ from loguru import logger
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token, list_known_meta_tag_terms
 from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
-from app.services.search_text import build_searchable_text_casefold_from_plaintext
+from app.services.search_text import build_searchable_text_casefold_from_plaintext, text_term_matches
 
 
 _QUOTE_CHARS = {"'", '"'}
@@ -1015,10 +1015,10 @@ class SearchIndex:
     def _verify_note_matches_locked(self, note_int_id: int, clause: SearchClause) -> bool:
         text_casefold = self._note_text_casefold[note_int_id]
         for term in clause.required_text:
-            if term.casefold() not in text_casefold:
+            if not text_term_matches(term, text_casefold):
                 return False
         for term in clause.forbidden_text:
-            if term.casefold() in text_casefold:
+            if text_term_matches(term, text_casefold):
                 return False
         note_tag_terms_casefold = self._note_tag_terms_casefold[note_int_id]
         for tag in clause.forbidden_tags:

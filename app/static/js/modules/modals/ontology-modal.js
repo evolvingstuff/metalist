@@ -3,6 +3,7 @@ import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js'
 import { BaseModal } from './base-modal.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { buildSessionHeaders } from '../session-auth.js';
+import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
@@ -394,6 +395,7 @@ export class OntologyModal extends BaseModal {
         this._handleClick = this._handleClick.bind(this);
         this._handleMouseDownOutside = this._handleMouseDownOutside.bind(this);
         this._handleDialogInput = this._handleDialogInput.bind(this);
+        this._handleDialogPaste = this._handleDialogPaste.bind(this);
         this._handleDialogKeydown = this._handleDialogKeydown.bind(this);
         this._handleDialogOverlayClick = this._handleDialogOverlayClick.bind(this);
         this._handleDialogOverlayKeydown = this._handleDialogOverlayKeydown.bind(this);
@@ -569,6 +571,8 @@ export class OntologyModal extends BaseModal {
             throw new Error('ontology search input missing');
         }
         input.addEventListener('input', this._handleSearchInput);
+        // Dictated text pasted here becomes one tag (dictation-paste-service.js).
+        input.addEventListener('paste', (event) => handleDictationPasteEvent(event, 'tag'));
         input.addEventListener('keydown', this._handleSearchKeydown);
         input.addEventListener('blur', this._handleSearchBlur);
         setTimeout(() => {
@@ -1217,6 +1221,7 @@ export class OntologyModal extends BaseModal {
         }
         this._detachDialogListeners();
         elements.input.addEventListener('input', this._handleDialogInput);
+        elements.input.addEventListener('paste', this._handleDialogPaste);
         elements.input.addEventListener('keydown', this._handleDialogKeydown);
         elements.overlay.addEventListener('mousedown', this._handleDialogOverlayClick);
         elements.overlay.addEventListener('keydown', this._handleDialogOverlayKeydown);
@@ -1234,6 +1239,7 @@ export class OntologyModal extends BaseModal {
         const input = overlay.querySelector('#ontology-dialog-input');
         if (input instanceof HTMLInputElement) {
             input.removeEventListener('input', this._handleDialogInput);
+            input.removeEventListener('paste', this._handleDialogPaste);
             input.removeEventListener('keydown', this._handleDialogKeydown);
         }
         overlay.removeEventListener('mousedown', this._handleDialogOverlayClick);
@@ -1452,6 +1458,20 @@ export class OntologyModal extends BaseModal {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.focus();
         this._hideDialogSuggestions();
+    }
+
+    // Dictated text: one tag in a tag field, tags and quoted text in a condition.
+    // Rule text is typed, so a paste there stays as it is.
+    _handleDialogPaste(event) {
+        const state = this._dialogState;
+        if (!state) {
+            throw new Error('Dialog state missing');
+        }
+        if (state.mode === 'single-tag') {
+            handleDictationPasteEvent(event, 'tag');
+        } else if (state.mode === 'incoming') {
+            handleDictationPasteEvent(event, 'condition');
+        }
     }
 
     _handleDialogInput(event) {

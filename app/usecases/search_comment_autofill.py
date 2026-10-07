@@ -5,7 +5,7 @@ from typing import Optional, Sequence
 from app.services.search_query import parse_search_query
 from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.search_index import extract_tags_for_search, search_index
-from app.services.search_text import build_searchable_text_casefold
+from app.services.search_text import build_searchable_text_casefold, text_term_matches
 from app.services.store import store
 from app.services.tag_case import (
     build_preferred_tag_case_map,
@@ -38,7 +38,8 @@ def _build_comment_tokens(required_text_terms: Sequence[str]) -> str:
             continue
         if "/*" in term or "*/" in term:
             continue
-        tokens.append(f"/*{term}*/")
+        # The words only: a comment matches the term's word boundaries by itself.
+        tokens.append(f"/*{term.strip()}*/")
     return " ".join(tokens)
 
 
@@ -121,7 +122,7 @@ def compute_initial_tags_for_new_note(
     while current_id is not None:
         ancestor = store.get(current_id)
         ancestor_text = build_searchable_text_casefold(ancestor.content, ancestor.tags)
-        if all(term.casefold() in ancestor_text for term in required_text_terms):
+        if all(text_term_matches(term, ancestor_text) for term in required_text_terms):
             return " ".join(tags_tokens)
         current_id = ancestor.parent_id
 
