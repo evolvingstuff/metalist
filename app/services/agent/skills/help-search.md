@@ -71,6 +71,9 @@ Searching for quote characters without escaping:
 - Leading/trailing whitespace is trimmed.
 - The verifier actively rewrites the input while typing (cursor/selection is preserved).
 
+## Pasting Dictated Text
+- Pasting (never typing) dictated text, for example from Superwhisper, turns it into tags: "neural network minus python" becomes `neural-network -python`. The full rules are in the dictation help topic.
+
 ## Completeness + Warnings
 The verifier produces:
 - `normalizedText`: the normalized query string.
@@ -158,6 +161,11 @@ Text matching is:
 - Case-insensitive (`casefold`).
 - Against **visible text**, extracted by stripping HTML (scripts/styles ignored).
 - Also against tag-bar `/* ... */` comment text (whitespace-normalized).
+- A space at the edge of the quotes marks a word boundary on that side: `"fat "` needs
+  the word to end there (a space, punctuation or the end of the text follows), so it
+  matches "fat cat" and "fat." but not "father"; `" fat"` needs it to start there, so
+  it does not match "sulfate"; `" fat "` matches only the word "fat". Without edge
+  spaces a term matches anywhere, also inside words (`"fat"` matches "father").
 
 ### UUID Terms
 - UUIDs in positive terms are treated as direct note targets (including when pasted as `[[UUID]]`).

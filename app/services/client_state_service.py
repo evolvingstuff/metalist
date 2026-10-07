@@ -38,6 +38,13 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.drag_ghost": {"true", "false"},
     "pref.drop_indicator": {"true", "false"},
     "pref.drag_direction_icon": {"true", "false"},
+    # In dictated text pasted into a note, this phrase starts the tags.
+    "pref.dictation.tag_phrase": "dictation_phrase",
+    # The spoken phrases around a quoted phrase when dictating.
+    "pref.dictation.quote_open": "dictation_phrase",
+    "pref.dictation.quote_close": "dictation_phrase",
+    # Spoken before a search term to exclude it when dictating.
+    "pref.dictation.negate": "dictation_phrase",
     "pref.update_notice_version": "release_version",
     "pref.reminder_surface_expanded": {"true", "false"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
@@ -208,6 +215,9 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 raise ClientStateValidationError("Invalid update notice version")
         elif allowed_values == "tag_activity_windows":
             _validate_tag_activity_windows_preference(key=key, value=value)
+        elif allowed_values == "dictation_phrase":
+            if len(value) < 2 or len(value) > 64 or re.fullmatch(r"[A-Za-z]+(?: [A-Za-z]+)*", value) is None:
+                raise ClientStateValidationError("Dictation phrases must be words of letters, 2 to 64 characters")
         elif allowed_values == "openai_model":
             value = validate_openai_model(value)
         elif allowed_values == "ai_chat_width":

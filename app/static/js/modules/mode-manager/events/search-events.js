@@ -16,6 +16,7 @@ import {
     dismissReferenceSourceModeForActiveTab,
     isViewingReferenceSource,
 } from '../services/reference-source-navigation-service.js';
+import { handleDictationPasteEvent, isDictationRawInsertInProgress } from '../services/dictation-paste-service.js';
 
 export function resetActiveTabForSearchExecution(searchQuery, options) {
     if (typeof searchQuery !== 'string') {
@@ -35,6 +36,11 @@ export function resetActiveTabForSearchExecution(searchQuery, options) {
 }
 
 export function handleSearchInput(event) {
+    // A dictated paste is inserted as is, then replaced by its cleaned text;
+    // only the cleaned text is enforced and searched.
+    if (isDictationRawInsertInProgress()) {
+        return;
+    }
     if (ModeContext.isLoading) {
         let currentValue = '';
         if (event && event.target && typeof event.target.value === 'string') {
@@ -160,6 +166,7 @@ export async function initializeSearchEvents() {
 
     // Add input event listener
     searchInput.addEventListener('input', handleSearchInput);
+    searchInput.addEventListener('paste', (event) => handleDictationPasteEvent(event, 'search'));
     initializeSearchSuggestions();
 
     await initializeTabStateService();

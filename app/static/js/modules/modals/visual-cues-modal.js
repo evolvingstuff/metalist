@@ -106,7 +106,7 @@ export class VisualCuesModal extends BaseModal {
         modalElement.innerHTML = `
             <div class="modal-content visual-cues-modal-content">
                 <h2>Visual Cues</h2>
-                <p class="note-layout-description">Choose the visual feedback shown while you drag notes and after you leave edit mode. Changes apply immediately.</p>
+                <p class="note-layout-description">Choose the visual feedback shown while you drag notes. Changes apply immediately.</p>
                 <div class="visual-cues-controls">${sections}
                 </div>
             </div>

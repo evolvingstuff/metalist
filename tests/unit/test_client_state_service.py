@@ -13,6 +13,7 @@ from app.security.encryption import set_encryption_required
 from app.security.encryption import clear_encryption_key
 from app.security.encryption import set_session_dek
 from app.security.encryption import get_encryption_service
+from app.services.client_state_service import ClientStateValidationError
 from app.services.client_state_service import load_client_preferences
 from app.services.client_state_service import load_client_state
 from app.services.client_state_service import load_command_palette_usage
@@ -472,3 +473,15 @@ def test_save_command_palette_usage_rejects_invalid_usage_record(
                 },
             },
         )
+
+
+def test_the_dictation_tag_phrase_is_words_of_letters(memory_settings_db) -> None:
+    del memory_settings_db
+    for key in ["pref.dictation.tag_phrase", "pref.dictation.quote_open", "pref.dictation.quote_close",
+                "pref.dictation.negate"]:
+        for valid in ["start tags", "armadillo", "now add these tags"]:
+            saved = save_client_preferences(preferences={key: valid}, token="")
+            assert saved == {key: valid}
+        for invalid in ["", "t", "start  tags", " start tags", "tags1", "start-tags", "a" * 65]:
+            with pytest.raises(ClientStateValidationError):
+                save_client_preferences(preferences={key: invalid}, token="")

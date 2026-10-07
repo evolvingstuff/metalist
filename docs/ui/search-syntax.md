@@ -54,6 +54,9 @@ Searching for quote characters without escaping:
 - Leading/trailing whitespace is trimmed.
 - The verifier actively rewrites the input while typing (cursor/selection is preserved).
 
+## Pasting Dictated Text
+- Pasting (never typing) cleans up dictated text, for example from Superwhisper: `Neural network, neural network. Neural-Dash Network.` becomes the existing tag `neural-network`. Punctuation and filler words are dropped, spoken "dash"/"hyphen"/"underscore"/"slash" join words, the longest run of words matching an existing tag becomes that tag (spelled as used most often, also when the tag is one word: "to do" gives `todo`), "at" before a built-in meta tag gives that meta tag ("at to do" gives `@todo`), "or" becomes `OR`, the exclusion phrase ("minus" by default) excludes the next term, and the quote phrases ("quote … end quote" by default; all set in Dictation Settings) make a text search. Words matching no tag are dropped. A spoken word that is a tag stays that tag. One undo restores the pasted text. Full rules: `docs/ui/dictation-paste.md`.
+
 ## Completeness + Warnings
 The verifier produces:
 - `normalizedText`: the normalized query string.

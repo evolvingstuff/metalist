@@ -157,8 +157,12 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _normalize_phrase(text: str) -> str:
+    """Runs of whitespace become one space. One space at an edge is kept: it marks
+    a word boundary there ("fat " does not match "father")."""
     normalized = _WHITESPACE_RE.sub(" ", text)
-    return normalized.strip()
+    if normalized.strip() == "":
+        return ""
+    return normalized
 
 
 def _read_quoted_inner(text: str, start_index: int, quote_char: str) -> tuple[str, Optional[int]]:

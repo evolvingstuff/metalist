@@ -39,6 +39,7 @@ Sources: docs/ui/controls.md
 | `⇧ + ⌘ + Z` or `⌘ + Y` | Redo text/tag edits locally, or redo the latest saved mutation when the active editor has no local edit history |
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
+- Dictated text pasted into a note can end with tags: everything after the phrase "start tags" (set in `Dictation Settings`) is added to the note's tags. The full rules are in the dictation help topic.
 - When note paste replaces an empty target, the target keeps its search-context tags and merges in copied root tags with case-insensitive dedupe.
 - A saved whole-note paste resets the local editor history baseline so the next Undo reaches application history.
 - If the clipboard value came from `Generate random password…`, pasting into an empty note also adds `@password` automatically when that tag is not already present.

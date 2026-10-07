@@ -5,6 +5,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { captureActiveAgentScope } from './ai-chat-panel-controller.js';
 import { runMenuProposalOperation } from './bulk-proposal-ui.js';
+import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 
 export async function removeAllTagSuggestionsFromCurrentContext() {
     return await runMenuProposalOperation({
@@ -29,6 +30,10 @@ export async function openProposalMenu(preferences, settingsOnly) {
     for (const button of form.querySelectorAll('button')) actions.append(button);
     form.append(actions);
     const scope = captureActiveAgentScope();
+    if (!settingsOnly) {
+        // Dictated text pasted into the tag filter becomes one tag.
+        form.elements.tag.addEventListener('paste', (event) => handleDictationPasteEvent(event, 'tag'));
+    }
     if (settingsOnly) {
         const response = await fetch(CONFIG.API.AI.CHAT.replace(/\/chat$/u, '/proposals/settings'), { headers: buildSessionHeaders(false) });
         if (!response.ok) throw new HttpRequestError('Could not load tagging settings');

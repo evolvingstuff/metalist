@@ -6,6 +6,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
+import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 const moduleState = ApplicationState.createFields('input-events', {
     lastKeyPressed: null,
@@ -78,9 +79,18 @@ function ensureEditingCaretVisible(noteContentElement) {
 export function initInputEvents() {
         
     document.addEventListener('input', handleInput, { capture: true });
+    document.addEventListener('paste', handleTagBarPaste, { capture: true });
     initializeTagSuggestions();
         
     Logger.logInit('Input events handler');
+}
+
+// Dictated text pasted into the tag bar becomes tags (dictation-paste-service.js).
+function handleTagBarPaste(event) {
+    if (!(event.target instanceof Element) || !event.target.closest('.note-tag-bar-input')) {
+        return;
+    }
+    handleDictationPasteEvent(event, 'tags');
 }
 
 function handleInput(event) {
@@ -104,7 +114,8 @@ function handleInput(event) {
         
     const tagBarInput = event.target.closest('.note-tag-bar-input');
     if (tagBarInput) {
-        if (event.isComposing) {
+        // A dictated paste is inserted as is, then replaced by its cleaned text.
+        if (event.isComposing || isDictationRawInsertInProgress()) {
             return;
         }
 
@@ -122,6 +133,7 @@ function handleInput(event) {
             throw new Error(`Tag bar input fired while not editing note ${noteId}`);
         }
 
+        noteDictationEditSeen();
         if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
         enforceTagBarInputElement(tagBarInput);
         ensureEditingCaretVisible(tagBarInput);
@@ -148,6 +160,7 @@ function handleInput(event) {
 			return; 
 		}
 
+        noteDictationEditSeen();
         if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
 
         ensureEditingCaretVisible(noteContent);

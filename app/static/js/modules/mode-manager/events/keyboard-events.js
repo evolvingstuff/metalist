@@ -98,6 +98,7 @@ import { CommandPalette } from '../../command-palette/command-palette-controller
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
+import { handleDictatedNotePaste, undoDictatedNotePasteTags } from '../services/dictation-paste-service.js';
 
 const helpModal = new HelpModal();
 
@@ -992,6 +993,12 @@ function handleOutdentNoteShortcut(event) {
 function handleUndoShortcut(event) {
     if (!event) {
         throw new Error('handleUndoShortcut called without an event object');
+    }
+
+    // Right after a dictated paste that added tags, undo also removes the tags.
+    if (undoDictatedNotePasteTags(event)) {
+        event.stopPropagation();
+        return;
     }
 
     if (!shouldUseApplicationHistory({
@@ -2783,6 +2790,13 @@ function handlePasteEvent(event) {
             7000,
             true,
         );
+        return;
+    }
+
+    // Dictated text whose tag phrase ("start tags") starts tags: the text before
+    // it goes into the note, the words after it into the tag bar.
+    if (shouldHandleInlinePaste && imageFiles.length === 0 && !hasTrackedNoteClipboardHtml
+        && handleDictatedNotePaste(event, DOMUtils.getNoteById(ModeContext.currentNoteId), plainText)) {
         return;
     }
 

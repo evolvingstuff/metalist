@@ -42,6 +42,12 @@
     "presentation": "dialog"
   },
   {
+    "id": "form.dictation_settings",
+    "label": "Dictation Settings",
+    "selector": "#dictation-settings-modal",
+    "presentation": "dialog"
+  },
+  {
     "id": "action.edit_tag_relationships",
     "label": "Edit tag relationships",
     "selector": "#ontology-modal",
