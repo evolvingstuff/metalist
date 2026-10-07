@@ -11,6 +11,7 @@
       "content": "Where can I edit the agent skills?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

@@ -355,7 +355,7 @@ def test_selected_tree_never_discloses_redacted_children_even_when_selected(sele
     for withheld in ("gray", "gray bar text", "gray-exclusive", "HIDDEN_DESCENDANT_CONTENT", "hidden-descendant-tag"):
         assert withheld not in str(payload)
     builder = AgentContextBuilder()
-    agent = builder.build_agent_messages(canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
+    agent = builder.build_agent_messages(earlier_actions=[], canonical_messages=[{"role": "user", "content": "Summarize the selected note."}],
         skills=DEFAULT_AGENT_SKILLS, web_settings=DEFAULT_AGENT_WEB_SETTINGS, snapshot=snapshot, available_urls=(),
         note_aliases=NoteAliases.from_snapshot(snapshot))
     for messages in (agent,):

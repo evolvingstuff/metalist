@@ -642,6 +642,7 @@ def stream_ai_chat(
         model=payload.model,
     )
     provider_messages = ai_chat_store.provider_messages(session_key=session_key)
+    earlier_actions = ai_chat_store.earlier_actions(session_key=session_key)
     initial_messages = agent_context_builder.build_initial_messages(
         canonical_messages=provider_messages,
         prompts=prompts,
@@ -654,7 +655,7 @@ def stream_ai_chat(
     events = _stream_runtime_events(payload=payload, openai_api_key=openai_api_key,
         session_key=session_key, provider_messages=provider_messages, prompts=prompts, skills=skills,
         retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
-        web_settings=web_settings,
+        web_settings=web_settings, earlier_actions=earlier_actions,
         initial_input_tokens=initial_approx_input_tokens)
 
     return StreamingResponse(
@@ -673,6 +674,7 @@ async def _stream_runtime_events(
     provider_messages: list[dict[str, str]], prompts: AgentPromptSet, skills: AgentSkillSet,
     retrieval_settings: AgentRetrievalSettings, frozen_scope: ScopedSearchSnapshot,
     tagging_run: TaggingRun, initial_input_tokens: int, web_settings: AgentWebSettings,
+    earlier_actions: list[dict[str, object]],
 ) -> AsyncIterator[dict[str, object]]:
     action, start_label = 'provider_runtime', 'Connecting to OpenAI API'
     ready_label = 'OpenAI API ready · 1,050,000-token context'
@@ -686,7 +688,7 @@ async def _stream_runtime_events(
             selected_model=payload.model, thinking_level=payload.thinking_level,
             canonical_messages=provider_messages, prompts=prompts, skills=skills,
             retrieval_settings=retrieval_settings, web_settings=web_settings,
-            frozen_scope=frozen_scope, tagging_run=tagging_run)
+            frozen_scope=frozen_scope, tagging_run=tagging_run, earlier_actions=earlier_actions)
     try:
         async for event in events:
             yield event

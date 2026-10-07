@@ -11,6 +11,7 @@
       "content": "Does encryption protect the logs and memory too? Is logout the same as the idle timeout?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

@@ -11,6 +11,7 @@
       "content": "Reject all suggested tag proposals for the notes currently shown."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "synthetic-papers",

@@ -52,6 +52,7 @@ from app.services.bulk_operation import bulk_operation_guard
 from app.services.agent.citation_tokens import ShortCitationTranslator
 from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.execution_errors import AgentExecutionError
+from app.services.agent.action_log import describe_action
 
 
 MAX_AGENT_TURNS = 8
@@ -82,6 +83,8 @@ class AgentLoopState:
         self.web_evidence: list[WebPageEvidence] = []
         self.capabilities = capabilities
         self.content = ""
+        # What this answer did, for later turns (action_log.py).
+        self.actions: list[dict[str, object]] = []
         # Note text shown to the model, and full-mode addresses the user approved.
         self.note_text_parts: list[str] = [selected_note_text]
         self.approved_urls: set[str] = set()
@@ -129,14 +132,19 @@ class AgentLoopState:
                 "reference_note_ids": list(self.reference_note_ids),
                 "reference_web_ids": self.reference_web_ids()}
 
+    def record_action(self, *, call: dict[str, str], result_content: str, is_error: bool) -> None:
+        self.actions.append(describe_action(name=call["name"], arguments=call["arguments"],
+                                            result_content=result_content, is_error=is_error))
+
     def done_event(self) -> dict[str, object]:
         return {"type": "done", "reference_note_ids": list(self.reference_note_ids),
-                "reference_web_ids": self.reference_web_ids()}
+                "reference_web_ids": self.reference_web_ids(), "actions": list(self.actions)}
 
 
 class AgentLoopMixin:
     async def _run_agent_loop(
         self, *, run, canonical_messages: list[dict[str, str]], frozen_scope: ScopedSearchSnapshot, tagging_run,
+        earlier_actions: list[dict[str, object]],
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(frozen_scope, ScopedSearchSnapshot):
             raise TypeError("frozen_scope must be ScopedSearchSnapshot")
@@ -167,6 +175,7 @@ class AgentLoopMixin:
         messages = self._context_builder.build_agent_messages(
             canonical_messages=canonical_messages, skills=run.skills, web_settings=run.web_settings,
             snapshot=snapshot, available_urls=capabilities.normalized_urls, note_aliases=note_aliases,
+            earlier_actions=earlier_actions,
         )
         self._trace_store.append_event(
             session_key=run.session_key, run_id=run.run_id, event_type="FROZEN_SCOPE",
@@ -238,16 +247,21 @@ class AgentLoopMixin:
                     result = tool_message_result({"summary": "not started",
                                                   "reason": "The current view has no notes to summarize."})
                     self._record_tool_call(run=run, call=operation, result_text=result.content)
+                    state.record_action(call=operation, result_content=result.content, is_error=False)
                     messages.append({"role": "tool", "tool_call_id": operation["id"], "name": operation["name"],
                                      "content": result.content})
                     answered_without_operation = True
                 elif not isinstance(parsed, ToolResult):
                     self._record_tool_call(run=run, call=operation, result_text="(operation started)")
+                    state.record_action(call=operation, result_content="{}", is_error=False)
                     async with aclosing(self._stream_agent_operation(
                         run=run, canonical_messages=canonical_messages, snapshot=snapshot,
                         tagging_run=tagging_run, arguments=parsed, state=state,
                     )) as operation_events:
                         async for event in operation_events:
+                            # The operation ends the answer: its completion carries the log.
+                            if event["type"] == "done":
+                                event = {**event, "actions": list(state.actions)}
                             yield event
                     return
             if answered_without_operation:
@@ -266,6 +280,7 @@ class AgentLoopMixin:
                 result = result_holder[0]
                 results.append(result)
                 state.add_tool_result(result)
+                state.record_action(call=call, result_content=result.content, is_error=result.is_error)
                 self._record_tool_call(run=run, call=call, result_text=result.content)
                 messages.append({"role": "tool", "tool_call_id": call["id"], "name": call["name"],
                                  "content": result.content})

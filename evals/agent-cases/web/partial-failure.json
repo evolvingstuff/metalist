@@ -11,6 +11,7 @@
       "content": "Compare the two reports, using what is available and noting any material limitation."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

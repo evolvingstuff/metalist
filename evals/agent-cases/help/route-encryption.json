@@ -11,6 +11,7 @@
       "content": "is everything encrypted at rest?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

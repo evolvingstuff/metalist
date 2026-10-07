@@ -11,6 +11,7 @@
       "content": "Generate tag proposals for the current notes."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

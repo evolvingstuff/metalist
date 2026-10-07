@@ -11,6 +11,7 @@
       "content": "What measured value does the report give?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

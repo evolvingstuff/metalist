@@ -11,6 +11,7 @@
       "content": "Are my backups encrypted? What happens to an old backup when I add or change the namespace password?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

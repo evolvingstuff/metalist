@@ -11,6 +11,7 @@
       "content": "How does undo work after editing notes?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

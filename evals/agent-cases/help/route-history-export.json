@@ -11,6 +11,7 @@
       "content": "How can I export exactly what the LLM saw?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

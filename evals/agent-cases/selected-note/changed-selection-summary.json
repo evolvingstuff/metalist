@@ -19,6 +19,7 @@
       "content": "Summarize the note I am looking at now."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

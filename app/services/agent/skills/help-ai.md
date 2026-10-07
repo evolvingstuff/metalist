@@ -39,7 +39,7 @@ a word search (every word must appear in a note's text or tags), and reading who
 result trees in visible order. Each read returns as many whole trees as fit the
 evidence limit; a tree is never divided, trees left unread can be read in a later
 step, and a tree too large for the limit on its own is reported instead of read.
-Notes within returned trees are complete. A whole-view summary packs trees in
+The AI keeps a private record of what it did for each answer in the chat (help it looked up, notes it read, searches and pages it opened), so it can say truthfully how an earlier answer was made; the record is cleared with the chat. Notes within returned trees are complete. A whole-view summary packs trees in
 visible order and asks before using several batches. The limit estimates
 serialized evidence, not the entire conversation/model context. Raising it can
 include more evidence and increase cost. A reference-source view

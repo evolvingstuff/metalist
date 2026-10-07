@@ -11,6 +11,7 @@
       "content": "Compare the gardening plans across all notes in the current view."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

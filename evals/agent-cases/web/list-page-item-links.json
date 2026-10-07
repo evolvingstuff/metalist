@@ -11,6 +11,7 @@
       "content": "can you summarize the front page of HackerNews right now?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

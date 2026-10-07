@@ -11,6 +11,7 @@
       "content": "Summarize the papers about symbolic algorithms in this collection."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "synthetic-papers",

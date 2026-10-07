@@ -11,6 +11,7 @@
       "content": "Summarize this note: I planted three apple trees in April. Two survived the summer."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

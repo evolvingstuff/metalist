@@ -19,6 +19,7 @@
       "content": "Which exact four tags did you add? Answer only from that operation result; do not inspect current notes."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

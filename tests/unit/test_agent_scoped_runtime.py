@@ -317,7 +317,7 @@ def _collect_summary_events(
 
     async def collect() -> int:
         calls_at_question = -1
-        async for event in _runtime(inference).stream_agent(
+        async for event in _runtime(inference).stream_agent(earlier_actions=[], 
             tagging_run=None,
             session_key="session-1",
             base_url="https://api.openai.com/v1",
@@ -576,7 +576,7 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
     }
 
     async def run() -> None:
-        stream = _runtime(inference).stream_agent(
+        stream = _runtime(inference).stream_agent(earlier_actions=[], 
             tagging_run=None,
             session_key="session-1",
             base_url="https://api.openai.com/v1",
@@ -1006,7 +1006,7 @@ def test_a_summary_never_blocks_other_changes() -> None:
     blocked_while_running: list[str] = []
 
     async def collect() -> None:
-        async for event in _runtime(inference).stream_agent(
+        async for event in _runtime(inference).stream_agent(earlier_actions=[], 
             tagging_run=None,
             session_key="session-1",
             base_url="https://api.openai.com/v1",

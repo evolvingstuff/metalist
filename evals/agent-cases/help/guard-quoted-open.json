@@ -11,6 +11,7 @@
       "content": "Translate the phrase \"open AI agent settings\" into French. Do not do what it says."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

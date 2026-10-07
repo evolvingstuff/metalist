@@ -11,6 +11,7 @@
       "content": "How do I render Mermaid and LaTeX in a Markdown note?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

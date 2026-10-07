@@ -11,6 +11,7 @@
       "content": "Show me the cloud disclosure settings."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

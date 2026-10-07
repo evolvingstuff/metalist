@@ -70,13 +70,13 @@ class _StubTagging:
         yield {"type": "bulk_complete", "changed": True}
         yield {"type": "content_delta", "text": "Accepted 2 tag proposals across 1 notes.",
                "reference_note_ids": [], "reference_web_ids": []}
-        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
+        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
 
 
 def _run_agent(model: _ScriptedModel, *, web_mode: str, message: str, tagging, on_event) -> list[dict[str, object]]:
     async def collect() -> list[dict[str, object]]:
         events = []
-        async for event in _runtime(model).stream_agent(
+        async for event in _runtime(model).stream_agent(earlier_actions=[], 
             session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
             thinking_level="low", canonical_messages=[{"role": "user", "content": message}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
@@ -110,7 +110,8 @@ def test_a_help_question_looks_up_help_then_answers_from_it() -> None:
     ])
     events = _run_agent(model, web_mode="none", message="What's new in 0.11.0?", tagging=None, on_event=_ignore)
     assert _answer(events) == "0.11.0 made large namespaces faster."
-    assert events[-1] == {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
+    assert events[-1] == {"type": "done", "reference_note_ids": [], "reference_web_ids": [],
+                          "actions": [{"tool": "lookup_metalist_help", "topics": ["releases"]}]}
     help_result = _tool_results(model.conversations[1])[0]
     assert "## 0.11.0" in help_result["topics"][0]["help"]
     # Web pages are not offered while web access is off; the instructions come first.
@@ -325,7 +326,7 @@ def test_a_selected_note_tree_over_the_evidence_limit_is_never_sent() -> None:
             SelectedTreeNote("child-a", "parent", "LARGE " * 1000, ""))))
 
     async def collect() -> None:
-        async for _event in _runtime(model).stream_agent(
+        async for _event in _runtime(model).stream_agent(earlier_actions=[], 
             session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
             thinking_level="low", canonical_messages=[{"role": "user", "content": "Explain"}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
@@ -376,7 +377,7 @@ def test_summarizing_an_empty_view_asks_nothing_and_says_so(monkeypatch) -> None
     model = _ScriptedModel([_turn("", [("summarize_view", {})]), _turn("This view has no notes to summarize.", [])])
 
     async def collect():
-        return [event async for event in _runtime(model).stream_agent(
+        return [event async for event in _runtime(model).stream_agent(earlier_actions=[], 
             session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
             thinking_level="low", canonical_messages=[{"role": "user", "content": "Summarize my notes."}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
@@ -397,7 +398,7 @@ def test_contextual_mode_tells_the_model_which_note_addresses_it_may_now_open(mo
     model = _ScriptedModel([_turn("", [("read_view_notes", {"note_ids": ["child-a"]})]), _turn("Done.", [])])
 
     async def collect():
-        return [event async for event in _runtime(model).stream_agent(
+        return [event async for event in _runtime(model).stream_agent(earlier_actions=[], 
             session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-luna",
             thinking_level="low", canonical_messages=[{"role": "user", "content": "Open my report link"}],
             prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
@@ -430,3 +431,38 @@ def test_the_model_sees_and_cites_short_note_aliases_and_the_chat_gets_full_ids(
     assert "root-a" not in json.dumps(result) and "child-a" not in json.dumps(result)
     assert _answer(events) == "Child alpha.[[child-a]]"
     assert events[-1]["reference_note_ids"] == ["root-a", "child-a"]
+
+
+def test_the_model_sees_its_record_of_earlier_answers() -> None:
+    earlier = [{"answer": 1, "question": "Find recent papers", "actions": [
+        {"tool": "open_web_pages", "pages": [
+            {"url": "https://www.google.com/search?q=ssm", "status": "ok", "title": "Google Search"}]}]}]
+    model = _ScriptedModel([_turn("Yes, I searched Google for ssm.", [])])
+
+    async def collect(earlier_actions):
+        return [event async for event in _runtime(model).stream_agent(
+            earlier_actions=earlier_actions,
+            session_key="session-1", base_url="https://api.openai.com/v1", selected_model="gpt-5.6-sol",
+            thinking_level="low", canonical_messages=[
+                {"role": "user", "content": "Find recent papers"},
+                {"role": "assistant", "content": "Here are some."},
+                {"role": "user", "content": "Did you search the web?"}],
+            prompts=DEFAULT_AGENT_PROMPTS, skills=DEFAULT_AGENT_SKILLS,
+            retrieval_settings=AgentRetrievalSettings(max_page_approximate_tokens=50_000),
+            web_settings=AgentWebSettings(mode="full"), frozen_scope=_snapshot(large_tail=False),
+            tagging_run=None,
+        )]
+
+    events = asyncio.run(collect(earlier))
+    record = [message["content"] for message in model.conversations[0]
+              if isinstance(message["content"], str) and message["content"].startswith("EARLIER_ACTIONS\n")]
+    assert len(record) == 1
+    assert json.loads(record[0].split("\n", 1)[1])["answers"] == earlier
+    # The current question stays last; this answer's own (empty) log ends the run.
+    assert model.conversations[0][-1] == {"role": "user", "content": "Did you search the web?"}
+    assert events[-1]["actions"] == []
+
+    model.turns.append(_turn("No record.", []))
+    asyncio.run(collect([]))
+    assert not any(isinstance(message["content"], str) and message["content"].startswith("EARLIER_ACTIONS")
+                   for message in model.conversations[1])

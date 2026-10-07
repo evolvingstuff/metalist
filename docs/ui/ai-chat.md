@@ -333,6 +333,11 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
 
 ## Session and Debug Boundaries
 
+- The agent keeps a private record of what each answer did (tools, searches and pages
+  opened, notes read), so questions such as "did you search the web?" are answered
+  from what actually happened. Only the model sees it; it is cleared with the chat
+  history (`docs/design/agent-harness.md`).
+
 - Transcript/activity state lives only in server memory keyed by authenticated
   session token hash. Refresh rehydrates it; logout, auth reset, runtime lock, or
   restart clears it.

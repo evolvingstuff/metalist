@@ -11,6 +11,7 @@
       "content": "What are the new features of Metalist 0.11.0 You probably need to look at the Github change log"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

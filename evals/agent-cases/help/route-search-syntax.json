@@ -11,6 +11,7 @@
       "content": "How do I search for garden OR a quoted phrase?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

@@ -39,6 +39,28 @@ model. Two failed tool turns in a row, or the eighth turn, ask the model to answ
 with what it has; a turn that ends silently gets one reminder before the run fails
 with a clear message. References may grow while the answer streams but never shrink.
 
+## The Agent's Record of Earlier Answers
+
+The history the model receives is the text of earlier turns only, so on its own it
+cannot know what it did for an earlier answer (asked "did you search the web?", it
+used to guess, and wrongly said no). Each answer therefore keeps the agent's own
+action log (`action_log.py` `describe_action`): one entry per tool call with what
+was asked and what came of it, never the returned content: help topics, notes in
+view and trees read or left unread, the search words, each web address with its
+status and title, the menu and whether it opened, and the operation's arguments.
+A rejected call is recorded as rejected.
+
+The loop collects the entries and attaches them to the run's `done` event (also
+after an operation hands over). `ChatTurnStream.complete` stores them with the
+answer through `AiChatSessionStore.complete_turn(actions=…)` and removes them from
+the event, so the browser never receives them. `earlier_actions()` returns
+`{answer, question, actions}` for the completed answers the model still sees, in the
+order of `provider_messages()` (a privacy boundary change drops them with the
+history). The next request carries them as an `EARLIER_ACTIONS` context message, and
+the instructions say to answer how an earlier answer was made only from that record
+and to say it cannot tell otherwise. The user never sees the record; Agent Debug and
+the LLM history export already show the same steps.
+
 ## Conversation disclosure boundaries
 
 The display transcript stays visible when the provider or disclosure boundary

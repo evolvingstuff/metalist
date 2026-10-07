@@ -19,6 +19,7 @@
       "content": "I changed the search. Try again now."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "synthetic-papers",

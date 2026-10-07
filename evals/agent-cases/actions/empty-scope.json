@@ -11,6 +11,7 @@
       "content": "Summarize my notes in this search."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "invented-empty-topic",

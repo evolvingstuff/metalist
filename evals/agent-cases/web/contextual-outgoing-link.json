@@ -11,6 +11,7 @@
       "content": "Open the outside details link mentioned in that report."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

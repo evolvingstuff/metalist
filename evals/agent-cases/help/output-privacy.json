@@ -11,6 +11,7 @@
       "content": "Can whitelisting a tag let the AI see a note marked @password?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

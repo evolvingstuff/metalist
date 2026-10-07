@@ -1,0 +1,135 @@
+{
+  "schema_version": 3,
+  "id": "web-recommend-recent-papers",
+  "description": "Finding newer papers like the ones in the view needs the notes and a web search, not recommendations from memory.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Based on the overall interests here in the papers that I have highlighted, can you find some more recent ones that might be of interest to me?"
+    }
+  ],
+  "earlier_actions": [],
+  "view": {
+    "scope_kind": "search",
+    "label": "papers",
+    "search_query": "papers",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "paper-0",
+        "parent_id": "",
+        "content_text": "arXiv: Mamba: Linear-Time Sequence Modeling with Selective State Spaces",
+        "tags": "papers ssm sequence-models",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-1",
+        "parent_id": "",
+        "content_text": "arXiv: Recurrent Memory Transformer",
+        "tags": "papers rnn long-context",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-2",
+        "parent_id": "",
+        "content_text": "arXiv: Universal Transformers: adaptive computation over depth",
+        "tags": "papers recurrence adaptive-computation",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-3",
+        "parent_id": "",
+        "content_text": "arXiv: Progress measures for grokking via mechanistic interpretability",
+        "tags": "papers grokking interpretability",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-4",
+        "parent_id": "",
+        "content_text": "arXiv: Risks from Learned Optimization (mesa-optimization)",
+        "tags": "papers mesa-optimization",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-5",
+        "parent_id": "",
+        "content_text": "arXiv: Evolution Strategies as a Scalable Alternative to Reinforcement Learning",
+        "tags": "papers evolution-strategies optimization",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-6",
+        "parent_id": "",
+        "content_text": "arXiv: Learned optimizers that scale and generalize",
+        "tags": "papers learned-optimizers",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-7",
+        "parent_id": "",
+        "content_text": "arXiv: The Forward-Forward Algorithm: training without backpropagation",
+        "tags": "papers local-learning",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-8",
+        "parent_id": "",
+        "content_text": "arXiv: GPTQ: Accurate Post-Training Quantization",
+        "tags": "papers quantization efficiency",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "paper-9",
+        "parent_id": "",
+        "content_text": "arXiv: Formal Language Recognition by Hard Attention Transformers",
+        "tags": "papers formal-languages transformers",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "full",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "view_overview",
+          "search_view_notes",
+          "read_view_notes"
+        ],
+        "arguments_any_of": []
+      },
+      {
+        "tools": [
+          "open_web_pages"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [
+      "propose_tag_generation",
+      "propose_tag_review",
+      "summarize_view"
+    ],
+    "forbidden_calls": [],
+    "confirmation": "any",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "source": "user report 2026-10-06: the agent recommended papers from memory without searching the web, and only admitted it when asked"
+  }
+}

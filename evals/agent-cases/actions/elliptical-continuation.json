@@ -19,6 +19,7 @@
       "content": "Yes, please do that."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

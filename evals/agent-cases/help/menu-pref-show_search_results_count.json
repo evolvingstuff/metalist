@@ -11,6 +11,7 @@
       "content": "Open the show search results count menu item. Do not apply, submit, or run its operation."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

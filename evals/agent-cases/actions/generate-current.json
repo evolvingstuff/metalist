@@ -11,6 +11,7 @@
       "content": "Generate tag proposals for the notes in this view."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

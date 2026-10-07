@@ -11,6 +11,7 @@
       "content": "Where can I change the OpenAI model?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

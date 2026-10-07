@@ -11,6 +11,7 @@
       "content": "How do I change the agent context to 250k tokens?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

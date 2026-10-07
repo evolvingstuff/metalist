@@ -11,6 +11,7 @@
       "content": "Please open https://example.com/report#results and summarize it."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

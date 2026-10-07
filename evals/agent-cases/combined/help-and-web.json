@@ -16,6 +16,7 @@
       "content": "What's new in MetaList 0.11.0? Also check the GitHub releases page at https://github.com/metalist/metalist/releases for anything newer."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

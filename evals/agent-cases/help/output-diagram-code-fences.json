@@ -11,6 +11,7 @@
       "content": "Do you know how I can draw charts or diagrams in MetaList? Please show an example of the text-based option."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

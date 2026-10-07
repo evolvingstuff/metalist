@@ -11,6 +11,7 @@
       "content": "Does saving new namespace ports immediately restart the server or switch my tab?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

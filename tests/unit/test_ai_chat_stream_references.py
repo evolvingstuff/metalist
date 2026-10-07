@@ -33,7 +33,7 @@ def test_references_may_grow_while_a_tool_using_answer_streams() -> None:
     lines = _stream_lines([
         _delta("I'll check your notes. ", []),
         _delta("Found it.", ["note-1"]),
-        {"type": "done", "reference_note_ids": ["note-1"], "reference_web_ids": []},
+        {"type": "done", "reference_note_ids": ["note-1"], "reference_web_ids": [], "actions": []},
     ])
     assert lines[-1]["type"] == "done"
 

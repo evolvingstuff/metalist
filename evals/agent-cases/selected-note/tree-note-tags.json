@@ -11,6 +11,7 @@
       "content": "Which tags are on the note I am editing, and which tags are on its parent?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

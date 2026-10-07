@@ -11,6 +11,7 @@
       "content": "How are proposals accepted? Explain only; do not open anything or accept tags."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",
