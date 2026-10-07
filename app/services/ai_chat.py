@@ -70,12 +70,19 @@ class AiChatActivityTimer:
         return {**event, "duration_ms": duration_ms}
 
 
+# Enough of each earlier question for the model to tell answers apart.
+_ACTION_LOG_QUESTION_CHARACTERS = 200
+
+
 class AiChatSessionStore:
     """Keep AI conversations isolated by opaque authenticated-session key."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, list[dict[str, str]]] = {}
         self._activities: dict[str, dict[str, list[dict[str, object]]]] = {}
+        # The agent's own record of what each answer did (action_log.py), by
+        # assistant message id. Only the model sees it, on later turns.
+        self._action_logs: dict[str, dict[str, list[dict[str, object]]]] = {}
         self._lock = Lock()
         self._history_starts: dict[str, int] = {}
         self._disclosure_keys: dict[str, str] = {}
@@ -86,6 +93,7 @@ class AiChatSessionStore:
             self._disclosure_keys.clear()
             self._sessions.clear()
             self._activities.clear()
+            self._action_logs.clear()
 
     def clear_session(self, *, session_key: str) -> None:
         self._validate_session_key(session_key)
@@ -94,6 +102,7 @@ class AiChatSessionStore:
             self._disclosure_keys.pop(session_key, None)
             self._sessions.pop(session_key, None)
             self._activities.pop(session_key, None)
+            self._action_logs.pop(session_key, None)
 
     def snapshot(self, *, session_key: str) -> dict[str, list[dict[str, object]]]:
         self._validate_session_key(session_key)
@@ -140,10 +149,13 @@ class AiChatSessionStore:
                 removed_message_ids = [message["id"] for message in messages[:2]]
                 del messages[:2]
                 self._history_starts[session_key] = max(0, self._history_starts.get(session_key, 0) - 2)
+                session_action_logs = self._action_logs.setdefault(session_key, {})
                 for removed_message_id in removed_message_ids:
                     if removed_message_id not in session_activities:
                         raise RuntimeError("AI activity list missing for removed message")
                     del session_activities[removed_message_id]
+                    if removed_message_id in session_action_logs:
+                        del session_action_logs[removed_message_id]
             user_message_id = str(uuid4())
             assistant_message_id = str(uuid4())
             messages.extend(
@@ -257,10 +269,13 @@ class AiChatSessionStore:
         session_key: str,
         turn_id: str,
         final_content: str,
+        actions: list[dict[str, object]],
     ) -> None:
         self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
         self._validate_message_text(final_content, label="final_content")
+        if not isinstance(actions, list) or not all(isinstance(action, dict) for action in actions):
+            raise TypeError("actions must be a list of action log entries")
         with self._lock:
             message = self._require_streaming_turn(
                 session_key=session_key,
@@ -268,6 +283,7 @@ class AiChatSessionStore:
             )
             message["content"] = final_content
             message["status"] = "complete"
+            self._action_logs.setdefault(session_key, {})[turn_id] = [dict(action) for action in actions]
 
     def is_streaming(self, *, session_key: str, turn_id: str) -> bool:
         with self._lock:
@@ -331,6 +347,27 @@ class AiChatSessionStore:
                     }
                 )
             return provider_messages
+
+    def earlier_actions(self, *, session_key: str) -> list[dict[str, object]]:
+        """What the agent did for each completed answer the model still sees, in the
+        order of provider_messages(): {answer, question, actions}."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            messages = self._sessions.get(session_key, [])
+            session_action_logs = self._action_logs.get(session_key, {})
+            earlier: list[dict[str, object]] = []
+            for index in range(self._history_starts.get(session_key, 0), len(messages), 2):
+                user_message, assistant_message = messages[index], messages[index + 1]
+                if assistant_message["status"] != "complete":
+                    continue
+                if assistant_message["id"] not in session_action_logs:
+                    raise RuntimeError("Completed AI answer has no action log")
+                earlier.append({
+                    "answer": len(earlier) + 1,
+                    "question": user_message["content"][:_ACTION_LOG_QUESTION_CHARACTERS],
+                    "actions": [dict(action) for action in session_action_logs[assistant_message["id"]]],
+                })
+            return earlier
 
     def _require_streaming_turn(
         self,

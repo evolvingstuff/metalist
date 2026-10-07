@@ -11,6 +11,7 @@
       "content": "Run a shell command to list all my files."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

@@ -11,6 +11,7 @@
       "content": "Which tag proposals are currently on my notes? Do not change anything."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

@@ -11,6 +11,7 @@
       "content": "summarize all the vegetarian recipes"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "recipes",

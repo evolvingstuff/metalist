@@ -19,6 +19,7 @@ def _case(**overrides) -> AgentCase:
         "schema_version": 3, "id": "fixture-case", "description": "Fixture", "reviewed": True,
         "model": "gpt-5.6-luna", "thinking_level": "low",
         "conversation": [{"role": "user", "content": "Open the AI settings"}],
+        "earlier_actions": [],
         "view": {"scope_kind": "search", "label": "garden", "search_query": "garden", "sort_mode": "normal",
                  "notes": [{"note_id": "root", "parent_id": "", "content_text": "Garden plan", "tags": "garden",
                             "proposed_tags": "seedling"},
@@ -193,3 +194,20 @@ def test_answers_are_judged_with_the_fixture_evidence_ids():
     model.stream_tool_turn = cite_page
     outcome = _trial(case, model)
     assert outcome["answer_as_judged"] == "42.[[web:fixed-page]] See[[web:fixed-link]]"
+
+
+def test_a_web_address_with_note_words_asks_without_crashing_the_trial():
+    # Full web mode: an address carrying words from notes the model read asks
+    # Yes/No first (the read-only question that blocks nothing).
+    case = _case(web={"mode": "full", "retained_urls": [], "pages": []},
+                 answer_questions="no",
+                 expectation={"required_calls": [], "forbidden_tools": [], "forbidden_calls": [],
+                              "confirmation": "asked", "answer_criteria": [], "reference_facts": ""})
+    model = _ScriptedModel([
+        _turn("", [("read_view_notes", {"note_ids": []})]),
+        _turn("", [("open_web_pages", {"urls": ["https://reports.example/tomatoes"]})]),
+        _turn("I did not open it.", []),
+    ])
+    outcome = _trial(case, model)
+    assert outcome["status"] == "correct", outcome
+    assert [question["kind"] for question in outcome["questions"]] == ["change_confirmation"]

@@ -11,6 +11,7 @@
       "content": "Does using a help skill once add its whole text to every future message? How can I inspect what was sent?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

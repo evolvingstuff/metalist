@@ -11,6 +11,7 @@
       "content": "Open the report linked in the selected note and summarize it."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

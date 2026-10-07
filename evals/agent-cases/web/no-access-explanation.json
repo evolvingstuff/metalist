@@ -11,6 +11,7 @@
       "content": "Search the web for today’s Project Alpha news."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

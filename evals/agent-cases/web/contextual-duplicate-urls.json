@@ -11,6 +11,7 @@
       "content": "Open both of these report links and summarize them: https://example.com/report#overview and https://example.com/report#results"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

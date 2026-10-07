@@ -75,7 +75,7 @@ def test_password_creation_failure_restores_sidecar_and_key_metadata(live_databa
 def test_switching_provider_does_not_replay_local_answer():
     chat = AiChatSessionStore()
     turn = chat.start_turn(session_key='fixture', user_content='Read local notes', provider='retired-provider', model='local')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='LOCAL_ONLY_CANARY')
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='LOCAL_ONLY_CANARY', actions=[])
     chat.start_turn(session_key='fixture', user_content='Hello cloud', provider='openai', model='cloud')
     assert chat.provider_messages(session_key='fixture') == [{'role':'user', 'content':'Hello cloud'}]
     assert 'LOCAL_ONLY_CANARY' in str(chat.snapshot(session_key='fixture'))
@@ -195,7 +195,7 @@ def test_privacy_change_excludes_prior_answer_even_with_empty_followup_scope(liv
     first_key = evaluator.history_disclosure_key(boundary=boundary)
     chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
     turn = chat.start_turn(session_key='fixture', user_content='Read notes', provider='openai', model='cloud')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='PRIVATE_CANARY')
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='PRIVATE_CANARY', actions=[])
     chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
     assert 'PRIVATE_CANARY' in str(chat.provider_messages(session_key='fixture'))
     if change == 'policy':

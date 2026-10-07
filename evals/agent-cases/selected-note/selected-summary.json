@@ -11,6 +11,7 @@
       "content": "Give me a concise summary."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

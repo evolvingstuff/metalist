@@ -11,6 +11,7 @@
       "content": "Where can I manage or snooze reminders?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

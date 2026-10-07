@@ -42,8 +42,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
     store.complete_turn(
         session_key="session-a",
         turn_id=first_turn,
-        final_content="4",
-    )
+        final_content="4", actions=[])
 
     session_a = store.snapshot(session_key="session-a")
     session_b = store.snapshot(session_key="session-b")
@@ -99,8 +98,7 @@ def test_chat_store_builds_provider_history_without_thinking_trace() -> None:
     store.complete_turn(
         session_key="session-a",
         turn_id=turn_id,
-        final_content="Hi there",
-    )
+        final_content="Hi there", actions=[])
 
     history = store.provider_messages(session_key="session-a")
 
@@ -168,8 +166,7 @@ def test_chat_store_removes_prior_note_citations_from_provider_history() -> None
     store.complete_turn(
         session_key="session-a",
         turn_id=turn_id,
-        final_content=f"Sleep can affect testosterone. [[{note_id}]]",
-    )
+        final_content=f"Sleep can affect testosterone. [[{note_id}]]", actions=[])
     store.start_turn(
         session_key="session-a",
         user_content="Please describe Bayes' theorem briefly",
@@ -227,3 +224,36 @@ def test_chat_store_rejects_parallel_turns_in_one_session() -> None:
             provider="openai",
             model="gpt-5.6-sol",
         )
+
+
+def test_the_agent_action_log_follows_the_provider_history() -> None:
+    # The model's own record of what each earlier answer did (action_log.py),
+    # kept beside the history and never shown to the user.
+    store = AiChatSessionStore()
+    searched = [{"tool": "open_web_pages", "pages": [
+        {"url": "https://www.google.com/search?q=ssm", "status": "ok", "title": "Google Search"}]}]
+    first = store.start_turn(session_key="session-a", user_content="Find recent papers",
+                             provider="openai", model="gpt-5.6-luna")
+    store.complete_turn(session_key="session-a", turn_id=first, final_content="Here are some.", actions=searched)
+    failed = store.start_turn(session_key="session-a", user_content="And more?",
+                              provider="openai", model="gpt-5.6-luna")
+    store.fail_turn(session_key="session-a", turn_id=failed, error="Provider failed")
+    store.start_turn(session_key="session-a", user_content="Did you search the web?",
+                     provider="openai", model="gpt-5.6-luna")
+
+    assert store.earlier_actions(session_key="session-a") == [
+        {"answer": 1, "question": "Find recent papers", "actions": searched},
+    ]
+    assert "actions" not in str(store.snapshot(session_key="session-a"))
+
+
+def test_the_action_log_starts_over_with_the_history() -> None:
+    store = AiChatSessionStore()
+    turn = store.start_turn(session_key="session-a", user_content="Find recent papers",
+                            provider="openai", model="gpt-5.6-luna")
+    store.complete_turn(session_key="session-a", turn_id=turn, final_content="Done.",
+                        actions=[{"tool": "view_overview", "notes_in_view": 3, "trees_in_view": 3}])
+    # A privacy boundary change hides the earlier history from the model, and its actions with it.
+    store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="first")
+    store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="second")
+    assert store.earlier_actions(session_key="session-a") == []

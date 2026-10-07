@@ -189,6 +189,9 @@ models are not worth paying to find failures Luna doesn't have.
 A case (`schema_version: 3`, `evals/agent_models.py`) fixes:
 
 - the conversation, ending with the user's request;
+- `earlier_actions`: the agent's record of what each earlier answer in the conversation
+  did (`{answer, question, actions}`, see `action_log.py`); usually empty. The judge sees
+  it too, so answers about earlier turns are checked against it;
 - the view: scope label, search and the notes (id, parent, text, tags, pending
   proposals); the selected note uses the same fixtures as summary cases;
 - web access: the mode, the pages a fixture web serves (with fixed citation ids the

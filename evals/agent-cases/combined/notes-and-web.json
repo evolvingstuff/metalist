@@ -16,6 +16,7 @@
       "content": "Open the report linked in my soil testing note and tell me the recommended pH."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

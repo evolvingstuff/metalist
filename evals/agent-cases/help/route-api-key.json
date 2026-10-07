@@ -11,6 +11,7 @@
       "content": "Where should I enter my OpenAI API key?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

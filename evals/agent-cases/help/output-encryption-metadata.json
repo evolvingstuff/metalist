@@ -11,6 +11,7 @@
       "content": "With password protection enabled, can someone read my note hierarchy, timestamps, tags, or attachment filenames directly from the database?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

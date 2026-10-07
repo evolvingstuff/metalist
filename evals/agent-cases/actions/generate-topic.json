@@ -11,6 +11,7 @@
       "content": "Suggest tag proposals only about symbolic methods for these papers."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "synthetic-papers",

@@ -125,6 +125,9 @@ class AgentCase(StrictModel):
     model: Literal["gpt-5.6-luna"]
     thinking_level: Literal["low"]
     conversation: list[ConversationMessage] = Field(min_length=1)
+    # The agent's own record of what each earlier answer in the conversation did
+    # (AiChatSessionStore.earlier_actions): {answer, question, actions}.
+    earlier_actions: list[dict]
     view: ViewFixture
     selected_note: SelectedNoteFixture | SelectedTreeFixture | UnavailableSelectionFixture
     web: WebFixture
@@ -137,4 +140,14 @@ class AgentCase(StrictModel):
     def ends_with_the_request(self):
         if self.conversation[-1].role != "user":
             raise ValueError("Conversation must end with the current user request")
+        return self
+
+    @model_validator(mode="after")
+    def earlier_actions_follow_the_conversation(self):
+        answers = sum(1 for message in self.conversation if message.role == "assistant")
+        for entry in self.earlier_actions:
+            if set(entry) != {"answer", "question", "actions"}:
+                raise ValueError("Earlier actions need answer, question and actions")
+            if not isinstance(entry["answer"], int) or not 1 <= entry["answer"] <= answers:
+                raise ValueError("Earlier actions must belong to an assistant message in the conversation")
         return self

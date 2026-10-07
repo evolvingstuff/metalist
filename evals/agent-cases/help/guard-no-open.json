@@ -11,6 +11,7 @@
       "content": "Explain the evidence limit, but do not open any menu."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

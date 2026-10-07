@@ -158,6 +158,9 @@ class _TrialGuard:
     def question(self, choices):
         return _TRIAL_GUARD.get().question(choices)
 
+    def ask(self, session_key, choices):
+        return _TRIAL_GUARD.get().ask(session_key, choices)
+
     def answer(self, session_key, question_id, value):
         return _TRIAL_GUARD.get().answer(session_key, question_id, value)
 
@@ -329,7 +332,7 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
         with record_history(traces, session_key=session_key, run_id=run_id):
             # lint: allow-PY001 rationale="count provider and model-output failures as errors; internal errors propagate"
             try:
-                async for event in runtime.stream_agent(
+                async for event in runtime.stream_agent(earlier_actions=case.earlier_actions, 
                     session_key=session_key, base_url=OPENAI_API_BASE_URL, selected_model=model,
                     thinking_level=thinking_level,
                     canonical_messages=[message.model_dump() for message in case.conversation],
@@ -366,6 +369,10 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
             failures = check_trial(case, calls=calls, questions=questions)
             if failures:
                 status = "incorrect"
+        # What earlier answers did, as the agent's own record shows it.
+        judged_earlier_actions: list[dict[str, str]] = []
+        if case.earlier_actions:
+            judged_earlier_actions.append({"role": "earlier_actions", "content": json.dumps(case.earlier_actions)})
         if status == "correct" and case.expectation.answer_criteria:
             # lint: allow-PY001 rationale="judge provider errors count as trial errors, never as passes"
             try:
@@ -373,6 +380,7 @@ async def run_trial(case: AgentCase, *, adapter, judge, model: str, thinking_lev
                     kind="output", criteria=case.expectation.answer_criteria,
                     reference_facts=case.expectation.reference_facts),
                     messages=[*[message.model_dump() for message in case.conversation],
+                              *judged_earlier_actions,
                               {"role": "tool_calls", "content": calls_as_judged}],
                     output=answer_as_judged, judge=judge)
             # lint: allow-PY001 rationale="a failed judge call is an external error for this trial"

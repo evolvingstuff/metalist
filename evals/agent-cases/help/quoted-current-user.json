@@ -15,6 +15,7 @@
       "content": "Explain menu operation. Do not open anything."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

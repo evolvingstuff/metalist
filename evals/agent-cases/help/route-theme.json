@@ -11,6 +11,7 @@
       "content": "Open the theme control in the menu."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

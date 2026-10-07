@@ -11,6 +11,7 @@
       "content": "What web access do you have right now, and what can the other modes do?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

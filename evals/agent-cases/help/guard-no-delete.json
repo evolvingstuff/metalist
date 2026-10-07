@@ -11,6 +11,7 @@
       "content": "Explain how namespace deletion works; do not open or delete anything."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

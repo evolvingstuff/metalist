@@ -11,6 +11,7 @@
       "content": "Can you summarize this?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

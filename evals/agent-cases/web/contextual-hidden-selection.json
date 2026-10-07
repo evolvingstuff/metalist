@@ -11,6 +11,7 @@
       "content": "Open the link in the selected note and tell me what it says."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

@@ -368,8 +368,7 @@ def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) ->
             "# Result\n\n"
             "Inline math: $x^2$.\n\n"
             "```mermaid\nflowchart LR\nA-->B\n```"
-        ),
-    )
+        ), actions=[])
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
         ai_routes.token_service,
@@ -421,8 +420,7 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=f"Source: [[{note_id}]]",
-    )
+        final_content=f"Source: [[{note_id}]]", actions=[])
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())
     monkeypatch.setattr(
@@ -460,8 +458,7 @@ def test_ai_session_omits_stale_web_citation_after_evidence_clear(monkeypatch) -
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=content,
-    )
+        final_content=content, actions=[])
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "web_evidence_store", WebEvidenceStore())
     monkeypatch.setattr(
@@ -496,6 +493,7 @@ def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> N
         session_key="session-key",
         turn_id=turn_id,
         final_content="[unsafe](javascript:alert(1)) <script>alert(2)</script>",
+        actions=[],
     )
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
@@ -531,8 +529,7 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=raw_markdown,
-    )
+        final_content=raw_markdown, actions=[])
     copied_payloads = []
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
@@ -714,6 +711,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             web_settings,
             frozen_scope,
             tagging_run,
+            earlier_actions,
         ):
             assert session_key == "session-key"
             assert base_url == "https://api.openai.com/v1"
@@ -727,6 +725,8 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             assert web_settings.mode == "none"
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
+            # The first answer of the chat has no earlier actions.
+            assert earlier_actions == []
             yield {
                 "type": "action_status",
                 "action": "planning",
@@ -743,7 +743,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
@@ -850,7 +850,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     store = AiChatSessionStore()
     store.synchronize_disclosure_boundary(session_key="session-key", disclosure_key="previous-disclosure-boundary")
     previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider="openai", model="old-model")
-    store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY")
+    store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[])
     api_key = "sk-test-0123456789abcdefghijklmnop"
     inference_sentinel = object()
 
@@ -884,7 +884,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
@@ -1199,6 +1199,10 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
     }]
 
 
+PRIOR_ACTIONS = [{"tool": "search_view_notes", "query": "testosterone", "matching_notes": 1,
+                  "trees_read": 1, "trees_left_unread": 0, "trees_too_large": 0}]
+
+
 def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None:
     stale_note_id = "75193dae-9e05-4a4e-94bf-417ffde18957"
 
@@ -1229,9 +1233,13 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             web_settings,
             frozen_scope,
             tagging_run,
+            earlier_actions,
         ):
             del session_key, base_url, selected_model, thinking_level
             del prompts, skills, retrieval_settings, web_settings, frozen_scope
+            # The agent's record of the earlier answer reaches the next request.
+            assert earlier_actions == [{"answer": 1, "question": "Summarize testosterone notes",
+                                        "actions": PRIOR_ACTIONS}]
             assert canonical_messages == [
                 {"role": "user", "content": "Summarize testosterone notes"},
                 {"role": "assistant", "content": "Sleep affects testosterone."},
@@ -1243,7 +1251,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
 
     store = AiChatSessionStore()
     monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure_key', lambda **kwargs: 'fixture-boundary')
@@ -1264,8 +1272,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     store.complete_turn(
         session_key="session-key",
         turn_id=prior_turn_id,
-        final_content=prior_content,
-    )
+        final_content=prior_content, actions=PRIOR_ACTIONS)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())
@@ -1327,6 +1334,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
             web_settings,
             frozen_scope,
             tagging_run,
+            earlier_actions,
         ):
             del session_key, base_url, selected_model, thinking_level
             del canonical_messages, prompts, skills, retrieval_settings, web_settings

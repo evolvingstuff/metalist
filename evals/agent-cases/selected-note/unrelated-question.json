@@ -11,6 +11,7 @@
       "content": "What is the capital of France?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

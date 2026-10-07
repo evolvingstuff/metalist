@@ -160,8 +160,12 @@ class AgentRuntime(AgentLoopMixin):
         web_settings: AgentWebSettings,
         frozen_scope: ScopedSearchSnapshot,
         tagging_run,
+        earlier_actions: list[dict[str, object]],
     ) -> AsyncIterator[dict[str, object]]:
-        """Answer with the tool-using agent loop (see agent_loop.py)."""
+        """Answer with the tool-using agent loop (see agent_loop.py).
+
+        `earlier_actions` is the agent's own record of what each earlier answer in
+        the history did (AiChatSessionStore.earlier_actions, action_log.py)."""
         run, _initial_messages = self._start_run(
             session_key=session_key, base_url=base_url, selected_model=selected_model,
             thinking_level=thinking_level, canonical_messages=canonical_messages, prompts=prompts,
@@ -172,7 +176,7 @@ class AgentRuntime(AgentLoopMixin):
             try:
                 async with aclosing(self._run_agent_loop(
                     run=run, canonical_messages=canonical_messages, frozen_scope=frozen_scope,
-                    tagging_run=tagging_run,
+                    tagging_run=tagging_run, earlier_actions=earlier_actions,
                 )) as steps:
                     async for event in steps:
                         self._trace_store.append_event(

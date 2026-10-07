@@ -11,6 +11,7 @@
       "content": "Open the backup restore picker, but do not restore anything."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

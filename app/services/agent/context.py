@@ -78,7 +78,8 @@ class AgentContextBuilder:
             "none": (
                 "Web access is disabled. You cannot search or open pages. If the "
                 "request requires the web, state that limitation and tell the user "
-                "they can enable contextual or full web access in AI Agent Settings."
+                "they can enable contextual or full web access in AI Agent Settings. Label "
+                "anything you suggest from your own knowledge as not looked up."
             ),
             "contextual": (
                 "You may open only exact URLs in available_urls, plus addresses written in "
@@ -86,7 +87,11 @@ class AgentContextBuilder:
                 "A #fragment is ignored "
                 "when comparing, so https://a.example/page#part is the same address as "
                 "https://a.example/page. You cannot search, and links discovered inside "
-                "opened pages do not become available."
+                "opened pages do not become available. When a request needs a search (for "
+                "example newer or recent papers, releases or news), say plainly that this mode "
+                "only opens links already in the notes or chat, that 'Open any public web page' "
+                "in AI Agent Settings allows searching, and label anything you suggest from your "
+                "own knowledge as not looked up."
             ),
             "full": (
                 "You may open any direct public HTTP(S) page, including Google "
@@ -158,6 +163,7 @@ class AgentContextBuilder:
         snapshot: ScopedSearchSnapshot,
         available_urls: tuple[str, ...],
         note_aliases: NoteAliases,
+        earlier_actions: list[dict[str, object]],
     ) -> list[dict[str, object]]:
         """The tool-using agent's opening conversation.
 
@@ -189,6 +195,16 @@ class AgentContextBuilder:
             {"role": "user", "content": "SELECTED_NOTE_CONTEXT\n" + json.dumps(view_context, sort_keys=True, separators=(",", ":"))},
             *self.append_web_access_context(messages=[], settings=web_settings, available_urls=available_urls),
         ]
+        if earlier_actions:
+            context_messages.append({"role": "user", "content": "EARLIER_ACTIONS\n" + json.dumps({
+                "instruction": (
+                    "Your own record of what you did for each earlier answer in this chat, oldest first: "
+                    "the tools you called, what you asked for, and what came of them (page text and note "
+                    "content are not repeated here). Answer questions about how an earlier answer was made "
+                    "only from this record. If it does not show something, say you cannot tell."
+                ),
+                "answers": earlier_actions,
+            }, sort_keys=True, separators=(",", ":"))})
         return [
             *system_messages,
             *[dict(message) for message in canonical_messages[:-1]],

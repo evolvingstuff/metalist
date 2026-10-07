@@ -11,6 +11,7 @@
       "content": "Can I undo bulk acceptance of AI proposals? Are proposals already accepted tags?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

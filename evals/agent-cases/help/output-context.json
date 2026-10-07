@@ -11,6 +11,7 @@
       "content": "How do I change context to 250k tokens? Explain the exact field and whether you changed it."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

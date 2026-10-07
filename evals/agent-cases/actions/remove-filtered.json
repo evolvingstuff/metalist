@@ -11,6 +11,7 @@
       "content": "Remove every pending compost tag proposal in this context."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "garden",

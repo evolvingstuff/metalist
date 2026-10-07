@@ -11,6 +11,7 @@
       "content": "What would happen if I clicked Restore from backup? Just explain."
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

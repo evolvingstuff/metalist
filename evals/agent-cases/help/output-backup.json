@@ -11,6 +11,7 @@
       "content": "If I change my namespace password, do my old backups get rewritten? What happens on restore?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

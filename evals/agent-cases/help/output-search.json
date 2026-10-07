@@ -11,6 +11,7 @@
       "content": "Explain garden red OR \"spring plan\" -done. Also can I use @untagged or date:2026?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",

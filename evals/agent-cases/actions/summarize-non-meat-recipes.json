@@ -11,6 +11,7 @@
       "content": "can you summarize all of the non-meat recipes?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "search",
     "label": "recipes",

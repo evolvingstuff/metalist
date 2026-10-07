@@ -11,6 +11,7 @@
       "content": "what is the price of QQQ?"
     }
   ],
+  "earlier_actions": [],
   "view": {
     "scope_kind": "all_notes",
     "label": "All notes",
