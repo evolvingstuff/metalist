@@ -24,11 +24,11 @@ from experiments.tag_suggestions.features import (
     fit_vectorizers,
 )
 from experiments.tag_suggestions.metrics import per_target_hits, score_case, summarize
-from experiments.tag_suggestions.models import BoostedRanker, LogisticRanker, rank_by_column
-from experiments.tag_suggestions.world_store import baseline_suggestions, load_world
+from experiments.tag_suggestions.models import BoostedRanker, FormulaRanker, LogisticRanker, fuse_ranks, rank_by_column
+from experiments.tag_suggestions.world_store import baseline_kept_order, baseline_suggestions, load_world
 
-MODEL_NAMES = ("today", "neighbors", "naive_bayes", "logistic", "trees_yes_no", "trees_ranking",
-               "trees+today_slots", "trees+today_alternate")
+MODEL_NAMES = ("today", "today_kept_order", "today+neighbors", "formula", "neighbors", "naive_bayes", "logistic",
+               "trees_yes_no", "trees_ranking", "trees+today_slots", "trees+today_alternate")
 # Fixed-slot merge: the trees' top 3, then today's best 2 not already shown.
 MERGE_TREE_SLOTS = 3
 MERGE_TODAY_SLOTS = 2
@@ -98,13 +98,21 @@ PROGRESS_EVERY = 250
 def _baseline_for(corpus: Corpus, cases: list[TagCase]) -> tuple[dict[TagCase, list[str]], float]:
     started = time.perf_counter()
     lists: dict[TagCase, list[str]] = {}
+    seconds_by_moment: dict[str, list[float]] = {EMPTY_BAR: [], FIRST_LETTER: []}
     for done, case in enumerate(cases, start=1):
+        call_started = time.perf_counter()
         lists[case] = baseline_suggestions(corpus=corpus, case=case)
+        seconds_by_moment[case.moment].append(time.perf_counter() - call_started)
         if done % PROGRESS_EVERY == 0 or done == len(cases):
             elapsed = time.perf_counter() - started
             remaining = elapsed / done * (len(cases) - done)
             print(f"    {done}/{len(cases)} moments, {1000 * elapsed / done:.0f} ms each, "
                   f"about {remaining / 60:.1f} min left", flush=True)
+    for moment, seconds in seconds_by_moment.items():
+        if seconds:
+            ordered = sorted(seconds)
+            print(f"    today's ranking, {moment.replace('_', ' ')}: median {1000 * ordered[len(ordered) // 2]:.0f} ms, "
+                  f"slowest 5% {1000 * ordered[int(len(ordered) * 0.95)]:.0f} ms", flush=True)
     return lists, time.perf_counter() - started
 
 
@@ -139,6 +147,9 @@ def _run_split(*, corpus: Corpus, split: Split, options: Options) -> None:
     test_cases = build_cases(corpus=corpus, note_ids=tuple(test_ids), max_stage=options.max_stage)
     print(f"  running today's ranking on {len(test_cases)} test moments...", flush=True)
     test_baseline, baseline_seconds = _baseline_for(corpus, test_cases)
+    print("  running today's ranking with the empty-bar order kept after a letter...", flush=True)
+    kept_order = {case: baseline_kept_order(corpus=corpus, case=case)
+                  for case in test_cases if case.moment == FIRST_LETTER}
     test_stats = build_source_stats(corpus=corpus, world=test_world, vectorizers=vectorizers, source_ids=train_ids)
     feature_started = time.perf_counter()
     test_items = build_case_candidates(corpus=corpus, world=test_world, vectorizers=vectorizers, stats=test_stats,
@@ -151,12 +162,16 @@ def _run_split(*, corpus: Corpus, split: Split, options: Options) -> None:
     fit_items, validation_items = by_time[:validation_start], by_time[validation_start:]
     fit_started = time.perf_counter()
     logistic = LogisticRanker(fit_items)
+    formula = FormulaRanker(fit_items)
     trees_yes_no = BoostedRanker(training=fit_items, validation=validation_items, objective="binary")
     trees_ranking = BoostedRanker(training=fit_items, validation=validation_items, objective="lambdarank")
     fit_seconds = time.perf_counter() - fit_started
 
     rankers = {
         "today": lambda item: test_baseline[item.case],
+        "today_kept_order": lambda item: _kept_or_today(item, kept_order, test_baseline),
+        "today+neighbors": lambda item: fuse_ranks([test_baseline[item.case], rank_by_column(item, "knn_score")]),
+        "formula": formula.rank,
         "neighbors": lambda item: rank_by_column(item, "knn_score"),
         "naive_bayes": lambda item: rank_by_column(item, "nb_gap"),
         "logistic": logistic.rank,
@@ -167,6 +182,7 @@ def _run_split(*, corpus: Corpus, split: Split, options: Options) -> None:
     }
     _report(items=test_items, rankers=rankers, training_uses=test_stats.tag_count)
     _report_today_first_letter(items=test_items, today=test_baseline)
+    print(f"\nFormula chosen on the training moments: {formula.describe()}")
     print("\nWhat the ranking trees rely on (share of total gain):")
     for name, share in trees_ranking.importance()[:12]:
         print(f"  {name:28s} {share:6.1%}")
@@ -175,6 +191,14 @@ def _run_split(*, corpus: Corpus, split: Split, options: Options) -> None:
     print(f"Timing: preparation {prepared_seconds:.1f}s, model fitting {fit_seconds:.1f}s, "
           f"features {1000 * feature_seconds_per_case:.1f} ms per moment, "
           f"today's ranking {1000 * baseline_seconds / max(len(test_cases), 1):.1f} ms per moment")
+
+
+def _kept_or_today(item: CaseCandidates, kept_order: dict[TagCase, list[str]],
+                   today: dict[TagCase, list[str]]) -> list[str]:
+    """The kept-order variant differs from today only after a letter is typed."""
+    if item.case in kept_order:
+        return kept_order[item.case]
+    return today[item.case]
 
 
 def merge_slots(trees: list[str], today: list[str]) -> list[str]:

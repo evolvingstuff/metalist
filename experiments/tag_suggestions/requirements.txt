@@ -1,4 +1,4 @@
-# Offline tag-suggestion experiment only (PLAN.md, phase 1). Not MetaList
+# Offline tag-suggestion experiment only (docs/design/tag-suggestion-learnings.md). Not MetaList
 # dependencies: install into .venv-experiments together with
 # requirements/runtime.txt, never into .venv.
 numpy==2.3.3

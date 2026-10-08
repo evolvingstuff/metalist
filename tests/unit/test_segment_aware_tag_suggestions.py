@@ -744,7 +744,9 @@ def test_single_letter_prefix_ranks_raw_inherited_usage_without_ontology_implica
         content_html="<p>M should lead to ML3, not goat's milk</p>",
     )
 
-    assert suggestions[:3] == ["ML3", "goat's-milk", "math"]
+    # goat's-milk is named in the note, so it leads (typing narrows the empty-bar order);
+    # the inherited ML3 follows, ahead of math, whose count comes only from ontology implications.
+    assert suggestions[:3] == ["goat's-milk", "ML3", "math"]
 
 
 def test_single_letter_prefix_prioritizes_inherited_tag_cooccurrence(

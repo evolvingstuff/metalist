@@ -15,6 +15,7 @@ import app.services.tag_suggestions as tag_suggestions_module
 from app.config import MAX_TAG_SUGGESTIONS
 from app.services.note_store import store
 from app.services.tag_ontology import TagOntology, compile_rules, parse_rules_text
+from app.services.tag_term_matching import tag_term_matches_prefix
 
 from experiments.tag_suggestions.cases import FIRST_LETTER, Split, TagCase
 from experiments.tag_suggestions.corpus import Corpus
@@ -83,6 +84,27 @@ def baseline_suggestions(*, corpus: Corpus, case: TagCase) -> list[str]:
         limit=MAX_TAG_SUGGESTIONS,
     )
     return [suggestion.casefold() for suggestion in suggestions]
+
+
+# How deep the empty-bar list goes before the prefix filter (kept-order variant).
+KEPT_ORDER_DEPTH = 300
+
+
+def baseline_kept_order(*, corpus: Corpus, case: TagCase) -> list[str]:
+    """Variant of today's ranking: after a letter is typed, keep the empty-bar order and filter it by the prefix."""
+    assert case.moment == FIRST_LETTER
+    note = corpus.notes[case.note_id]
+    bar = list(note.meta_tags) + list(case.present)
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id=case.note_id,
+        anchors=bar,
+        explicit_tags=list(bar),
+        prefix="",
+        content_html=note.content_html,
+        limit=KEPT_ORDER_DEPTH,
+    )
+    return [suggestion.casefold() for suggestion in suggestions
+            if tag_term_matches_prefix(term=suggestion, prefix=case.prefix)][:MAX_TAG_SUGGESTIONS]
 
 
 def _rows(corpus: Corpus) -> list[dict[str, object]]:

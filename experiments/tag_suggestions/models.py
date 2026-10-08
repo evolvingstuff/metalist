@@ -7,6 +7,7 @@ the latest training notes (a time-ordered validation slice).
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import lightgbm
@@ -18,6 +19,10 @@ from sklearn.preprocessing import StandardScaler
 from experiments.tag_suggestions.features import FEATURE_NAMES, CaseCandidates
 
 RANDOM_SEED = 7
+
+# LightGBM names its columns itself; scikit-learn then warns on every prediction
+# from a plain array. The columns are always FEATURE_NAMES, in order.
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 # +1: more never lowers the score; -1: more never raises it (a larger rank is worse).
 _MONOTONE = {
@@ -63,6 +68,71 @@ def _order(item: CaseCandidates, scores: np.ndarray) -> list[str]:
     # Stable: ties keep generator order (neighbors first).
     order = np.argsort(-scores, kind="stable")
     return [item.candidates[position] for position in order]
+
+
+# Reciprocal rank fusion constant (the usual choice; larger flattens rank differences).
+FUSION_K = 60
+
+
+def fuse_ranks(lists: list[list[str]]) -> list[str]:
+    """Combine ranked lists with no weights: score = sum of 1 / (FUSION_K + rank)."""
+    scores: dict[str, float] = {}
+    first_seen: dict[str, int] = {}
+    for ranked in lists:
+        for rank, tag in enumerate(ranked, start=1):
+            if tag not in scores:
+                scores[tag] = 0.0
+                first_seen[tag] = len(first_seen)
+            scores[tag] += 1.0 / (FUSION_K + rank)
+    return sorted(scores, key=lambda tag: (-scores[tag], first_seen[tag]))
+
+
+class FormulaRanker:
+    """A fixed formula, no model: neighbor vote + a*name in text + b*fits the bar + c*recency + d*usage.
+
+    The four weights are chosen once by grid search on the training moments
+    (best mean reciprocal rank); in the app they would be constants.
+    """
+
+    GRID_NAME = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0)
+    GRID_JOINT = (0.0, 0.25, 0.5, 1.0, 2.0)
+    GRID_RECENCY = (0.0, 0.1, 0.25, 0.5, 1.0)
+    GRID_USAGE = (0.0, 0.02, 0.05, 0.1, 0.2)
+    RECENCY_DAYS = 30.0
+
+    def __init__(self, training: list[CaseCandidates]) -> None:
+        weights = np.array([(1.0, name, joint, recency, usage)
+                            for name in self.GRID_NAME for joint in self.GRID_JOINT
+                            for recency in self.GRID_RECENCY for usage in self.GRID_USAGE]).T
+        totals = np.zeros(weights.shape[1])
+        for item in training:
+            if item.labels.sum() == 0:
+                continue
+            scores = self._signals(item) @ weights
+            # Reciprocal rank of the first correct tag, for every weight setting at once.
+            order = np.argsort(-scores, axis=0, kind="stable")
+            correct = item.labels[order] > 0
+            first = np.argmax(correct, axis=0)
+            totals += 1.0 / (first + 1)
+        best = int(np.argmax(totals))
+        self.weights = weights[:, best]
+
+    def _signals(self, item: CaseCandidates) -> np.ndarray:
+        def column(name: str) -> np.ndarray:
+            return item.features[:, FEATURE_NAMES.index(name)]
+        recency = 1.0 / (1.0 + column("days_since_last_use") / self.RECENCY_DAYS)
+        return np.stack([column("knn_score"), column("name_in_text"), column("joint_fraction"), recency,
+                         column("log_tag_count")], axis=1)
+
+    def rank(self, item: CaseCandidates) -> list[str]:
+        if not item.candidates:
+            return []
+        return _order(item, self._signals(item) @ self.weights)
+
+    def describe(self) -> str:
+        _vote, name, joint, recency, usage = self.weights
+        return (f"neighbor vote + {name:g} x name in text + {joint:g} x fits the bar + "
+                f"{recency:g} x recency + {usage:g} x usage")
 
 
 class LogisticRanker:

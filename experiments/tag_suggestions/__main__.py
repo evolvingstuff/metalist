@@ -1,4 +1,4 @@
-"""Offline tag-suggestion experiment (PLAN.md, phase 1).
+"""Offline tag-suggestion experiment (docs/design/tag-suggestion-learnings.md).
 
     .venv-experiments/bin/python -m experiments.tag_suggestions --namespace NAME
     .venv-experiments/bin/python -m experiments.tag_suggestions --synthetic 3000

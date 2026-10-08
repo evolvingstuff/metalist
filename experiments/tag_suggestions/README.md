@@ -1,8 +1,8 @@
 # Offline Tag-Suggestion Experiment
 
-Phase 1 of `PLAN.md`: compare today's tag-bar ranking with learned rankers on
-your own notes, before anything changes in MetaList. Not part of the shipped
-package.
+Compare MetaList's tag-bar ranking with learned and rule-based rankers on your
+own notes. Not part of the shipped package. Results and conclusions:
+`docs/design/tag-suggestion-learnings.md`.
 
 ## Setup (once)
 
