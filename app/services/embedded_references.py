@@ -12,6 +12,7 @@ from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
 from app.services.content_formatting import render_standalone_link_title_html
+from app.services.file_text_preview import text_file_badge
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
@@ -1030,7 +1031,7 @@ def _render_file_body(
     escaped_note_id = html.escape(reference_note_id, quote=True)
     escaped_title = html.escape(title)
     escaped_title_attribute = html.escape(title, quote=True)
-    badge_text = html.escape(_format_thumbnail_badge(thumbnail_kind))
+    badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
     if static_export:
         return _render_static_file_body(
             record=record,
@@ -1062,8 +1063,10 @@ def _render_file_body(
     if is_embed:
         button_classes = f"{button_classes} note-file-reference-link-embed"
 
+    download_tooltip = html.escape(f"Click to download {original_filename}", quote=True)
     return (
-        f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}">'
+        f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}" '
+        f'title="{download_tooltip}">'
         f'<span class="note-file-reference-header">'
         f'<span class="note-file-reference-badge">{badge_text}</span>'
         f'<span class="note-file-reference-title">{escaped_title}</span>'
@@ -1334,6 +1337,14 @@ def _extract_html_closing_tag_name(tag_html: str) -> str:
     if not match:
         return ""
     return match.group(1).lower()
+
+
+def _format_file_badge(*, thumbnail_kind: str, original_filename: str) -> str:
+    """The pill label: a previewable text file's extension (.MD, .CSV, .JSON, .TXT), else its kind."""
+    text_badge = text_file_badge(original_filename)
+    if text_badge != "":
+        return text_badge
+    return _format_thumbnail_badge(thumbnail_kind)
 
 
 def _format_thumbnail_badge(thumbnail_kind: str) -> str:

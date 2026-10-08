@@ -149,6 +149,14 @@ class CreateChildRequest(TypedDict):
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
+class CreateFilePreviewChildRequest(TypedDict):
+    fileId: Identifier
+    search_query: Text | None
+    clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+
+@with_config(ConfigDict(strict=True))
 class UpdateNoteRequest(TypedDict):
     clientId: Identifier
     content: Content

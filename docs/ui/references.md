@@ -24,12 +24,12 @@
     - when that compact source preview is a standalone URL with a cached link title, it displays the same `title · domain` treatment as the source note instead of the raw URL. Inline/prose URLs remain raw.
     - right-click anywhere inside a rendered reference and choose **Go to Source** to open that source note with the same navigation behavior.
   - File targets:
-    - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
+    - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title. `.txt`, `.md`/`.markdown`, `.csv` and `.json` files are labelled by extension (`.TXT`, `.MD`, `.CSV`, `.JSON`) whatever MIME type the browser sent; other files by their kind.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor. See `docs/ui/excalidraw.md`.
-    - clicking the rendered file reference downloads the decrypted file from the server.
+    - clicking the rendered file reference downloads the decrypted file from the server; hovering it shows the tooltip "Click to download <file name>".
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
     - when the host note is collapsed and the first visible line is an embedded image file or diagram, the note collapses to a compact thumbnail-only version of that preview.
   - Rendered references have no internal expand/collapse or embed/link controls; edit the raw token to change between `![[...]]` and `[[...]]`.
@@ -48,6 +48,14 @@
 - Drag/drop follows the same attachment path for non-image files.
   - Dropping onto the actively edited note inserts into that note.
   - Dropping anywhere else creates a new top note first, then inserts there.
+- Dropped text files: a dropped `.txt`, `.md`/`.markdown`, `.csv` or `.json` file also gets its text as a new child note of the note holding its pill.
+  - The child is the note's last child (after any existing children), in drop order when several files are dropped together.
+  - Markdown children get `@markdown`, CSV children `@csv`, JSON children `@json`, text children no render tag; a child also gets the tags a new child gets from the current search.
+  - The child starts expanded, so the dropped text is visible; collapse the pill note's children to hide it.
+  - The child is an ordinary note: editing, moving or deleting it never changes the stored file, and the pill still downloads the original.
+  - Files over 200 KB or not in UTF-8 keep only their pill; an info banner says why. Picking a file with `Attach file…` adds no child.
+  - The text is stored line for line as escaped plain text (`<br>` between lines), never read as HTML.
+  - Implementation: `app/services/file_text_preview.py`, `POST /api2/notes/file-preview-child/{note_id}` (`app/usecases/create_file_preview_child.py`), `dropped-file-preview-service.js`. Tests: `tests/unit/test_file_text_preview.py`, `BROWSER_TEST_SUITE=file-drop-previews npm run test:browser`.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.

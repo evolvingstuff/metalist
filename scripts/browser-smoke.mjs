@@ -25,12 +25,20 @@ import {checkExitEditScroll} from './browser-scroll-regressions.mjs';
 import {checkSortedTabs} from './browser-sorted-tab-regressions.mjs';
 import {checkSearchInputRejected} from './browser-search-input-regressions.mjs';
 import {checkDictationPaste} from './browser-dictation-paste-regressions.mjs';
+import {checkFileDropPreviews} from './browser-file-drop-preview-regressions.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
-const probe = createServer();
-await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
-const port = probe.address().port;
-await new Promise(resolve => probe.close(resolve));
+// Free ports for HTTP and HTTPS: the user's own MetaList keeps its usual ports (HTTPS 8443).
+async function freePort() {
+  const probe = createServer();
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const freeTcpPort = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  return freeTcpPort;
+}
+const port = await freePort();
+let httpsPort = await freePort();
+while (httpsPort === port) httpsPort = await freePort();
 const origin = `http://127.0.0.1:${port}`;
 const env = {...process.env};
 for (const key of Object.keys(env)) {
@@ -39,6 +47,7 @@ for (const key of Object.keys(env)) {
 env.METALIST_DATA_DIRECTORY = directory;
 env.METALIST_ENVIRONMENT = 'production';
 env.METALIST_PORT = String(port);
+env.METALIST_HTTPS_PORT = String(httpsPort);
 env.API_PREFIX = '/api2';
 env.V1_API_PREFIX = '/api';
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
@@ -79,7 +88,7 @@ try {
   browser.on('targetdestroyed', target => lifecycle(`target destroyed ${target.type()} ${target.url()}`));
   browser.on('targetcreated', target => lifecycle(`target created ${target.type()} ${target.url()}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll', 'sorted-tabs', 'search-input', 'dictation-paste'].includes(process.env.BROWSER_TEST_SUITE)) {
+  if (['ai-selected-note', 'writing-assistant', 'ai-history', 'agent-help', 'ai-privacy', 'ai-response-menu', 'exit-edit-scroll', 'sorted-tabs', 'search-input', 'dictation-paste', 'file-drop-previews'].includes(process.env.BROWSER_TEST_SUITE)) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -130,6 +139,10 @@ try {
     await checkDictationPaste(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dictation paste regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-drop-previews') {
+    await checkFileDropPreviews(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file drop preview regressions in ${await browser.version()}`);
   } else {
   assert(process.env.BROWSER_TEST_SUITE === undefined, 'Unknown BROWSER_TEST_SUITE');
   await checkAppUpdates(page, updateFixture);
@@ -351,6 +364,7 @@ try {
   // After the sort menu check: its searches persist in search history.
   await checkSearchInputRejected(page);
   await checkDictationPaste(page);
+  await checkFileDropPreviews(page);
   await checkFloatingNotes(page);
   await checkAiSelectedNote(page);
   assert.deepEqual(errors, []);

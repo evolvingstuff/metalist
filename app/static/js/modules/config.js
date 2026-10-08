@@ -18,6 +18,7 @@ export const CONFIG = {
             CREATE: `${API_NOTES_BASE}/new`,
             CREATE_SIBLING: (noteId) => `${API_NOTES_BASE}/new-sibling/${noteId}`,
             CREATE_CHILD: (noteId) => `${API_NOTES_BASE}/new-child/${noteId}`,
+            CREATE_FILE_PREVIEW_CHILD: (noteId) => `${API_NOTES_BASE}/file-preview-child/${noteId}`,
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
             ADD_SELECTED_TEXT_TAG: (noteId) => `${API_NOTES_BASE}/${noteId}/add-selected-text-tag`,
