@@ -1040,6 +1040,7 @@ def _combine_candidate_rankings(
     *, content_terms: List[str], cooccurrence: List[str], local_terms: List[str],
     overlap_terms: List[str], candidate_terms: List[str], has_direct_anchor_context: bool,
     has_prefix: bool, undercovered_terms: FrozenSet[str], ontology_only_casefold: FrozenSet[str],
+    include_unranked: bool,
 ) -> List[str]:
     seen_terms = set(content_terms)
     cooccurrence_only = []
@@ -1055,7 +1056,11 @@ def _combine_candidate_rankings(
         if term not in seen_terms:
             remaining.append(term)
             seen_terms.add(term)
-    for term in candidate_terms:
+    # Every other candidate, with no evidence for this note (the generic tail).
+    unranked_terms: List[str] = []
+    if include_unranked:
+        unranked_terms = candidate_terms
+    for term in unranked_terms:
         if term in seen_terms or term in undercovered_terms:
             continue
         if not has_prefix and term.casefold() in ontology_only_casefold:
@@ -1076,6 +1081,100 @@ def suggest_tags_for_note(
     content_html: str,
     limit: int,
 ) -> List[str]:
+    if not isinstance(prefix, str):
+        raise TypeError("prefix must be a string")
+    if _is_single_character_non_meta_prefix(prefix):
+        return _suggest_after_one_letter(
+            note_id=note_id, anchors=list(anchors), explicit_tags=list(explicit_tags), prefix=prefix,
+            content_html=content_html, limit=limit,
+        )
+    return _suggest_tags(
+        note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, prefix=prefix,
+        content_html=content_html, limit=limit, include_unranked=True,
+    )
+
+
+def _is_single_character_non_meta_prefix(prefix: str) -> bool:
+    return not prefix.startswith("@") and len(normalize_tag_match_text(prefix)) == 1
+
+
+def _suggest_after_one_letter(
+    *, note_id: str, anchors: List[str], explicit_tags: List[str], prefix: str, content_html: str, limit: int,
+) -> List[str]:
+    """Typing one letter narrows the empty-bar list instead of reordering it.
+
+    Order: the empty-bar suggestions that have evidence for this note (named in
+    it, going with its tags, its hierarchy, similar notes), filtered by the
+    letter; then matching tags that already apply through inheritance or the
+    rules (the empty bar hides those), by raw usage; then every other matching
+    tag by raw usage. One ranking pass, as for any other prefix.
+    """
+    # The letter being typed is the last token the tag bar sends; the empty bar has no such token.
+    empty_bar_explicit = list(explicit_tags)
+    for index in range(len(empty_bar_explicit) - 1, -1, -1):
+        if empty_bar_explicit[index] == prefix:
+            del empty_bar_explicit[index]
+            break
+    with_evidence = _suggest_tags(
+        note_id=note_id, anchors=anchors, explicit_tags=empty_bar_explicit, prefix="",
+        content_html=content_html, limit=_ONE_LETTER_EVIDENCE_DEPTH, include_unranked=False,
+    )
+    ordered = [term for term in with_evidence if tag_term_matches_prefix(term=term, prefix=prefix)]
+
+    explicit_casefold = {tag.casefold() for tag in explicit_tags if not tag.startswith("@")}
+    raw_tag_counts = search_index.list_raw_tag_frequencies_by_casefold()
+    explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
+    already_applying = _select_preferred_case_variants(
+        terms=_inherited_or_implied_tags(note_id=note_id, anchors=anchors, explicit_casefold=explicit_casefold),
+        exact_tag_counts=exact_tag_counts,
+    )
+    ordered.extend(sorted(
+        (term for term in already_applying if tag_term_matches_prefix(term=term, prefix=prefix)),
+        key=lambda term: (-_lookup_count(raw_tag_counts, term.casefold()), term.casefold()),
+    ))
+    # Then every other known tag with the letter, by raw usage (explicit plus inherited, not implied).
+    all_terms, _ontology_only = _merge_ontology_tag_terms(
+        explicit_terms=explicit_terms, exact_tag_counts=exact_tag_counts, ontology=get_ontology(),
+    )
+    ordered.extend(sorted(
+        (term for term in all_terms if tag_term_matches_prefix(term=term, prefix=prefix)),
+        key=lambda term: (-_lookup_count(raw_tag_counts, term.casefold()), *_suggestion_tiebreak(term)),
+    ))
+    shown: List[str] = []
+    shown_casefold: set[str] = set()
+    for term in ordered:
+        if term.casefold() in shown_casefold or term.casefold() in explicit_casefold:
+            continue
+        shown.append(term)
+        shown_casefold.add(term.casefold())
+    return shown[:limit]
+
+
+def _inherited_or_implied_tags(*, note_id: str, anchors: List[str], explicit_casefold: set[str]) -> set[str]:
+    """Non-meta tags that already apply to the note without being written in its bar."""
+    anchor_set = {tag for tag in anchors if not tag.startswith("@")}
+    base_tags = frozenset(anchor_set | note_store.get_inherited_non_meta_tag_terms(note_id))
+    ontology = get_ontology()
+    context_tags = base_tags
+    if not ontology.is_empty:
+        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    return {tag for tag in context_tags if not tag.startswith("@") and tag.casefold() not in explicit_casefold}
+
+
+# The empty-bar evidence list is computed this deep before filtering by the letter.
+_ONE_LETTER_EVIDENCE_DEPTH = 500
+
+
+def _suggest_tags(
+    *,
+    note_id: str,
+    anchors: Iterable[str],
+    explicit_tags: Iterable[str],
+    prefix: str,
+    content_html: str,
+    limit: int,
+    include_unranked: bool,
+) -> List[str]:
     if not isinstance(note_id, str) or not note_id:
         raise TypeError("note_id must be a non-empty string")
     if not isinstance(prefix, str):
@@ -1090,9 +1189,7 @@ def suggest_tags_for_note(
     anchor_set = {tag for tag in anchor_list if not tag.startswith("@")}
     explicit_tag_casefold_set = {tag.casefold() for tag in explicit_tag_list if not tag.startswith("@")}
     has_prefix = prefix != ""
-    is_single_character_non_meta_prefix = (
-        not prefix.startswith("@") and len(normalize_tag_match_text(prefix)) == 1
-    )
+    assert not _is_single_character_non_meta_prefix(prefix), "one-letter prefixes go through _suggest_after_one_letter"
 
     inherited_non_meta = note_store.get_inherited_non_meta_tag_terms(note_id)
     base_tags = frozenset(anchor_set | inherited_non_meta)
@@ -1108,8 +1205,7 @@ def suggest_tags_for_note(
         if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set
     }
     suppressed_casefold = set(explicit_tag_casefold_set)
-    if not is_single_character_non_meta_prefix:
-        suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
+    suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
 
     explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
     all_terms, ontology_only_casefold = _merge_ontology_tag_terms(
@@ -1141,7 +1237,7 @@ def suggest_tags_for_note(
     direct_standalone_literal_terms = content_candidates.literal_terms
     exact_synonym_content_hits = content_candidates.exact_synonyms
 
-    cooccurrence, cooccurrence_rank, cooccurrence_hit_terms = _collect_cooccurrence_candidates(
+    cooccurrence, cooccurrence_rank, _cooccurrence_hit_terms = _collect_cooccurrence_candidates(
         all_terms=all_terms,
         candidate_terms=candidate_terms,
         explicit_anchors=anchor_list,
@@ -1179,7 +1275,7 @@ def suggest_tags_for_note(
         local_terms=local_first, overlap_terms=overlap_first, candidate_terms=candidate_terms,
         has_direct_anchor_context=bool(anchor_set), has_prefix=has_prefix,
         undercovered_terms=content_candidates.undercovered_terms,
-        ontology_only_casefold=ontology_only_casefold,
+        ontology_only_casefold=ontology_only_casefold, include_unranked=include_unranked,
     )
 
     if has_prefix:
@@ -1193,21 +1289,6 @@ def suggest_tags_for_note(
                 present_suffix.append(term)
         present_suffix.sort()
         suggestions.extend(present_suffix)
-
-    if is_single_character_non_meta_prefix:
-        raw_tag_counts = search_index.list_raw_tag_frequencies_by_casefold()
-        suggestions.sort(
-            key=lambda term: (
-                0
-                if term in cooccurrence_hit_terms
-                else 1
-                if term in direct_standalone_literal_terms
-                else 2,
-                cooccurrence_rank[term]
-                if term in cooccurrence_hit_terms
-                else -_lookup_count(raw_tag_counts, term.casefold()),
-            )
-        )
 
     representative_by_term = _build_equivalent_term_representatives(
         terms=list(candidate_terms) + suggestions,

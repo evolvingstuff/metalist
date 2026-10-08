@@ -1,0 +1,8 @@
+# Offline tag-suggestion experiment only (docs/design/tag-suggestion-learnings.md). Not MetaList
+# dependencies: install into .venv-experiments together with
+# requirements/runtime.txt, never into .venv.
+numpy==2.3.3
+scipy==1.16.2
+scikit-learn==1.7.2
+lightgbm==4.6.0
+pytest==8.4.2
