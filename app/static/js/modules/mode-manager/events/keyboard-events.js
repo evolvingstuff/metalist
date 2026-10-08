@@ -32,6 +32,7 @@ import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
+import { addDroppedFilePreviews } from '../services/dropped-file-preview-service.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
@@ -2367,6 +2368,7 @@ async function processDroppedFiles(droppedFiles, options) {
     let insertedAnything = false;
     let sawAttachedFile = false;
     let pendingSelectionRange = selectionRange;
+    const attachedFiles = [];
 
     let i = 0;
     while (i < droppedFiles.length) {
@@ -2411,11 +2413,16 @@ async function processDroppedFiles(droppedFiles, options) {
                 pendingSelectionRange = null;
             }
             sawAttachedFile = true;
-            await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
+            const uploaded = await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
                 createAtTop: createTopNote && !createdTopNote && currentTargetNoteId === null,
             });
             insertedAnything = true;
             currentTargetNoteId = ModeContext.currentNoteId;
+            attachedFiles.push({
+                noteId: currentTargetNoteId,
+                fileId: uploaded.file_id,
+                filename: uploaded.original_filename,
+            });
             if (createTopNote) {
                 createdTopNote = true;
             }
@@ -2439,6 +2446,7 @@ async function processDroppedFiles(droppedFiles, options) {
     ) {
         await actionSaveNote(ModeContext.currentNoteId);
     }
+    await addDroppedFilePreviews(attachedFiles);
 
     return insertedAnything;
 }

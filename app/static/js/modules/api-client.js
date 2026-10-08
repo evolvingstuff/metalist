@@ -274,6 +274,14 @@ export const NotesAPI = {
         });
     },
 
+    async createFilePreviewChild(noteId, fileId, searchQuery) {
+        return this._apiCall(CONFIG.API.NOTES.CREATE_FILE_PREVIEW_CHILD(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ fileId, search_query: searchQuery }),
+        });
+    },
+
     async updateNote(noteId, content, tags) {
         const sanitizedContent = sanitizeNoteHtmlForStorage(content);
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {

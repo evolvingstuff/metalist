@@ -36,12 +36,12 @@ Sources: docs/ui/references.md
     - when that compact source preview is a standalone URL with a cached link title, it displays the same `title · domain` treatment as the source note instead of the raw URL. Inline/prose URLs remain raw.
     - right-click anywhere inside a rendered reference and choose **Go to Source** to open that source note with the same navigation behavior.
   - File targets:
-    - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
+    - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title. `.txt`, `.md`, `.csv` and `.json` files are labelled by their extension: `.TXT`, `.MD`, `.CSV`, `.JSON`.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor (see Excalidraw Diagrams below).
-    - clicking the rendered file reference downloads the decrypted file from the server.
+    - clicking the rendered file reference downloads the decrypted file from the server; hovering it shows the tooltip "Click to download <file name>".
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
     - when the host note is collapsed and the first visible line is an embedded image file or diagram, the note collapses to a compact thumbnail-only version of that preview.
   - Rendered references have no internal expand/collapse or embed/link controls; edit the raw token to change between `![[...]]` and `[[...]]`.
@@ -60,6 +60,7 @@ Sources: docs/ui/references.md
 - Drag/drop follows the same attachment path for non-image files.
   - Dropping onto the actively edited note inserts into that note.
   - Dropping anywhere else creates a new top note first, then inserts there.
+- Dropping a `.txt`, `.md`, `.csv` or `.json` file also copies its text into a new child note under the note holding its pill, shown expanded. Markdown is tagged `@markdown`, CSV `@csv` and JSON `@json`, so they render as formatted text, a table and pretty-printed JSON. The child is the last child, one per file in drop order. It is an ordinary note: edit or delete it freely; the stored file is unchanged and clicking the pill still downloads it. Files over 200 KB or not in UTF-8 get only the pill, with a banner saying why. `Attach file…` adds no child.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.

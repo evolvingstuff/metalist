@@ -420,3 +420,27 @@ def test_exported_compact_reference_embeds_the_diagram_preview() -> None:
     assert '<img class="note-reference-link-thumbnail-static" src="data:image/svg+xml;base64,PHN2Zy8+" alt="" />' in rendered
     assert "data-file-ref-id" not in rendered
     assert "(empty note)" in export("")
+
+
+def test_file_pill_tooltip_says_clicking_downloads_the_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
+    notes = {"a": _Note("a", None, None, None, False, f"![[{file_id}]]", "")}
+    file_record = SimpleNamespace(
+        id=file_id,
+        title='Q&A "notes".md',
+        original_filename='Q&A "notes".md',
+        mime_type="text/markdown",
+        size_bytes=10,
+        thumbnail_kind="text",
+    )
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        file_ids={file_id},
+        file_record=file_record,
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert 'title="Click to download Q&amp;A &quot;notes&quot;.md"' in rendered
+    assert '<span class="note-file-reference-badge">.MD</span>' in rendered
