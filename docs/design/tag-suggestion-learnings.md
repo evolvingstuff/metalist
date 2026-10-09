@@ -4,7 +4,9 @@ In October 2026 we compared the tag-bar ranking with learned and rule-based
 alternatives on a real namespace (about 107,000 notes, 67,000 tagged, 10,400
 distinct tags, 8,000 rules). The experiment lives in
 `experiments/tag_suggestions/` (see its README); it prints totals only. This
-note records what we learned and the improvements left for later. The first
+note records what we learned and the improvements left for later. The same
+approach applied to search-bar suggestions is in
+`search-suggestion-learnings.md` (no change resulted). The first
 one, the one-letter fix, is already in (`docs/ui/tag-bar.md`).
 
 ## How we measured
