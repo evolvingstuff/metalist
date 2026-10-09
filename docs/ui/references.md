@@ -4,7 +4,7 @@
 - Implemented reference syntaxes:
   - `![[UUID]]` = embedded mode
   - `[[UUID]]` = link mode
-- If the note has a matching `[[...]]` scoped wrapper tag (for example `[[@LaTeX]]`), `[[...]]` is parsed as content formatting instead of link mode. Use `![[UUID]]` for embedded references in that case, or use a different formatting wrapper delimiter.
+- `[[...]]` containing exactly a note or file UUID is always a link, even when the note has a matching `[[...]]` scoped wrapper tag (for example `[[@LaTeX]]`); other `[[...]]` text is formatted by that wrapper, and links nested inside it still render.
 - A UUID can resolve to:
   - a note
   - a file attachment

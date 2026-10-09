@@ -22,7 +22,7 @@ class BacklinkIndex:
     def upsert(self, note_id: str, content: str, tags: str) -> None:
         assert isinstance(note_id, str) and note_id
         counts = dict(Counter(
-            token.note_id for token in collect_active_reference_tokens(content, tags)
+            token.note_id for token in collect_active_reference_tokens(content)
             if token.note_id != note_id
         ))
         self.remove(note_id)

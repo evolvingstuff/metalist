@@ -166,7 +166,8 @@ def test_list_backlinks_for_note_can_scope_sources_to_search_context(
     assert rows[0]["id"] == "source-in"
 
 
-def test_backlinks_ignore_formatting_scopes_but_keep_explicit_embeds(monkeypatch):
+def test_note_id_links_count_even_in_notes_with_square_formatting_wrappers(monkeypatch):
+    # A [[...]] holding exactly a note id is always a link (docs/ui/references.md).
     target_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     notes = {
         "scoped": _Note("scoped", None, f"[[{target_id}]]", "[[@red]]"),
@@ -176,4 +177,4 @@ def test_backlinks_ignore_formatting_scopes_but_keep_explicit_embeds(monkeypatch
     monkeypatch.setattr(backlinks, "note_store", _FakeStore(
         notes=notes, children_by_parent={None: list(notes)},
     ))
-    assert [row["id"] for row in backlinks.list_backlinks_for_note(target_id, None)] == ["embedded"]
+    assert [row["id"] for row in backlinks.list_backlinks_for_note(target_id, None)] == ["scoped", "embedded"]

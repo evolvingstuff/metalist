@@ -18,7 +18,7 @@ def decorate_note_references(
     assert context.has_note(note_id)
     assert isinstance(has_backlinks, bool)
     classes = []
-    tokens = collect_active_reference_tokens(content_html, tags)
+    tokens = collect_active_reference_tokens(content_html)
     if len(tokens) == 1 and context.has_note(tokens[0].note_id):
         token = tokens[0]
         remaining = content_html[:token.start] + content_html[token.end:]
