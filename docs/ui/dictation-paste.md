@@ -50,6 +50,7 @@ only pastes.
 | "or" | `OR` between clauses | dropped |
 | The exclusion phrase ("minus" by default), or a typed `-`, `−` or em dash `—` before a term (Superwhisper types "minus" as an em dash) | exclude the next term, `-python`, `-"fat"` | dropped |
 | Pasted search syntax (`-tag`, `+tag`, `OR`, `"text"`) | kept as is | not applicable |
+| Pasted with the cursor inside a quoted phrase (after `"`) | no cleanup: inserted exactly as copied, on one line, with quote marks escaped (`\"`) so the phrase does not end early | not applicable |
 
 A spoken word that is one of the user's tags is always that tag: with a tag
 `minus`, "minus python" is `minus python`. An operator with nothing to apply to (a

@@ -38,7 +38,7 @@ from app.services.structured_note_renderers import (
 )
 from app.services.footnote_rendering import collect_footnotes, finish_footnotes
 from app.services.latex_rendering import render_latex_to_html
-from app.utils.text_utils import HTMLStripper, strip_html
+from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_html
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.link_titles import display_domain_for_url
@@ -346,8 +346,8 @@ class MetaTagConfig:
     scoped_renderers: Mapping[Tuple[str, int], str]
 
 
-class _AgentNoteText(HTMLStripper):
-    """Preserve visible text and anchor destinations for cached-title lookup."""
+class _AgentNoteText(LinkUrlKeepingStripper):
+    """Visible text with the URLs link labels hide, and anchor destinations for cached-title lookup."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -361,9 +361,15 @@ class _AgentNoteText(HTMLStripper):
                     self.anchor_urls.append(value)
 
 
+def find_plain_text_urls(text: str) -> list[str]:
+    """URLs written out in plain text, in order, without trailing punctuation."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    return [_split_trailing_url_punctuation(match.group(0))[0] for match in _PLAIN_URL_RE.finditer(text)]
+
+
 def _cached_agent_url_titles(text: str, anchor_urls: list[str], title_lookup: Callable[[str], str | None]) -> list[dict[str, str]]:
-    urls = [*anchor_urls, *(_split_trailing_url_punctuation(match.group(0))[0]
-                          for match in _PLAIN_URL_RE.finditer(text))]
+    urls = [*anchor_urls, *find_plain_text_urls(text)]
     seen = set()
     titles = []
     for url in urls:

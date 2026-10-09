@@ -34,7 +34,16 @@ from app.services.tag_ontology import TagOntology
 from app.services.note_image_tags import infer_image_tag_terms
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
-from app.utils.text_utils import strip_html
+from app.utils.text_utils import strip_html, strip_html_keeping_link_urls
+
+
+def _search_text(content_html: str, visible_text: str) -> str:
+    """The text search sees: the visible text plus the URLs that link labels hide
+    (docs/ui/search-semantics.md). Ontology text matchers keep the visible text."""
+    if "href" not in content_html:
+        # No link: the visible text, already computed, is the same.
+        return visible_text
+    return strip_html_keeping_link_urls(content_html)
 
 
 def _derive_own_tag_terms(*, tags: str, content_html: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
@@ -624,7 +633,7 @@ class NoteStore:
             search_records.append(
                 SearchRecord(
                     note_id=record.id,
-                    content_text=content_text_by_id[record.id],
+                    content_text=_search_text(record.content, content_text_by_id[record.id]),
                     tags=record.tags,
                     tag_terms=tag_only_terms,
                 )
@@ -773,7 +782,7 @@ class NoteStore:
         )
         search_index.upsert(
             note_id=record.id,
-            content_text=content_text,
+            content_text=_search_text(record.content, content_text),
             tags=record.tags,
             raw_tag_terms=effective_tag_terms,
             tag_terms=effective_with_ontology,
@@ -835,7 +844,7 @@ class NoteStore:
                 inferred_plaintext = content_text
             search_index.upsert(
                 note_id=record.id,
-                content_text=content_text,
+                content_text=_search_text(record.content, content_text),
                 tags=record.tags,
                 raw_tag_terms=effective_tag_terms,
                 tag_terms=ontology.infer_effective_tags(base_tags=effective_tag_terms, plaintext=inferred_plaintext),
@@ -917,7 +926,7 @@ class NoteStore:
         )
         search_index.upsert(
             note_id=updated.id,
-            content_text=content_text,
+            content_text=_search_text(updated.content, content_text),
             tags=updated.tags,
             raw_tag_terms=effective_tag_terms,
             tag_terms=effective_with_ontology,
@@ -1193,7 +1202,7 @@ class NoteStore:
             if ontology.matcher_rules:
                 inferred_plaintext = plaintext
             effective = ontology.infer_effective_tags(base_tags=raw, plaintext=inferred_plaintext)
-            search_index.upsert(note_id=note_id, content_text=plaintext,
+            search_index.upsert(note_id=note_id, content_text=_search_text(record.content, plaintext),
                                 tags=record.tags, raw_tag_terms=raw, tag_terms=effective)
 
     def rebuild_search_index_tag_terms(self) -> None:

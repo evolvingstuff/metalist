@@ -607,6 +607,18 @@ def test_extract_note_text_for_agent_withholds_password_even_with_renderer_tag()
     assert "sekret" not in content_text
 
 
+def test_agent_text_shows_the_url_a_link_label_hides(monkeypatch) -> None:
+    # A link pasted from a web page shows the video title and hides its URL.
+    monkeypatch.setattr(link_title_store, "get_ok_title", lambda url: None)
+    text, redacted = extract_note_text_for_agent(
+        content_html='<div><a href="https://www.youtube.com/watch?v=abc123">Attention, explained</a></div>'
+                     '<div><a href="https://example.test/a">https://example.test/a</a></div>',
+        tags="",
+    )
+    assert not redacted
+    assert text == "Attention, explained (https://www.youtube.com/watch?v=abc123) https://example.test/a"
+
+
 @pytest.mark.parametrize("content", [
     '<p>https://example.test/paper?a=1&amp;b=2</p>',
     '<a href="https://example.test/paper?a=1&amp;b=2">Read the paper</a>',

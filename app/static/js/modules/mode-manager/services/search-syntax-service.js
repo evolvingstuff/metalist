@@ -298,6 +298,58 @@ export function analyzeSearchQueryInput(rawInput) {
     };
 }
 
+/**
+ * The quote mark of the quoted phrase the cursor is inside (" or '), or '' when
+ * the cursor is outside quoted text. Inside a phrase a paste is text as copied,
+ * not dictation (docs/ui/dictation-paste.md).
+ */
+export function findOpenQuoteAtIndex(rawInput, cursorIndex) {
+    if (typeof rawInput !== 'string') {
+        throw new Error('findOpenQuoteAtIndex expects a string');
+    }
+    if (!Number.isInteger(cursorIndex) || cursorIndex < 0 || cursorIndex > rawInput.length) {
+        throw new Error('findOpenQuoteAtIndex expects a cursor index within the input');
+    }
+    const before = rawInput.slice(0, cursorIndex);
+    let index = 0;
+    while (index < before.length) {
+        if (isWhitespace(before[index])) {
+            index += 1;
+            continue;
+        }
+        if (before[index] === '+' || before[index] === '-') {
+            index += 1;
+        }
+        if (index < before.length && QUOTE_CHARS.has(before[index])) {
+            const quoteChar = before[index];
+            const { closed, nextIndex } = readQuotedInner(before, index + 1, quoteChar);
+            if (!closed) {
+                return quoteChar;
+            }
+            index = nextIndex;
+            continue;
+        }
+        while (index < before.length && !isWhitespace(before[index])) {
+            index += 1;
+        }
+    }
+    return '';
+}
+
+/** Pasted text for inside a quoted phrase: one line, its quote marks and backslashes escaped. */
+export function quotePastedSearchText(pastedText, quoteChar) {
+    if (typeof pastedText !== 'string') {
+        throw new Error('quotePastedSearchText expects the pasted text');
+    }
+    if (!QUOTE_CHARS.has(quoteChar)) {
+        throw new Error('quotePastedSearchText expects " or \'');
+    }
+    return pastedText
+        .replace(/[\r\n]+/g, ' ')
+        .replaceAll('\\', '\\\\')
+        .replaceAll(quoteChar, `\\${quoteChar}`);
+}
+
 export function enforceSearchQueryInputForEditing(rawInput) {
     return analyzeSearchQueryInput(rawInput).enforcedText;
 }

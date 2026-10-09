@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
     analyzeSearchQueryInput,
+    findOpenQuoteAtIndex,
     findSearchTagAtIndex,
+    quotePastedSearchText,
 } from '../../app/static/js/modules/mode-manager/services/search-syntax-service.js';
 
 test('uppercase OR separates complete implicit-AND clauses', () => {
@@ -70,4 +72,34 @@ test('a lone prefix at the end is still being typed: no warning yet', () => {
     assert.equal(analysis.isComplete, false);
     assert.equal(analysis.warningMessage, null);
     assert.equal(analysis.sanitizedText, 'foo');
+});
+
+
+test('a cursor inside a quoted phrase is found, open or closed, with either quote mark', () => {
+    assert.equal(findOpenQuoteAtIndex('"', 1), '"');
+    assert.equal(findOpenQuoteAtIndex('tag "youtube.com/', 17), '"');
+    assert.equal(findOpenQuoteAtIndex('"abcdef"', 4), '"');
+    assert.equal(findOpenQuoteAtIndex("-'abc", 5), "'");
+    assert.equal(findOpenQuoteAtIndex('"say \\"hi', 9), '"');
+});
+
+test('a cursor outside quoted text is not inside a phrase', () => {
+    assert.equal(findOpenQuoteAtIndex('', 0), '');
+    assert.equal(findOpenQuoteAtIndex('tag ', 4), '');
+    assert.equal(findOpenQuoteAtIndex('"done" ', 7), '');
+    assert.equal(findOpenQuoteAtIndex('"done"', 0), '');
+    assert.equal(findOpenQuoteAtIndex("it's", 4), '');
+    assert.throws(() => findOpenQuoteAtIndex('abc', 4), /cursor index/);
+});
+
+test('text pasted into a phrase stays as copied, on one line, without ending the phrase', () => {
+    assert.equal(quotePastedSearchText('This is a test', '"'), 'This is a test');
+    assert.equal(quotePastedSearchText('https://www.youtube.com/watch?v=abc', '"'), 'https://www.youtube.com/watch?v=abc');
+    assert.equal(quotePastedSearchText('line one\nline two', '"'), 'line one line two');
+    assert.equal(quotePastedSearchText('say "hi"', '"'), 'say \\"hi\\"');
+    assert.equal(quotePastedSearchText("it's", "'"), "it\\'s");
+    assert.equal(quotePastedSearchText('a\\b', '"'), 'a\\\\b');
+    const pasted = analyzeSearchQueryInput(`"${quotePastedSearchText('say "hi"', '"')}"`);
+    assert.equal(pasted.isComplete, true);
+    assert.equal(pasted.sanitizedText, '"say \\"hi\\""');
 });

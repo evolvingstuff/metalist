@@ -162,6 +162,15 @@ Text matching is:
 - Case-insensitive (`casefold`).
 - Against **visible text**, extracted by stripping HTML (scripts/styles ignored).
 - Also against tag-bar `/* ... */` comment text (whitespace-normalized).
+- Also against the URL of a web link whose label hides it (for example a link
+  pasted from a web page that shows a video title): the note is searched as
+  "Video title (https://...)".
+- Also against the titles of web pages linked in the note: for each `http(s)` URL
+  in the note (written out, or hidden behind a link label), the page title
+  MetaList has already fetched and stored. Titles are fetched when a URL on its own
+  line is first displayed, so a note matches by title once its title has been
+  fetched; a title fetched later makes the note match from then on. Titles are not
+  available while the namespace is locked. The URL itself remains searchable.
 - A space at the edge of the quotes marks a word boundary on that side: `"fat "` needs
   the word to end there (a space, punctuation or the end of the text follows), so it
   matches "fat cat" and "fat." but not "father"; `" fat"` needs it to start there, so
