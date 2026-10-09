@@ -91,6 +91,48 @@ class HTMLStripper(HTMLParser):
         return ''.join(self.text)
 
 
+class LinkUrlKeepingStripper(HTMLStripper):
+    """Visible text, plus each web link's URL after its label when the label does not show it.
+
+    A link pasted from a web page often shows a title ("Video title") and hides
+    its URL; search and the AI should still see "Video title (https://...)".
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._open_links: list[tuple[str, int]] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        super().handle_starttag(tag, attrs)
+        if tag.lower() != "a" or self._ignore_depth > 0:
+            return
+        href = ""
+        for name, value in attrs:
+            if name.lower() == "href" and value:
+                href = value.strip()
+        self._open_links.append((href, len(self.text)))
+
+    def handle_endtag(self, tag: str) -> None:
+        # Pasted HTML can close a link that was never opened; there is no URL to add then.
+        if tag.lower() == "a" and self._open_links:
+            href, label_start = self._open_links.pop()
+            label = "".join(self.text[label_start:])
+            if href.casefold().startswith(("http://", "https://")) and href not in label:
+                self.text.append(f" ({href})")
+        super().handle_endtag(tag)
+
+
+def strip_html_keeping_link_urls(html_content: str) -> str:
+    """strip_html, plus the URLs that link labels hide (see LinkUrlKeepingStripper)."""
+    if not isinstance(html_content, str):
+        raise TypeError(f"html_content must be a string, got {type(html_content)}")
+    if "href" not in html_content:
+        return strip_html(html_content)
+    stripper = LinkUrlKeepingStripper()
+    stripper.feed(html_content)
+    return " ".join(stripper.get_data().split())
+
+
 def strip_html(html_content: str) -> str:
     """
     Strip HTML tags from content and return plain text.

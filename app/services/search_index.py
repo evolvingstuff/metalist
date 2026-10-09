@@ -10,7 +10,13 @@ from loguru import logger
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token, list_known_meta_tag_terms
 from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
-from app.services.search_text import build_searchable_text_casefold_from_plaintext, text_term_matches
+from app.services.link_titles import link_title_store
+from app.services.search_text import (
+    append_link_titles_casefold,
+    build_searchable_base_text_casefold,
+    list_link_title_urls,
+    text_term_matches,
+)
 
 
 _QUOTE_CHARS = {"'", '"'}
@@ -168,6 +174,12 @@ class SearchIndex:
         self._alive: Set[int] = set()
 
         self._note_text_casefold: List[str] = []
+        # Notes are also searchable by the cached titles of URLs written in them.
+        # A title can arrive or disappear later, so keep each note's URLs (and,
+        # for notes with URLs, its text without titles) to recompose its text.
+        self._note_link_title_urls: List[FrozenSet[str]] = []
+        self._link_title_url_notes: Dict[str, Set[int]] = {}
+        self._note_base_text_casefold: Dict[int, str] = {}
         self._note_explicit_tag_terms: List[FrozenSet[str]] = []
         self._note_raw_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
@@ -200,6 +212,9 @@ class SearchIndex:
             self._id_to_uuid.clear()
             self._alive.clear()
             self._note_text_casefold.clear()
+            self._note_link_title_urls.clear()
+            self._link_title_url_notes.clear()
+            self._note_base_text_casefold.clear()
             self._note_explicit_tag_terms.clear()
             self._note_raw_tag_terms.clear()
             self._note_tag_terms.clear()
@@ -291,6 +306,26 @@ class SearchIndex:
         logger.bind(
             metrics={"elapsed_ms": elapsed_ms, "note_id": note_id, "revision": self._revision}
         ).info("search.index.upsert.finish")
+
+    def refresh_link_titles(self, urls: FrozenSet[str]) -> None:
+        """Recompose the text of notes containing these URLs after their cached titles changed."""
+        if not isinstance(urls, frozenset):
+            raise TypeError("refresh_link_titles requires a frozenset of normalized URLs")
+        with self._lock:
+            note_int_ids: Set[int] = set()
+            for url in urls:
+                if url in self._link_title_url_notes:
+                    note_int_ids |= self._link_title_url_notes[url]
+            if not note_int_ids:
+                return
+            for note_int_id in note_int_ids:
+                assert note_int_id in self._alive, "deleted notes have no link-title URLs"
+                self._note_text_casefold[note_int_id] = append_link_titles_casefold(
+                    self._note_base_text_casefold[note_int_id],
+                    self._note_link_title_urls[note_int_id],
+                )
+            self._revision += 1
+            self._result_cache.clear()
 
     def update_tag_terms(self, *, note_id: str, tag_terms: FrozenSet[str]) -> None:
         self.bulk_update_tag_terms({note_id: tag_terms})
@@ -803,8 +838,9 @@ class SearchIndex:
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
-        text_casefold = self._build_note_text_casefold(content_text, tags)
-        self._note_text_casefold.append(text_casefold)
+        self._note_text_casefold.append("")
+        self._note_link_title_urls.append(frozenset())
+        self._set_note_text_locked(note_int_id, content_text, tags)
         self._note_explicit_tag_terms.append(explicit_tag_terms)
         self._note_raw_tag_terms.append(raw_tag_terms)
         self._note_tag_terms.append(tag_terms)
@@ -836,7 +872,6 @@ class SearchIndex:
         if note_int_id not in self._alive:
             raise RuntimeError("Cannot update deleted note")
 
-        new_text_casefold = self._build_note_text_casefold(content_text, tags)
         new_explicit_tag_terms = extract_tags_for_search(tags)
         old_explicit_tag_terms = self._note_explicit_tag_terms[note_int_id]
         old_raw_tag_terms = self._note_raw_tag_terms[note_int_id]
@@ -878,7 +913,7 @@ class SearchIndex:
                 term.casefold() for term in new_tag_terms
             )
 
-        self._note_text_casefold[note_int_id] = new_text_casefold
+        self._set_note_text_locked(note_int_id, content_text, tags)
 
     def _remove_existing_locked(self, note_int_id: int) -> None:
         if note_int_id not in self._alive:
@@ -903,18 +938,36 @@ class SearchIndex:
             if bucket is not None:
                 bucket.discard(note_int_id)
         self._note_text_casefold[note_int_id] = ""
+        self._set_link_title_urls_locked(note_int_id, frozenset())
+        if note_int_id in self._note_base_text_casefold:
+            del self._note_base_text_casefold[note_int_id]
         self._note_explicit_tag_terms[note_int_id] = frozenset()
         self._note_raw_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms_casefold[note_int_id] = frozenset()
 
-    def _build_note_text_casefold(self, content_text: str, tags: str) -> str:
-        if not isinstance(content_text, str):
-            raise TypeError(f"content_text must be a string, got {type(content_text)}")
-        if not isinstance(tags, str):
-            raise TypeError(f"tags must be a string, got {type(tags)}")
+    def _set_note_text_locked(self, note_int_id: int, content_text: str, tags: str) -> None:
+        base_text_casefold = build_searchable_base_text_casefold(content_text, tags)
+        link_title_urls = list_link_title_urls(content_text)
+        self._set_link_title_urls_locked(note_int_id, link_title_urls)
+        if link_title_urls:
+            self._note_base_text_casefold[note_int_id] = base_text_casefold
+        elif note_int_id in self._note_base_text_casefold:
+            del self._note_base_text_casefold[note_int_id]
+        self._note_text_casefold[note_int_id] = append_link_titles_casefold(base_text_casefold, link_title_urls)
 
-        return build_searchable_text_casefold_from_plaintext(content_text, tags)
+    def _set_link_title_urls_locked(self, note_int_id: int, urls: FrozenSet[str]) -> None:
+        previous_urls = self._note_link_title_urls[note_int_id]
+        if previous_urls == urls:
+            return
+        for url in previous_urls - urls:
+            bucket = self._link_title_url_notes[url]
+            bucket.discard(note_int_id)
+            if not bucket:
+                del self._link_title_url_notes[url]
+        for url in urls - previous_urls:
+            _add_posting(self._link_title_url_notes, url, note_int_id)
+        self._note_link_title_urls[note_int_id] = urls
 
     def _build_suggestion_representatives_locked(
         self,
@@ -1028,3 +1081,5 @@ class SearchIndex:
 
 
 search_index = SearchIndex()
+# A fetched, decrypted or cleared URL title changes which notes match a text search.
+link_title_store.add_titles_changed_listener(search_index.refresh_link_titles)

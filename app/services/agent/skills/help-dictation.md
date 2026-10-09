@@ -47,6 +47,8 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
   exclusion phrase ("minus" by default) excludes the next term ("neural network
   minus python" gives `neural-network -python`), and a quoted phrase becomes a text
   search. "not" is an ordinary word unless it is set as the exclusion phrase.
+  With the cursor inside a quoted phrase (after `"`), a paste is not cleaned up:
+  it goes in exactly as copied, on one line, with quote marks escaped.
 - **Tag bar:** words matching no tag become new tags, lowercased unless they look
   like an acronym (`GPT`). Each word is its own tag unless the words together match
   one of the user's tags; a new multi-word tag has to be typed.

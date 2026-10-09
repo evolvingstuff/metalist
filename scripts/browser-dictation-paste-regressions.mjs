@@ -147,6 +147,26 @@ export async function checkDictationPaste(page) {
     await page.keyboard.press('Backspace');
     await idle(page);
 
+    // After an opening quote, a paste is text to find: inserted as copied.
+    await page.focus('#search-input');
+    await page.keyboard.type('"');
+    await idle(page);
+    await paste(page, '#search-input', 'This is a test');
+    await waitForValue(page, '#search-input', '"This is a test', 'search paste: after an opening quote, text goes in as copied');
+    await page.keyboard.type('"');
+    await idle(page);
+    await waitForValue(page, '#search-input', '"This is a test"', 'search paste: the quoted paste can be closed');
+    await page.evaluate(() => document.getElementById('search-input').select());
+    await page.keyboard.press('Backspace');
+    await idle(page);
+    await page.keyboard.type('"');
+    await idle(page);
+    await paste(page, '#search-input', 'youtube.com/watch?v=abc');
+    await waitForValue(page, '#search-input', '"youtube.com/watch?v=abc', 'search paste: a URL fragment after an opening quote goes in as copied');
+    await page.evaluate(() => document.getElementById('search-input').select());
+    await page.keyboard.press('Backspace');
+    await idle(page);
+
     // Tag bar: known tags are not added again, unknown words become new tags.
     const point = await page.evaluate(noteId => {
       const rect = document.querySelector(`[data-note-id="${noteId}"] .note-content p`).getBoundingClientRect();

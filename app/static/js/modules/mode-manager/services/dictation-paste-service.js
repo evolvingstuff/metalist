@@ -12,6 +12,7 @@ import {
     splitDictatedNotePaste,
 } from './dictation-note-paste.js';
 import { validateAndRenderTagBar } from './tag-bar-service.js';
+import { findOpenQuoteAtIndex, quotePastedSearchText } from './search-syntax-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
 // Pasting into the search bar or the tag bar turns dictated text (for example
@@ -154,6 +155,14 @@ export function handleDictationPasteEvent(event, target) {
         return;
     }
     event.preventDefault();
+    if (target === 'search') {
+        // Inside a quoted phrase the paste is text to find, inserted as copied.
+        const quoteChar = findOpenQuoteAtIndex(event.target.value, event.target.selectionStart);
+        if (quoteChar !== '') {
+            insertAsNativeEdit(quotePastedSearchText(pastedText, quoteChar));
+            return;
+        }
+    }
     void pasteDictatedText(event.target, target, pastedText);
 }
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 
-from app.utils.text_utils import strip_html
+from app.services.content_formatting import find_plain_text_urls
+from app.services.link_titles import link_title_store, normalize_url_for_link_title
+from app.utils.text_utils import strip_html_keeping_link_urls
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -37,7 +39,47 @@ def extract_tag_bar_comment_text(tags: str) -> str:
     return " ".join(comments)
 
 
+def list_link_title_urls(content_text: str) -> frozenset[str]:
+    """The normalized URLs written out in a note's text; their cached titles are searchable."""
+    if "://" not in content_text:
+        # Most notes have no URL; skip the scan during hydration.
+        return frozenset()
+    urls: set[str] = set()
+    for url in find_plain_text_urls(content_text):
+        normalized_url = normalize_url_for_link_title(url)
+        if normalized_url is not None:
+            urls.add(normalized_url)
+    return frozenset(urls)
+
+
+def append_link_titles_casefold(text_casefold: str, link_title_urls: frozenset[str]) -> str:
+    """Searchable text plus the cached titles of the note's URLs (docs/ui/search-semantics.md).
+
+    Only titles already fetched count; a title fetched later is added when the
+    search index refreshes the notes containing that URL.
+    """
+    if not isinstance(text_casefold, str) or not isinstance(link_title_urls, frozenset):
+        raise TypeError("append_link_titles_casefold requires text and a frozenset of URLs")
+    titles: list[str] = []
+    for url in sorted(link_title_urls):
+        title = link_title_store.get_ok_title(url)
+        if title is not None:
+            titles.append(title.casefold())
+    if not titles:
+        return text_casefold
+    return " ".join([text_casefold, *titles])
+
+
 def build_searchable_text_casefold_from_plaintext(content_text: str, tags: str) -> str:
+    """Visible text, tag-bar comments and the cached titles of URLs in the text, casefolded."""
+    return append_link_titles_casefold(
+        build_searchable_base_text_casefold(content_text, tags),
+        list_link_title_urls(content_text),
+    )
+
+
+def build_searchable_base_text_casefold(content_text: str, tags: str) -> str:
+    """Visible text and tag-bar comments, casefolded (without URL titles)."""
     if not isinstance(content_text, str):
         raise TypeError(f"content_text must be a string, got {type(content_text)}")
     if not isinstance(tags, str):
@@ -61,8 +103,7 @@ def build_searchable_text_casefold(content_html: str, tags: str) -> str:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
 
-    visible_text = strip_html(content_html)
-    return build_searchable_text_casefold_from_plaintext(visible_text, tags)
+    return build_searchable_text_casefold_from_plaintext(strip_html_keeping_link_urls(content_html), tags)
 
 
 def text_term_matches(term: str, text_casefold: str) -> bool:

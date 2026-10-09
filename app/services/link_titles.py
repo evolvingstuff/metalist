@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import re
 from threading import RLock
-from typing import Mapping
+from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
 import httpcore
@@ -213,6 +213,18 @@ class _TitleParser(HTMLParser):
         return _clean_title_text("".join(self._title_parts))
 
 
+def _ok_titles_by_url(state: _LinkTitleState | None) -> dict[str, str]:
+    """The usable titles (status ok) by normalized URL; none while locked."""
+    if state is None or not state.is_decrypted:
+        return {}
+    titles: dict[str, str] = {}
+    for url, record in state.records_by_url.items():
+        if record.status == "ok":
+            assert record.title, f"ok link title record missing title: {url}"
+            titles[url] = record.title
+    return titles
+
+
 class LinkTitleStore:
     def __init__(self) -> None:
         self._lock = RLock()
@@ -223,6 +235,27 @@ class LinkTitleStore:
         # state swaps, and in-flight lookups shown as diagnostics), including
         # the ones that do not advance the client-facing revision.
         self._render_generation = 0
+        # Called, outside the store lock, with the normalized URLs whose usable
+        # title changed (fetched, decrypted, sanitized or cleared on reset).
+        self._titles_changed_listeners: list[Callable[[frozenset[str]], None]] = []
+
+    def add_titles_changed_listener(self, listener: Callable[[frozenset[str]], None]) -> None:
+        if not callable(listener):
+            raise TypeError("listener must be callable")
+        with self._lock:
+            self._titles_changed_listeners.append(listener)
+
+    def _notify_titles_changed(self, before: Mapping[str, str], after: Mapping[str, str]) -> None:
+        changed = frozenset(
+            url for url in set(before) | set(after)
+            if url not in before or url not in after or before[url] != after[url]
+        )
+        if not changed:
+            return
+        with self._lock:
+            listeners = tuple(self._titles_changed_listeners)
+        for listener in listeners:
+            listener(changed)
 
     def bootstrap(self, *, connection) -> None:
         rows = fetch_all_link_title_rows(connection)
@@ -234,11 +267,13 @@ class LinkTitleStore:
             state = result.state
             did_sanitize = result.did_update
         with self._lock:
+            before = _ok_titles_by_url(self._state)
             self._state = state
             self._in_flight.clear()
             self._render_generation += 1
             if did_sanitize:
                 self._revision += 1
+        self._notify_titles_changed(before, _ok_titles_by_url(state))
 
     def ensure_decrypted(self, *, token: str) -> None:
         if not isinstance(token, str):
@@ -249,6 +284,7 @@ class LinkTitleStore:
                 raise RuntimeError("LinkTitleStore is not bootstrapped")
             if state.is_decrypted:
                 return
+            before = _ok_titles_by_url(state)
             state = _build_state_from_stored_rows(
                 stored_rows=state.stored_rows,
                 token=token,
@@ -261,13 +297,16 @@ class LinkTitleStore:
                     self._revision += 1
             self._state = state
             self._render_generation += 1
+        self._notify_titles_changed(before, _ok_titles_by_url(state))
 
     def reset(self) -> None:
         with self._lock:
+            before = _ok_titles_by_url(self._state)
             self._state = None
             self._in_flight.clear()
             self._revision = 0
             self._render_generation += 1
+        self._notify_titles_changed(before, {})
 
     def get_revision(self) -> int:
         with self._lock:
@@ -333,6 +372,7 @@ class LinkTitleStore:
                 self._render_generation += 1
                 return
             previous = state.records_by_url.get(normalized_url)
+            before = _ok_titles_by_url(state)
             next_record = _build_next_record(
                 previous=previous,
                 normalized_url=normalized_url,
@@ -361,6 +401,8 @@ class LinkTitleStore:
             self._in_flight.discard(normalized_url)
             self._revision += 1
             self._render_generation += 1
+            after = _ok_titles_by_url(self._state)
+        self._notify_titles_changed(before, after)
 
     def discard_in_flight(self, url: str) -> None:
         normalized_url = normalize_url_for_link_title(url)
