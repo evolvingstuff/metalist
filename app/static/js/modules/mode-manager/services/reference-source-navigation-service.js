@@ -1,6 +1,9 @@
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
+// The kinds of temporary view a note can open: its source, or the notes referencing it.
+const REFERENCE_VIEW_KINDS = new Set(['source', 'backlinks']);
+
 // Reference tabs are ordinary server tabs whose search is a hidden note-ID query.
 // The navigation stack that hides that query is kept per browser tab in
 // sessionStorage so a reload keeps the "Reference source" label instead of
@@ -75,7 +78,12 @@ export function parseStoredReferenceNavigationStack(rawValue) {
     if (!Array.isArray(parsed)) {
         throw new Error('Stored reference navigation must be a list');
     }
-    return parsed.map(copyReferenceNavigationEntry);
+    // Only kinds of view this version knows are restored; others (e.g. the removed
+    // similar-notes view, docs/design/similar-notes-learnings.md) are dropped, leaving
+    // their tab as an ordinary tab.
+    return parsed
+        .filter((entry) => entry && typeof entry === 'object' && REFERENCE_VIEW_KINDS.has(entry.viewKind))
+        .map(copyReferenceNavigationEntry);
 }
 
 /**

@@ -133,5 +133,7 @@ test('a missing reference navigation record restores nothing', async (t) => {
     );
     assert.deepEqual(parseStoredReferenceNavigationStack(null), []);
     assert.throws(() => parseStoredReferenceNavigationStack('{"not":"a list"}'), /must be a list/);
-    assert.throws(() => parseStoredReferenceNavigationStack('[{"toTabId":"x"}]'), /fromTabId/);
+    // Only known kinds of view are kept; a known kind with missing fields is still a bug.
+    assert.deepEqual(parseStoredReferenceNavigationStack('[{"toTabId":"x"}]'), []);
+    assert.throws(() => parseStoredReferenceNavigationStack('[{"toTabId":"x","viewKind":"source"}]'), /fromTabId/);
 });

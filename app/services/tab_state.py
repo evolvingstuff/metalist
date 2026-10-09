@@ -15,7 +15,7 @@ from app.security.encryption import (
     get_encryption_service_with_token,
     is_encryption_required,
 )
-from app.services.root_sorting import SORT_MODE_NORMAL, normalize_sort_mode
+from app.services.root_sorting import SORT_MODE_NORMAL, SORT_MODES, normalize_sort_mode
 from app.services.input_errors import InputRejected
 
 
@@ -26,6 +26,19 @@ _UUID_RE = re.compile(
     r"[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{12}$"
 )
+
+
+def _normalize_tab_sort_mode(sort_mode: object, *, from_storage: bool) -> str:
+    """A saved sort mode this version does not know opens in normal order.
+
+    Saved tab state can hold values from a removed feature (the similar-notes
+    view saved "similarity:<note id>", docs/design/similar-notes-learnings.md)
+    or from another version; only the known modes are kept. A request from the
+    browser with an unknown sort mode is still a bug and fails.
+    """
+    if from_storage and not (isinstance(sort_mode, str) and sort_mode.strip().lower() in SORT_MODES):
+        return SORT_MODE_NORMAL
+    return normalize_sort_mode(sort_mode)
 
 
 def _is_uuid_string(value: str) -> bool:
@@ -169,7 +182,7 @@ class TabStateStore:
         tabs: Dict[str, Dict[str, object]],
         tab_order: List[str],
     ) -> Dict[str, object]:
-        normalized_tabs = self._normalize_tabs(tabs)
+        normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
         normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
         if active_tab_id not in normalized_tabs:
             raise InputRejected("activeTabId must reference an existing tab")
@@ -316,7 +329,7 @@ class TabStateStore:
             raise RuntimeError("tab-state JSON tabOrder must be a list")
         return {
             "activeTabId": active_tab_id,
-            "tabs": self._normalize_tabs(tabs),
+            "tabs": self._normalize_tabs(tabs, from_storage=True),
             "tabOrder": [str(entry) for entry in tab_order],
             "version": version,
         }
@@ -336,7 +349,7 @@ class TabStateStore:
             raise RuntimeError("snapshot tabs must be an object")
         if not isinstance(tab_order, list):
             raise RuntimeError("snapshot tabOrder must be a list")
-        normalized_tabs = self._normalize_tabs(tabs)
+        normalized_tabs = self._normalize_tabs(tabs, from_storage=True)
         normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
         if active_tab_id not in normalized_tabs:
             raise RuntimeError("snapshot activeTabId must reference an existing tab")
@@ -453,7 +466,8 @@ class TabStateStore:
             normalized.append(tab_id)
         return normalized
 
-    def _normalize_tabs(self, tabs: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, object]]:
+    def _normalize_tabs(self, tabs: Dict[str, Dict[str, object]], *,
+                        from_storage: bool) -> Dict[str, Dict[str, object]]:
         if not isinstance(tabs, dict) or not tabs:
             raise InputRejected("tabs must be a non-empty object")
         if len(tabs) > self._MAX_TABS:
@@ -476,7 +490,7 @@ class TabStateStore:
                 raise InputRejected("searchQuery must be a string")
             if not isinstance(scroll_y, int) or scroll_y < 0:
                 raise InputRejected("scrollY must be a non-negative integer")
-            normalized_sort_mode = normalize_sort_mode(sort_mode)
+            normalized_sort_mode = _normalize_tab_sort_mode(sort_mode, from_storage=from_storage)
 
             normalized_anchor_root_id: Optional[str] = None
             if "anchorRootId" in value:
