@@ -41,6 +41,18 @@ def compile_ontology(rules_text: str) -> TagOntology:
 def load_world(*, corpus: Corpus, split: Split, hidden_note_ids: frozenset[str]) -> World:
     """Load the note store with `hidden_note_ids` showing only their meta tags."""
     assert split.hidden_note_ids <= hidden_note_ids
+    ontology, explicit = load_store(corpus=corpus, hidden_note_ids=hidden_note_ids)
+    return World(
+        split=split,
+        hidden_note_ids=hidden_note_ids,
+        ontology=ontology,
+        explicit=explicit,
+        inherited={note_id: frozenset(store.get_inherited_non_meta_tag_terms(note_id)) for note_id in corpus.notes},
+    )
+
+
+def load_store(*, corpus: Corpus, hidden_note_ids: frozenset[str]) -> tuple[TagOntology, dict[str, frozenset[str]]]:
+    """Load MetaList's note store and search index from the corpus; returns the ontology and visible tags."""
     ontology = compile_ontology(corpus.rules_text)
     tags_by_id: dict[str, str] = {}
     explicit: dict[str, frozenset[str]] = {}
@@ -59,13 +71,7 @@ def load_world(*, corpus: Corpus, split: Split, hidden_note_ids: frozenset[str])
     tag_suggestions_module.get_ontology = lambda: ontology
     store._timing_enabled = False
     store.load_from_db(None, prefetched_rows=_rows(corpus))
-    return World(
-        split=split,
-        hidden_note_ids=hidden_note_ids,
-        ontology=ontology,
-        explicit=explicit,
-        inherited={note_id: frozenset(store.get_inherited_non_meta_tag_terms(note_id)) for note_id in corpus.notes},
-    )
+    return ontology, explicit
 
 
 def baseline_suggestions(*, corpus: Corpus, case: TagCase) -> list[str]:
