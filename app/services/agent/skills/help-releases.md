@@ -5,6 +5,14 @@ README. Changes made after the newest listed version are not described here.
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.13.0
+
+- Dictation: text from speech-to-text tools such as Superwhisper, pasted into the search bar or any tag field, becomes your existing tags ("neural network" gives `neural-network`). Say "quote … end quote" for text, "minus" to exclude, "at" before meta tags such as `@todo`. In a note, the words after "start tags" go to its tag bar. The phrases are set in Dictation Settings, and one undo restores what was pasted.
+- A quoted search with a space at its edge matches whole words: `" fat"` no longer finds "father".
+- The AI keeps a record of what it did for each answer (notes read, searches, web pages opened), so questions like "did you search the web for that?" are answered from what actually happened.
+- Dropping a `.txt`, `.md`, `.csv` or `.json` file stores it as before and adds its text as a child note, shown as Markdown, a table or formatted JSON. File pills show the extension (`.MD`, `.CSV`, …), and hovering a pill says that clicking downloads the file.
+- Typing one letter in the tag bar now narrows the suggestions you were already shown instead of reordering them, so the tag you want is in the top five far more often.
+
 ## 0.12.0
 
 - AI chat is now a tool-using agent: in one answer it can look up MetaList help, read and search the notes in your view, open web pages, and open menus, instead of picking a single route up front. Answers cite notes and web pages with clickable references, including each item listed from a web page.
