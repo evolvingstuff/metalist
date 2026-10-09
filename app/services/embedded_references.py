@@ -220,18 +220,15 @@ def replace_reference_token_mode_in_html(
     return updated_content, True
 
 
-def collect_active_reference_tokens(content_html: str, tags: str) -> List[ReferenceToken]:
-    """Exclude square scopes consumed as formatting, just as the renderer does."""
+def collect_active_reference_tokens(content_html: str) -> List[ReferenceToken]:
+    """The note references the renderer shows: every [[note id]] and ![[note id]].
+
+    A [[...]] holding exactly a note id is a link even in a note whose tag bar
+    has a [[...]] formatting wrapper (docs/ui/references.md).
+    """
     if "[[" not in content_html:
         return []
-    ignored_keys = _ignored_link_wrapper_keys_for_tags(tags)
-    return [
-        token for token in collect_reference_tokens_from_html(content_html)
-        if _ignored_scoped_square_wrapper_depth_at(
-            text=content_html, index=token.start,
-            ignored_link_wrapper_keys=ignored_keys, is_embed=token.is_embed,
-        ) == 0
-    ]
+    return collect_reference_tokens_from_html(content_html)
 
 
 def render_note_content_with_embeds(
@@ -458,7 +455,6 @@ def _replace_reference_tokens_in_html(
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
     occurrence_index = 0
-    ignored_link_wrapper_keys = _ignored_link_wrapper_keys_for_tags(tags)
     for part in parts:
         if _is_html_segment(part):
             output.append(part)
@@ -469,7 +465,6 @@ def _replace_reference_tokens_in_html(
             context=context,
             ancestry=ancestry,
             occurrence_start=occurrence_index,
-            ignored_link_wrapper_keys=ignored_link_wrapper_keys,
             static_export=static_export,
             redact_passwords=redact_passwords,
             render_note_embeds_as_links=render_note_embeds_as_links,
@@ -486,7 +481,6 @@ def _replace_reference_tokens_in_text(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     occurrence_start: int,
-    ignored_link_wrapper_keys: FrozenSet[Tuple[str, int]],
     static_export: bool,
     redact_passwords: bool,
     render_note_embeds_as_links: bool,
@@ -503,17 +497,6 @@ def _replace_reference_tokens_in_text(
             output.append(text[index:])
             break
 
-        ignored_wrapper_depth = _ignored_scoped_square_wrapper_depth_at(
-            text=text,
-            index=token_start,
-            ignored_link_wrapper_keys=ignored_link_wrapper_keys,
-            is_embed=is_embed,
-        )
-        if ignored_wrapper_depth > 0:
-            output.append(text[index : token_start + ignored_wrapper_depth])
-            index = token_start + ignored_wrapper_depth
-            continue
-
         output.append(text[index:token_start])
         end = text.find("]]", token_start + token_open_length)
         if end == -1:
@@ -524,8 +507,10 @@ def _replace_reference_tokens_in_text(
         reference_note_id = raw_id.strip()
 
         if not _is_valid_embed_note_id(reference_note_id):
-            output.append(text[token_start : end + 2])
-            index = end + 2
+            # Not a note id (a formatting wrapper or plain brackets): keep the opener
+            # and scan on, so a link nested inside, as in [[see [[id]] here]], still counts.
+            output.append(text[token_start : token_start + token_open_length])
+            index = token_start + token_open_length
             continue
 
         output.append(
@@ -578,8 +563,10 @@ def _collect_reference_tokens_in_text(
                 )
             )
             occurrence_index += 1
-
-        index = token_end_inner + 2
+            index = token_end_inner + 2
+        else:
+            # Same rule as rendering: only the opener is skipped, so nested links are found.
+            index = token_start + token_open_length
 
     return tokens
 
@@ -1211,37 +1198,6 @@ def _render_embedded_note_node(
         "</div>"
         "</div>"
     )
-
-
-def _ignored_link_wrapper_keys_for_tags(tags: str) -> FrozenSet[Tuple[str, int]]:
-    consumed_wrapper_keys = find_consumed_content_wrapper_keys(tags)
-    return frozenset(
-        key
-        for key in consumed_wrapper_keys
-        if key[0] == "[" and key[1] >= 2
-    )
-
-
-def _ignored_scoped_square_wrapper_depth_at(
-    *,
-    text: str,
-    index: int,
-    ignored_link_wrapper_keys: FrozenSet[Tuple[str, int]],
-    is_embed: bool,
-) -> int:
-    if is_embed:
-        return 0
-    for depth in sorted((key[1] for key in ignored_link_wrapper_keys), reverse=True):
-        opener = "[" * depth
-        if not text.startswith(opener, index):
-            continue
-        if index + depth < len(text) and text[index + depth] == "[":
-            continue
-        closer = "]" * depth
-        if text.find(closer, index + depth) == -1:
-            continue
-        return depth
-    return 0
 
 
 def _extract_first_line_preview(content_html: str) -> str:

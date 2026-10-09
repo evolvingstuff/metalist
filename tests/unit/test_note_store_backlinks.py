@@ -55,23 +55,24 @@ def test_edits_reindex_only_changed_content_or_accepted_tags(hydrated_store, mon
     parsed = []
     original = backlink_index_module.collect_active_reference_tokens
 
-    def track_parse(content, tags):
-        parsed.append((content, tags))
-        return original(content, tags)
+    def track_parse(content):
+        parsed.append(content)
+        return original(content)
 
     monkeypatch.setattr(backlink_index_module, "collect_active_reference_tokens", track_parse)
     content = f"[[{TARGET}]]"
     note = SimpleNamespace(id=REFERRER)
     hydrated_store.update_note_from_db(note, content, "", "")
-    assert parsed == [(content, "")]
+    assert parsed == [content]
     assert hydrated_store.get_backlink_counts(TARGET) == {REFERRER: 1, CHILD: 1}
     hydrated_store.update_note_from_db(note, content, "", "suggestion")
     hydrated_store.apply_bulk_tag_sources({REFERRER: ("", "other-proposal")})
-    assert parsed == [(content, "")]
+    assert parsed == [content]
+    # A note-id link is a link even beside a [[...]] formatting wrapper tag.
     hydrated_store.update_note_from_db(note, content, "[[@red]]", "")
-    assert hydrated_store.get_backlink_counts(TARGET) == {CHILD: 1}
+    assert hydrated_store.get_backlink_counts(TARGET) == {REFERRER: 1, CHILD: 1}
     hydrated_store.apply_bulk_tag_sources({REFERRER: ("", "")})
-    assert parsed == [(content, ""), (content, "[[@red]]"), (content, "")]
+    assert parsed == [content, content, content]
     assert hydrated_store.get_backlink_counts(TARGET) == {REFERRER: 1, CHILD: 1}
 
 

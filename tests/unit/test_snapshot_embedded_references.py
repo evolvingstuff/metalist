@@ -265,14 +265,33 @@ def test_editing_source_omits_reference_chrome(monkeypatch):
     assert state.payloads[TARGET_ID]["content"] == "Source"
 
 
-def test_scoped_square_content_and_self_reference_do_not_create_source_arrows(monkeypatch):
-    notes = {
-        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"[[{TARGET_ID}]]", "[[@red]]"),
-        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, f"![[{TARGET_ID}]]", ""),
-    }
+def test_a_self_reference_does_not_create_a_source_arrow(monkeypatch):
+    notes = {TARGET_ID: _Note(TARGET_ID, None, None, None, False, f"![[{TARGET_ID}]]", "")}
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
     assert "note-backlinks-link" not in state.payloads[TARGET_ID]["content"]
-    assert "note-reference-only" not in state.payloads[HOST_ID]["content"]
+
+
+def test_a_note_id_link_beside_a_square_formatting_wrapper_is_still_a_link(monkeypatch):
+    # A [[...]] holding exactly a note id is always a link (docs/ui/references.md).
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"[[{TARGET_ID}]]", "[[@red]]"),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "Target", ""),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
+    assert "note-backlinks-link" in state.payloads[TARGET_ID]["content"]
+    assert "note-reference-only" in state.payloads[HOST_ID]["content"]
+
+
+def test_a_link_nested_in_a_square_formatting_wrapper_still_renders(monkeypatch):
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False,
+                       f"<div>[[see [[{TARGET_ID}]] here]]</div>", "[[@red]]"),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "Target", ""),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
+    rendered = state.payloads[HOST_ID]["content"]
+    assert "note-reference-block" in rendered
+    assert f"[[{TARGET_ID}]]" not in rendered
 
 
 def test_view_rendering_never_exposes_remote_image_source_to_browser(

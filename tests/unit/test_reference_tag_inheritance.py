@@ -215,18 +215,19 @@ def test_chains_cycles_and_tag_removal_reach_least_fixed_point(monkeypatch):
     assert index.query_note_ids("bar") == set()
 
 
-def test_bulk_tags_and_formatting_scopes_update_edges(monkeypatch):
+def test_bulk_tags_update_edges_and_note_id_links_beat_formatting_scopes(monkeypatch):
+    # A [[...]] holding exactly a note id is a link even beside a [[...]] wrapper tag.
     store, index = _load(monkeypatch, {
         SOURCE: (None, "Source", "foo", ""),
         HOST: (None, f"[[{SOURCE}]]", "[[@red]]", ""),
         CHILD: (HOST, "Child", "", ""),
     })
-    assert index.query_note_ids("foo") == {SOURCE}
+    assert index.query_note_ids("foo") == {SOURCE, HOST, CHILD}
     store.apply_bulk_tag_sources({HOST: ("", ""), SOURCE: ("bar", "pending")})
     assert index.query_note_ids("bar pending") == {SOURCE, HOST, CHILD}
     assert index.query_note_ids("foo") == set()
     store.apply_bulk_tag_sources({HOST: ("[[@red]]", "")})
-    assert index.query_note_ids("bar") == {SOURCE}
+    assert index.query_note_ids("bar") == {SOURCE, HOST, CHILD}
 
 
 def test_deleted_and_restored_source_updates_surviving_referrers(monkeypatch):
