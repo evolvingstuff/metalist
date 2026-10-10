@@ -62,7 +62,7 @@ async function checkPasswordLogin(page) {
         if (!response.ok) throw new Error(await response.text());
     }, password);
     await page.reload();
-    await page.waitForSelector('#login-password', {visible: true});
+    await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
     await page.type('#login-password', password);
     await page.click('#login-form button[type="submit"]');
     await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});

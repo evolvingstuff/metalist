@@ -716,6 +716,8 @@ def auth_status(
     return {
         "version": VERSION,
         "database_user_version": database_user_version,
+        # The next login backs up and upgrades this database (the login screen says so).
+        "database_upgrade_pending": database_user_version < CURRENT_DATABASE_VERSION,
         "authenticated": token is not None,
         # Same answer as AuthService.has_password(), from the row already read.
         "has_password": settings is not None and bool(settings.encryption_enabled),

@@ -112,6 +112,14 @@ loudly; known old-version issues may require authenticated migration. This is a
 storage-contract check, not proof of every disk byte being encrypted or a scan
 of all logs/backups/swap. It does not authenticate ciphertext without the key.
 
+Logging in: the login screen shows the MetaList logo with the namespace dropdown,
+the password field and OK. A wrong password shows the reason under OK without
+leaving the form. After the password is accepted, a progress bar shows the
+current loading step and the seconds elapsed. When a database upgrade is due,
+"Backing up and upgrading this namespace…" appears under OK while it checks, and
+that login takes longer. "Session locked" means the session moved to another tab
+or device; Go to Login opens the login screen.
+
 The Add password, Change password, and Remove password menus open forms. Opening
 is not submitting. An encryption explanation alone does not request a form or a
 password change. Never ask for an actual password or API key in chat.

@@ -16,7 +16,7 @@ from app.api.upload_limits import UploadLimitMiddleware
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
-from app.config import ACTIVE_NAMESPACE, STARTUP_ANIMATION_ENABLED, VERSION
+from app.config import ACTIVE_NAMESPACE, VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.migrations import CURRENT_DATABASE_VERSION
@@ -61,6 +61,7 @@ from app.services.diagnostics import track_request
 from app.services.diagnostics import write_encrypted_exception_trace
 from app.security.sensitive_logging import traceback_frame_summary
 from app.api.request_auth import clear_auth_cookie
+from app.presentation.login_page import login_is_certainly_needed
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.app_updates import router as api2_app_updates_router
@@ -463,7 +464,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             asset_version=ASSET_VERSION,
             page_title=_resolve_page_title(base_title="MetaList"),
             needs_auth=True,
-            startup_animation_enabled=STARTUP_ANIMATION_ENABLED,
+            shows_login_at_once=login_is_certainly_needed(request),
         )
     return template.render(
         request=request,
@@ -472,8 +473,9 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         asset_version=ASSET_VERSION,
         page_title=_resolve_page_title(base_title="MetaList"),
         needs_auth=False,
-        startup_animation_enabled=STARTUP_ANIMATION_ENABLED,
+        shows_login_at_once=False,
     )
+
 
 
 @app.get("/maintenance", response_class=HTMLResponse)

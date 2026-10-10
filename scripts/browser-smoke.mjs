@@ -451,7 +451,7 @@ try {
     if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
   }, password);
   await page.reload();
-  await page.waitForSelector('#login-password', {visible:true});
+  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   await page.type('#login-password', password);
   await page.click('#login-form button[type="submit"]');
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
@@ -475,7 +475,7 @@ try {
   for (let attempt=0; attempt<300 && logs.split('Application startup complete.').length<3; attempt++) await delay(100);
   assert(logs.split('Application startup complete.').length>=3, 'Restored server did not restart');
   await page.reload();
-  await page.waitForSelector('#login-password', {visible:true});
+  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   await page.type('#login-password', password);
   await page.click('#login-form button[type="submit"]');
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
@@ -487,7 +487,7 @@ try {
   await page.waitForFunction(() => document.body.textContent.includes('No actions to undo'));
   console.log('PASS empty undo history shows an explanatory banner');
   await page.evaluate(async () => { const {Auth} = await import('/static/js/modules/auth.js'); await Auth.logout(); });
-  await page.waitForSelector('#login-password', {visible:true});
+  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   console.log('PASS password setup, login, hydration, and logout');
   assert.deepEqual(errors, []);
   await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
