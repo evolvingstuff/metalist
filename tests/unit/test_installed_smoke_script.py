@@ -54,6 +54,49 @@ def test_smoke_cleanup_does_not_terminate_unowned_processes(
     assert terminated == [111]
 
 
+def _refuse_termination(pid, signal):
+    raise PermissionError(13, "Access is denied")
+
+
+def test_smoke_cleanup_on_windows_accepts_a_process_already_exiting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Seen on the Windows release run: the process was exiting after the update's restart.
+    probes = iter([{111}, set()])
+    monkeypatch.setattr(smoke, "_namespace_processes", lambda **kwargs: next(probes))
+    monkeypatch.setattr(smoke.os, "name", "nt")
+    monkeypatch.setattr(smoke.os, "kill", _refuse_termination)
+
+    smoke._stop_namespace_children(executable=tmp_path / "metalist", profiles=[("unique-smoke", 12345, 12346)])
+
+
+def test_smoke_cleanup_on_windows_still_fails_when_the_process_does_not_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(smoke, "_namespace_processes", lambda **kwargs: {111})
+    monkeypatch.setattr(smoke.os, "name", "nt")
+    monkeypatch.setattr(smoke.os, "kill", _refuse_termination)
+    clock = iter(range(0, 1000, 5))
+    monkeypatch.setattr(smoke, "time", SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda seconds: None))
+
+    with pytest.raises(RuntimeError, match="did not stop"):
+        smoke._stop_namespace_children(executable=tmp_path / "metalist", profiles=[("unique-smoke", 12345, 12346)])
+
+
+def test_smoke_cleanup_elsewhere_does_not_hide_a_refused_termination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(smoke, "_namespace_processes", lambda **kwargs: {111})
+    monkeypatch.setattr(smoke.os, "name", "posix")
+    monkeypatch.setattr(smoke.os, "kill", _refuse_termination)
+
+    with pytest.raises(PermissionError):
+        smoke._stop_namespace_children(executable=tmp_path / "metalist", profiles=[("unique-smoke", 12345, 12346)])
+
+
 def test_failure_stack_dump_signals_only_owned_processes_with_registered_handler(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

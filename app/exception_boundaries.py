@@ -26,6 +26,8 @@ CAPTURE_BOUNDARIES = {
     'app/api/routes/app_updates.py:update_status:lookup': ('AppUpdateRejected', 'FileNotFoundError'),
     # Release smoke polls only its own disposable HTTP listeners during an actual update.
     'scripts/smoke_self_update.py:_has_updated_namespace:probe_capture': ('HTTPError',),
+    # Release smoke cleanup: on Windows an exiting process refuses termination; the wait then checks it stopped.
+    'scripts/smoke_installed_package.py:_terminate_on_windows:exit_capture': ('ProcessLookupError', 'PermissionError'),
     # A child can exit between poll and terminate; hung children must be killed and reaped.
     'app/services/namespace_switcher.py:_stop_failed_namespace_launch:terminate_capture': ('ProcessLookupError',),
     'app/services/namespace_switcher.py:_stop_failed_namespace_launch:wait_capture': ('TimeoutExpired',),

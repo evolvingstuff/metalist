@@ -24,6 +24,8 @@ import tempfile
 import time
 from uuid import uuid4
 
+from app.services.exception_capture import CapturedExceptionContext
+
 
 def _request(port: int, path: str, *, host: str, use_https: bool, tls_context: ssl.SSLContext) -> bytes:
     if use_https:
@@ -107,11 +109,27 @@ def _namespace_processes(*, executable: Path, profiles: list[tuple[str, int, int
     return owned_pids
 
 
+def _terminate_on_windows(pid: int) -> None:
+    """A process that is already exiting refuses termination on Windows with
+    "Access is denied" (WinError 5) rather than reporting itself gone. The caller's
+    wait still fails loudly if it does not actually stop."""
+    exit_capture = CapturedExceptionContext(
+        ProcessLookupError,
+        PermissionError,
+        boundary='scripts/smoke_installed_package.py:_terminate_on_windows:exit_capture',
+    )
+    with exit_capture:
+        os.kill(pid, signal.SIGTERM)
+
+
 def _stop_namespace_children(*, executable: Path, profiles: list[tuple[str, int, int]]) -> None:
     # Require both the installed executable and this run's unpredictable namespace
     # identities. A process is never terminated merely for owning a selected port.
     owned_pids = _namespace_processes(executable=executable, profiles=profiles)
     for pid in owned_pids:
+        if os.name == "nt":
+            _terminate_on_windows(pid)
+            continue
         with suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + 15
