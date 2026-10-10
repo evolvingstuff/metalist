@@ -32,6 +32,10 @@ def test_a_pipe_outside_pycharm_gets_plain_text() -> None:
 
 def _table_output(environ: dict[str, str]) -> str:
     console = make_startup_console(environ=environ)
+    # Without a console window attached (CI on Windows) Rich assumes the old
+    # Windows console, which cannot show links, and leaves them out. A modern
+    # terminal (Windows Terminal, macOS, Linux) is what these tests describe.
+    console.legacy_windows = False
     console.file = io.StringIO()
     print_namespace_table(console, rows=[("default", "restarted", "http://127.0.0.1:8000", "https://127.0.0.1:8443")])
     return console.file.getvalue()
