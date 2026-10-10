@@ -26,7 +26,6 @@ test('login and workspace requests retain the authenticated tab identity when br
     const {AiChatPanel} = await import('../../app/static/js/modules/ai-chat/ai-chat-panel-controller.js');
     const {ReminderSurface} = await import('../../app/static/js/modules/reminder-surface-service.js');
     t.mock.method(Auth, 'setupEventListeners', () => {});
-    t.mock.method(Auth, '_isStartupIntroEnabled', () => false);
     t.mock.method(Auth, 'checkAuthStatus', async () => false);
     await Auth.init();
     const loginId = stored.get('metalist_tab_id');
@@ -36,8 +35,8 @@ test('login and workspace requests retain the authenticated tab identity when br
         headers.push(options.headers);
         return {ok: true, text: async () => JSON.stringify({hydration_required: true})};
     });
-    t.mock.method(Auth, '_showLoginLoadingPanel', () => {});
-    t.mock.method(Auth, '_waitForBrowserPaint', async () => {});
+    t.mock.method(Auth, '_clearLoginError', () => {});
+    t.mock.method(Auth, '_setLoginSubmitBusy', () => {});
     t.mock.method(Auth, '_runHydrationFlow', async () => {
         stored.delete('metalist_tab_id');
     });

@@ -124,7 +124,7 @@ async function checkEncryptedLogin(context, origin) {
       stage = `reloading encrypted login (removeStoredIdentity=${removeStoredIdentity})`;
       await page.reload({waitUntil: 'domcontentloaded', timeout: 30000});
       stage = `waiting for login form (removeStoredIdentity=${removeStoredIdentity})`;
-      await page.waitForSelector('#login-password', {visible: true, timeout: 30000});
+      await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true, timeout: 30000});
       stage = `preparing login identity (removeStoredIdentity=${removeStoredIdentity})`;
       const identity = await page.evaluate(shouldRemove => {
         const tabId = sessionStorage.getItem('metalist_tab_id');
@@ -177,7 +177,7 @@ async function checkEncryptedLogin(context, origin) {
           await Auth.logout();
         });
         stage = `waiting for logout form (removeStoredIdentity=${removeStoredIdentity})`;
-        await page.waitForSelector('#login-password', {visible: true, timeout: 30000});
+        await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true, timeout: 30000});
       }
     }
   } catch (error) {

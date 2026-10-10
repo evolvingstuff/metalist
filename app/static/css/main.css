@@ -46,149 +46,231 @@ html {
     scrollbar-gutter: stable;
 }
 
-/* Login Page Styles */
+/* Login / loading screen (PLAN.md): always dark, the animated logo stays in
+   place while the form or the loading progress shows under it. */
 .login-page {
+    --login-logo-width: min(300px, 62vw);
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     z-index: 1000;
     overflow: hidden;
-    background: #08111c;
+    background: radial-gradient(ellipse at 50% 42%, #1a1a1a 0%, #0b0b0b 58%, #050505 100%);
+    color: #f4f4f4;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
 }
 
-.login-background {
+.login-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: var(--login-logo-width);
+    /* A fixed distance from the top: the panel under the logo can change height
+       (an error line, the loading view) without moving the logo. */
+    margin-top: max(48px, 16vh);
+}
+
+.login-title {
     position: absolute;
-    inset: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.login-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    /* Clear space under the bars, so the fields below do not read as part of the logo. */
+    margin-bottom: 72px;
+}
+
+.login-logo-mark {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    fill: #ffffff;
+}
+
+.login-panel {
+    width: 100%;
+}
+
+/* Nothing under the logo until the namespace list has loaded; then the form and
+   the picker fade in together instead of arriving one by one. Transparent rather
+   than hidden, so the browser can fill a saved password before the fade. */
+.login-panel[data-revealed="false"] {
+    opacity: 0;
     pointer-events: none;
 }
 
-.login-startup-video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+.login-panel[data-revealed="true"] {
+    animation: login-fade-in 250ms ease-out;
 }
 
-.login-background-scrim {
-    position: absolute;
-    inset: 0;
-    background:
-        linear-gradient(135deg, rgba(5, 10, 18, 0.78), rgba(9, 25, 44, 0.42)),
-        radial-gradient(circle at top right, rgba(71, 153, 255, 0.22), transparent 36%);
+@keyframes login-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
-.login-background-glow {
-    position: absolute;
-    inset: auto auto -16vh -12vw;
-    width: 44vw;
-    height: 44vw;
-    border-radius: 999px;
-    background: rgba(0, 102, 204, 0.22);
-    filter: blur(64px);
+@media (prefers-reduced-motion: reduce) {
+    .login-panel[data-revealed="true"] {
+        animation: none;
+    }
 }
 
-.login-container {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    text-align: left;
-    padding: 36px;
-    max-width: 440px;
-    width: 100%;
-    min-height: 430px;
-    margin: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 24px;
-    background: rgba(7, 16, 28, 0.58);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(16px);
-    color: #f4f8ff;
+/* The form and the loading view occupy the same place. When the password is
+   accepted the form slides out to the left while the loading view slides in from
+   the right, within the logo's width; the logo does not move. */
+.login-views {
+    display: grid;
+    overflow: hidden;
 }
 
-.login-copy {
-    margin-bottom: 26px;
+.login-views > * {
+    grid-area: 1 / 1;
+    min-width: 0;
 }
 
-.login-container h1 {
-    font-size: clamp(2.7rem, 4vw, 3.4rem);
-    line-height: 0.95;
+.login-view-leaving {
+    animation: login-slide-out-left 350ms ease-in-out forwards;
+}
+
+.login-view-entering {
+    animation: login-slide-in-right 350ms ease-in-out;
+}
+
+@keyframes login-slide-out-left {
+    to {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+}
+
+@keyframes login-slide-in-right {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .login-view-leaving,
+    .login-view-entering {
+        animation: none;
+    }
+}
+
+/* Under OK while a slow login runs (a database upgrade is due). */
+.login-note {
+    margin-top: 12px;
+    font-size: 14px;
+    font-style: italic;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* The Session Locked page uses the login screen's look. */
+.locked-panel {
+    text-align: center;
+    transition: opacity 200ms ease-in;
+}
+
+/* Leaving for the login page: the heading and button fade out first (locked.js). */
+.locked-panel[data-leaving="true"] {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.locked-panel h1 {
     margin: 0 0 14px;
-    color: #f7fbff;
-    letter-spacing: -0.04em;
+    font-size: 20px;
+    font-weight: 600;
+    color: #f4f4f4;
 }
 
-.login-container h2 {
-    font-size: 1.02rem;
-    margin: 0;
-    color: rgba(230, 238, 252, 0.82);
-    font-weight: normal;
-}
-
-.startup-splash {
-    display: flex;
-    align-items: center;
-    min-height: 72px;
-    margin-bottom: 8px;
-    padding: 18px 20px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.startup-message {
-    margin: 0;
-    font-size: 0.98rem;
-    color: rgba(243, 247, 255, 0.9);
-}
-
-.login-container input {
+.locked-panel button {
     width: 100%;
-    padding: 15px;
-    margin: 15px 0;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 14px;
-    font-size: 18px;
-    box-sizing: border-box;
-    background: rgba(8, 15, 28, 0.74);
-    color: #f7fbff;
-}
-
-.login-container input:focus {
-    outline: none;
-    border-color: rgba(120, 187, 255, 0.82);
-    box-shadow: 0 0 0 4px rgba(0, 102, 204, 0.18);
-}
-
-.login-container input::placeholder {
-    color: rgba(214, 224, 242, 0.52);
-}
-
-.login-container button {
-    width: 100%;
-    padding: 15px;
-    background: linear-gradient(135deg, #0b78ed, #1f58d6);
-    color: white;
+    margin-top: 8px;
+    padding: 12px 14px;
     border: none;
-    border-radius: 14px;
-    font-size: 18px;
+    border-radius: 10px;
+    background: #f4f4f4;
+    color: #0b0b0b;
+    font-size: 16px;
+    font-weight: 600;
     cursor: pointer;
-    margin-top: 10px;
-    box-shadow: 0 18px 36px rgba(11, 120, 237, 0.28);
-    transition:
-        transform 0.18s ease,
-        box-shadow 0.18s ease,
-        filter 0.18s ease;
 }
 
-.login-container button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 22px 40px rgba(11, 120, 237, 0.34);
-    filter: brightness(1.03);
+.locked-panel button:hover {
+    background: #ffffff;
+}
+
+
+.login-form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #f4f4f4;
+    font-size: 16px;
+}
+
+.login-form input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* A browser-filled password keeps the dark look (browsers paint it yellow or blue). */
+.login-form input:-webkit-autofill,
+.login-form input:-webkit-autofill:hover,
+.login-form input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f4f4f4;
+    caret-color: #f4f4f4;
+    box-shadow: 0 0 0 1000px #161616 inset;
+    transition: background-color 600000s 0s;
+}
+
+.login-form input:autofill {
+    background: #161616;
+}
+
+.login-form input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.login-form button {
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px 14px;
+    border: none;
+    border-radius: 10px;
+    background: #f4f4f4;
+    color: #0b0b0b;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.login-form button:hover {
+    background: #ffffff;
+}
+
+.login-form button:disabled {
+    cursor: wait;
+    opacity: 0.6;
 }
 
 .error-message {
@@ -204,76 +286,55 @@ html {
     display: none;
 }
 
-.login-loading {
-    margin-top: 24px;
-    text-align: left;
-    padding: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.08);
+.login-form .error-message {
+    margin-top: 12px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    color: #ff8a9a;
+    font-size: 14px;
 }
 
-.login-loading-title {
-    font-size: 1.1em;
-    color: #f5f9ff;
-    margin-bottom: 8px;
-    font-weight: 600;
-}
-
-.login-loading-first {
-    font-size: 0.9em;
-    color: rgba(226, 235, 250, 0.74);
-    margin-bottom: 12px;
-}
-
-.login-loading-message {
-    font-size: 0.9em;
-    color: rgba(236, 241, 250, 0.82);
-    margin-bottom: 10px;
-}
-
+/* The progress bar is the logo's width, like a third bar. */
 .login-progress-track {
     width: 100%;
-    height: 10px;
-    background-color: rgba(255, 255, 255, 0.16);
-    border-radius: 999px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.12);
     overflow: hidden;
 }
 
 .login-progress-bar {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, #0b78ed, #6cc0ff);
+    background: #ffffff;
     transition: width 0.2s ease;
 }
 
-.login-loading-elapsed {
-    margin-top: 8px;
-    font-size: 0.85em;
-    font-variant-numeric: tabular-nums;
-    color: rgba(226, 235, 250, 0.74);
+.login-loading-line {
+    margin-top: 12px;
+    min-height: 1.4em;
+    font-size: 14px;
+    font-style: italic;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
 }
 
-.login-loading-count {
-    margin-top: 8px;
-    font-size: 0.85em;
-    color: rgba(226, 235, 250, 0.74);
+.login-loading-elapsed {
+    font-variant-numeric: tabular-nums;
+}
+
+.login-loading-message[data-state="error"] {
+    font-style: normal;
+    color: #ff8a9a;
 }
 
 .login-namespace-switcher {
-    margin-top: auto;
-    padding-top: 18px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    /* The same gap as between the password field and OK. */
+    margin-bottom: 10px;
 }
 
-.login-namespace-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.76rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: rgba(214, 226, 245, 0.58);
-}
+
 
 .login-namespace-select-wrap {
     position: relative;
@@ -286,8 +347,8 @@ html {
     right: 14px;
     width: 8px;
     height: 8px;
-    border-right: 1.5px solid rgba(229, 237, 249, 0.6);
-    border-bottom: 1.5px solid rgba(229, 237, 249, 0.6);
+    border-right: 1.5px solid rgba(255, 255, 255, 0.55);
+    border-bottom: 1.5px solid rgba(255, 255, 255, 0.55);
     transform: translateY(-70%) rotate(45deg);
     pointer-events: none;
 }
@@ -296,27 +357,17 @@ html {
     width: 100%;
     padding: 10px 40px 10px 14px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 12px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.04);
-    color: rgba(242, 247, 255, 0.84);
+    color: rgba(255, 255, 255, 0.85);
     font-size: 0.94rem;
     appearance: none;
     cursor: pointer;
-    transition:
-        border-color 0.18s ease,
-        background 0.18s ease,
-        color 0.18s ease;
-}
-
-.login-namespace-select:hover {
-    border-color: rgba(144, 194, 255, 0.24);
-    background: rgba(255, 255, 255, 0.06);
 }
 
 .login-namespace-select:focus {
     outline: none;
-    border-color: rgba(120, 187, 255, 0.48);
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.12);
+    border-color: rgba(255, 255, 255, 0.45);
 }
 
 .login-namespace-select:disabled {
@@ -330,30 +381,13 @@ html {
 }
 
 .login-namespace-status {
-    margin: 10px 0 0;
-    font-size: 0.88rem;
-    color: rgba(216, 228, 245, 0.68);
+    margin: 8px 0 0;
+    font-size: 0.86rem;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .login-namespace-status[data-state="error"] {
-    color: #ffd8de;
-}
-
-@media (max-width: 640px) {
-    .login-container {
-        margin: 18px;
-        padding: 28px 22px;
-        border-radius: 20px;
-    }
-
-    .login-container h1 {
-        font-size: 2.3rem;
-    }
-
-    .login-container input,
-    .login-container button {
-        font-size: 16px;
-    }
+    color: #ff8a9a;
 }
 
 /* Shared modal shell. Modal contents are intentionally dark in every app theme. */

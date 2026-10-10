@@ -21,19 +21,21 @@ import {
 import { renderNamespaceLoadingTab } from './modals/namespace-loading-page.js';
 import { formatElapsedDuration } from './elapsed-time.js';
 
+// Matches the 350 ms slide in main.css (.login-view-leaving).
+const LOGIN_SLIDE_MS = 350;
+
 export const Auth = {
     hasPassword: null,
     _forcingLogout: false,
     _currentNamespace: null,
     _loginNamespaceRequestId: 0,
-    _startupIntroPromise: null,
-    _startupIntroResolved: false,
+    // Hydration progress shown so far: the bar never moves backwards.
+    _shownProgressPercent: 0,
+    // Seconds shown beside the loading step, counted from when the loading view appears.
     _loadingStartedAt: null,
-    _loadingElapsedTimerId: null,
-
-    _isStartupIntroEnabled() {
-        return CONFIG.STARTUP.ENABLE_LOGIN_INTRO === true;
-    },
+    _loadingTimerId: null,
+    // The next login backs up and upgrades the database (from /auth/status).
+    _isUpgradePending: false,
     
     /**
      * Initialize authentication on page load
@@ -43,12 +45,6 @@ export const Auth = {
         initializeSessionIdentity();
         clearLegacyAuthStorage();
         this.setupEventListeners();
-        if (this._isStartupIntroEnabled()) {
-            this._startStartupIntro();
-        } else {
-            this._startupIntroResolved = true;
-            this._startupIntroPromise = Promise.resolve();
-        }
         return await this.checkAuthStatus();
     },
     
@@ -77,6 +73,10 @@ export const Auth = {
 
         const status = await response.json();
         if (this.hasPassword !== Boolean(status.has_password)) this.hasPassword = Boolean(status.has_password);
+        if (typeof status.database_upgrade_pending !== 'boolean') {
+            throw new Error('Auth status requires database_upgrade_pending');
+        }
+        if (this._isUpgradePending !== status.database_upgrade_pending) this._isUpgradePending = status.database_upgrade_pending;
         if (this._currentNamespace !== status.namespace) this._setCurrentNamespace(status.namespace);
         this._applyThemePreference(status.client_preferences);
         console.log('[Auth] Status response received');
@@ -86,14 +86,7 @@ export const Auth = {
                 this.showLoginModal();
                 return false;
             }
-            if (this._isStartupIntroEnabled()) {
-                this.showStartupSplash('Opening encrypted workspace…', 'Preparing your encrypted workspace…');
-            }
             return true;
-        }
-
-        if (this._isStartupIntroEnabled()) {
-            this.showStartupSplash('Opening workspace…', 'Preparing workspace…');
         }
 
         if (!status.authenticated) {
@@ -130,56 +123,6 @@ export const Auth = {
         return element;
     },
 
-    _setLoginSubtitle(text) {
-        if (typeof text !== 'string' || text.length === 0) {
-            throw new Error('Auth._setLoginSubtitle requires text string');
-        }
-        const subtitle = this._requireElement('login-subtitle');
-        subtitle.textContent = text;
-        subtitle.hidden = false;
-    },
-
-    _hideLoginSubtitle() {
-        const subtitle = this._requireElement('login-subtitle');
-        subtitle.hidden = true;
-    },
-
-    _setLoginLoadingTitle(text) {
-        if (typeof text !== 'string' || text.length === 0) {
-            throw new Error('Auth._setLoginLoadingTitle requires text string');
-        }
-        const loadingTitle = this._requireElement('login-loading-title');
-        loadingTitle.textContent = text;
-    },
-
-    _updateLoadingElapsedUI() {
-        if (this._loadingStartedAt === null) {
-            throw new Error('Loading elapsed timer has not started');
-        }
-        const elapsed = this._requireElement('login-loading-elapsed');
-        const elapsedMilliseconds = window.performance.now() - this._loadingStartedAt;
-        elapsed.textContent = `Elapsed: ${formatElapsedDuration(elapsedMilliseconds)}`;
-    },
-
-    _startLoadingElapsedTimer() {
-        if (this._loadingElapsedTimerId !== null) {
-            return;
-        }
-        this._loadingStartedAt = window.performance.now();
-        this._updateLoadingElapsedUI();
-        this._loadingElapsedTimerId = window.setInterval(() => {
-            this._updateLoadingElapsedUI();
-        }, 1000);
-    },
-
-    _stopLoadingElapsedTimer() {
-        if (this._loadingElapsedTimerId === null) return;
-        window.clearInterval(this._loadingElapsedTimerId);
-        this._loadingElapsedTimerId = null;
-        this._loadingStartedAt = null;
-        this._requireElement('login-loading-elapsed').textContent = '';
-    },
-
     _setCurrentNamespace(namespace) {
         if (typeof namespace !== 'string') {
             throw new Error('Auth._setCurrentNamespace requires namespace string');
@@ -196,14 +139,6 @@ export const Auth = {
             return;
         }
         document.documentElement.removeAttribute('data-theme');
-    },
-
-    _setStartupMessage(text) {
-        if (typeof text !== 'string' || text.length === 0) {
-            throw new Error('Auth._setStartupMessage requires text string');
-        }
-        const startupMessage = this._requireElement('startup-message');
-        startupMessage.textContent = text;
     },
 
     _setLoginNamespaceStatus(text, state = 'info') {
@@ -229,13 +164,12 @@ export const Auth = {
 
     _syncLoginNamespaceVisibility() {
         const switcher = this._requireElement('login-namespace-switcher');
-        const loginForm = this._requireElement('login-form');
         const loginPage = this._requireElement('login-page');
         const status = this._requireElement('login-namespace-status');
         const hasChoices = switcher.dataset.hasChoices === 'true';
         const shouldShow = (hasChoices || status.hidden === false)
             && loginPage.style.display !== 'none'
-            && loginForm.style.display !== 'none';
+            && !this._requireElement('login-form-view').hidden;
         switcher.hidden = !shouldShow;
     },
 
@@ -328,44 +262,111 @@ export const Auth = {
     _resetHydrationUI() {
         const message = this._requireElement('login-loading-message');
         const bar = this._requireElement('login-progress-bar');
-        const firstLoad = this._requireElement('login-loading-first');
-        this._setLoginLoadingTitle('Loading encrypted data…');
         message.textContent = '';
+        message.dataset.state = 'info';
         bar.style.width = '0%';
-        firstLoad.style.display = 'none';
+        if (this._shownProgressPercent !== 0) this._shownProgressPercent = 0;
     },
 
-    _showLoginLoadingPanel(subtitle, loadingTitle, loadingMessage, progressPercent) {
-        if (typeof subtitle !== 'string' || subtitle.length === 0) {
-            throw new Error('Auth._showLoginLoadingPanel requires subtitle string');
+    _setLoginProgress(percent) {
+        if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
+            throw new Error('Auth._setLoginProgress requires an integer percent 0-100');
         }
-        if (typeof loadingTitle !== 'string' || loadingTitle.length === 0) {
-            throw new Error('Auth._showLoginLoadingPanel requires loadingTitle string');
-        }
-        if (typeof loadingMessage !== 'string') {
-            throw new Error('Auth._showLoginLoadingPanel requires loadingMessage string');
-        }
-        if (!Number.isInteger(progressPercent) || progressPercent < 0 || progressPercent > 100) {
-            throw new Error('Auth._showLoginLoadingPanel requires progressPercent integer 0-100');
-        }
+        // A later phase can report less than an earlier one; the bar holds its place.
+        const shown = Math.max(this._shownProgressPercent, percent);
+        if (shown !== this._shownProgressPercent) this._shownProgressPercent = shown;
+        this._requireElement('login-progress-bar').style.width = `${shown}%`;
+    },
 
-        const startupSplash = this._requireElement('startup-splash');
-        const loginForm = this._requireElement('login-form');
-        const loadingPanel = this._requireElement('login-loading');
-        const message = this._requireElement('login-loading-message');
-        const bar = this._requireElement('login-progress-bar');
+    _showLoadingElapsed() {
+        if (this._loadingStartedAt === null) {
+            throw new Error('The loading time has not started');
+        }
+        const elapsed = window.performance.now() - this._loadingStartedAt;
+        this._requireElement('login-loading-elapsed').textContent = ` · ${formatElapsedDuration(elapsed)}`;
+    },
 
+    _startLoadingElapsed() {
+        this._stopLoadingElapsed();
+        this._loadingStartedAt = window.performance.now();
+        this._showLoadingElapsed();
+        this._loadingTimerId = window.setInterval(() => this._showLoadingElapsed(), 1000);
+    },
+
+    // Stops counting; the last time stays shown (it stays visible after a failure).
+    _stopLoadingElapsed() {
+        if (this._loadingTimerId === null) {
+            return;
+        }
+        window.clearInterval(this._loadingTimerId);
+        this._loadingTimerId = null;
+    },
+
+    // The panel under the logo shows the form or the loading progress.
+    _showLoginLoadingPanel(message, progressPercent) {
+        if (typeof message !== 'string') {
+            throw new Error('Auth._showLoginLoadingPanel requires message string');
+        }
         this._resetHydrationUI();
-        startupSplash.style.display = 'none';
-        loginForm.style.display = 'none';
-        loadingPanel.style.display = 'block';
-        this._setLoginSubtitle(subtitle);
-        this._setLoginLoadingTitle(loadingTitle);
-        message.textContent = loadingMessage;
-        bar.style.width = `${progressPercent}%`;
-        this._startLoadingElapsedTimer();
+        this._slideToLoadingView();
+        this._requireElement('login-loading-message').textContent = message;
+        this._setLoginProgress(progressPercent);
+        this._startLoadingElapsed();
         this._clearLoginError();
         this._syncLoginNamespaceVisibility();
+    },
+
+    _showLoginForm() {
+        this._stopLoadingElapsed();
+        this._requireElement('login-loading-elapsed').textContent = '';
+        const formView = this._requireElement('login-form-view');
+        const loadingView = this._requireElement('login-loading');
+        formView.classList.remove('login-view-leaving');
+        loadingView.classList.remove('login-view-entering');
+        formView.hidden = false;
+        loadingView.hidden = true;
+        this._setLoginSubmitBusy(false);
+    },
+
+    // The form slides out to the left while the loading view slides in from the
+    // right (PLAN.md case 5); with reduced motion, or no form showing, it swaps.
+    _slideToLoadingView() {
+        const formView = this._requireElement('login-form-view');
+        const loadingView = this._requireElement('login-loading');
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        loadingView.hidden = false;
+        if (formView.hidden || reducedMotion) {
+            formView.hidden = true;
+            return;
+        }
+        formView.classList.add('login-view-leaving');
+        loadingView.classList.add('login-view-entering');
+        let isFinished = false;
+        const finish = () => {
+            if (isFinished) {
+                return;
+            }
+            isFinished = true;
+            formView.hidden = true;
+            formView.classList.remove('login-view-leaving');
+            loadingView.classList.remove('login-view-entering');
+            this._syncLoginNamespaceVisibility();
+        };
+        formView.addEventListener('animationend', finish, { once: true });
+        // Background tabs may not run the animation; the swap still completes.
+        window.setTimeout(finish, LOGIN_SLIDE_MS + 100);
+    },
+
+    _setLoginSubmitBusy(isBusy) {
+        const button = this._requireElement('login-submit');
+        button.disabled = isBusy;
+        // A login that upgrades the database takes longer; say why (PLAN.md case 7).
+        this._requireElement('login-note').hidden = !(isBusy && this._isUpgradePending);
+        if (isBusy) {
+            button.textContent = 'Checking…';
+            return;
+        }
+        button.textContent = 'OK';
     },
 
     async _waitForBrowserPaint() {
@@ -377,83 +378,6 @@ export const Auth = {
         });
     },
 
-    _startStartupIntro() {
-        if (this._startupIntroPromise !== null) {
-            return;
-        }
-        if (!this._isStartupIntroEnabled()) {
-            throw new Error('Startup intro is disabled');
-        }
-
-        const loginPage = this._requireElement('login-page');
-        const mainApp = this._requireElement('main-app');
-        const video = this._requireElement('login-startup-video');
-
-        loginPage.style.display = 'flex';
-        mainApp.style.display = 'none';
-        this.showStartupSplash('Opening workspace…', 'Preparing workspace…');
-
-        this._startupIntroPromise = new Promise((resolve) => {
-            const finishIntro = () => {
-                if (this._startupIntroResolved) {
-                    return;
-                }
-                this._startupIntroResolved = true;
-                video.pause();
-                resolve();
-            };
-
-            video.addEventListener('ended', finishIntro, { once: true });
-            video.addEventListener('error', finishIntro, { once: true });
-
-            const playPromise = video.play();
-            if (playPromise !== undefined && playPromise !== null && typeof playPromise.then === 'function') {
-                playPromise.catch((error) => {
-            rethrowUnexpectedError(error);
-                    console.warn('[Auth] Startup intro playback failed');
-                    finishIntro();
-                });
-            }
-        });
-    },
-
-    async waitForStartupIntro() {
-        if (this._startupIntroPromise === null) {
-            throw new Error('Startup intro not initialized');
-        }
-        await this._startupIntroPromise;
-    },
-
-    showStartupSplash(subtitle, message) {
-        if (typeof subtitle !== 'string' || subtitle.length === 0) {
-            throw new Error('Auth.showStartupSplash requires subtitle string');
-        }
-        if (typeof message !== 'string' || message.length === 0) {
-            throw new Error('Auth.showStartupSplash requires message string');
-        }
-        if (!this._isStartupIntroEnabled()) {
-            throw new Error('Startup splash requested while startup intro is disabled');
-        }
-
-        const loginPage = this._requireElement('login-page');
-        const mainApp = this._requireElement('main-app');
-        const startupSplash = this._requireElement('startup-splash');
-        const loginForm = this._requireElement('login-form');
-        const loadingPanel = this._requireElement('login-loading');
-
-        this._stopLoadingElapsedTimer();
-        mainApp.style.display = 'none';
-        loginPage.style.display = 'flex';
-        startupSplash.style.display = 'flex';
-        loginForm.style.display = 'none';
-        loadingPanel.style.display = 'none';
-        this._setLoginSubtitle(subtitle);
-        this._setStartupMessage(message);
-        this._resetHydrationUI();
-        this._clearLoginError();
-        this._syncLoginNamespaceVisibility();
-    },
-    
     /**
      * Show the login page and hide main app
      */
@@ -462,31 +386,35 @@ export const Auth = {
         const loginPage = this._requireElement('login-page');
         const mainApp = this._requireElement('main-app');
         const passwordInput = this._requireElement('login-password');
-        const startupSplash = this._requireElement('startup-splash');
-        const loginForm = this._requireElement('login-form');
-        const loadingPanel = this._requireElement('login-loading');
 
-        this._stopLoadingElapsedTimer();
         mainApp.style.display = 'none';
         loginPage.style.display = 'flex';
-        startupSplash.style.display = 'none';
-        loginForm.style.display = 'block';
-        loadingPanel.style.display = 'none';
-        this._setLoginSubtitle('Authentication Required');
+        this._showLoginForm();
         this._resetHydrationUI();
         this._clearLoginError();
         this._syncLoginNamespaceVisibility();
-        void this._loadLoginNamespaceCatalog().catch((error) => {
-            rethrowUnexpectedError(error);
-            const message = error instanceof Error ? error.message : 'Failed to load namespaces';
-            this._setLoginNamespaceStatus(message, 'error');
-        });
-
-        setTimeout(() => {
-            passwordInput.focus();
-        }, 100);
+        void this._loadLoginNamespaceCatalog().then(
+            () => this._revealLoginPanel(passwordInput),
+            (error) => {
+                rethrowUnexpectedError(error);
+                const message = error instanceof Error ? error.message : 'Failed to load namespaces';
+                this._setLoginNamespaceStatus(message, 'error');
+                // Shown anyway, with the error, so the login is never stuck hidden.
+                this._revealLoginPanel(passwordInput);
+            },
+        );
     },
-    
+
+    // Everything under the logo appears together, fading in, once the namespace
+    // list is known; later login screens on this page keep it shown.
+    _revealLoginPanel(passwordInput) {
+        const panel = this._requireElement('login-panel');
+        if (panel.dataset.revealed !== 'true') {
+            panel.dataset.revealed = 'true';
+        }
+        passwordInput.focus();
+    },
+
     /**
      * Hide the login page and show main app
      */
@@ -495,7 +423,7 @@ export const Auth = {
         const mainApp = this._requireElement('main-app');
         const passwordInput = this._requireElement('login-password');
 
-        this._stopLoadingElapsedTimer();
+        this._stopLoadingElapsed();
         loginPage.style.display = 'none';
         mainApp.style.display = 'block';
         this._resetHydrationUI();
@@ -505,57 +433,21 @@ export const Auth = {
     },
 
     _showHydrationUI() {
-        this._showLoginLoadingPanel(
-            'Loading encrypted data…',
-            'Loading encrypted data…',
-            '',
-            0,
-        );
-        this._hideLoginSubtitle();
+        this._showLoginLoadingPanel('', 0);
     },
 
     _updateHydrationUI(status) {
-        const message = document.getElementById('login-loading-message');
-        const bar = document.getElementById('login-progress-bar');
-        const firstLoad = document.getElementById('login-loading-first');
-
-        if (message) {
-            if (typeof status.message === 'string') {
-                const trimmed = status.message.trim();
-                if (trimmed.length > 0) {
-                    const needsEllipsis = !(trimmed.endsWith('...') || trimmed.endsWith('…'));
-                    message.textContent = needsEllipsis ? `${trimmed}...` : trimmed;
-                } else {
-                    message.textContent = '';
-                }
-            } else {
-                message.textContent = '';
-            }
+        const message = this._requireElement('login-loading-message');
+        if (typeof status.message !== 'string') {
+            throw new Error('Hydration status requires a message string');
         }
-        if (firstLoad) {
-            firstLoad.style.display = status.first_load ? 'block' : 'none';
+        const trimmed = status.message.trim();
+        const needsEllipsis = trimmed.length > 0 && !(trimmed.endsWith('...') || trimmed.endsWith('…'));
+        message.textContent = needsEllipsis ? `${trimmed}…` : trimmed;
+        if (typeof status.overall_percent !== 'number') {
+            throw new Error('Hydration status requires overall_percent');
         }
-        if (typeof status.overall_percent === 'number') {
-            let percent = Math.floor(status.overall_percent);
-            if (percent > 100) {
-                percent = 100;
-            }
-            if (percent < 0) {
-                percent = 0;
-            }
-            if (bar) {
-                bar.style.width = `${percent}%`;
-            }
-        } else if (typeof status.total === 'number' && status.total > 0) {
-            const percent = Math.min(100, Math.floor((status.processed / status.total) * 100));
-            if (bar) {
-                bar.style.width = `${percent}%`;
-            }
-        } else {
-            if (bar) {
-                bar.style.width = '0%';
-            }
-        }
+        this._setLoginProgress(Math.min(100, Math.max(0, Math.floor(status.overall_percent))));
     },
 
     async _runHydrationFlow() {
@@ -626,13 +518,7 @@ export const Auth = {
             pendingTab = openPendingNamespaceTab(window);
             renderNamespaceLoadingTab(pendingTab, namespace);
             select.disabled = true;
-            document.body.classList.add('loading');
-            this._showLoginLoadingPanel(
-                openingCopy.subtitle,
-                openingCopy.loadingTitle,
-                openingCopy.loadingMessage,
-                35,
-            );
+            this._showLoginLoadingPanel(openingCopy.loadingMessage, 35);
             this._setLoginNamespaceStatus(openingCopy.statusText);
 
             const response = await fetch(CONFIG.API.AUTH.LOGIN_NAMESPACES.OPEN, {
@@ -656,14 +542,12 @@ export const Auth = {
             }
 
             navigateNamespaceInNewTab(payload.url, window, pendingTab);
-            document.body.classList.remove('loading');
             this.showLoginModal();
         } catch (error) {
             rethrowUnexpectedError(error);
             if (pendingTab !== null && !pendingTab.closed) {
                 pendingTab.close();
             }
-            document.body.classList.remove('loading');
             this.showLoginModal();
             const restoredSelect = this._requireElement('login-namespace-select');
             restoredSelect.value = this._currentNamespace;
@@ -691,23 +575,18 @@ export const Auth = {
      */
     async handleLogin(event) {
         event.preventDefault();
-        
-        const passwordInput = document.getElementById('login-password');
+
+        const passwordInput = this._requireElement('login-password');
         const password = passwordInput.value;
-        
+
         if (!password) {
             this.showLoginError('Please enter a password');
             return;
         }
-        
-        document.body.classList.add('loading');
-        this._showLoginLoadingPanel(
-            'Opening encrypted workspace…',
-            'Checking database version…',
-            'Verifying your password, backing up, and upgrading this namespace if needed…',
-            5,
-        );
-        await this._waitForBrowserPaint();
+
+        // Nothing moves until the password is accepted (PLAN.md, cases 2-4).
+        this._clearLoginError();
+        this._setLoginSubmitBusy(true);
 
         let response;
         try {
@@ -721,13 +600,10 @@ export const Auth = {
             });
         } catch (error) {
             rethrowUnexpectedError(error);
-            document.body.classList.remove('loading');
-            this.showLoginModal();
+            this._rejectLoginAttempt(error instanceof Error ? `Login request failed: ${error.message}` : 'Login request failed');
             if (error instanceof Error) {
-                this.showLoginError(`Login request failed: ${error.message}`);
                 throw error;
             }
-            this.showLoginError('Login request failed');
             throw new Error('Login request failed');
         }
 
@@ -735,10 +611,7 @@ export const Auth = {
             const fallbackPrefix = response.status >= 500
                 ? 'Database check or login failed on the server'
                 : 'Login failed';
-            const errorDetail = await this._readResponseDetail(response, fallbackPrefix);
-            document.body.classList.remove('loading');
-            this.showLoginModal();
-            this.showLoginError(errorDetail);
+            this._rejectLoginAttempt(await this._readResponseDetail(response, fallbackPrefix));
             return;
         }
 
@@ -780,8 +653,6 @@ export const Auth = {
                     openSettings: () => CommandPalette.openAiAgentSettings(),
                     openMenu: (menuId, scope, signal) => CommandPalette.openAgentMenu(menuId, scope, signal),
                 });
-                startupPhase = 'finishing the startup introduction';
-                await this.waitForStartupIntro();
                 startupPhase = 'revealing the workspace';
                 this.revealMainApp();
                 startupPhase = 'starting reminders';
@@ -794,21 +665,28 @@ export const Auth = {
             }
         } catch (error) {
             rethrowUnexpectedError(error);
-            document.body.classList.remove('loading');
-            this._setLoginLoadingTitle('Workspace startup failed');
+            this._stopLoadingElapsed();
             const loadingMessage = this._requireElement('login-loading-message');
             const errorMessage = error instanceof Error
                 ? `${error.name}: ${error.message}`
                 : `Non-Error thrown: ${String(error)}`;
-            const diagnosticMessage = `${startupPhase}: ${errorMessage}`;
+            loadingMessage.dataset.state = 'error';
             loadingMessage.textContent =
-                `Your password was accepted, but the workspace could not finish opening. ${diagnosticMessage}`;
+                `Your password was accepted, but the workspace could not finish opening. ${startupPhase}: ${errorMessage}`;
             if (error instanceof Error) {
                 throw error;
             }
             throw new Error(errorMessage);
         }
-        document.body.classList.remove('loading');
+    },
+
+    // A refused or failed login: the form stays where it is, with the reason.
+    _rejectLoginAttempt(message) {
+        const passwordInput = this._requireElement('login-password');
+        this._setLoginSubmitBusy(false);
+        this.showLoginError(message);
+        passwordInput.value = '';
+        passwordInput.focus();
     },
     
     /**

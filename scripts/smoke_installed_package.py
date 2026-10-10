@@ -375,7 +375,7 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str],
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith(("METALIST_", "UVICORN_", "SECURITY_", "PYTHON"))
-        and key not in {"TEST_MODE", "API_PREFIX", "V1_API_PREFIX", "SQL_TRACE", "STARTUP_ANIMATION_ENABLED"}
+        and key not in {"TEST_MODE", "API_PREFIX", "V1_API_PREFIX", "SQL_TRACE"}
     }
     environment.update(TEST_MODE="0", METALIST_ENVIRONMENT="production", PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     profiles = _profiles_with_free_ports()

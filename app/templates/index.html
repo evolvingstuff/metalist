@@ -1,57 +1,43 @@
 <%inherit file="base.html"/>
 
-<!-- Login / Startup Page (full screen, not modal) -->
-<div id="login-page" class="login-page" style="display: ${'flex' if startup_animation_enabled else 'none'};">
-    % if startup_animation_enabled:
-    <div class="login-background" aria-hidden="true">
-        <video
-            id="login-startup-video"
-            class="login-startup-video"
-            autoplay
-            muted
-            playsinline
-            preload="auto"
-        >
-            <source src="/static/video/login-startup.mp4?v=${asset_version}" type="video/mp4">
-        </video>
-        <div class="login-background-scrim"></div>
-        <div class="login-background-glow"></div>
-    </div>
-    % endif
-    <div class="login-container">
-        <div class="login-copy">
-            <h1 id="login-title">MetaList</h1>
-            <h2 id="login-subtitle">${'Opening workspace…' if startup_animation_enabled else 'Authentication Required'}</h2>
+<!-- Login / loading screen (full screen, not modal; PLAN.md): the logo stays in
+     place while the form or the loading progress shows under it. -->
+## Shown at once when a login is certain (no white page before the session check).
+<div id="login-page" class="login-page" style="display: ${'flex' if shows_login_at_once else 'none'};">
+    <div class="login-stage">
+        <h1 id="login-title" class="login-title">MetaList</h1>
+        <div id="login-logo" class="login-logo" aria-hidden="true">
+            <%include file="_logo_mark.html"/>
         </div>
-        <div id="startup-splash" class="startup-splash" style="display: ${'flex' if startup_animation_enabled else 'none'};">
-            <p id="startup-message" class="startup-message">Preparing workspace…</p>
-        </div>
-        <form id="login-form" style="display: ${'none' if startup_animation_enabled else 'block'};">
-            <input type="password" id="login-password" placeholder="Enter password" autofocus>
-            <button type="submit">Login</button>
-            <div id="login-error" class="error-message" style="display: none;"></div>
-        </form>
-        <div id="login-loading" class="login-loading" style="display: none;">
-            <div id="login-loading-title" class="login-loading-title">
-                Loading encrypted data…
+        <!-- Revealed, fading in as a whole, once the namespace list has loaded. -->
+        <div id="login-panel" class="login-panel" data-revealed="false">
+            <!-- The form and the loading view share one place; accepting the password slides one out and the other in. -->
+            <div class="login-views">
+                <div id="login-form-view" class="login-form-view">
+                    <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
+                        <div class="login-namespace-select-wrap">
+                            <select id="login-namespace-select" class="login-namespace-select" aria-label="Switch namespace">
+                                <option value="">Loading namespaces…</option>
+                            </select>
+                        </div>
+                        <p id="login-namespace-status" class="login-namespace-status" hidden></p>
+                    </div>
+                    <form id="login-form" class="login-form">
+                        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" aria-label="Password">
+                        <button type="submit" id="login-submit">OK</button>
+                        <div id="login-note" class="login-note" hidden>Backing up and upgrading this namespace…</div>
+                        <div id="login-error" class="error-message" style="display: none;"></div>
+                    </form>
+                </div>
+                <div id="login-loading" class="login-loading" hidden>
+                    <div class="login-progress-track">
+                        <div id="login-progress-bar" class="login-progress-bar"></div>
+                    </div>
+                    <div class="login-loading-line">
+                        <span id="login-loading-message" class="login-loading-message"></span><span id="login-loading-elapsed" class="login-loading-elapsed"></span>
+                    </div>
+                </div>
             </div>
-            <div id="login-loading-first" class="login-loading-first" style="display: none;">
-                Hydrating the encrypted note store into memory.
-            </div>
-            <div id="login-loading-message" class="login-loading-message"></div>
-            <div class="login-progress-track">
-                <div id="login-progress-bar" class="login-progress-bar"></div>
-            </div>
-            <div id="login-loading-elapsed" class="login-loading-elapsed"></div>
-        </div>
-        <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
-            <label class="login-namespace-label" for="login-namespace-select">Namespace</label>
-            <div class="login-namespace-select-wrap">
-                <select id="login-namespace-select" class="login-namespace-select" aria-label="Switch namespace">
-                    <option value="">Loading namespaces…</option>
-                </select>
-            </div>
-            <p id="login-namespace-status" class="login-namespace-status" hidden></p>
         </div>
     </div>
 </div>
@@ -59,7 +45,7 @@
 <!-- Password Management Modal will be dynamically created when needed -->
 
 <!-- Main App (hidden when login required) -->
-<div id="main-app" style="display: ${'none' if startup_animation_enabled else 'block'};">
+<div id="main-app" style="display: ${'none' if shows_login_at_once else 'block'};">
     <div class="global-controls">
         <button
             id="menu-button"

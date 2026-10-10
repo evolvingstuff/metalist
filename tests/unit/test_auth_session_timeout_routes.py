@@ -6,19 +6,28 @@ import app.api.routes.auth as auth_route
 
 
 class _FakeUserVersionCursor:
+    def __init__(self, version: int) -> None:
+        self._version = version
+
     def fetchone(self):
-        return (42,)
+        return (self._version,)
 
 
 class _FakeConnection:
+    def __init__(self, version: int) -> None:
+        self._version = version
+
     def execute(self, statement: str):
         assert statement == "PRAGMA user_version"
-        return _FakeUserVersionCursor()
+        return _FakeUserVersionCursor(self._version)
 
 
 class _FakeDb:
+    def __init__(self, version: int) -> None:
+        self._version = version
+
     def connection(self):
-        return _FakeConnection()
+        return _FakeConnection(self._version)
 
 
 def test_get_session_timeout_settings_returns_current_timeout(
@@ -108,9 +117,22 @@ def test_auth_status_reports_app_and_database_versions(monkeypatch) -> None:
     monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
     monkeypatch.setattr(auth_route, "load_client_preferences", lambda *, token: {})
 
-    payload = auth_route.auth_status(db=_FakeDb(), token="token")
+    payload = auth_route.auth_status(db=_FakeDb(42), token="token")
 
     assert payload["version"] == auth_route.VERSION
     assert payload["database_user_version"] == 42
+    assert payload["database_upgrade_pending"] is False
     assert payload["authenticated"] is True
     assert payload["namespace"] == auth_route.ACTIVE_NAMESPACE
+
+
+def test_auth_status_says_when_the_next_login_upgrades_the_database(monkeypatch) -> None:
+    monkeypatch.setattr(auth_route, "AuthService", lambda db: SimpleNamespace(get_settings=lambda: None))
+    monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
+    monkeypatch.setattr(auth_route, "load_client_preferences", lambda *, token: {})
+
+    older = auth_route.auth_status(db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION - 1), token=None)
+    current = auth_route.auth_status(db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION), token=None)
+
+    assert older["database_upgrade_pending"] is True
+    assert current["database_upgrade_pending"] is False

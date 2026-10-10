@@ -1,0 +1,18 @@
+"""Whether the page opens straight on the login screen (docs/AI-SUMMARY.md, Login screen)."""
+
+from __future__ import annotations
+
+from starlette.requests import Request
+
+from app.api.request_auth import AUTH_COOKIE_NAME
+
+
+def login_is_certainly_needed(request: Request) -> bool:
+    """Whether a password namespace's page can open on the login screen at once,
+    with no white page before the browser checks its session: a re-login was asked
+    for (the Session locked page's Go to Login), or the browser has no session."""
+    if not isinstance(request, Request):
+        raise TypeError("request must be a Request")
+    if request.query_params.get("force_reauth") == "1":
+        return True
+    return request.cookies.get(AUTH_COOKIE_NAME) is None

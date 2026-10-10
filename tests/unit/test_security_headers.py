@@ -74,6 +74,7 @@ def test_inline_template_scripts_carry_the_response_nonce() -> None:
         if template_name == "maintenance.html":
             assert 'src="/static/js/modules/maintenance.js?v=${asset_version}"' in template_text
             assert not inline_script_tags
-        else:
+        elif template_name != "base.html":
+            # base.html no longer needs an inline script; any it gains must carry the nonce.
             assert inline_script_tags, template_name
         assert all('nonce="${request.state.csp_nonce}"' in tag for tag in inline_script_tags)

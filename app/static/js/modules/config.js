@@ -5,12 +5,6 @@ const API_AUTH_BASE = `${API_BASE}/auth`;
 const API_FILES_BASE = `${API_BASE}/files`;
 const API_REMINDERS_BASE = `${API_BASE}/reminders`;
 const API_AI_BASE = `${API_BASE}/ai`;
-const RUNTIME_FLAGS = globalThis.__METALIST_RUNTIME__;
-const STARTUP_ANIMATION_ENABLED = Boolean(
-    RUNTIME_FLAGS &&
-    typeof RUNTIME_FLAGS === 'object' &&
-    RUNTIME_FLAGS.startupAnimationEnabled === true,
-);
 
 export const CONFIG = {
     API: {
@@ -222,9 +216,5 @@ export const CONFIG = {
     BACKUP: {
         RETENTION_PROMPT_THRESHOLD: 25,
         RETENTION_SUGGESTED_KEEP_COUNT: 3,
-    },
-
-    STARTUP: {
-        ENABLE_LOGIN_INTRO: STARTUP_ANIMATION_ENABLED,
     },
 };

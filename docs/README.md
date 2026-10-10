@@ -12,6 +12,7 @@
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`
+- Login screen, loading progress and Session locked page: `docs/ui/login-screen.md`
 - UUID note/file references (`![[UUID]]`, `[[UUID]]`): `docs/ui/references.md`
 - External HTML paste sanitization: `docs/ui/paste-sanitization.md`
 - Note content meta-tag formatting: `docs/ui/content-formatting.md`

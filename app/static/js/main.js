@@ -57,7 +57,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             openSettings: () => CommandPalette.openAiAgentSettings(),
             openMenu: (menuId, scope, signal) => CommandPalette.openAgentMenu(menuId, scope, signal),
         });
-        await Auth.waitForStartupIntro();
         Auth.revealMainApp();
         await ReminderSurface.start();
         document.body.dataset.appReady = 'true';
