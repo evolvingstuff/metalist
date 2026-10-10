@@ -629,19 +629,21 @@ class AiChatPanelController {
     }
 
     async _toggleSpend() {
+        // Flip at once: a second click before the save lands toggles back.
         const nextVisibility = !this._showSpend;
-        await this._saveSpendVisible(nextVisibility);
         this._showSpend = nextVisibility;
         this._syncSpendToggle();
         this._syncOpenAiCostVisibility();
+        await this._saveSpendVisible(nextVisibility);
     }
 
     async _toggleDiagnosticActivities() {
+        // Flip at once: a second click before the save lands toggles back.
         const nextVisibility = !this._showDiagnosticActivities;
-        await this._saveDiagnosticsVisible(nextVisibility);
         this._showDiagnosticActivities = nextVisibility;
         this._syncDiagnosticActivityToggle();
         this._render({ shouldScrollToBottom: true });
+        await this._saveDiagnosticsVisible(nextVisibility);
     }
 
     _handlePointerMove(event) {
