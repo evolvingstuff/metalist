@@ -188,16 +188,17 @@ def test_run_startup_sanity_gates_runs_python_then_js_in_development(
     calls: list[str] = []
     monkeypatch.setenv("METALIST_ENVIRONMENT", "development")
 
-    monkeypatch.setattr(
-        main_entrypoint,
-        "assert_startup_sanity",
-        lambda repo_root: calls.append(f"python:{repo_root}"),
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "assert_startup_js_sanity",
-        lambda repo_root: calls.append(f"js:{repo_root}"),
-    )
+    def python_checks(repo_root):
+        calls.append(f"python:{repo_root}")
+        return [Path("a.py"), Path("b.py")], []
+
+    def js_checks(repo_root):
+        calls.append(f"js:{repo_root}")
+        return [Path("a.js")], []
+
+    monkeypatch.setattr(main_entrypoint, "collect_startup_sanity_violations", python_checks)
+    monkeypatch.setattr(main_entrypoint, "collect_startup_js_sanity_violations", js_checks)
+    monkeypatch.setattr(main_entrypoint, "discover_typescript_source_paths", lambda repo_root: [])
 
     main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
 
@@ -205,7 +206,25 @@ def test_run_startup_sanity_gates_runs_python_then_js_in_development(
         f"python:{tmp_path}",
         f"js:{tmp_path}",
     ]
-    assert "[startup] MetaList environment: development" in capsys.readouterr().out
+    assert capsys.readouterr().out == (
+        f"MetaList {main_entrypoint.__version__} · development\n"
+        " ✓ Python sanity checks       2 Python files\n"
+        " ✓ JS sanity checks           1 JS/JSX files\n"
+    )
+
+
+def test_startup_sanity_violations_still_fail_with_their_report(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("METALIST_ENVIRONMENT", "development")
+    monkeypatch.setattr(main_entrypoint, "collect_startup_sanity_violations",
+                        lambda repo_root: ([Path("a.py")], ["violation"]))
+
+    def fail_with_report(repo_root):
+        raise RuntimeError("PY001 report")
+
+    monkeypatch.setattr(main_entrypoint, "assert_startup_sanity", fail_with_report)
+
+    with pytest.raises(RuntimeError, match="PY001 report"):
+        main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
 
 
 def test_run_startup_sanity_gates_skips_checks_in_production(
@@ -216,18 +235,18 @@ def test_run_startup_sanity_gates_skips_checks_in_production(
     monkeypatch.setenv("METALIST_ENVIRONMENT", "production")
     monkeypatch.setattr(
         main_entrypoint,
-        "assert_startup_sanity",
+        "collect_startup_sanity_violations",
         lambda repo_root: (_ for _ in ()).throw(AssertionError("Python sanity must not run")),
     )
     monkeypatch.setattr(
         main_entrypoint,
-        "assert_startup_js_sanity",
+        "collect_startup_js_sanity_violations",
         lambda repo_root: (_ for _ in ()).throw(AssertionError("JS sanity must not run")),
     )
 
     main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
 
-    assert "[startup] MetaList environment: production" in capsys.readouterr().out
+    assert capsys.readouterr().out == f"MetaList {main_entrypoint.__version__} · production\n"
 
 
 def test_startup_encryption_audit_crashes_for_fatal_findings(
@@ -304,6 +323,19 @@ def test_startup_encryption_audit_prints_migration_warning_and_continues(
     assert "- default: PASS" in captured.err
 
 
+def test_startup_encryption_audit_prints_nothing_without_encrypted_namespaces(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    report = SimpleNamespace(passed=True, checked_payload_count=0, encrypted_namespace_count=0,
+                             namespace_statuses=lambda: [("default", "SKIPPED (not encrypted)")])
+    monkeypatch.setattr(main_entrypoint, "audit_all_namespaces", lambda *, namespaces_directory: report)
+
+    assert main_entrypoint._run_startup_encryption_audit(namespaces_directory=tmp_path) is report
+    assert capsys.readouterr().out == ""
+
+
 def test_startup_encryption_audit_prints_pass_without_warning(
     monkeypatch,
     tmp_path: Path,
@@ -311,7 +343,9 @@ def test_startup_encryption_audit_prints_pass_without_warning(
 ) -> None:
     report = SimpleNamespace(
         passed=True,
-        render_text=lambda: "Encrypted namespace audit: PASS\n- default: PASS",
+        checked_payload_count=342772,
+        encrypted_namespace_count=1,
+        namespace_statuses=lambda: [("cla", "PASS"), ("default", "SKIPPED (not encrypted)")],
     )
     monkeypatch.setattr(
         main_entrypoint,
@@ -325,7 +359,10 @@ def test_startup_encryption_audit_prints_pass_without_warning(
 
     captured = capsys.readouterr()
     assert returned_report is report
-    assert "Encrypted namespace audit: PASS" in captured.out
+    assert captured.out == (
+        " ✓ Encrypted namespace audit  342,772 payloads checked\n"
+        "     cla  PASS\n"
+    )
     assert captured.err == ""
 
 
@@ -709,10 +746,7 @@ def test_shell_execution_enabled_notice_is_concise(capsys) -> None:
     main_entrypoint._print_shell_execution_enabled_banner()
 
     output = capsys.readouterr().out
-    assert output == (
-        "[startup] @shell enabled for authenticated loopback clients "
-        "(this launch only).\n"
-    )
+    assert output == " @shell enabled for authenticated loopback clients (this launch only)\n"
 
 
 def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(monkeypatch) -> None:
@@ -801,8 +835,7 @@ def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -
     assert calls == ["_record_self_executable_for_namespace_launch"]
 
 
-def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch) -> None:
-    printed: list[str] = []
+def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(
         main_entrypoint,
@@ -817,8 +850,6 @@ def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch
             ssl_keyfile=None,
         ),
     )
-    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
-
     main_entrypoint._print_namespace_bootstrap_results(
         environ={},
         launch_results=[
@@ -851,11 +882,15 @@ def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch
         ],
     )
 
-    assert printed == [
-        "MetaList namespace bootstrap:",
-        "namespace\taction\thttp\thttps",
-        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443",
-        "cla\trestarted\thttp://127.0.0.1:8001\tdisabled",
+    lines = [line.rstrip() for line in capsys.readouterr().out.splitlines()]
+    assert lines == [
+        "",
+        " default  launched",
+        "   http://127.0.0.1:8000",
+        "   https://127.0.0.1:8443",
+        " cla      restarted",
+        "   http://127.0.0.1:8001",
+        "   disabled",
     ]
 
 
