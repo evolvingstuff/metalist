@@ -71,6 +71,35 @@ def test_interstitial_title_classifier_allows_content_titles() -> None:
     assert not _looks_like_interstitial_title("Verification Methods in Distributed Systems")
 
 
+@pytest.mark.parametrize("title", [
+    "Sign in - Google Accounts",
+    "Log in | LinkedIn",
+    "Sign In \u2013 Notion",
+    "LinkedIn: Log In or Sign Up",
+    "Sign in to your account",
+    "Before you continue to YouTube",
+    "Page not found | Example",
+    "404 Not Found",
+    "Example \u00b7 Login",
+    "Sign in",
+])
+def test_login_consent_and_not_found_titles_say_nothing_about_the_page(title: str) -> None:
+    assert _looks_like_interstitial_title(title)
+
+
+@pytest.mark.parametrize("title", [
+    "How to sign in to Gmail on a new phone",
+    "Login Security Best Practices - OWASP",
+    "Home | Example",
+    "Not Found: A Novel - Penguin Books",
+    "Sign-in flows that users love | UX Collective",
+    "E-mail login problems - Stack Overflow",
+    "The Literal Best Exercise for Insulin Resistance and Blood Pressure (Better than Walking and HIIT) - YouTube",
+])
+def test_real_titles_that_mention_login_words_are_kept(title: str) -> None:
+    assert not _looks_like_interstitial_title(title)
+
+
 def test_extracted_interstitial_title_becomes_no_title_result() -> None:
     result = _fetch_result_from_extracted_title(
         url="https://example.com/thread",
@@ -441,3 +470,28 @@ def test_resolve_public_http_target_rejects_any_private_dns_answer(
         _resolve_public_http_target("https://example.com/article")
 
     assert exc_info.value.reason == "blocked_private_address"
+
+
+def test_a_login_page_title_saved_earlier_is_cleared_at_the_next_login() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    initialize_schema(connection)
+    now = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
+    insert_link_title_row(
+        connection, url="https://docs.google.com/document/d/abc/edit", url_encryption_nonce=None,
+        url_encryption_tag=None, title="Sign in - Google Accounts", title_encryption_nonce=None,
+        title_encryption_tag=None, status="ok", last_error_kind=None, last_checked_at=now,
+        last_success_at=now, last_failure_at=None, next_check_after=now + timedelta(days=90),
+        failure_count=0, created_at=now, updated_at=now,
+    )
+    try:
+        link_title_store.bootstrap(connection=connection)
+        displayed_title = link_title_store.get_ok_title("https://docs.google.com/document/d/abc/edit")
+        rows = fetch_all_link_title_rows(connection)
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    assert displayed_title is None
+    assert rows[0]["status"] == "no_title"
+    assert rows[0]["last_error_kind"] == "interstitial_title"

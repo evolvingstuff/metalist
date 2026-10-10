@@ -5,7 +5,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import re
-from threading import RLock
+from threading import Lock, RLock
+import time
 from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
@@ -55,6 +56,21 @@ _FAILED_RETRY_DELAYS = (
     timedelta(days=1),
     _FAILED_REFRESH_AFTER,
 )
+# A site that answered HTTP 429 (too many requests) is retried more slowly.
+_RATE_LIMITED_RETRY_DELAYS = (
+    timedelta(minutes=10),
+    timedelta(hours=1),
+    timedelta(hours=6),
+    timedelta(days=1),
+    _FAILED_REFRESH_AFTER,
+)
+# Polite pacing per site (docs/ui/content-formatting.md): one request at a time,
+# spaced apart, and none while the site asked MetaList to wait.
+_HOST_REQUEST_SPACING_SECONDS = 2.0
+_HOST_WAIT_POLL_SECONDS = 0.1
+_RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS = 10 * 60
+_RATE_LIMIT_MIN_COOLDOWN_SECONDS = 60
+_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
 _NO_TITLE_RETRY_DELAYS = (
     timedelta(minutes=1),
     timedelta(minutes=10),
@@ -90,7 +106,37 @@ _INTERSTITIAL_TITLE_PHRASES = (
     "please wait for verification",
     "security check",
     "verify you are human",
+    # Login and consent walls, wherever the site puts its name.
+    "before you continue",
+    "log in or sign up",
+    "sign in or sign up",
+    "please log in",
+    "please sign in",
 )
+# A title part (split at the usual site-name separators) that is only one of
+# these says nothing about the page: "Sign in - Google Accounts", "Log in | LinkedIn",
+# "Page not found | Example". Part of a longer title ("How to sign in to Gmail")
+# is a real title.
+_PLACEHOLDER_TITLE_PARTS = {
+    "403 forbidden",
+    "404",
+    "404 not found",
+    "log in",
+    "log in to your account",
+    "log-in",
+    "login",
+    "not found",
+    "page not found",
+    "sign in",
+    "sign in to continue",
+    "sign in to your account",
+    "sign up",
+    "sign-in",
+    "signin",
+}
+# Site-name separators: | · – — anywhere, " - " with spaces (not "e-mail"). Not ":",
+# which also starts subtitles ("Not Found: A Novel").
+_TITLE_PART_SEPARATOR_RE = re.compile(r"\s*[|·–—]\s*|\s+-\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -849,6 +895,11 @@ def _next_check_after_for_status(
             failure_count=failure_count,
             delays=_NO_TITLE_RETRY_DELAYS,
         )
+    if status == "failed" and last_error_kind == "http_429":
+        return now + _delay_for_failure_count(
+            failure_count=failure_count,
+            delays=_RATE_LIMITED_RETRY_DELAYS,
+        )
     if status == "failed":
         return now + _delay_for_failure_count(
             failure_count=failure_count,
@@ -907,10 +958,102 @@ def _format_utc_datetime(value: datetime) -> str:
     return utc_value.strftime("%Y-%m-%d %H:%M UTC")
 
 
+class _HostPacer:
+    """Per-site pacing for title lookups: at most one request to a site at a
+    time, at least _HOST_REQUEST_SPACING_SECONDS apart, and none while the site
+    is cooling down after HTTP 429. In memory only; record retry delays persist."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._busy: set[str] = set()
+        self._next_allowed_at: dict[str, float] = {}
+        self._cooldown_until: dict[str, float] = {}
+
+    def acquire(self, host: str) -> bool:
+        """Wait for this site's turn. False (without waiting) while it is cooling down."""
+        if not isinstance(host, str) or host == "":
+            raise TypeError("host must be a non-empty string")
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                if host in self._cooldown_until and now < self._cooldown_until[host]:
+                    return False
+                # A site never contacted before may be asked at once.
+                next_allowed_at = now
+                if host in self._next_allowed_at:
+                    next_allowed_at = self._next_allowed_at[host]
+                if host not in self._busy and now >= next_allowed_at:
+                    self._busy.add(host)
+                    return True
+            time.sleep(_HOST_WAIT_POLL_SECONDS)
+
+    def release(self, host: str) -> None:
+        with self._lock:
+            assert host in self._busy, f"released a site that was not taken: {host}"
+            self._busy.discard(host)
+            self._next_allowed_at[host] = time.monotonic() + _HOST_REQUEST_SPACING_SECONDS
+
+    def cool_down(self, host: str, seconds: int) -> None:
+        if not isinstance(seconds, int) or seconds <= 0:
+            raise ValueError("cool_down requires a positive number of seconds")
+        with self._lock:
+            until = time.monotonic() + seconds
+            if host not in self._cooldown_until or self._cooldown_until[host] < until:
+                self._cooldown_until[host] = until
+
+    def reset(self) -> None:
+        with self._lock:
+            self._next_allowed_at.clear()
+            self._cooldown_until.clear()
+
+
+class _HostTurn:
+    """Holds a site's turn for one request (released on exit, also on error)."""
+
+    def __init__(self, pacer: _HostPacer, host: str) -> None:
+        self._pacer = pacer
+        self._host = host
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        self._pacer.release(self._host)
+        return False
+
+
+_host_pacer = _HostPacer()
+
+
+def _pacing_host(url: str) -> str:
+    """The site a request counts against: the hostname without a leading "www."."""
+    hostname = urlsplit(url).hostname
+    if hostname is None or hostname == "":
+        raise ValueError(f"Link-title URL has no hostname: {url}")
+    hostname = hostname.casefold()
+    if hostname.startswith("www."):
+        return hostname[len("www."):]
+    return hostname
+
+
+def _rate_limit_cooldown_seconds(retry_after: str | None) -> int:
+    """How long to leave a site alone after HTTP 429: its Retry-After seconds
+    (bounded), or a default when it gives none or an HTTP date."""
+    if retry_after is None or re.fullmatch(r"\s*\d+\s*", retry_after) is None:
+        return _RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS
+    seconds = int(retry_after)
+    return min(max(seconds, _RATE_LIMIT_MIN_COOLDOWN_SECONDS), _RATE_LIMIT_MAX_COOLDOWN_SECONDS)
+
+
 def _run_fetch_job(normalized_url: str, generation: int) -> None:
     if generation != current_generation():
         return
     result = fetch_link_title(normalized_url)
+    if result.status == "deferred":
+        # The site is cooling down: nothing is recorded, and a later view of the
+        # link asks again once the site may be contacted.
+        link_title_store.discard_in_flight(normalized_url)
+        return
     link_title_store.apply_current_fetch_result(result, generation)
 
 
@@ -939,7 +1082,11 @@ def fetch_link_title(normalized_url: str) -> _LinkTitleFetchResult:
             )
         if target is None:
             raise RuntimeError("Link-title target resolution returned no target")
-        response_result = _fetch_one_url(current_url, target)
+        host = _pacing_host(current_url)
+        if not _host_pacer.acquire(host):
+            return _LinkTitleFetchResult(url=normalized_url, title=None, status="deferred", last_error_kind="rate_limited")
+        with _HostTurn(_host_pacer, host):
+            response_result = _fetch_one_url(current_url, target)
         if response_result.status != "redirect":
             return replace(response_result, url=normalized_url)
         if response_result.title is None:
@@ -984,6 +1131,11 @@ def _fetch_one_url(url: str, target: _ResolvedHttpTarget) -> _LinkTitleFetchResu
                 if redirect_result is not None:
                     return redirect_result
 
+                if response.status_code == 429:
+                    _host_pacer.cool_down(
+                        _pacing_host(url),
+                        _rate_limit_cooldown_seconds(response.headers.get("retry-after")),
+                    )
                 if response.status_code >= 400:
                     return _LinkTitleFetchResult(
                         url=url,
@@ -1085,6 +1237,9 @@ def _looks_like_interstitial_title(title: str) -> bool:
         return False
     if normalized in _INTERSTITIAL_TITLE_EXACT_MATCHES:
         return True
+    for part in _TITLE_PART_SEPARATOR_RE.split(normalized):
+        if part.strip(" .!:-|") in _PLACEHOLDER_TITLE_PARTS:
+            return True
     return any(_contains_normalized_phrase(normalized, phrase) for phrase in _INTERSTITIAL_TITLE_PHRASES)
 
 
