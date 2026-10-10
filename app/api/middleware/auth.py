@@ -41,6 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     NO_TOKEN_REFRESH_PATHS = [
         f"{API_PREFIX}/auth/status",  # Polling service pings this for connectivity
         f"{API_PREFIX}/reminders/evaluate",  # Reminder polling is not user-initiated activity
+        f"{API_PREFIX}/notes/link-titles/retry",  # The retry dialog polls its progress
     ]
     
     # Note: /api/notes/* paths are NOT in this list - they require auth when password is set

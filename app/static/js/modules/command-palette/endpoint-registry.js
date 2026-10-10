@@ -69,6 +69,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const addExcalidrawDiagram = requireAction(actions, 'addExcalidrawDiagram');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
+    const retryFailedLinkTitles = requireAction(actions, 'retryFailedLinkTitles');
     const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
     const openSwitchNamespace = requireAction(actions, 'openSwitchNamespace');
     const openCreateNamespace = requireAction(actions, 'openCreateNamespace');
@@ -465,6 +466,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Trim unused files',
             closeOnExecute: true,
             execute: async () => trimUnusedFiles(),
+        },
+        {
+            id: 'action.retry_failed_link_titles',
+            kind: 'action',
+            label: 'Retry failed link titles',
+            closeOnExecute: true,
+            execute: async () => retryFailedLinkTitles(),
         },
         {
             id: 'action.prioritize_tag_front',

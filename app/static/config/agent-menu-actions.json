@@ -300,6 +300,12 @@
     "presentation": "palette"
   },
   {
+    "id": "action.retry_failed_link_titles",
+    "label": "Retry failed link titles",
+    "selector": "#link-title-retry-modal",
+    "presentation": "dialog"
+  },
+  {
     "id": "action.prioritize_tag_front",
     "label": "Prioritize tag to front (global)",
     "selector": "#command-palette-modal",

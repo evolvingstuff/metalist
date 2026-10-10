@@ -48,6 +48,8 @@ _USER_AGENT = (
 )
 
 _AUTO_RETRY_STATUSES = {"ok", "no_title", "failed"}
+# "Retry failed link titles" asks these again; unsupported and blocked links are final.
+_MANUAL_RETRY_STATUSES = {"no_title", "failed"}
 _FAILED_RETRY_DELAYS = (
     timedelta(minutes=1),
     timedelta(minutes=5),
@@ -450,6 +452,33 @@ class LinkTitleStore:
             after = _ok_titles_by_url(self._state)
         self._notify_titles_changed(before, after)
 
+    def list_manual_retry_urls(self) -> tuple[str, ...]:
+        """Failed or title-less lookups a manual retry may ask again now (whatever
+        their schedule); never unsupported or blocked links. None while locked."""
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted:
+                return ()
+            return tuple(sorted(
+                url for url, record in state.records_by_url.items()
+                if record.status in _MANUAL_RETRY_STATUSES and url not in self._in_flight
+            ))
+
+    def claim_for_manual_retry(self, normalized_url: str) -> bool:
+        """Mark a lookup in progress for a manual retry; False when it no longer
+        qualifies (already being looked up, now titled, or locked)."""
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted or normalized_url in self._in_flight:
+                return False
+            if normalized_url not in state.records_by_url:
+                return False
+            if state.records_by_url[normalized_url].status not in _MANUAL_RETRY_STATUSES:
+                return False
+            self._in_flight.add(normalized_url)
+            self._render_generation += 1
+            return True
+
     def discard_in_flight(self, url: str) -> None:
         normalized_url = normalize_url_for_link_title(url)
         if normalized_url is None:
@@ -498,6 +527,12 @@ class LinkTitleFetcher:
         if not isinstance(normalized_url, str) or normalized_url == "":
             raise TypeError("normalized_url must be a non-empty string")
         _executor().submit(_run_fetch_job, normalized_url, generation)
+
+    def submit_job(self, job: Callable[..., None], *args: object) -> None:
+        """Run a lookup job on the title-lookup workers (manual retries)."""
+        if not callable(job):
+            raise TypeError("job must be callable")
+        _executor().submit(job, *args)
 
 
 _FETCHER_EXECUTOR = None
