@@ -37,6 +37,7 @@ import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
+import { LinkTitleRetryModal } from '../modals/link-title-retry-modal.js';
 import {
     CreateNamespaceModal,
     ManageNamespacePortsModal,
@@ -345,6 +346,7 @@ class CommandPaletteController {
         this._removePasswordModal = null;
         this._randomPasswordModal = null;
         this._helpModal = null;
+        this._linkTitleRetryModal = null;
         this._sessionTimeoutModal = null;
         this._switchNamespaceModal = null;
         this._createNamespaceModal = null;
@@ -419,6 +421,7 @@ class CommandPaletteController {
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 addExcalidrawDiagram: this.addExcalidrawDiagram.bind(this),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
+                retryFailedLinkTitles: this.retryFailedLinkTitles.bind(this),
                 openSwitchNamespace: this.openSwitchNamespace.bind(this),
                 openCreateNamespace: this.openCreateNamespace.bind(this),
                 openManageNamespacePorts: this.openManageNamespacePorts.bind(this),
@@ -1606,6 +1609,21 @@ class CommandPaletteController {
             `Trimmed ${result.deleted_count} unused file(s).`,
             6000,
         );
+    }
+
+    // Retry failed link titles (docs/ui/command-palette.md): opens the dialog,
+    // which shows a run in progress or offers to start one; nothing runs until
+    // its Retry button is pressed.
+    async retryFailedLinkTitles() {
+        const progress = await NotesAPI.getLinkTitleRetry();
+        const isReady = await this._prepareForModalOpen('commandPalette.retryFailedLinkTitles');
+        if (!isReady) {
+            return;
+        }
+        if (this._linkTitleRetryModal === null) {
+            this._linkTitleRetryModal = new LinkTitleRetryModal();
+        }
+        await this._linkTitleRetryModal.openWithProgress(progress);
     }
 
     async _prioritizeTag(direction) {

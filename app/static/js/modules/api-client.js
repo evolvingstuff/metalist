@@ -782,6 +782,19 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, options);
     },
 
+    // Retry failed link titles: progress (status "idle" before any run), start, stop.
+    async getLinkTitleRetry() {
+        return this._apiCall(CONFIG.API.NOTES.LINK_TITLE_RETRY, { method: 'GET' });
+    },
+
+    async startLinkTitleRetry() {
+        return this._apiCall(CONFIG.API.NOTES.LINK_TITLE_RETRY, { method: 'POST' });
+    },
+
+    async stopLinkTitleRetry() {
+        return this._apiCall(CONFIG.API.NOTES.LINK_TITLE_RETRY_STOP, { method: 'POST' });
+    },
+
     async fetchBacklinks(noteId, searchQuery) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchBacklinks requires noteId string');

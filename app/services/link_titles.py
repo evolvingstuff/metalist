@@ -4,10 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+import json
 import re
-from threading import RLock
+from threading import Lock, RLock
+import time
 from typing import Callable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpcore
 import httpx
@@ -47,6 +49,8 @@ _USER_AGENT = (
 )
 
 _AUTO_RETRY_STATUSES = {"ok", "no_title", "failed"}
+# "Retry failed link titles" asks these again; unsupported and blocked links are final.
+_MANUAL_RETRY_STATUSES = {"no_title", "failed"}
 _FAILED_RETRY_DELAYS = (
     timedelta(minutes=1),
     timedelta(minutes=5),
@@ -55,6 +59,21 @@ _FAILED_RETRY_DELAYS = (
     timedelta(days=1),
     _FAILED_REFRESH_AFTER,
 )
+# A site that answered HTTP 429 (too many requests) is retried more slowly.
+_RATE_LIMITED_RETRY_DELAYS = (
+    timedelta(minutes=10),
+    timedelta(hours=1),
+    timedelta(hours=6),
+    timedelta(days=1),
+    _FAILED_REFRESH_AFTER,
+)
+# Polite pacing per site (docs/ui/content-formatting.md): one request at a time,
+# spaced apart, and none while the site asked MetaList to wait.
+_HOST_REQUEST_SPACING_SECONDS = 2.0
+_HOST_WAIT_POLL_SECONDS = 0.1
+_RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS = 10 * 60
+_RATE_LIMIT_MIN_COOLDOWN_SECONDS = 60
+_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
 _NO_TITLE_RETRY_DELAYS = (
     timedelta(minutes=1),
     timedelta(minutes=10),
@@ -90,7 +109,40 @@ _INTERSTITIAL_TITLE_PHRASES = (
     "please wait for verification",
     "security check",
     "verify you are human",
+    # Login and consent walls, wherever the site puts its name.
+    "before you continue",
+    "log in or sign up",
+    "sign in or sign up",
+    "please log in",
+    "please sign in",
 )
+# A title part (split at the usual site-name separators) that is only one of
+# these says nothing about the page: "Sign in - Google Accounts", "Log in | LinkedIn",
+# "Page not found | Example". Part of a longer title ("How to sign in to Gmail")
+# is a real title.
+_PLACEHOLDER_TITLE_PARTS = {
+    "403 forbidden",
+    # Reddit's generic page for automated requests ("Reddit - Dive into anything").
+    "dive into anything",
+    "the heart of the internet",
+    "404",
+    "404 not found",
+    "log in",
+    "log in to your account",
+    "log-in",
+    "login",
+    "not found",
+    "page not found",
+    "sign in",
+    "sign in to continue",
+    "sign in to your account",
+    "sign up",
+    "sign-in",
+    "signin",
+}
+# Site-name separators: | · – — anywhere, " - " with spaces (not "e-mail"). Not ":",
+# which also starts subtitles ("Not Found: A Novel").
+_TITLE_PART_SEPARATOR_RE = re.compile(r"\s*[|·–—]\s*|\s+-\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,6 +456,33 @@ class LinkTitleStore:
             after = _ok_titles_by_url(self._state)
         self._notify_titles_changed(before, after)
 
+    def list_manual_retry_urls(self) -> tuple[str, ...]:
+        """Failed or title-less lookups a manual retry may ask again now (whatever
+        their schedule); never unsupported or blocked links. None while locked."""
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted:
+                return ()
+            return tuple(sorted(
+                url for url, record in state.records_by_url.items()
+                if record.status in _MANUAL_RETRY_STATUSES and url not in self._in_flight
+            ))
+
+    def claim_for_manual_retry(self, normalized_url: str) -> bool:
+        """Mark a lookup in progress for a manual retry; False when it no longer
+        qualifies (already being looked up, now titled, or locked)."""
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted or normalized_url in self._in_flight:
+                return False
+            if normalized_url not in state.records_by_url:
+                return False
+            if state.records_by_url[normalized_url].status not in _MANUAL_RETRY_STATUSES:
+                return False
+            self._in_flight.add(normalized_url)
+            self._render_generation += 1
+            return True
+
     def discard_in_flight(self, url: str) -> None:
         normalized_url = normalize_url_for_link_title(url)
         if normalized_url is None:
@@ -452,6 +531,12 @@ class LinkTitleFetcher:
         if not isinstance(normalized_url, str) or normalized_url == "":
             raise TypeError("normalized_url must be a non-empty string")
         _executor().submit(_run_fetch_job, normalized_url, generation)
+
+    def submit_job(self, job: Callable[..., None], *args: object) -> None:
+        """Run a lookup job on the title-lookup workers (manual retries)."""
+        if not callable(job):
+            raise TypeError("job must be callable")
+        _executor().submit(job, *args)
 
 
 _FETCHER_EXECUTOR = None
@@ -740,7 +825,7 @@ def _sanitize_cached_interstitial_titles(
     for record in state.records_by_url.values():
         if record.status != "ok" or record.title is None:
             continue
-        if not _looks_like_interstitial_title(record.title):
+        if not _is_placeholder_title(title=record.title, url=record.url):
             continue
         next_record = _build_next_record(
             previous=record,
@@ -849,6 +934,11 @@ def _next_check_after_for_status(
             failure_count=failure_count,
             delays=_NO_TITLE_RETRY_DELAYS,
         )
+    if status == "failed" and last_error_kind == "http_429":
+        return now + _delay_for_failure_count(
+            failure_count=failure_count,
+            delays=_RATE_LIMITED_RETRY_DELAYS,
+        )
     if status == "failed":
         return now + _delay_for_failure_count(
             failure_count=failure_count,
@@ -907,11 +997,135 @@ def _format_utc_datetime(value: datetime) -> str:
     return utc_value.strftime("%Y-%m-%d %H:%M UTC")
 
 
+class _HostPacer:
+    """Per-site pacing for title lookups: at most one request to a site at a
+    time, at least _HOST_REQUEST_SPACING_SECONDS apart, and none while the site
+    is cooling down after HTTP 429. In memory only; record retry delays persist."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._busy: set[str] = set()
+        self._next_allowed_at: dict[str, float] = {}
+        self._cooldown_until: dict[str, float] = {}
+
+    def acquire(self, host: str) -> bool:
+        """Wait for this site's turn. False (without waiting) while it is cooling down."""
+        if not isinstance(host, str) or host == "":
+            raise TypeError("host must be a non-empty string")
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                if host in self._cooldown_until and now < self._cooldown_until[host]:
+                    return False
+                # A site never contacted before may be asked at once.
+                next_allowed_at = now
+                if host in self._next_allowed_at:
+                    next_allowed_at = self._next_allowed_at[host]
+                if host not in self._busy and now >= next_allowed_at:
+                    self._busy.add(host)
+                    return True
+            time.sleep(_HOST_WAIT_POLL_SECONDS)
+
+    def release(self, host: str) -> None:
+        with self._lock:
+            assert host in self._busy, f"released a site that was not taken: {host}"
+            self._busy.discard(host)
+            self._next_allowed_at[host] = time.monotonic() + _HOST_REQUEST_SPACING_SECONDS
+
+    def cool_down(self, host: str, seconds: int) -> None:
+        if not isinstance(seconds, int) or seconds <= 0:
+            raise ValueError("cool_down requires a positive number of seconds")
+        with self._lock:
+            until = time.monotonic() + seconds
+            if host not in self._cooldown_until or self._cooldown_until[host] < until:
+                self._cooldown_until[host] = until
+
+    def reset(self) -> None:
+        with self._lock:
+            self._next_allowed_at.clear()
+            self._cooldown_until.clear()
+
+
+class _HostTurn:
+    """Holds a site's turn for one request (released on exit, also on error)."""
+
+    def __init__(self, pacer: _HostPacer, host: str) -> None:
+        self._pacer = pacer
+        self._host = host
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        self._pacer.release(self._host)
+        return False
+
+
+_host_pacer = _HostPacer()
+
+
+def _pacing_host(url: str) -> str:
+    """The site a request counts against: the hostname without a leading "www."."""
+    hostname = urlsplit(url).hostname
+    if hostname is None or hostname == "":
+        raise ValueError(f"Link-title URL has no hostname: {url}")
+    hostname = hostname.casefold()
+    if hostname.startswith("www."):
+        return hostname[len("www."):]
+    return hostname
+
+
+def _rate_limit_cooldown_seconds(retry_after: str | None) -> int:
+    """How long to leave a site alone after HTTP 429: its Retry-After seconds
+    (bounded), or a default when it gives none or an HTTP date."""
+    if retry_after is None or re.fullmatch(r"\s*\d+\s*", retry_after) is None:
+        return _RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS
+    seconds = int(retry_after)
+    return min(max(seconds, _RATE_LIMIT_MIN_COOLDOWN_SECONDS), _RATE_LIMIT_MAX_COOLDOWN_SECONDS)
+
+
 def _run_fetch_job(normalized_url: str, generation: int) -> None:
     if generation != current_generation():
         return
     result = fetch_link_title(normalized_url)
+    if result.status == "deferred":
+        # The site is cooling down: nothing is recorded, and a later view of the
+        # link asks again once the site may be contacted.
+        link_title_store.discard_in_flight(normalized_url)
+        return
     link_title_store.apply_current_fetch_result(result, generation)
+
+
+# oEmbed: the preview service some sites offer for exactly this, answering with
+# the real title where the page itself is blocked or built by JavaScript. Keyed by
+# the pacing host (hostname without "www."); each URL is quoted into the endpoint.
+_OEMBED_ENDPOINTS = {
+    "youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "m.youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "music.youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "youtu.be": "https://www.youtube.com/oembed?format=json&url=",
+    "reddit.com": "https://www.reddit.com/oembed?url=",
+    "old.reddit.com": "https://www.reddit.com/oembed?url=",
+    "new.reddit.com": "https://www.reddit.com/oembed?url=",
+    "np.reddit.com": "https://www.reddit.com/oembed?url=",
+    "vimeo.com": "https://vimeo.com/api/oembed.json?url=",
+    "player.vimeo.com": "https://vimeo.com/api/oembed.json?url=",
+    "tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "m.tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "vm.tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "open.spotify.com": "https://open.spotify.com/oembed?url=",
+    "soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+    "m.soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+}
+_MAX_OEMBED_RESPONSE_BYTES = 256 * 1024
+
+
+def _oembed_url_for(normalized_url: str) -> str | None:
+    """The oEmbed request for a link on a site that offers one, else None."""
+    host = _pacing_host(normalized_url)
+    if host not in _OEMBED_ENDPOINTS:
+        return None
+    return _OEMBED_ENDPOINTS[host] + quote(normalized_url, safe="")
 
 
 def fetch_link_title(normalized_url: str) -> _LinkTitleFetchResult:
@@ -920,6 +1134,14 @@ def fetch_link_title(normalized_url: str) -> _LinkTitleFetchResult:
 
     current_url = normalized_url
     for _ in range(_MAX_REDIRECTS + 1):
+        # Each address on the way (a share link forwards to its post) may have an
+        # oEmbed answer; without one, the page is read as for any other site.
+        oembed_url = _oembed_url_for(current_url)
+        if oembed_url is not None:
+            oembed_result = _fetch_oembed_title(page_url=normalized_url, oembed_url=oembed_url)
+            if oembed_result is not None:
+                return oembed_result
+
         target_capture = CapturedExceptionContext(PublicHttpTargetRejected, boundary='app/services/link_titles.py:fetch_link_title:target_capture')
         target = None
         with target_capture:
@@ -939,7 +1161,11 @@ def fetch_link_title(normalized_url: str) -> _LinkTitleFetchResult:
             )
         if target is None:
             raise RuntimeError("Link-title target resolution returned no target")
-        response_result = _fetch_one_url(current_url, target)
+        host = _pacing_host(current_url)
+        if not _host_pacer.acquire(host):
+            return _LinkTitleFetchResult(url=normalized_url, title=None, status="deferred", last_error_kind="rate_limited")
+        with _HostTurn(_host_pacer, host):
+            response_result = _fetch_one_url(current_url, target)
         if response_result.status != "redirect":
             return replace(response_result, url=normalized_url)
         if response_result.title is None:
@@ -984,6 +1210,11 @@ def _fetch_one_url(url: str, target: _ResolvedHttpTarget) -> _LinkTitleFetchResu
                 if redirect_result is not None:
                     return redirect_result
 
+                if response.status_code == 429:
+                    _host_pacer.cool_down(
+                        _pacing_host(url),
+                        _rate_limit_cooldown_seconds(response.headers.get("retry-after")),
+                    )
                 if response.status_code >= 400:
                     return _LinkTitleFetchResult(
                         url=url,
@@ -1021,6 +1252,81 @@ def _fetch_one_url(url: str, target: _ResolvedHttpTarget) -> _LinkTitleFetchResu
 
     title = _extract_title_from_html(content=content, encoding=response_encoding)
     return _fetch_result_from_extracted_title(url=url, title=title)
+
+
+def _fetch_oembed_title(*, page_url: str, oembed_url: str) -> _LinkTitleFetchResult | None:
+    """The page's title from its site's oEmbed service, paced like any request to
+    that site. None when the service has no usable answer (the page is read instead)."""
+    target_capture = CapturedExceptionContext(PublicHttpTargetRejected, boundary='app/services/link_titles.py:_fetch_oembed_title:target_capture')
+    target = None
+    with target_capture:
+        target = _resolve_public_http_target(oembed_url)
+    if target_capture.captured_exception is not None or target is None:
+        return None
+    host = _pacing_host(oembed_url)
+    if not _host_pacer.acquire(host):
+        return _LinkTitleFetchResult(url=page_url, title=None, status="deferred", last_error_kind="rate_limited")
+    with _HostTurn(_host_pacer, host):
+        response = _download_oembed(oembed_url, target)
+    if response is None:
+        return None
+    status_code, content = response
+    if status_code == 429:
+        return _LinkTitleFetchResult(url=page_url, title=None, status="failed", last_error_kind="http_429")
+    if status_code != 200:
+        return None
+    json_capture = CapturedExceptionContext(json.JSONDecodeError, UnicodeDecodeError, boundary='app/services/link_titles.py:_fetch_oembed_title:json_capture')
+    payload = None
+    with json_capture:
+        payload = json.loads(content.decode("utf-8"))
+    if json_capture.captured_exception is not None or not isinstance(payload, dict):
+        return None
+    if "title" not in payload or not isinstance(payload["title"], str):
+        return None
+    title = _clean_title_text(payload["title"])
+    if title is None or _is_placeholder_title(title=title, url=page_url):
+        return None
+    return _LinkTitleFetchResult(url=page_url, title=title, status="ok", last_error_kind=None)
+
+
+def _download_oembed(oembed_url: str, target: _ResolvedHttpTarget) -> tuple[int, bytes] | None:
+    """(status code, body) of an oEmbed request; None when the network fails."""
+    capture = CapturedExceptionContext(
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.HTTPError,
+        httpcore.TimeoutException,
+        httpcore.NetworkError,
+        httpcore.ProtocolError,
+    boundary='app/services/link_titles.py:_download_oembed:capture')
+    status_code = 0
+    content = b""
+    with capture:
+        with httpx.Client(
+            timeout=_FETCH_TIMEOUT_SECONDS,
+            follow_redirects=False,
+            transport=_PinnedHTTPTransport(target=target, network_backend=httpcore.SyncBackend()),
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+        ) as client:
+            with client.stream("GET", oembed_url) as response:
+                status_code = response.status_code
+                if status_code == 429:
+                    _host_pacer.cool_down(
+                        _pacing_host(oembed_url),
+                        _rate_limit_cooldown_seconds(response.headers.get("retry-after")),
+                    )
+                if status_code == 200:
+                    chunks: list[bytes] = []
+                    total_bytes = 0
+                    for chunk in response.iter_bytes():
+                        chunks.append(chunk)
+                        total_bytes += len(chunk)
+                        if total_bytes > _MAX_OEMBED_RESPONSE_BYTES:
+                            return None
+                    content = b"".join(chunks)
+    if capture.captured_exception is not None:
+        return None
+    return status_code, content
 
 
 def _redirect_result_from_response(*, url: str, response: httpx.Response) -> _LinkTitleFetchResult | None:
@@ -1074,7 +1380,40 @@ def _fetch_result_from_extracted_title(*, url: str, title: str | None) -> _LinkT
         return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="no_title")
     if _looks_like_interstitial_title(title):
         return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="interstitial_title")
+    if _is_site_name_title(title=title, url=url):
+        return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="site_name_title")
     return _LinkTitleFetchResult(url=url, title=title, status="ok", last_error_kind=None)
+
+
+def _is_placeholder_title(*, title: str, url: str) -> bool:
+    if _looks_like_interstitial_title(title):
+        return True
+    return _is_site_name_title(title=title, url=url)
+
+
+# Second-level labels under a country code ("bbc.co.uk"): the site's name is the label before.
+_COUNTRY_SECOND_LEVEL_LABELS = {"ac", "co", "com", "edu", "gov", "net", "org"}
+
+
+def _site_domain_labels(url: str) -> list[str]:
+    """The site's own domain: ["reddit", "com"] for old.reddit.com, ["bbc", "co", "uk"] for bbc.co.uk."""
+    labels = _pacing_host(url).split(".")
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _COUNTRY_SECOND_LEVEL_LABELS:
+        return labels[-3:]
+    return labels[-2:]
+
+
+def _is_site_name_title(*, title: str, url: str) -> bool:
+    """A title that is only the site's name ("Reddit" for reddit.com) tells nothing
+    the domain does not; the link shows its URL instead."""
+    if not isinstance(title, str) or not isinstance(url, str):
+        raise TypeError("_is_site_name_title requires title and url strings")
+    compact_title = re.sub(r"[^a-z0-9]", "", title.casefold())
+    if compact_title == "":
+        return False
+    site_labels = _site_domain_labels(url)
+    # "Reddit", "reddit.com" or the full host name.
+    return compact_title in {site_labels[0], "".join(site_labels), re.sub(r"[^a-z0-9]", "", _pacing_host(url))}
 
 
 def _looks_like_interstitial_title(title: str) -> bool:
@@ -1085,6 +1424,9 @@ def _looks_like_interstitial_title(title: str) -> bool:
         return False
     if normalized in _INTERSTITIAL_TITLE_EXACT_MATCHES:
         return True
+    for part in _TITLE_PART_SEPARATOR_RE.split(normalized):
+        if part.strip(" .!:-|") in _PLACEHOLDER_TITLE_PARTS:
+            return True
     return any(_contains_normalized_phrase(normalized, phrase) for phrase in _INTERSTITIAL_TITLE_PHRASES)
 
 

@@ -68,6 +68,11 @@ from app.usecases.create_child import CmdCreateChild
 from app.usecases.create_file_preview_child import CmdCreateFilePreviewChild
 from app.usecases.update_content import CmdUpdateContent
 from app.usecases.prefetch_link_titles import CmdPrefetchLinkTitles
+from app.services.link_title_retry import (
+    link_title_retry_snapshot,
+    start_link_title_retry,
+    stop_link_title_retry,
+)
 from app.usecases.add_selected_text_tag import CmdAddSelectedTextTag
 from app.usecases.tag_proposals import (
     CmdAcceptTagProposal,
@@ -157,6 +162,26 @@ class LinkTitlePrefetchRequest(BaseModel):
 def prefetch_link_titles(request: Request, draft: LinkTitlePrefetchRequest) -> dict[str, str]:
     require_request_auth_token(request)
     return CmdPrefetchLinkTitles(content=draft.content, tags=draft.tags).execute()
+
+
+@router.get("/notes/link-titles/retry")
+def link_title_retry_progress(request: Request) -> dict[str, object]:
+    require_request_auth_token(request)
+    return link_title_retry_snapshot()
+
+
+@router.post("/notes/link-titles/retry")
+@transactional_route
+def start_link_title_retry_route(request: Request) -> dict[str, object]:
+    require_request_auth_token(request)
+    return start_link_title_retry()
+
+
+@router.post("/notes/link-titles/retry/stop")
+@transactional_route
+def stop_link_title_retry_route(request: Request) -> dict[str, object]:
+    require_request_auth_token(request)
+    return stop_link_title_retry()
 
 
 def _require_note_present(note_id: str, *, context: str) -> None:

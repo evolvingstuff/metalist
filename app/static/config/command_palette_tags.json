@@ -185,6 +185,10 @@
       "tags": ["file", "trim", "unused", "orphan", "attachments", "cleanup", "delete"]
     },
     {
+      "id": "action.retry_failed_link_titles",
+      "tags": ["link", "url", "title", "retry", "refresh", "failed", "fetch", "web"]
+    },
+    {
       "id": "action.prioritize_tag_front",
       "tags": ["prioritize", "priority", "tag", "front", "search", "view", "order", "reorder"]
     },

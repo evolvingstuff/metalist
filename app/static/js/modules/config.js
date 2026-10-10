@@ -66,6 +66,8 @@ export const CONFIG = {
             TAG_SUGGESTIONS: `${API_NOTES_BASE}/tag-suggestions`,
             DICTATION_PASTE: `${API_NOTES_BASE}/dictation-paste`,
             BACKLINKS: (noteId) => `${API_NOTES_BASE}/${noteId}/backlinks`,
+            LINK_TITLE_RETRY: `${API_NOTES_BASE}/link-titles/retry`,
+            LINK_TITLE_RETRY_STOP: `${API_NOTES_BASE}/link-titles/retry/stop`,
         },
         AUTH: {
             APP_UPDATE: `${API_AUTH_BASE}/app-update`,

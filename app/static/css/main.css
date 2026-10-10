@@ -469,6 +469,36 @@ html {
     gap: 10px;
 }
 
+.link-title-retry-modal-content {
+    width: min(520px, 92vw);
+}
+
+.link-title-retry-progress {
+    width: 100%;
+    height: 8px;
+    margin: 4px 0 14px;
+}
+
+.link-title-retry-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+}
+
+.link-title-retry-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-variant-numeric: tabular-nums;
+}
+
+.link-title-retry-note {
+    color: var(--modal-text-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
 .namespace-modal-content {
     width: min(640px, 94vw);
 }

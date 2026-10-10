@@ -97,6 +97,7 @@ from app.services.client_state_service import save_client_preferences
 from app.services.client_state_service import save_command_palette_usage
 from app.services.openai_credentials import openai_credential_store
 from app.services.input_errors import NamespaceInputRejected
+from app.services.link_title_retry import stop_link_title_retry
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -595,6 +596,9 @@ def logout(
     openai_credential_store.clear_session(session_key=session_key)
     token_service.revoke_token(token)
     shell_session_service.reset()
+    # Lock and login end a retry through the runtime generation; a passwordless
+    # logout does not change it, so stop the retry here.
+    stop_link_title_retry()
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
