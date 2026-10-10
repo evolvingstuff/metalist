@@ -30,8 +30,19 @@ from app.server_runtime import save_namespace_launch_profile
 from app.db.live_recovery import recover_pending_namespaces
 from app.encryption_audit import audit_all_namespaces
 from app.encryption_audit import EncryptionAuditReport
+from app.startup_console import make_startup_console
+from app.startup_console import print_audit_namespaces
+from app.startup_console import print_check_passed
+from app.startup_console import print_environment
+from app.startup_console import print_namespace_table
+from app.startup_console import print_shell_enabled
+from app.startup_console import run_check
+from app.startup_console import working
 from app.startup_js_sanity import assert_startup_js_sanity
+from app.startup_js_sanity import collect_startup_js_sanity_violations
+from app.startup_js_sanity import discover_typescript_source_paths
 from app.startup_sanity import assert_startup_sanity
+from app.startup_sanity import collect_startup_sanity_violations
 from app.startup_environment import DEVELOPMENT_ENVIRONMENT
 from app.startup_environment import resolve_startup_environment
 from app.services.exception_capture import CapturedExceptionContext
@@ -89,11 +100,25 @@ _HTTPS_PROXY_STRIPPED_REQUEST_HEADERS = frozenset(
 
 
 def _print_shell_execution_enabled_banner() -> None:
-    print(
-        "[startup] @shell enabled for authenticated loopback clients "
-        "(this launch only).",
-        flush=True,
-    )
+    print_shell_enabled(make_startup_console(environ=os.environ))
+
+
+def _python_sanity_detail(repo_root: Path) -> str:
+    paths, violations = collect_startup_sanity_violations(repo_root)
+    if violations:
+        # Prints the findings and raises (fail fast, as at any other startup).
+        assert_startup_sanity(repo_root)
+        raise RuntimeError("Python sanity checks found violations but did not fail")
+    return f"{len(paths)} Python files"
+
+
+def _js_sanity_detail(repo_root: Path) -> str:
+    typescript_paths = discover_typescript_source_paths(repo_root)
+    paths, violations = collect_startup_js_sanity_violations(repo_root)
+    if typescript_paths or violations:
+        assert_startup_js_sanity(repo_root)
+        raise RuntimeError("JS sanity checks found violations but did not fail")
+    return f"{len(paths)} JS/JSX files"
 
 
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
@@ -101,12 +126,13 @@ def _run_startup_sanity_gates(*, repo_root: Path) -> None:
         repo_root=repo_root,
         environ=os.environ,
     )
-    print(f"[startup] MetaList environment: {startup_environment}", flush=True)
+    console = make_startup_console(environ=os.environ)
+    print_environment(console, version=__version__, environment=startup_environment)
     if startup_environment != DEVELOPMENT_ENVIRONMENT:
         return
 
-    assert_startup_sanity(repo_root)
-    assert_startup_js_sanity(repo_root)
+    run_check(console, label="Python sanity checks", check=lambda: _python_sanity_detail(repo_root))
+    run_check(console, label="JS sanity checks", check=lambda: _js_sanity_detail(repo_root))
 
 
 def _run_startup_encryption_audit(
@@ -114,12 +140,22 @@ def _run_startup_encryption_audit(
     namespaces_directory: Path,
 ) -> EncryptionAuditReport:
     recover_pending_namespaces(namespaces_directory)
-    print("[startup] Scanning encrypted namespaces for plaintext payloads...", flush=True)
-    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
-    rendered_report = report.render_text()
+    console = make_startup_console(environ=os.environ)
+    with working(console, "Encrypted namespace audit"):
+        report = audit_all_namespaces(namespaces_directory=namespaces_directory)
     if report.passed:
-        print(rendered_report, flush=True)
+        # Nothing was checked without an encrypted namespace: no line at all.
+        if report.encrypted_namespace_count == 0:
+            return report
+        print_check_passed(
+            console,
+            label="Encrypted namespace audit",
+            detail=f"{report.checked_payload_count:,} payloads checked",
+        )
+        print_audit_namespaces(console, statuses=report.namespace_statuses())
         return report
+
+    rendered_report = report.render_text()
 
     warning_border = "!" * 96
     if report.startup_allowed:
@@ -360,20 +396,16 @@ def _print_namespace_bootstrap_results(
 ) -> None:
     main_server_config = resolve_main_server_config(environ=environ)
     browser_host = resolve_local_browser_host(host=main_server_config.host)
-    print("MetaList namespace bootstrap:")
-    print("namespace\taction\thttp\thttps")
-    for result in launch_results:
-        https_url = _build_https_namespace_url(host=browser_host, result=result)
-        print(
-            "\t".join(
-                [
-                    result.namespace,
-                    result.action,
-                    result.url,
-                    https_url,
-                ]
-            )
+    rows = [
+        (
+            result.namespace,
+            result.action,
+            result.url,
+            _build_https_namespace_url(host=browser_host, result=result),
         )
+        for result in launch_results
+    ]
+    print_namespace_table(make_startup_console(environ=os.environ), rows=rows)
 
 
 def _read_process_state(*, pid: int) -> str | None:

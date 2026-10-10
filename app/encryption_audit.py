@@ -94,6 +94,20 @@ class EncryptionAuditReport:
     def startup_allowed(self) -> bool:
         return self.namespace_count > 0 and len(self.fatal_findings) == 0
 
+    def namespace_statuses(self) -> list[tuple[str, str]]:
+        """(namespace, PASS | MIGRATION REQUIRED | FAIL | SKIPPED (not encrypted)) per namespace."""
+        statuses: list[tuple[str, str]] = []
+        for result in self.results:
+            result_status = "SKIPPED (not encrypted)"
+            if result.is_encrypted:
+                result_status = "PASS"
+                if result.findings:
+                    result_status = "MIGRATION REQUIRED"
+                    if any(not finding.is_migration_deferred for finding in result.findings):
+                        result_status = "FAIL"
+            statuses.append((result.namespace, result_status))
+        return statuses
+
     def render_text(self) -> str:
         status = "FAIL"
         if self.passed:
@@ -110,15 +124,8 @@ class EncryptionAuditReport:
             ),
             f"Sensitive payloads checked: {self.checked_payload_count}",
         ]
-        for result in self.results:
-            result_status = "SKIPPED (not encrypted)"
-            if result.is_encrypted:
-                result_status = "PASS"
-                if result.findings:
-                    result_status = "MIGRATION REQUIRED"
-                    if any(not finding.is_migration_deferred for finding in result.findings):
-                        result_status = "FAIL"
-            lines.append(f"- {result.namespace}: {result_status}")
+        for namespace, result_status in self.namespace_statuses():
+            lines.append(f"- {namespace}: {result_status}")
         if self.findings:
             lines.append("Findings:")
             for finding in self.findings:
