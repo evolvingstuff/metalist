@@ -5,6 +5,15 @@ README. Changes made after the newest listed version are not described here.
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.14.0
+
+- A new login screen: one dark screen with the MetaList logo. The namespace, password and OK fade in together; once the password is accepted, the loading progress slides in with the current step and the seconds elapsed. When the first login after an update backs up and upgrades the namespace, a note under OK says so. The Session locked page has the same look, and there is no white flash between them.
+- Web link titles: links to Reddit (including share links), YouTube, Vimeo, TikTok, Spotify and SoundCloud get their real titles. Lookups are paced per site, so a note full of links no longer trips a site's rate limit. Login, consent and site-name-only titles ("Sign in", "Reddit") show the link instead. The new command palette action Retry failed link titles asks every failed link again, with a progress dialog.
+- Quoted search also matches link titles and the URLs hidden behind link labels, and the AI sees those URLs too. Pasting into a quoted search inserts the text as copied.
+- `[[note id]]` is always a link, even in a note with a `[[ ]]` formatting tag.
+- The startup output in the terminal is easier to read: the version, a check mark per check, and each namespace's URLs lined up.
+- Fixed: clicking the AI chat's $ or eye button twice quickly crashed with "Redundant state change".
+
 ## 0.13.0
 
 - Dictation: text from speech-to-text tools such as Superwhisper, pasted into the search bar or any tag field, becomes your existing tags ("neural network" gives `neural-network`). Say "quote … end quote" for text, "minus" to exclude, "at" before meta tags such as `@todo`. In a note, the words after "start tags" go to its tag bar. The phrases are set in Dictation Settings, and one undo restores what was pasted.
