@@ -125,6 +125,12 @@ CAPTURE_BOUNDARIES = {
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/link_titles.py:fetch_link_title:target_capture': ('PublicHttpTargetRejected',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
+    'app/services/link_titles.py:_fetch_oembed_title:target_capture': ('PublicHttpTargetRejected',),
+    # Handle expected external I/O, provider, image or LaTeX parsing failure.
+    'app/services/link_titles.py:_fetch_oembed_title:json_capture': ('JSONDecodeError', 'UnicodeDecodeError'),
+    # Handle expected external I/O, provider, image or LaTeX parsing failure.
+    'app/services/link_titles.py:_download_oembed:capture': ('TimeoutException', 'NetworkError', 'HTTPError', 'TimeoutException', 'NetworkError', 'ProtocolError'),
+    # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_is_process_running:kill_capture': ('ProcessLookupError', 'PermissionError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_send_signal_if_running:signal_capture': ('ProcessLookupError',),

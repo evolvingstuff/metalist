@@ -48,21 +48,21 @@ def _serve(monkeypatch: pytest.MonkeyPatch, handler) -> list[str]:
 
 def test_a_rate_limited_site_is_left_alone_while_other_sites_are_still_asked(monkeypatch, pacer) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.youtube.com":
+        if request.url.host == "www.medium.com":
             return httpx.Response(429, headers={"Retry-After": "120"})
         return httpx.Response(200, headers={"content-type": "text/html"}, content=HTML)
 
     requested = _serve(monkeypatch, handler)
     monkeypatch.setattr(link_titles, "_HOST_REQUEST_SPACING_SECONDS", 0.0)
 
-    first = fetch_link_title("https://www.youtube.com/watch?v=one")
-    assert first == _LinkTitleFetchResult(url="https://www.youtube.com/watch?v=one", title=None,
+    first = fetch_link_title("https://www.medium.com/one")
+    assert first == _LinkTitleFetchResult(url="https://www.medium.com/one", title=None,
                                           status="failed", last_error_kind="http_429")
-    # Another video on the same site (with or without "www.") is not requested.
-    assert fetch_link_title("https://youtube.com/watch?v=two").status == "deferred"
-    assert fetch_link_title("https://www.youtube.com/watch?v=three").status == "deferred"
+    # Another page on the same site (with or without "www.") is not requested.
+    assert fetch_link_title("https://medium.com/two").status == "deferred"
+    assert fetch_link_title("https://www.medium.com/three").status == "deferred"
     assert fetch_link_title("https://example.com/page").status == "ok"
-    assert requested == ["https://www.youtube.com/watch?v=one", "https://example.com/page"]
+    assert requested == ["https://www.medium.com/one", "https://example.com/page"]
 
 
 def test_a_deferred_lookup_records_nothing_and_can_be_asked_again(monkeypatch, pacer) -> None:

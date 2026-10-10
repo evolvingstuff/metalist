@@ -4,11 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+import json
 import re
 from threading import Lock, RLock
 import time
 from typing import Callable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpcore
 import httpx
@@ -121,6 +122,9 @@ _INTERSTITIAL_TITLE_PHRASES = (
 # is a real title.
 _PLACEHOLDER_TITLE_PARTS = {
     "403 forbidden",
+    # Reddit's generic page for automated requests ("Reddit - Dive into anything").
+    "dive into anything",
+    "the heart of the internet",
     "404",
     "404 not found",
     "log in",
@@ -821,7 +825,7 @@ def _sanitize_cached_interstitial_titles(
     for record in state.records_by_url.values():
         if record.status != "ok" or record.title is None:
             continue
-        if not _looks_like_interstitial_title(record.title):
+        if not _is_placeholder_title(title=record.title, url=record.url):
             continue
         next_record = _build_next_record(
             previous=record,
@@ -1092,12 +1096,52 @@ def _run_fetch_job(normalized_url: str, generation: int) -> None:
     link_title_store.apply_current_fetch_result(result, generation)
 
 
+# oEmbed: the preview service some sites offer for exactly this, answering with
+# the real title where the page itself is blocked or built by JavaScript. Keyed by
+# the pacing host (hostname without "www."); each URL is quoted into the endpoint.
+_OEMBED_ENDPOINTS = {
+    "youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "m.youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "music.youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "youtu.be": "https://www.youtube.com/oembed?format=json&url=",
+    "reddit.com": "https://www.reddit.com/oembed?url=",
+    "old.reddit.com": "https://www.reddit.com/oembed?url=",
+    "new.reddit.com": "https://www.reddit.com/oembed?url=",
+    "np.reddit.com": "https://www.reddit.com/oembed?url=",
+    "vimeo.com": "https://vimeo.com/api/oembed.json?url=",
+    "player.vimeo.com": "https://vimeo.com/api/oembed.json?url=",
+    "tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "m.tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "vm.tiktok.com": "https://www.tiktok.com/oembed?url=",
+    "open.spotify.com": "https://open.spotify.com/oembed?url=",
+    "soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+    "m.soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+}
+_MAX_OEMBED_RESPONSE_BYTES = 256 * 1024
+
+
+def _oembed_url_for(normalized_url: str) -> str | None:
+    """The oEmbed request for a link on a site that offers one, else None."""
+    host = _pacing_host(normalized_url)
+    if host not in _OEMBED_ENDPOINTS:
+        return None
+    return _OEMBED_ENDPOINTS[host] + quote(normalized_url, safe="")
+
+
 def fetch_link_title(normalized_url: str) -> _LinkTitleFetchResult:
     if normalize_url_for_link_title(normalized_url) != normalized_url:
         raise ValueError(f"fetch_link_title requires normalized URL: {normalized_url}")
 
     current_url = normalized_url
     for _ in range(_MAX_REDIRECTS + 1):
+        # Each address on the way (a share link forwards to its post) may have an
+        # oEmbed answer; without one, the page is read as for any other site.
+        oembed_url = _oembed_url_for(current_url)
+        if oembed_url is not None:
+            oembed_result = _fetch_oembed_title(page_url=normalized_url, oembed_url=oembed_url)
+            if oembed_result is not None:
+                return oembed_result
+
         target_capture = CapturedExceptionContext(PublicHttpTargetRejected, boundary='app/services/link_titles.py:fetch_link_title:target_capture')
         target = None
         with target_capture:
@@ -1210,6 +1254,81 @@ def _fetch_one_url(url: str, target: _ResolvedHttpTarget) -> _LinkTitleFetchResu
     return _fetch_result_from_extracted_title(url=url, title=title)
 
 
+def _fetch_oembed_title(*, page_url: str, oembed_url: str) -> _LinkTitleFetchResult | None:
+    """The page's title from its site's oEmbed service, paced like any request to
+    that site. None when the service has no usable answer (the page is read instead)."""
+    target_capture = CapturedExceptionContext(PublicHttpTargetRejected, boundary='app/services/link_titles.py:_fetch_oembed_title:target_capture')
+    target = None
+    with target_capture:
+        target = _resolve_public_http_target(oembed_url)
+    if target_capture.captured_exception is not None or target is None:
+        return None
+    host = _pacing_host(oembed_url)
+    if not _host_pacer.acquire(host):
+        return _LinkTitleFetchResult(url=page_url, title=None, status="deferred", last_error_kind="rate_limited")
+    with _HostTurn(_host_pacer, host):
+        response = _download_oembed(oembed_url, target)
+    if response is None:
+        return None
+    status_code, content = response
+    if status_code == 429:
+        return _LinkTitleFetchResult(url=page_url, title=None, status="failed", last_error_kind="http_429")
+    if status_code != 200:
+        return None
+    json_capture = CapturedExceptionContext(json.JSONDecodeError, UnicodeDecodeError, boundary='app/services/link_titles.py:_fetch_oembed_title:json_capture')
+    payload = None
+    with json_capture:
+        payload = json.loads(content.decode("utf-8"))
+    if json_capture.captured_exception is not None or not isinstance(payload, dict):
+        return None
+    if "title" not in payload or not isinstance(payload["title"], str):
+        return None
+    title = _clean_title_text(payload["title"])
+    if title is None or _is_placeholder_title(title=title, url=page_url):
+        return None
+    return _LinkTitleFetchResult(url=page_url, title=title, status="ok", last_error_kind=None)
+
+
+def _download_oembed(oembed_url: str, target: _ResolvedHttpTarget) -> tuple[int, bytes] | None:
+    """(status code, body) of an oEmbed request; None when the network fails."""
+    capture = CapturedExceptionContext(
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.HTTPError,
+        httpcore.TimeoutException,
+        httpcore.NetworkError,
+        httpcore.ProtocolError,
+    boundary='app/services/link_titles.py:_download_oembed:capture')
+    status_code = 0
+    content = b""
+    with capture:
+        with httpx.Client(
+            timeout=_FETCH_TIMEOUT_SECONDS,
+            follow_redirects=False,
+            transport=_PinnedHTTPTransport(target=target, network_backend=httpcore.SyncBackend()),
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+        ) as client:
+            with client.stream("GET", oembed_url) as response:
+                status_code = response.status_code
+                if status_code == 429:
+                    _host_pacer.cool_down(
+                        _pacing_host(oembed_url),
+                        _rate_limit_cooldown_seconds(response.headers.get("retry-after")),
+                    )
+                if status_code == 200:
+                    chunks: list[bytes] = []
+                    total_bytes = 0
+                    for chunk in response.iter_bytes():
+                        chunks.append(chunk)
+                        total_bytes += len(chunk)
+                        if total_bytes > _MAX_OEMBED_RESPONSE_BYTES:
+                            return None
+                    content = b"".join(chunks)
+    if capture.captured_exception is not None:
+        return None
+    return status_code, content
+
+
 def _redirect_result_from_response(*, url: str, response: httpx.Response) -> _LinkTitleFetchResult | None:
     if 300 > response.status_code or response.status_code >= 400:
         return None
@@ -1261,7 +1380,40 @@ def _fetch_result_from_extracted_title(*, url: str, title: str | None) -> _LinkT
         return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="no_title")
     if _looks_like_interstitial_title(title):
         return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="interstitial_title")
+    if _is_site_name_title(title=title, url=url):
+        return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="site_name_title")
     return _LinkTitleFetchResult(url=url, title=title, status="ok", last_error_kind=None)
+
+
+def _is_placeholder_title(*, title: str, url: str) -> bool:
+    if _looks_like_interstitial_title(title):
+        return True
+    return _is_site_name_title(title=title, url=url)
+
+
+# Second-level labels under a country code ("bbc.co.uk"): the site's name is the label before.
+_COUNTRY_SECOND_LEVEL_LABELS = {"ac", "co", "com", "edu", "gov", "net", "org"}
+
+
+def _site_domain_labels(url: str) -> list[str]:
+    """The site's own domain: ["reddit", "com"] for old.reddit.com, ["bbc", "co", "uk"] for bbc.co.uk."""
+    labels = _pacing_host(url).split(".")
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _COUNTRY_SECOND_LEVEL_LABELS:
+        return labels[-3:]
+    return labels[-2:]
+
+
+def _is_site_name_title(*, title: str, url: str) -> bool:
+    """A title that is only the site's name ("Reddit" for reddit.com) tells nothing
+    the domain does not; the link shows its URL instead."""
+    if not isinstance(title, str) or not isinstance(url, str):
+        raise TypeError("_is_site_name_title requires title and url strings")
+    compact_title = re.sub(r"[^a-z0-9]", "", title.casefold())
+    if compact_title == "":
+        return False
+    site_labels = _site_domain_labels(url)
+    # "Reddit", "reddit.com" or the full host name.
+    return compact_title in {site_labels[0], "".join(site_labels), re.sub(r"[^a-z0-9]", "", _pacing_host(url))}
 
 
 def _looks_like_interstitial_title(title: str) -> bool:
