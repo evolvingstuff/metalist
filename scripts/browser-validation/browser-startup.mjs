@@ -168,7 +168,10 @@ async function checkEncryptedLogin(context, origin) {
           if (!response.ok) throw new Error(`Password removal failed: ${response.status}`);
         }, password);
         stage = 'confirming passwordless browser fixture';
-        await page.reload({waitUntil: 'domcontentloaded', timeout: 30000});
+        // Removing the password ends every session, so the page's background
+        // session check may already have moved it to /locked; a reload would
+        // then reload /locked. Open the app's start page instead.
+        await page.goto(origin, {waitUntil: 'domcontentloaded', timeout: 30000});
         await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
       } else {
         stage = `logging out (removeStoredIdentity=${removeStoredIdentity})`;
