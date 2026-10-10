@@ -8,6 +8,8 @@
 
 `app/static/js/modules/application-state.js` exports the single `ApplicationState` owner. `ModeContext`, modal controllers, preferences, usage, reminders, request caches, timers, and module-level UI records register their state there. Controller properties are getter/setter accessors into owned records; they are not independent backing stores. DOM nodes, promises, callbacks, and other platform resources remain opaque references.
 
+Preferences change before they are saved: `PreferencesStore` answers reads with the latest value asked for and saves changes one at a time, in order, so a second click that lands while the first click's save is still on its way works from the first click's value (a toggle pressed twice toggles back) instead of repeating it. A UI toggle updates its own state before saving for the same reason.
+
 - `createFields` and `own` install strict property and collection setters. Equal scalar or structurally equal record writes throw. Duplicate map/set insertion, absent deletion, and empty clears throw. Controller schemas cannot acquire undeclared fields after construction.
 - `createScope` supplies immutable snapshots and strict replacement. It copies incoming records and nested collections so retaining the caller's input cannot mutate stored state. Modal scopes require initialization and are disposed on close; there is no implicit empty-state fallback.
 - Public snapshot getters return immutable values or detached copies. Internally, controlled collection handles route mutations through the same state owner. No code may write `ModeContext` backing fields directly.
